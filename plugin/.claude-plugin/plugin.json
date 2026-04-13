@@ -1,0 +1,12 @@
+{
+  "name": "codeforge",
+  "version": "0.1.0",
+  "description": "Claude Code power-user toolkit — memory management + pet gamification",
+  "statusLine": {
+    "type": "command",
+    "command": "codeforge statusline"
+  },
+  "hooks": {
+    "file": "hooks.json"
+  }
+}

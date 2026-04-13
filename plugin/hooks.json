@@ -1,0 +1,17 @@
+{
+  "hooks": [
+    {
+      "event": "PostToolUse",
+      "matcher": "Bash",
+      "command": "bash -c 'echo \"$CLAUDE_TOOL_INPUT\" | grep -q \"git commit\" && codeforge learn --file /dev/stdin 2>/dev/null || true'",
+      "timeout": 5000,
+      "blocking": false
+    },
+    {
+      "event": "SessionEnd",
+      "command": "codeforge dream --only track 2>/dev/null || true",
+      "timeout": 10000,
+      "blocking": false
+    }
+  ]
+}
