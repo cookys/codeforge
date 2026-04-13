@@ -7,8 +7,8 @@ pub struct Village {
     pub pet_name: &'static str,
     pub color: Color,
     pub tagline: &'static str,
-    pub ascii_small: &'static str,  // ≤ 6 行 × 12 字（statusline 用）
-    pub ascii_full: &'static str,   // 完整版（pet card 用）
+    pub ascii_small: &'static str,  // ≤ 4 行 × 10 字（statusline 用）
+    pub ascii_full: &'static str,   // 完整版（pet card / TUI 用）
 }
 
 impl Village {
@@ -33,17 +33,18 @@ pub static VILLAGES: &[Village] = &[
         pet_name: "Spam",
         color: Color::Yellow,
         tagline: "凡事皆物件，空白定義秩序",
+        // owl: 圓眼 ((o,o)) + 嘴 , + 羽冠 ,_^_, + 爪 ):::(
         ascii_small: "\
- ,_,\n\
-(o,o)\n\
-/)__)\n\
- \" \"",
+  ,_^_,\n\
+ ((o,o))\n\
+  ):::(\n\
+  \" | \"",
         ascii_full: "\
     ,___,\n\
-   (o , o)\n\
-   /)___(\\  \n\
-  // | | \\\\\n\
-   \"\"   \"\"",
+   ( o,o )\n\
+   |):::(|\n\
+    V---V\n\
+    \"   \"",
     },
     Village {
         id: "typescript",
@@ -52,17 +53,19 @@ pub static VILLAGES: &[Village] = &[
         pet_name: "Blueprint",
         color: Color::Blue,
         tagline: "型別是合約，Promise 是承諾",
+        // cat: 尖耳 /\___/\ + 眼 =^.^= + 身體
         ascii_small: "\
 /\\___/\\\n\
-( o  o)\n\
-(  ^^  )\n\
- \\____/",
+(=^.^=)\n\
+ )   (\n\
+ \\___/",
         ascii_full: "\
-  /\\____/\\\n\
- ( o    o )\n\
- (   ^^^^  )\n\
-  \\______/\n\
-   |  ||  |",
+  /\\___/\\\n\
+ ( =^.^= )\n\
+ (  ~~~  )\n\
+  )     (\n\
+  \\_____/\n\
+  | | | |",
     },
     Village {
         id: "rust",
@@ -71,17 +74,20 @@ pub static VILLAGES: &[Village] = &[
         pet_name: "Ferris",
         color: Color::Red,
         tagline: "所有權是責任，錯誤是公民",
+        // crab: 波紋殼 _~^~^~_ + 蟹爪 \/...\/  + 臉 '_ - _' + 腹 /---\
+        // 設計來源：rust-lang/ferris-says canonical，壓縮至 ART_W=10
         ascii_small: "\
-  /  \\\n\
- (><><)\n\
-d/|  |\\b\n\
-  ~  ~",
+ _~^~^~_\n\
+\\/  oo  \\/\n\
+  '_ - _'\n\
+   /---\\",
         ascii_full: "\
-    /  \\\n\
-   (><><)\n\
-  d/|  |\\b\n\
-   d|  |b\n\
-    ~  ~",
+   _~^~^~_\n\
+\\) / o o \\ (/\n\
+  '_  -  _'\n\
+  / '---' \\\n\
+   |     |\n\
+   ~     ~",
     },
     Village {
         id: "go",
@@ -90,17 +96,19 @@ d/|  |\\b\n\
         pet_name: "Gopher",
         color: Color::Cyan,
         tagline: "簡單即道，並發是天性",
+        // gopher: 突眼 (` `) + 牙 >(. .)< + 身體
+        // 來源：belbomemo gist canonical Go gopher, 壓縮版
         ascii_small: "\
- (o)(o)\n\
- {    }\n\
-  \\  /\n\
-  /  \\",
+  (` `)\n\
+ >(. .)<\n\
+  |   |\n\
+  |___|",
         ascii_full: "\
-  (o)(o)\n\
-  {    }\n\
-   \\  /\n\
-   /  \\\n\
-  (====)",
+   ,_____,\n\
+  (  o o  )\n\
+  ( > . < )\n\
+   )     (\n\
+  (_______)",
     },
     Village {
         id: "javascript",
@@ -109,16 +117,17 @@ d/|  |\\b\n\
         pet_name: "Wat",
         color: Color::Ansi256(214), // 橙色
         tagline: "null ≠ undefined，callback 是歷史",
+        // confused creature: ?? + 混亂眼 o_o + 身體
         ascii_small: "\
- ??!?!\n\
-(#o_o#)\n\
- |   |\n\
- |___|",
-        ascii_full: "\
-  ??!?!?\n\
+  ??!??\n\
  (#o_o#)\n\
-  |   |\n\
-  | W |\n\
+  )   (\n\
   |___|",
+        ascii_full: "\
+  ??!?!??\n\
+ (#o   o#)\n\
+  (  ~  )\n\
+  )     (\n\
+  |_____|",
     },
 ];
