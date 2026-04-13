@@ -159,6 +159,7 @@ fn vis(s: &str) -> usize { UnicodeWidthStr::width(s) }
 
 /// Shorten path keeping tail, using column width (~/projects/very/long → …/very/long)
 fn shorten_path(path: &str, max_cols: usize) -> String {
+    if max_cols == 0 { return "…".to_string(); }
     if vis(path) <= max_cols { return path.to_string(); }
     // Walk from end, collect chars until we've used max_cols-1 columns
     let mut cols = 0usize;
@@ -172,6 +173,7 @@ fn shorten_path(path: &str, max_cols: usize) -> String {
 
 /// Shorten string keeping head, using column width
 fn shorten_str(s: &str, max_cols: usize) -> String {
+    if max_cols == 0 { return "…".to_string(); }
     if vis(s) <= max_cols { return s.to_string(); }
     let mut cols = 0usize;
     let head: String = s.chars().take_while(|c| {
@@ -271,12 +273,13 @@ struct Row {
 ///
 /// art 已在 art() closure 中 pad 到 art_w，所以每行 info 起始列一致。
 /// 不需要 MoveToColumn — 純 write! + writeln!，相容所有環境。
-/// rows 4-5 沒有 art → info 從 col 0 開始（stats/footer 自然縮排）
+/// art_w=0（render_no_pet）時 None 行直接輸出 info，不加前置空格。
 fn render_rows<W: Write>(out: &mut W, rows: &[Row], art_w: usize) -> Result<()> {
     let blank = " ".repeat(art_w);
     for row in rows {
         match &row.art {
             Some(art) => writeln!(out, "{}  {}", art, row.info)?,
+            None if art_w == 0 => writeln!(out, "{}", row.info)?,
             None      => writeln!(out, "{}  {}", blank, row.info)?,
         }
     }
@@ -469,10 +472,3 @@ fn build_usage_line(data: &StatusInput, _panel_w: usize) -> String {
     segs.join("  ")
 }
 
-// ─── Layout helpers ───────────────────────────────────────────────────────────
-
-/// Pad plain (non-ANSI) string to N terminal columns using unicode-width
-fn pad_plain(s: &str, width: usize) -> String {
-    let w = vis(s);
-    if w >= width { s.to_string() } else { format!("{}{}", s, " ".repeat(width - w)) }
-}
