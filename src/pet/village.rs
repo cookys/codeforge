@@ -7,7 +7,7 @@ pub struct Village {
     pub pet_name: &'static str,
     pub color: Color,
     pub tagline: &'static str,
-    pub ascii_small: &'static str,  // ≤ 4 行 × 10 字（statusline 用）
+    pub ascii_small: &'static str,  // 6 行 × ≤10 字（statusline 用）
     pub ascii_full: &'static str,   // 完整版（pet card / TUI 用）
 }
 
@@ -33,18 +33,20 @@ pub static VILLAGES: &[Village] = &[
         pet_name: "Spam",
         color: Color::Yellow,
         tagline: "凡事皆物件，空白定義秩序",
-        // owl: 圓眼 ((o,o)) + 嘴 , + 羽冠 ,_^_, + 爪 ):::(
         ascii_small: "\
   ,_^_,\n\
  ((o,o))\n\
   ):::(\n\
-  \" | \"",
+  \" | \"\n\
+  | V |\n\
+  V   V",
         ascii_full: "\
     ,___,\n\
    ( o,o )\n\
    |):::(|\n\
     V---V\n\
-    \"   \"",
+    \"   \"\n\
+    V V V",
     },
     Village {
         id: "typescript",
@@ -53,19 +55,20 @@ pub static VILLAGES: &[Village] = &[
         pet_name: "Blueprint",
         color: Color::Blue,
         tagline: "型別是合約，Promise 是承諾",
-        // cat: 尖耳 /\___/\ + 眼 =^.^= + 身體
         ascii_small: "\
 /\\___/\\\n\
 (=^.^=)\n\
  )   (\n\
- \\___/",
+(     )\n\
+ \\___/\n\
+  u u",
         ascii_full: "\
   /\\___/\\\n\
  ( =^.^= )\n\
  (  ~~~  )\n\
   )     (\n\
   \\_____/\n\
-  | | | |",
+   u   u",
     },
     Village {
         id: "rust",
@@ -74,13 +77,14 @@ pub static VILLAGES: &[Village] = &[
         pet_name: "Ferris",
         color: Color::Red,
         tagline: "所有權是責任，錯誤是公民",
-        // crab: 波紋殼 _~^~^~_ + 蟹爪 \/...\/  + 臉 '_ - _' + 腹 /---\
-        // 設計來源：rust-lang/ferris-says canonical，壓縮至 ART_W=10
+        // canonical: rust-lang/ferris-says，壓縮至 ART_W=10
         ascii_small: "\
  _~^~^~_\n\
 \\/  oo  \\/\n\
   '_ - _'\n\
-   /---\\",
+   /---\\\n\
+   |   |\n\
+   ~   ~",
         ascii_full: "\
    _~^~^~_\n\
 \\) / o o \\ (/\n\
@@ -96,38 +100,42 @@ pub static VILLAGES: &[Village] = &[
         pet_name: "Gopher",
         color: Color::Cyan,
         tagline: "簡單即道，並發是天性",
-        // gopher: 突眼 (` `) + 牙 >(. .)< + 身體
-        // 來源：belbomemo gist canonical Go gopher, 壓縮版
+        // canonical: belbomemo gist Go gopher，壓縮版
         ascii_small: "\
   (` `)\n\
  >(. .)<\n\
   |   |\n\
-  |___|",
+  |___|\n\
+  || ||\n\
+  ~~ ~~",
         ascii_full: "\
    ,_____,\n\
   (  o o  )\n\
   ( > . < )\n\
    )     (\n\
-  (_______)",
+  (_______)\n\
+   || | ||",
     },
     Village {
         id: "javascript",
         display_name: "Strata Bazaar",
         language: "JavaScript",
         pet_name: "Wat",
-        color: Color::Ansi256(214), // 橙色
+        color: Color::Ansi256(214),
         tagline: "null ≠ undefined，callback 是歷史",
-        // confused creature: ?? + 混亂眼 o_o + 身體
         ascii_small: "\
   ??!??\n\
  (#o_o#)\n\
   )   (\n\
-  |___|",
+  |   |\n\
+  |___|\n\
+  ~~~~~",
         ascii_full: "\
   ??!?!??\n\
  (#o   o#)\n\
   (  ~  )\n\
   )     (\n\
+  |     |\n\
   |_____|",
     },
 ];

@@ -429,8 +429,8 @@ fn render_full<W: Write>(
         Row { art: art(1), info: row1_info },
         Row { art: art(2), info: row2_info },
         Row { art: art(3), info: row3_info },
-        Row { art: None,   info: row4_info },
-        Row { art: None,   info: row5_info },
+        Row { art: art(4), info: row4_info },
+        Row { art: art(5), info: row5_info },
     ];
 
     render_rows(out, &rows, ART_W)
