@@ -144,8 +144,8 @@ fn colored_bar(pct: f64, width: usize) -> String {
     let filled = ((pct.clamp(0.0, 1.0)) * width as f64) as usize;
     let empty = width - filled;
     format!("{}{}",
-        tcs("▮".repeat(filled), bar_rgb(pct)),
-        tcs("▯".repeat(empty), BAR_EMPTY)
+        tcs("█".repeat(filled), bar_rgb(pct)),
+        tcs("░".repeat(empty), BAR_EMPTY)
     )
 }
 
@@ -322,7 +322,7 @@ fn render_full<W: Write>(
     village: &crate::pet::village::Village,
     width: usize,
 ) -> Result<()> {
-    const ART_W: usize = 15;
+    const ART_W: usize = 10;
     let panel_w = width.saturating_sub(ART_W + 2);
     let vrgb = village.rgb();
 
@@ -383,13 +383,13 @@ fn render_full<W: Write>(
     let hp_pct = (pet.hp as f64 / 100.0).clamp(0.0, 1.0);
     let hp_filled = (hp_pct * 6.0) as usize;
     let hp_bar = format!("{}{}",
-        tcs("▮".repeat(hp_filled), hp_rgb(pet.hp)),
-        tcs("▯".repeat(6 - hp_filled), BAR_EMPTY)
+        tcs("█".repeat(hp_filled), hp_rgb(pet.hp)),
+        tcs("░".repeat(6 - hp_filled), BAR_EMPTY)
     );
     let xp_filled = ((pet.xp as f64 / pet.xp_to_next as f64).clamp(0.0, 1.0) * 6.0) as usize;
     let xp_bar = format!("{}{}",
-        tcs("▮".repeat(xp_filled), vrgb),
-        tcs("▯".repeat(6 - xp_filled), BAR_EMPTY)
+        tcs("█".repeat(xp_filled), vrgb),
+        tcs("░".repeat(6 - xp_filled), BAR_EMPTY)
     );
     let row3_info = format!("{} {}  {} {} {}  {} {} {}/{}",
         tc_bold(&pet.name, PET_NAME),
