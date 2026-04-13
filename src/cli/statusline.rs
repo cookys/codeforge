@@ -268,28 +268,25 @@ struct Row {
     info: String,
 }
 
-/// 核心渲染引擎：reserve N rows → 回到頂端 → 兩欄各自定位寫入
-/// art 欄在 col 0，info 欄在 col (ART_W + 2)
-/// 不需要 blank padding — 沒有 art 的列直接跳到 INFO_COL 寫 info
+/// 核心渲染引擎：single-pass position-based
+///
+/// 每行：
+///   1. MoveToColumn(0)        → 寫 art（若有）
+///   2. MoveToColumn(info_col) → 寫 info
+///   3. writeln!               → 真正的 \n 換行（不用 \e[1E，避免 Claude Code 相容性問題）
+///
+/// rows 4-5 沒有 art → 直接 MoveToColumn(info_col)，col 0..info_col-1 自然空白
+/// 不需要 MoveUp + reserve，append-only stdout 按順序輸出即可
 fn render_rows<W: Write>(out: &mut W, rows: &[Row], art_w: usize) -> Result<()> {
-    let n = rows.len() as u16;
     let info_col = (art_w + 2) as u16;
 
-    // 1. Reserve 空間（往下推 n 行）
-    for _ in 0..n { writeln!(out)?; }
-
-    // 2. 回到第一行
-    execute!(out, cursor::MoveUp(n))?;
-
-    // 3. 每行：art 欄（col 0）→ info 欄（col info_col）→ 下一行
     for row in rows {
         if let Some(art) = &row.art {
             execute!(out, cursor::MoveToColumn(0))?;
             write!(out, "{}", art)?;
         }
         execute!(out, cursor::MoveToColumn(info_col))?;
-        write!(out, "{}", row.info)?;
-        execute!(out, cursor::MoveToNextLine(1))?;
+        writeln!(out, "{}", row.info)?;
     }
 
     Ok(())
