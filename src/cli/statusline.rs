@@ -143,8 +143,8 @@ fn colored_bar(pct: f64, width: usize) -> String {
     let filled = ((pct.clamp(0.0, 1.0)) * width as f64) as usize;
     let empty = width - filled;
     format!("{}{}",
-        tcs("█".repeat(filled), bar_rgb(pct)),
-        tcs("░".repeat(empty), BAR_EMPTY)
+        tcs("▮".repeat(filled), bar_rgb(pct)),
+        tcs("▯".repeat(empty), BAR_EMPTY)
     )
 }
 
