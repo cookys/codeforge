@@ -24,6 +24,9 @@ serde_yaml = "0.9"
 
 # Terminal colors
 termcolor = "1"
+owo-colors = { version = "4", features = ["supports-colors"] }
+unicode-width = "0.2"
+crossterm = "0.29"
 
 # Async runtime (for dream compile LLM calls)
 tokio = { version = "1", features = ["full"] }
