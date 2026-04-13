@@ -1,48 +1,50 @@
+/// Statusline — position-based 兩欄渲染
+/// art 欄（col 0）與 info 欄（col ART_W+2）獨立定位寫入，不需要 blank padding
+/// UX Pro palette: 三層亮度 (Tier1=222-231 身份, Tier2=71-179 狀態, Tier3=236-246 背景)
 use anyhow::Result;
 use crate::db;
 use crate::pet::state::PetState;
 use crate::pet::village::VILLAGES;
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use std::io::Write;
+use owo_colors::OwoColorize;
+use unicode_width::UnicodeWidthStr;
+use crossterm::{execute, cursor};
+use std::io::{self, Write};
 
 pub fn run(ctx: &db::Context) -> Result<()> {
-    let status_data = read_status_input();
-
+    let data = read_status_input();
     let conn = ctx.open_db()?;
     let has_pet = PetState::exists(&conn).unwrap_or(false);
 
     let width: usize = std::env::var("CODEFORGE_WIDTH")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(100);
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
 
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
 
     if !has_pet {
-        render_no_pet(&mut stdout, &status_data, width)?;
+        render_no_pet(&mut out, &data, width)?;
     } else {
         let pet = PetState::load(&conn).unwrap_or_default();
         let village = VILLAGES.iter().find(|v| v.id == pet.village).unwrap_or(&VILLAGES[2]);
-        render_full(&mut stdout, &status_data, &pet, village, width)?;
+        render_full(&mut out, &data, &pet, village, width)?;
     }
 
-    stdout.flush()?;
+    out.flush()?;
     Ok(())
 }
+
+// ─── Input ────────────────────────────────────────────────────────────────────
 
 #[derive(Default)]
 struct StatusInput {
     raw: serde_json::Value,
-    model: Option<String>,        // e.g. "Sonnet 4.6"
+    model: Option<String>,
     cwd: Option<String>,
-    version: Option<String>,      // e.g. "2.1.101"
-    // context_window.*
-    context_pct: Option<f64>,     // 0.0–1.0（used_percentage / 100）
+    version: Option<String>,
+    context_pct: Option<f64>,          // 0.0–1.0
     context_window_size: Option<u64>,
-    // rate_limits.five_hour.*
     five_hour_pct: Option<f64>,
-    five_hour_resets_at: Option<i64>,  // Unix timestamp
-    // rate_limits.seven_day.*
+    five_hour_resets_at: Option<i64>,
     seven_day_pct: Option<f64>,
     seven_day_resets_at: Option<i64>,
 }
@@ -52,24 +54,18 @@ fn read_status_input() -> StatusInput {
     let stdin = std::io::stdin();
     let mut line = String::new();
     if stdin.lock().read_line(&mut line).is_ok() && !line.trim().is_empty() {
-        // Debug：記錄原始 JSON 供分析（只在設定 CODEFORGE_DEBUG 時）
         if std::env::var("CODEFORGE_DEBUG").is_ok() {
             let _ = std::fs::write("/tmp/codeforge-sl.json", &line);
         }
-
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
-            // model: {"id": "claude-sonnet-4-6", "display_name": "Sonnet 4.6"}
             let model = v["model"]["display_name"].as_str()
                 .or_else(|| v["model"]["id"].as_str())
-                .or_else(|| v["model"].as_str())  // fallback: flat string
+                .or_else(|| v["model"].as_str())
                 .map(|s| s.replace("claude-", "").replace("-20", " 20"));
 
-            // context_window: {"used_percentage": 69, "context_window_size": 200000, ...}
             let context_pct = v["context_window"]["used_percentage"].as_f64()
                 .map(|p| p / 100.0);
             let context_window_size = v["context_window"]["context_window_size"].as_u64();
-
-            // rate_limits: {"five_hour": {"used_percentage": 8, "resets_at": ...}}
             let five_hour_pct = v["rate_limits"]["five_hour"]["used_percentage"].as_f64()
                 .map(|p| p / 100.0);
             let five_hour_resets_at = v["rate_limits"]["five_hour"]["resets_at"].as_i64();
@@ -96,315 +92,124 @@ fn read_status_input() -> StatusInput {
     StatusInput::default()
 }
 
-// ─── Layout helpers ──────────────────────────────────────────────────────────
+// ─── UX Pro color palette (ANSI256 → truecolor) ───────────────────────────────
 
-/// 可視欄數（box 字元 = 1 col，ASCII = 1 col）
-fn vis(s: &str) -> usize { s.chars().count() }
+type Rgb = (u8, u8, u8);
 
-/// 填充到恰好 width 可視欄
-fn pad(s: &str, width: usize) -> String {
-    let len = vis(s);
-    if len >= width { s.to_string() } else { format!("{}{}", s, " ".repeat(width - len)) }
+const DELIM:    Rgb = (0x44, 0x44, 0x44); // 238 — ( )
+const MODEL_C:  Rgb = (0xFF, 0xD7, 0x87); // 222 — model name
+const CTX_SZ:   Rgb = (0xD7, 0xAF, 0x5F); // 179 — ctx window size
+const CWD_C:    Rgb = (0x5F, 0xAF, 0xAF); // 73  — cwd path
+const BRANCH_C: Rgb = (0x87, 0xD7, 0x87); // 114 — git branch
+const BAR_LOW:  Rgb = (0x87, 0xD7, 0x87); // 114 — bar <50%
+const BAR_MID:  Rgb = (0xD7, 0xAF, 0x5F); // 179 — bar 50-80%
+const BAR_HIGH: Rgb = (0xD7, 0x5F, 0x5F); // 167 — bar >80%
+const BAR_EMPTY:Rgb = (0x30, 0x30, 0x30); // 236 — bar ▯
+const BAR_LBL:  Rgb = (0x8A, 0x8A, 0x8A); // 245 — "5h" "7d" "ctx"
+const REMAIN:   Rgb = (0x58, 0x58, 0x58); // 240 — "4h2m"
+const PET_NAME: Rgb = (0xEE, 0xEE, 0xEE); // 255 — pet name
+const PET_LV:   Rgb = (0xFF, 0xD7, 0x87); // 222 — "Lv.N"
+const STAT_LBL: Rgb = (0x58, 0x58, 0x58); // 240 — "ATK:"
+const STAT_VAL: Rgb = (0x94, 0x94, 0x94); // 246 — stat numbers
+const MEM_ACT:  Rgb = (0x5F, 0xAF, 0x5F); // 71  — memory active
+const MEM_INACT:Rgb = (0xD7, 0x5F, 0x5F); // 167 — memory inactive
+
+// ─── Color helpers ────────────────────────────────────────────────────────────
+
+fn tc(s: &str, (r, g, b): Rgb) -> String {
+    format!("{}", s.truecolor(r, g, b))
 }
 
-/// │ content（填充至 inner 欄）│
-fn box_line(content: &str, inner: usize) -> String {
-    format!("│{}│", pad(content, inner))
+fn tc_bold(s: &str, (r, g, b): Rgb) -> String {
+    format!("{}", s.truecolor(r, g, b).bold())
 }
 
-/// ╭── left ── right ─────────────────╮（總寬 = inner + 2）
-fn header_line(left: &str, right: &str, inner: usize) -> String {
-    // ╭(1)──(2) (1)left(1) ──(2) (1)right(1) ─(1)fill╮(1)  = 11 fixed
-    let fill = inner.saturating_sub(11 + vis(left) + vis(right));
-    format!("╭── {} ── {} ─{}╮", left, right, "─".repeat(fill))
+fn tcs(s: String, (r, g, b): Rgb) -> String {
+    format!("{}", s.truecolor(r, g, b))
 }
 
-/// ├── label ─────────────────────────┤（總寬 = inner + 2）
-fn divider_line(label: &str, inner: usize) -> String {
-    let fill = inner.saturating_sub(6 + vis(label));
-    format!("├── {} {}┤", label, "─".repeat(fill))
+/// Wrap inner content in dim `( )` parens
+/// inner_vis = visible char count of `inner` (not counting ANSI codes)
+fn seg(inner: &str, inner_vis: usize) -> (String, usize) {
+    let s = format!("{} {} {}", tc("(", DELIM), inner, tc(")", DELIM));
+    (s, inner_vis + 4) // "( " + " )"
 }
 
-/// ╰── left ─────────────[right]╯（總寬 = inner + 2）
-fn footer_line(left: &str, right: &str, inner: usize) -> String {
-    let fill = inner.saturating_sub(10 + vis(left) + vis(right));
-    format!("╰── {} ──{}[{}]╯", left, "─".repeat(fill), right)
+fn bar_rgb(pct: f64) -> Rgb {
+    if pct < 0.5 { BAR_LOW } else if pct < 0.8 { BAR_MID } else { BAR_HIGH }
 }
 
-/// 產生 N 格進度條（▮ 填充，▯ 空）
-fn pbar(pct: f64, width: usize) -> String {
+/// Colored progress bar (filled=semantic, empty=dim 236)
+fn colored_bar(pct: f64, width: usize) -> String {
     let filled = ((pct.clamp(0.0, 1.0)) * width as f64) as usize;
-    format!("{}{}", "▮".repeat(filled), "▯".repeat(width - filled))
+    let empty = width - filled;
+    format!("{}{}",
+        tcs("▮".repeat(filled), bar_rgb(pct)),
+        tcs("▯".repeat(empty), BAR_EMPTY)
+    )
 }
 
-/// 格式化秒數為人類可讀（38400 → "10h"，172800 → "2d"）
-fn fmt_duration(secs: u64) -> String {
-    if secs < 3600 { format!("{}m", secs / 60) }
-    else if secs < 86400 { format!("{}h", secs / 3600) }
-    else { format!("{}d", secs / 86400) }
+/// HP bar color: green >60%, amber 30-60%, red <30%
+fn hp_rgb(hp: u32) -> Rgb {
+    if hp > 60 { BAR_LOW } else if hp > 30 { BAR_MID } else { BAR_HIGH }
 }
 
-/// 格式化 context window（1000000 → "1M"，200000 → "200k"）
+/// Visible column width (handles wide chars: CJK=2col, ASCII/▮▯=1col)
+/// Use this for calculating layout, NOT str.len() or chars().count()
+fn vis(s: &str) -> usize { UnicodeWidthStr::width(s) }
+
+/// Shorten path keeping tail, using column width (~/projects/very/long → …/very/long)
+fn shorten_path(path: &str, max_cols: usize) -> String {
+    if vis(path) <= max_cols { return path.to_string(); }
+    // Walk from end, collect chars until we've used max_cols-1 columns
+    let mut cols = 0usize;
+    let tail: String = path.chars().rev().take_while(|c| {
+        let w = UnicodeWidthStr::width(c.encode_utf8(&mut [0u8; 4]));
+        if cols + w > max_cols - 1 { return false; }
+        cols += w; true
+    }).collect::<String>().chars().rev().collect();
+    format!("…{}", tail)
+}
+
+/// Shorten string keeping head, using column width
+fn shorten_str(s: &str, max_cols: usize) -> String {
+    if vis(s) <= max_cols { return s.to_string(); }
+    let mut cols = 0usize;
+    let head: String = s.chars().take_while(|c| {
+        let w = UnicodeWidthStr::width(c.encode_utf8(&mut [0u8; 4]));
+        if cols + w > max_cols - 1 { return false; }
+        cols += w; true
+    }).collect();
+    format!("{}…", head)
+}
+
+fn to_home_rel(path: &str) -> String {
+    if let Some(home) = dirs::home_dir() {
+        let h = home.to_string_lossy();
+        if path.starts_with(h.as_ref()) {
+            return format!("~{}", &path[h.len()..]);
+        }
+    }
+    path.to_string()
+}
+
 fn fmt_ctx_window(n: u64) -> String {
     if n >= 1_000_000 { format!("{}M", n / 1_000_000) }
     else if n >= 1_000 { format!("{}k", n / 1_000) }
     else { format!("{}", n) }
 }
 
-// ─── Renderers ───────────────────────────────────────────────────────────────
-
-fn render_no_pet(stdout: &mut StandardStream, data: &StatusInput, width: usize) -> Result<()> {
-    let inner = width.saturating_sub(2);
-    let mut spec = ColorSpec::new();
-    spec.set_fg(Some(Color::Ansi256(244)));
-    stdout.set_color(&spec)?;
-    writeln!(stdout, "╭{}╮", "─".repeat(inner))?;
-    writeln!(stdout, "{}", box_line("  CodeForge — 執行 `codeforge adopt` 開始你的旅程", inner))?;
-    let model_str = data.model.as_deref().unwrap_or("—");
-    writeln!(stdout, "{}", footer_line("Memory: inactive", model_str, inner))?;
-    stdout.reset()?;
-    Ok(())
-}
-
-fn render_full(
-    stdout: &mut StandardStream,
-    data: &StatusInput,
-    pet: &PetState,
-    village: &crate::pet::village::Village,
-    width: usize,
-) -> Result<()> {
-    const ART_W: usize = 15;
-    let panel_w = width.saturating_sub(ART_W);
-    let inner = panel_w.saturating_sub(2);
-
-    let branch = git_branch().unwrap_or_else(|| "—".to_string());
-    let cwd = data.cwd.clone()
-        .or_else(|| current_dir_short())
-        .unwrap_or_else(|| "~".to_string());
-
-    // 轉 home-relative 再截短（/home/user/x → ~/x）
-    let cwd_rel = to_home_rel(&cwd);
-    let cwd_short = shorten_path(&cwd_rel, 22);
-    let branch_short = shorten_str(&branch, 22);
-
-    // Model 顯示（含 context window 大小）
-    let model_display = match (&data.model, data.context_window_size) {
-        (Some(m), Some(cw)) => format!("{} ({})", m, fmt_ctx_window(cw)),
-        (Some(m), None) => m.clone(),
-        (None, _) => "—".to_string(),
-    };
-
-    // XP bar
-    let xp_filled = (pet.xp as f32 / pet.xp_to_next as f32 * 6.0) as usize;
-    let xp_bar = format!("{}{}", "▮".repeat(xp_filled.min(6)), "▯".repeat(6 - xp_filled.min(6)));
-
-    // HP bar
-    let hp_filled = ((pet.hp as f32 / 100.0) * 6.0).min(6.0) as usize;
-    let hp_bar = format!("{}{}", "▮".repeat(hp_filled), "▯".repeat(6 - hp_filled));
-
-    // 6 行面板文字（不含 art 欄）
-    let line0 = header_line(&model_display, &format!("{} ── {}", cwd_short, branch_short), inner);
-    let line2 = divider_line(&village.display_name, inner);
-    let line3 = box_line(&format!("  {} Lv.{}  HP {} {}  XP {} {}/{}",
-        pet.name, pet.level, hp_bar, pet.hp, xp_bar, pet.xp, pet.xp_to_next), inner);
-    let line4 = box_line(&format!("  ATK:{:2}  DEF:{:2}  SUP:{:2}  VER:{:2}",
-        pet.atk, pet.def, pet.sup, pet.ver), inner);
-    let line5 = footer_line("Memory: active", data.model.as_deref().unwrap_or("—"), inner);
-
-    let art_lines: Vec<&str> = village.ascii_small.lines().collect();
-
-    // ── 顏色規格 ───────────────────────────────────────────────
-    let art_spec  = cs(village.color);             // 村落色（art 欄）
-    let border    = cs(Color::Ansi256(238));        // 暗灰（box 框線）
-    let bright    = cs(Color::White);               // 亮白（header model+cwd）
-    let village_c = cs(village.color);              // 村落色（divider）
-    let pet_c     = cs(Color::Cyan);                // 青色（pet name/HP/XP）
-    let stat_c    = cs(Color::Ansi256(245));        // 灰（stats 數字）
-    let footer_c  = cs(Color::Ansi256(238));        // 暗灰（footer）
-
-    // Row 0: header（亮白）
-    write_art_row(stdout, art_lines.get(0), &art_spec)?;
-    stdout.set_color(&bright)?; writeln!(stdout, "{}", line0)?;
-
-    // Row 1: usage bars（語義顏色，逐段輸出）
-    write_art_row(stdout, art_lines.get(1), &art_spec)?;
-    write_usage_row(stdout, data, inner, &border)?;
-
-    // Row 2: village divider（村落色）
-    write_art_row(stdout, art_lines.get(2), &art_spec)?;
-    stdout.set_color(&village_c)?; writeln!(stdout, "{}", line2)?;
-
-    // Row 3: pet HP + XP（青色）
-    write_art_row(stdout, art_lines.get(3), &art_spec)?;
-    stdout.set_color(&pet_c)?; writeln!(stdout, "{}", line3)?;
-
-    // Row 4: stats（灰）
-    write_art_row(stdout, art_lines.get(4), &art_spec)?;
-    stdout.set_color(&stat_c)?; writeln!(stdout, "{}", line4)?;
-
-    // Row 5: footer（暗灰）
-    write_art_row(stdout, art_lines.get(5), &art_spec)?;
-    stdout.set_color(&footer_c)?; writeln!(stdout, "{}", line5)?;
-
-    stdout.reset()?;
-    Ok(())
-}
-
-/// 快速建立 ColorSpec
-fn cs(c: Color) -> ColorSpec {
-    let mut s = ColorSpec::new();
-    s.set_fg(Some(c));
-    s
-}
-
-/// 輸出 art 欄（固定 15 cols，村落色）
-fn write_art_row(stdout: &mut StandardStream, art: Option<&&str>, spec: &ColorSpec) -> Result<()> {
-    stdout.set_color(spec)?;
-    write!(stdout, "{:<15}", art.copied().unwrap_or(""))?;
-    Ok(())
-}
-
-/// usage 行逐段輸出，每段按 pct 選色（green / yellow / red）
-fn write_usage_row(stdout: &mut StandardStream, data: &StatusInput, inner: usize, border: &ColorSpec) -> Result<()> {
-    // 收集各段（text, pct）
-    let mut segments: Vec<(String, f64)> = Vec::new();
-
-    if let Some(pct) = data.five_hour_pct {
-        let remain = data.five_hour_resets_at
-            .map(|t| format!(" {}", fmt_remaining(t))).unwrap_or_default();
-        segments.push((format!("5h {} {:>2.0}%{}", pbar(pct, 6), pct * 100.0, remain), pct));
-    }
-    if let Some(pct) = data.seven_day_pct {
-        let remain = data.seven_day_resets_at
-            .map(|t| format!(" {}", fmt_remaining(t))).unwrap_or_default();
-        segments.push((format!("7d {} {:>2.0}%{}", pbar(pct, 6), pct * 100.0, remain), pct));
-    }
-    if let Some(pct) = data.context_pct {
-        segments.push((format!("ctx {} {:>2.0}%", pbar(pct, 6), pct * 100.0), pct));
-    }
-
-    // 輸出左框 │
-    stdout.set_color(border)?;
-    write!(stdout, "│  ")?;
-
-    let sep_color = cs(Color::Ansi256(238));
-    let mut visible_used: usize = 2; // "  " after │
-
-    for (i, (text, pct)) in segments.iter().enumerate() {
-        if i > 0 {
-            stdout.set_color(&sep_color)?;
-            write!(stdout, "  ·  ")?;
-            visible_used += 5;
-        }
-        let color = usage_color(*pct);
-        stdout.set_color(&cs(color))?;
-        write!(stdout, "{}", text)?;
-        visible_used += vis(text);
-    }
-
-    if segments.is_empty() {
-        stdout.set_color(&cs(Color::Ansi256(238)))?;
-        write!(stdout, "—")?;
-        visible_used += 1;
-    }
-
-    // 補空白到 inner 欄，再輸出右框 │
-    let pad_needed = inner.saturating_sub(visible_used);
-    stdout.set_color(border)?;
-    writeln!(stdout, "{}│", " ".repeat(pad_needed))?;
-    Ok(())
-}
-
-/// 計算距某 Unix timestamp 的剩餘時間字串（"4h2m"、"2d3h"）
 fn fmt_remaining(resets_at: i64) -> String {
-    let now = chrono::Utc::now().timestamp();
-    let secs = (resets_at - now).max(0) as u64;
-    if secs >= 86400 {
-        format!("{}d{}h", secs / 86400, (secs % 86400) / 3600)
-    } else if secs >= 3600 {
-        format!("{}h{}m", secs / 3600, (secs % 3600) / 60)
-    } else {
-        format!("{}m", secs / 60)
-    }
-}
-
-/// pct（0.0–1.0）→ 語義顏色
-fn usage_color(pct: f64) -> Color {
-    if pct < 0.50 { Color::Green }
-    else if pct < 0.80 { Color::Yellow }
-    else { Color::Red }
-}
-
-/// 建構 usage stats 行（純文字版，供 no-color fallback）
-fn build_usage_line(data: &StatusInput) -> String {
-    let mut parts: Vec<String> = Vec::new();
-
-    // 5h rate limit
-    if let Some(pct) = data.five_hour_pct {
-        let remain = data.five_hour_resets_at
-            .map(|t| format!(" {}", fmt_remaining(t)))
-            .unwrap_or_default();
-        parts.push(format!("5h {} {:>2.0}%{}", pbar(pct, 6), pct * 100.0, remain));
-    }
-
-    // 7d rate limit
-    if let Some(pct) = data.seven_day_pct {
-        let remain = data.seven_day_resets_at
-            .map(|t| format!(" {}", fmt_remaining(t)))
-            .unwrap_or_default();
-        parts.push(format!("7d {} {:>2.0}%{}", pbar(pct, 6), pct * 100.0, remain));
-    }
-
-    // Context window 使用率
-    if let Some(pct) = data.context_pct {
-        parts.push(format!("ctx {} {:>2.0}%", pbar(pct, 6), pct * 100.0));
-    }
-
-    if parts.is_empty() {
-        if std::env::var("CODEFORGE_DEBUG").is_ok() {
-            let keys: Vec<String> = data.raw.as_object()
-                .map(|m| m.keys().cloned().collect())
-                .unwrap_or_default();
-            return format!("keys: {}", keys.join(", "));
-        }
-        return "—".to_string();
-    }
-
-    parts.join("  ·  ")
-}
-
-/// 將完整路徑轉為 home-relative（/home/user/x → ~/x）
-fn to_home_rel(path: &str) -> String {
-    if let Some(home) = dirs::home_dir() {
-        let home_str = home.to_string_lossy();
-        if path.starts_with(home_str.as_ref()) {
-            return format!("~{}", &path[home_str.len()..]);
-        }
-    }
-    path.to_string()
-}
-
-/// 截短路徑（保留尾端，加 … 前綴）
-fn shorten_path(path: &str, max: usize) -> String {
-    let chars: Vec<char> = path.chars().collect();
-    if chars.len() <= max { return path.to_string(); }
-    let tail: String = chars[chars.len() - (max - 1)..].iter().collect();
-    format!("…{}", tail)
-}
-
-/// 截短字串（保留前端，加 … 後綴）
-fn shorten_str(s: &str, max: usize) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= max { return s.to_string(); }
-    let head: String = chars[..max - 1].iter().collect();
-    format!("{}…", head)
+    let secs = (resets_at - chrono::Utc::now().timestamp()).max(0) as u64;
+    if secs >= 86400 { format!("{}d{}h", secs / 86400, (secs % 86400) / 3600) }
+    else if secs >= 3600 { format!("{}h{}m", secs / 3600, (secs % 3600) / 60) }
+    else { format!("{}m", secs / 60) }
 }
 
 fn git_branch() -> Option<String> {
     std::process::Command::new("git")
         .args(["branch", "--show-current"])
-        .output()
-        .ok()
+        .output().ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
@@ -418,12 +223,263 @@ fn current_dir_short() -> Option<String> {
     } else {
         cwd.display().to_string()
     };
-    const MAX: usize = 25;
-    if path.chars().count() > MAX {
-        let tail: String = path.chars().rev().take(MAX - 1).collect::<String>()
-            .chars().rev().collect();
-        Some(format!("…{}", tail))
-    } else {
-        Some(path)
+    Some(shorten_path(&path, 25))
+}
+
+// ─── Usage segment builder ────────────────────────────────────────────────────
+
+struct UsageSeg {
+    ansi: String,
+    vis_w: usize,
+}
+
+fn usage_seg(label: &str, pct: f64, remain: Option<String>) -> UsageSeg {
+    let bar = colored_bar(pct, 6);
+    let pct_num = format!("{:.0}%", pct * 100.0);
+    let (r, g, b) = bar_rgb(pct);
+
+    let remain_part = match &remain {
+        Some(s) => format!(" {}", tc(s, REMAIN)),
+        None => String::new(),
+    };
+    let remain_vis = remain.as_deref().map(|s| 1 + vis(s)).unwrap_or(0);
+
+    // inner: "5h ▮▮▯▯▯▯ 8% 4h2m"
+    let inner = format!("{} {} {}{}",
+        tc(label, BAR_LBL),
+        bar,
+        tc(&pct_num, (r, g, b)),
+        remain_part
+    );
+    // vis: label(N) + 1 + 6(bar) + 1 + pct_num.len() + remain_vis
+    let inner_vis = vis(label) + 1 + 6 + 1 + vis(&pct_num) + remain_vis;
+
+    let (ansi, vis_w) = seg(&inner, inner_vis);
+    UsageSeg { ansi, vis_w }
+}
+
+// ─── Position-based renderer ──────────────────────────────────────────────────
+
+/// 一行的兩欄資料
+struct Row {
+    /// art 欄（None = 不寫 art，讓 col 0..ART_W 保持空白）
+    art: Option<String>,
+    /// info 欄（從 col INFO_COL 開始寫）
+    info: String,
+}
+
+/// 核心渲染引擎：reserve N rows → 回到頂端 → 兩欄各自定位寫入
+/// art 欄在 col 0，info 欄在 col (ART_W + 2)
+/// 不需要 blank padding — 沒有 art 的列直接跳到 INFO_COL 寫 info
+fn render_rows<W: Write>(out: &mut W, rows: &[Row], art_w: usize) -> Result<()> {
+    let n = rows.len() as u16;
+    let info_col = (art_w + 2) as u16;
+
+    // 1. Reserve 空間（往下推 n 行）
+    for _ in 0..n { writeln!(out)?; }
+
+    // 2. 回到第一行
+    execute!(out, cursor::MoveUp(n))?;
+
+    // 3. 每行：art 欄（col 0）→ info 欄（col info_col）→ 下一行
+    for row in rows {
+        if let Some(art) = &row.art {
+            execute!(out, cursor::MoveToColumn(0))?;
+            write!(out, "{}", art)?;
+        }
+        execute!(out, cursor::MoveToColumn(info_col))?;
+        write!(out, "{}", row.info)?;
+        execute!(out, cursor::MoveToNextLine(1))?;
     }
+
+    Ok(())
+}
+
+fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
+    // Row 0: identity
+    let mut id_parts: Vec<String> = Vec::new();
+    id_parts.push(seg(&tc_bold("CodeForge", PET_NAME), vis("CodeForge")).0);
+    if let Some(m) = &data.model {
+        let m_s = shorten_str(m, 20);
+        id_parts.push(seg(&tc_bold(&m_s, MODEL_C), vis(&m_s)).0);
+    }
+    let cwd_raw = data.cwd.clone().or_else(current_dir_short).unwrap_or_else(|| "~".to_string());
+    let cwd_s = shorten_path(&to_home_rel(&cwd_raw), 28);
+    id_parts.push(seg(&tc(&cwd_s, CWD_C), vis(&cwd_s)).0);
+    if let Some(b) = git_branch() {
+        let b_s = shorten_str(&b, 22);
+        id_parts.push(seg(&tc(&b_s, BRANCH_C), vis(&b_s)).0);
+    }
+
+    let rows = vec![
+        Row { art: None, info: id_parts.join("  ") },
+        Row { art: None, info: build_usage_line(data, width) },
+    ];
+    render_rows(out, &rows, 0)
+}
+
+fn render_full<W: Write>(
+    out: &mut W,
+    data: &StatusInput,
+    pet: &PetState,
+    village: &crate::pet::village::Village,
+    width: usize,
+) -> Result<()> {
+    const ART_W: usize = 15;
+    let panel_w = width.saturating_sub(ART_W + 2);
+    let vrgb = village.rgb();
+
+    let branch = git_branch().unwrap_or_else(|| "—".to_string());
+    let cwd_raw = data.cwd.clone()
+        .or_else(|| current_dir_short())
+        .unwrap_or_else(|| "~".to_string());
+    let cwd_short = shorten_path(&to_home_rel(&cwd_raw), 22);
+    let branch_short = shorten_str(&branch, 20);
+
+    let art_lines: Vec<&str> = village.ascii_small.lines().collect();
+
+    // ── Row 0: identity ──────────────────────────────────────────────────────
+
+    let model_inner = match (&data.model, data.context_window_size) {
+        (Some(m), Some(cw)) => {
+            let m_s = shorten_str(m, 16);
+            let cw_s = fmt_ctx_window(cw);
+            let vis_w = vis(&m_s) + 3 + vis(&cw_s); // "m (cw)"
+            (format!("{} {}{}{}",
+                tc_bold(&m_s, MODEL_C),
+                tc("(", DELIM),
+                tc(&cw_s, CTX_SZ),
+                tc(")", DELIM)
+            ), vis_w)
+        }
+        (Some(m), None) => {
+            let m_s = shorten_str(m, 18);
+            let l = vis(&m_s);
+            (tc_bold(&m_s, MODEL_C), l)
+        }
+        _ => (tc("—", STAT_VAL), 1),
+    };
+
+    let row0_info = format!("{}  {}  {}",
+        seg(&model_inner.0, model_inner.1).0,
+        seg(&tc(&cwd_short, CWD_C), vis(&cwd_short)).0,
+        seg(&tc(&branch_short, BRANCH_C), vis(&branch_short)).0,
+    );
+
+    // ── Row 1: usage ─────────────────────────────────────────────────────────
+
+    let row1_info = build_usage_line(data, panel_w);
+
+    // ── Row 2: village divider ────────────────────────────────────────────────
+
+    let vname = village.display_name;
+    let fill_vis = panel_w.saturating_sub(4 + vis(vname) + 1);
+    let row2_info = format!("{}{}{}{}",
+        tc("── ", DELIM),
+        tc_bold(vname, vrgb),
+        tc(" ", DELIM),
+        tcs("─".repeat(fill_vis), DELIM),
+    );
+
+    // ── Row 3: pet HP / XP ───────────────────────────────────────────────────
+
+    let hp_pct = (pet.hp as f64 / 100.0).clamp(0.0, 1.0);
+    let hp_filled = (hp_pct * 6.0) as usize;
+    let hp_bar = format!("{}{}",
+        tcs("▮".repeat(hp_filled), hp_rgb(pet.hp)),
+        tcs("▯".repeat(6 - hp_filled), BAR_EMPTY)
+    );
+    let xp_filled = ((pet.xp as f64 / pet.xp_to_next as f64).clamp(0.0, 1.0) * 6.0) as usize;
+    let xp_bar = format!("{}{}",
+        tcs("▮".repeat(xp_filled), vrgb),
+        tcs("▯".repeat(6 - xp_filled), BAR_EMPTY)
+    );
+    let row3_info = format!("{} {}  {} {} {}  {} {} {}/{}",
+        tc_bold(&pet.name, PET_NAME),
+        tc(&format!("Lv.{}", pet.level), PET_LV),
+        tc("HP", STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
+        tc("XP", STAT_LBL), xp_bar,
+        tc(&pet.xp.to_string(), vrgb),
+        tc(&pet.xp_to_next.to_string(), STAT_VAL),
+    );
+
+    // ── Row 4: stats ─────────────────────────────────────────────────────────
+
+    let row4_info = format!("{} {}  {} {}  {} {}  {} {}",
+        tc("ATK:", STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
+        tc("DEF:", STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
+        tc("SUP:", STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
+        tc("VER:", STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
+    );
+
+    // ── Row 5: footer ─────────────────────────────────────────────────────────
+
+    let footer_model = data.model.as_deref().unwrap_or("—");
+    let mem_vis = vis("Memory:") + 1 + vis("active");
+    let fm_vis = vis(footer_model);
+    let pad = panel_w.saturating_sub(mem_vis + fm_vis + 2);
+    let row5_info = format!("{} {}{}{}",
+        tc("Memory:", STAT_LBL),
+        tc_bold("active", MEM_ACT),
+        " ".repeat(pad.max(1)),
+        tc(footer_model, DELIM),
+    );
+
+    // ── 組裝 rows，art 欄只有 0-3 有，4-5 是 None ────────────────────────────
+
+    let art = |i: usize| -> Option<String> {
+        art_lines.get(i).map(|s| tcs(s.to_string(), vrgb))
+    };
+
+    let rows = vec![
+        Row { art: art(0), info: row0_info },
+        Row { art: art(1), info: row1_info },
+        Row { art: art(2), info: row2_info },
+        Row { art: art(3), info: row3_info },
+        Row { art: None,   info: row4_info },
+        Row { art: None,   info: row5_info },
+    ];
+
+    render_rows(out, &rows, ART_W)
+}
+
+// ─── Usage line builder ────────────────────────────────────────────────────────
+
+fn build_usage_line(data: &StatusInput, _panel_w: usize) -> String {
+    let mut segs: Vec<String> = Vec::new();
+
+    if let Some(pct) = data.five_hour_pct {
+        let remain = data.five_hour_resets_at.map(fmt_remaining);
+        let s = usage_seg("5h", pct, remain);
+        segs.push(s.ansi);
+    }
+    if let Some(pct) = data.seven_day_pct {
+        let remain = data.seven_day_resets_at.map(fmt_remaining);
+        let s = usage_seg("7d", pct, remain);
+        segs.push(s.ansi);
+    }
+    if let Some(pct) = data.context_pct {
+        let s = usage_seg("ctx", pct, None);
+        segs.push(s.ansi);
+    }
+
+    if segs.is_empty() {
+        if std::env::var("CODEFORGE_DEBUG").is_ok() {
+            let keys: Vec<String> = data.raw.as_object()
+                .map(|m| m.keys().cloned().collect())
+                .unwrap_or_default();
+            return tc(&format!("keys: {}", keys.join(", ")), STAT_VAL);
+        }
+        return tc("—", DELIM);
+    }
+
+    segs.join("  ")
+}
+
+// ─── Layout helpers ───────────────────────────────────────────────────────────
+
+/// Pad plain (non-ANSI) string to N terminal columns using unicode-width
+fn pad_plain(s: &str, width: usize) -> String {
+    let w = vis(s);
+    if w >= width { s.to_string() } else { format!("{}{}", s, " ".repeat(width - w)) }
 }
