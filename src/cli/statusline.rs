@@ -194,10 +194,6 @@ fn render_full(
         (None, _) => "—".to_string(),
     };
 
-    // Line 2：usage stats — session / daily / context
-    //  格式：5h ▮▮▯▯▯▯ 7%  ·  7d ▮▮▮▯▯▯ 37%  ·  ctx ▮▯▯▯▯▯ 9%
-    let usage_line = build_usage_line(data);
-
     // XP bar
     let xp_filled = (pet.xp as f32 / pet.xp_to_next as f32 * 6.0) as usize;
     let xp_bar = format!("{}{}", "▮".repeat(xp_filled.min(6)), "▯".repeat(6 - xp_filled.min(6)));
@@ -206,39 +202,116 @@ fn render_full(
     let hp_filled = ((pet.hp as f32 / 100.0) * 6.0).min(6.0) as usize;
     let hp_bar = format!("{}{}", "▮".repeat(hp_filled), "▯".repeat(6 - hp_filled));
 
-    // 6 行面板
-    let panels: [String; 6] = [
-        // Line 1: model (ctx) ── cwd ── branch
-        header_line(&model_display, &format!("{} ── {}", cwd_short, branch_short), inner),
-        // Line 2: session / daily / ctx usage bars
-        box_line(&format!("  {}", usage_line), inner),
-        // Line 3: village divider
-        divider_line(&village.display_name, inner),
-        // Line 4: pet name + HP
-        box_line(&format!("  {} Lv.{}  HP {} {}  XP {} {}/{}",
-            pet.name, pet.level, hp_bar, pet.hp, xp_bar, pet.xp, pet.xp_to_next), inner),
-        // Line 5: stats
-        box_line(&format!("  ATK:{:2}  DEF:{:2}  SUP:{:2}  VER:{:2}",
-            pet.atk, pet.def, pet.sup, pet.ver), inner),
-        // Line 6: footer
-        footer_line("Memory: active", data.model.as_deref().unwrap_or("—"), inner),
-    ];
+    // 6 行面板文字（不含 art 欄）
+    let line0 = header_line(&model_display, &format!("{} ── {}", cwd_short, branch_short), inner);
+    let line2 = divider_line(&village.display_name, inner);
+    let line3 = box_line(&format!("  {} Lv.{}  HP {} {}  XP {} {}/{}",
+        pet.name, pet.level, hp_bar, pet.hp, xp_bar, pet.xp, pet.xp_to_next), inner);
+    let line4 = box_line(&format!("  ATK:{:2}  DEF:{:2}  SUP:{:2}  VER:{:2}",
+        pet.atk, pet.def, pet.sup, pet.ver), inner);
+    let line5 = footer_line("Memory: active", data.model.as_deref().unwrap_or("—"), inner);
 
     let art_lines: Vec<&str> = village.ascii_small.lines().collect();
 
-    let mut art_spec = ColorSpec::new();
-    art_spec.set_fg(Some(village.color));
-    let mut panel_spec = ColorSpec::new();
-    panel_spec.set_fg(Some(Color::Ansi256(252)));
+    // ── 顏色規格 ───────────────────────────────────────────────
+    let art_spec  = cs(village.color);             // 村落色（art 欄）
+    let border    = cs(Color::Ansi256(238));        // 暗灰（box 框線）
+    let bright    = cs(Color::White);               // 亮白（header model+cwd）
+    let village_c = cs(village.color);              // 村落色（divider）
+    let pet_c     = cs(Color::Cyan);                // 青色（pet name/HP/XP）
+    let stat_c    = cs(Color::Ansi256(245));        // 灰（stats 數字）
+    let footer_c  = cs(Color::Ansi256(238));        // 暗灰（footer）
 
-    for (i, panel_line) in panels.iter().enumerate() {
-        let art = art_lines.get(i).copied().unwrap_or("");
-        stdout.set_color(&art_spec)?;
-        write!(stdout, "{:<ART_W$}", art)?;
-        stdout.set_color(&panel_spec)?;
-        writeln!(stdout, "{}", panel_line)?;
-    }
+    // Row 0: header（亮白）
+    write_art_row(stdout, art_lines.get(0), &art_spec)?;
+    stdout.set_color(&bright)?; writeln!(stdout, "{}", line0)?;
+
+    // Row 1: usage bars（語義顏色，逐段輸出）
+    write_art_row(stdout, art_lines.get(1), &art_spec)?;
+    write_usage_row(stdout, data, inner, &border)?;
+
+    // Row 2: village divider（村落色）
+    write_art_row(stdout, art_lines.get(2), &art_spec)?;
+    stdout.set_color(&village_c)?; writeln!(stdout, "{}", line2)?;
+
+    // Row 3: pet HP + XP（青色）
+    write_art_row(stdout, art_lines.get(3), &art_spec)?;
+    stdout.set_color(&pet_c)?; writeln!(stdout, "{}", line3)?;
+
+    // Row 4: stats（灰）
+    write_art_row(stdout, art_lines.get(4), &art_spec)?;
+    stdout.set_color(&stat_c)?; writeln!(stdout, "{}", line4)?;
+
+    // Row 5: footer（暗灰）
+    write_art_row(stdout, art_lines.get(5), &art_spec)?;
+    stdout.set_color(&footer_c)?; writeln!(stdout, "{}", line5)?;
+
     stdout.reset()?;
+    Ok(())
+}
+
+/// 快速建立 ColorSpec
+fn cs(c: Color) -> ColorSpec {
+    let mut s = ColorSpec::new();
+    s.set_fg(Some(c));
+    s
+}
+
+/// 輸出 art 欄（固定 15 cols，村落色）
+fn write_art_row(stdout: &mut StandardStream, art: Option<&&str>, spec: &ColorSpec) -> Result<()> {
+    stdout.set_color(spec)?;
+    write!(stdout, "{:<15}", art.copied().unwrap_or(""))?;
+    Ok(())
+}
+
+/// usage 行逐段輸出，每段按 pct 選色（green / yellow / red）
+fn write_usage_row(stdout: &mut StandardStream, data: &StatusInput, inner: usize, border: &ColorSpec) -> Result<()> {
+    // 收集各段（text, pct）
+    let mut segments: Vec<(String, f64)> = Vec::new();
+
+    if let Some(pct) = data.five_hour_pct {
+        let remain = data.five_hour_resets_at
+            .map(|t| format!(" {}", fmt_remaining(t))).unwrap_or_default();
+        segments.push((format!("5h {} {:>2.0}%{}", pbar(pct, 6), pct * 100.0, remain), pct));
+    }
+    if let Some(pct) = data.seven_day_pct {
+        let remain = data.seven_day_resets_at
+            .map(|t| format!(" {}", fmt_remaining(t))).unwrap_or_default();
+        segments.push((format!("7d {} {:>2.0}%{}", pbar(pct, 6), pct * 100.0, remain), pct));
+    }
+    if let Some(pct) = data.context_pct {
+        segments.push((format!("ctx {} {:>2.0}%", pbar(pct, 6), pct * 100.0), pct));
+    }
+
+    // 輸出左框 │
+    stdout.set_color(border)?;
+    write!(stdout, "│  ")?;
+
+    let sep_color = cs(Color::Ansi256(238));
+    let mut visible_used: usize = 2; // "  " after │
+
+    for (i, (text, pct)) in segments.iter().enumerate() {
+        if i > 0 {
+            stdout.set_color(&sep_color)?;
+            write!(stdout, "  ·  ")?;
+            visible_used += 5;
+        }
+        let color = usage_color(*pct);
+        stdout.set_color(&cs(color))?;
+        write!(stdout, "{}", text)?;
+        visible_used += vis(text);
+    }
+
+    if segments.is_empty() {
+        stdout.set_color(&cs(Color::Ansi256(238)))?;
+        write!(stdout, "—")?;
+        visible_used += 1;
+    }
+
+    // 補空白到 inner 欄，再輸出右框 │
+    let pad_needed = inner.saturating_sub(visible_used);
+    stdout.set_color(border)?;
+    writeln!(stdout, "{}│", " ".repeat(pad_needed))?;
     Ok(())
 }
 
@@ -255,7 +328,14 @@ fn fmt_remaining(resets_at: i64) -> String {
     }
 }
 
-/// 建構 usage stats 行：5h / 7d / ctx 各有 bar + %（+ 剩餘時間）
+/// pct（0.0–1.0）→ 語義顏色
+fn usage_color(pct: f64) -> Color {
+    if pct < 0.50 { Color::Green }
+    else if pct < 0.80 { Color::Yellow }
+    else { Color::Red }
+}
+
+/// 建構 usage stats 行（純文字版，供 no-color fallback）
 fn build_usage_line(data: &StatusInput) -> String {
     let mut parts: Vec<String> = Vec::new();
 
