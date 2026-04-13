@@ -76,9 +76,18 @@ pub async fn run(ctx: &db::Context, conn: &Connection) -> Result<CompileResult> 
         }
     }
 
-    // 更新 signal cursors（標記已處理）
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    l0::mark_compiled(ctx, conn, &today)?;
+    // 更新 signal cursors：為每個被處理的 signal 的 source_date 標記 compiled
+    // 避免跨日 signals 重複處理（只更新 today 會漏掉昨天以前的檔案）
+    let mut processed_dates = std::collections::HashSet::new();
+    for signal in &signals {
+        // timestamp 格式：2006-01-02T15:04:05Z，前 10 字元為日期
+        if signal.timestamp.len() >= 10 {
+            processed_dates.insert(signal.timestamp[..10].to_string());
+        }
+    }
+    for date in processed_dates {
+        l0::mark_compiled(ctx, conn, &date)?;
+    }
 
     Ok(CompileResult {
         signals_processed: signals.len(),

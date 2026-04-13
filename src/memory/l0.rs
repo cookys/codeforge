@@ -123,12 +123,18 @@ pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result
         ).unwrap_or(0);
 
         let content = std::fs::read_to_string(&path)?;
-        let bytes = content.as_bytes();
-        if cursor as usize >= bytes.len() {
+        if cursor as usize >= content.len() {
             continue;
         }
 
-        let slice = &content[cursor as usize..];
+        // 找到 cursor 之後的第一個合法 UTF-8 字元邊界（避免在多 byte 字元中間切割）
+        let char_start = content
+            .char_indices()
+            .find(|(byte_pos, _)| *byte_pos >= cursor as usize)
+            .map(|(byte_pos, _)| byte_pos)
+            .unwrap_or(content.len());
+
+        let slice = &content[char_start..];
         for line in slice.lines() {
             let line = line.trim();
             if line.is_empty() { continue; }
