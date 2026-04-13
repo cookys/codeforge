@@ -272,11 +272,12 @@ struct Row {
 /// art 已在 art() closure 中 pad 到 art_w，所以每行 info 起始列一致。
 /// 不需要 MoveToColumn — 純 write! + writeln!，相容所有環境。
 /// rows 4-5 沒有 art → info 從 col 0 開始（stats/footer 自然縮排）
-fn render_rows<W: Write>(out: &mut W, rows: &[Row], _art_w: usize) -> Result<()> {
+fn render_rows<W: Write>(out: &mut W, rows: &[Row], art_w: usize) -> Result<()> {
+    let blank = " ".repeat(art_w);
     for row in rows {
         match &row.art {
             Some(art) => writeln!(out, "{}  {}", art, row.info)?,
-            None      => writeln!(out, "{}", row.info)?,
+            None      => writeln!(out, "{}  {}", blank, row.info)?,
         }
     }
     Ok(())
