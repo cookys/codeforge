@@ -7,7 +7,6 @@ use crate::pet::state::PetState;
 use crate::pet::village::VILLAGES;
 use owo_colors::OwoColorize;
 use unicode_width::UnicodeWidthStr;
-use crossterm::{execute, cursor};
 use std::io::{self, Write};
 
 pub fn run(ctx: &db::Context) -> Result<()> {
@@ -268,27 +267,18 @@ struct Row {
     info: String,
 }
 
-/// 核心渲染引擎：single-pass position-based
+/// 核心渲染引擎：art 行 pad 到 art_w 寬，後接 2 空格，再寫 info
 ///
-/// 每行：
-///   1. MoveToColumn(0)        → 寫 art（若有）
-///   2. MoveToColumn(info_col) → 寫 info
-///   3. writeln!               → 真正的 \n 換行（不用 \e[1E，避免 Claude Code 相容性問題）
-///
-/// rows 4-5 沒有 art → 直接 MoveToColumn(info_col)，col 0..info_col-1 自然空白
-/// 不需要 MoveUp + reserve，append-only stdout 按順序輸出即可
-fn render_rows<W: Write>(out: &mut W, rows: &[Row], art_w: usize) -> Result<()> {
-    let info_col = (art_w + 2) as u16;
-
+/// art 已在 art() closure 中 pad 到 art_w，所以每行 info 起始列一致。
+/// 不需要 MoveToColumn — 純 write! + writeln!，相容所有環境。
+/// rows 4-5 沒有 art → info 從 col 0 開始（stats/footer 自然縮排）
+fn render_rows<W: Write>(out: &mut W, rows: &[Row], _art_w: usize) -> Result<()> {
     for row in rows {
-        if let Some(art) = &row.art {
-            execute!(out, cursor::MoveToColumn(0))?;
-            write!(out, "{}", art)?;
+        match &row.art {
+            Some(art) => writeln!(out, "{}  {}", art, row.info)?,
+            None      => writeln!(out, "{}", row.info)?,
         }
-        execute!(out, cursor::MoveToColumn(info_col))?;
-        writeln!(out, "{}", row.info)?;
     }
-
     Ok(())
 }
 
@@ -424,8 +414,13 @@ fn render_full<W: Write>(
 
     // ── 組裝 rows，art 欄只有 0-3 有，4-5 是 None ────────────────────────────
 
+    // 每行 art 都 pad 到 ART_W 寬，讓 info 欄起始列一致
     let art = |i: usize| -> Option<String> {
-        art_lines.get(i).map(|s| tcs(s.to_string(), vrgb))
+        art_lines.get(i).map(|s| {
+            let w = vis(s);
+            let pad = if w < ART_W { " ".repeat(ART_W - w) } else { String::new() };
+            format!("{}{}", tcs(s.to_string(), vrgb), pad)
+        })
     };
 
     let rows = vec![
