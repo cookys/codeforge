@@ -132,6 +132,27 @@ original canonical（太寬，需壓縮）：
   |___|
 ```
 
+## Phase 2：ANSI art 升級計畫
+
+Phase 1 statusline 用純 ASCII（單色 village.rgb()）。
+Phase 2 daemon TUI pane 寬 24-30 chars、高 16-20 rows，升級為真正的 ANSI art：
+
+**原理：半格 blocks + 多色 = 立體感**
+```
+▀ 上半格（高光）  ▄ 下半格（陰影）  █ 全格（實心）
+亮色在上/左 → 高光；暗色在下/右 → 陰影 → 球體/立體感
+```
+
+**升級路徑（Phase 2）：**
+- `Village` 新增 `ansi_art: &'static str` 欄位（含嵌入式 ANSI 色碼）
+- 或用 `ansi_frames: &'static [&'static str]`（多幀 idle 動畫）
+- Renderer 改為 per-character 顏色控制（不再是整體 village.rgb()）
+- 目標畫布：24 chars × 20 rows = 24×40 有效像素（半格）
+
+**Phase 2 之前：** ascii_small 維持現有 ASCII 單色設計。
+
+---
+
 ## 新村莊 checklist
 
 加新村莊時，在 `village.rs` 新增一個 `Village { ... }` 項目，確認：
