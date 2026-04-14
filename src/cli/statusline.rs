@@ -38,7 +38,6 @@ pub fn run(ctx: &db::Context) -> Result<()> {
 struct StatusInput {
     raw: serde_json::Value,
     model: Option<String>,
-    model_date: Option<String>,        // YYYYMMDD from model.id suffix
     cwd: Option<String>,
     version: Option<String>,           // current Claude Code version
     update_available: bool,            // ~/.claude/.update_available file exists
@@ -64,16 +63,6 @@ fn read_status_input() -> StatusInput {
                 .or_else(|| v["model"].as_str())
                 .map(|s| s.replace("claude-", "").replace("-20", " 20"));
 
-            // Extract 8-digit YYYYMMDD suffix from model.id (e.g. "claude-sonnet-4-6-20251001")
-            let model_date = v["model"]["id"].as_str()
-                .or_else(|| v["model"].as_str())
-                .and_then(|id| {
-                    let b = id.as_bytes();
-                    let len = b.len();
-                    (len >= 8 && b[len-8..].iter().all(|c| c.is_ascii_digit()))
-                        .then(|| id[len-8..].to_string())
-                });
-
             let context_pct = v["context_window"]["used_percentage"].as_f64()
                 .map(|p| p / 100.0);
             let context_window_size = v["context_window"]["context_window_size"].as_u64();
@@ -87,7 +76,6 @@ fn read_status_input() -> StatusInput {
             return StatusInput {
                 raw: v.clone(),
                 model,
-                model_date,
                 cwd: v["cwd"].as_str()
                     .or_else(|| v["workspace"]["current_dir"].as_str())
                     .map(|s| s.to_string()),
@@ -378,52 +366,72 @@ fn render_full<W: Write>(
     let cwd_raw = data.cwd.clone()
         .or_else(|| current_dir_short())
         .unwrap_or_else(|| "~".to_string());
-    let cwd_short = shorten_path(&to_home_rel(&cwd_raw), 22);
+    let cwd_home = to_home_rel(&cwd_raw);
 
     let art_lines: Vec<&str> = village.ascii_small.lines().collect();
 
-    // ── Row 0: identity ──────────────────────────────────────────────────────
+    // ── Row 0: dash-fill identity line ──────────────────────────────────────────
+    //
+    // ──▏Sonnet 4.6 (200k)▕──▏~/projects/codepower▕──▏feature/phase1▕────────────
+    // cwd truncates before branch when space is tight (Architect recommendation)
 
-    // Date suffix in dim DELIM color (e.g. "20251001")
-    let (date_str, date_vis) = match &data.model_date {
-        Some(d) => (format!(" {}", tc(d, DELIM)), 1 + vis(d)),
-        None    => (String::new(), 0),
-    };
+    const DASH_FIXED: usize = 6;   // lead(2) + gap(2) + gap(2)
+    const MIN_BRANCH: usize = 8;   // min visible chars for branch
+    const MIN_TRAIL:  usize = 2;   // at least ── after last segment
 
     let model_inner = match (&data.model, data.context_window_size) {
         (Some(m), Some(cw)) => {
             let m_s = shorten_str(m, 18);
             let cw_s = fmt_ctx_window(cw);
-            let inner_vis = vis(&m_s) + date_vis + 3 + vis(&cw_s);
-            (format!("{}{} {}{}{}",
+            let inner_vis = vis(&m_s) + 3 + vis(&cw_s); // "m (cw)"
+            (format!("{} {}{}{}",
                 tc_bold(&m_s, MODEL_C),
-                date_str,
                 tc("(", DELIM),
                 tc(&cw_s, CTX_SZ),
                 tc(")", DELIM)
             ), inner_vis)
         }
         (Some(m), None) => {
-            let m_s = shorten_str(m, 16);
-            let inner_vis = vis(&m_s) + date_vis;
-            (format!("{}{}", tc_bold(&m_s, MODEL_C), date_str), inner_vis)
+            let m_s = shorten_str(m, 18);
+            let inner_vis = vis(&m_s);
+            (tc_bold(&m_s, MODEL_C), inner_vis)
         }
         _ => (tc("—", STAT_VAL), 1),
     };
+    let model_seg_vis = model_inner.1 + 2; // +2 for ▏▕
 
-    // Branch gets remaining space after model + cwd segments + gaps
-    // seg overhead = 2 per segment (▏▕), gaps between 3 segs = 2+2=4
-    let model_seg_vis = model_inner.1 + 2;
-    let cwd_seg_vis   = vis(&cwd_short) + 2;
-    let branch_budget = panel_w
-        .saturating_sub(model_seg_vis + 2 + cwd_seg_vis + 2 + 2) // 2=gap, 2=gap, 2=▏▕
-        .max(8);
-    let branch_short = shorten_str(&branch, branch_budget);
+    // If full cwd leaves < MIN_BRANCH for branch, truncate cwd first
+    let cwd_full_vis = vis(&cwd_home);
+    let branch_avail_full = panel_w
+        .saturating_sub(DASH_FIXED + model_seg_vis + (cwd_full_vis + 2) + 2 + MIN_TRAIL);
+    let (cwd_display, cwd_vis) = if branch_avail_full >= MIN_BRANCH {
+        (cwd_home.clone(), cwd_full_vis)
+    } else {
+        let max_cwd = panel_w
+            .saturating_sub(DASH_FIXED + model_seg_vis + 4 + MIN_BRANCH + MIN_TRAIL)
+            .max(5);
+        let s = shorten_path(&cwd_home, max_cwd);
+        let v = vis(&s);
+        (s, v)
+    };
 
-    let row0_info = format!("{}  {}  {}",
+    // Branch fills remaining, with minimum trailing dashes
+    let branch_avail = panel_w
+        .saturating_sub(DASH_FIXED + model_seg_vis + (cwd_vis + 2) + 2 + MIN_TRAIL)
+        .max(MIN_BRANCH);
+    let branch_short = shorten_str(&branch, branch_avail);
+    let branch_vis = vis(&branch_short);
+
+    // Trailing dashes fill to exactly panel_w
+    let total_vis = DASH_FIXED + model_seg_vis + (cwd_vis + 2) + (branch_vis + 2);
+    let row0_info = format!("{}{}{}{}{}{}{}",
+        tcs("──".to_string(), DELIM),
         seg(&model_inner.0, model_inner.1).0,
-        seg(&tc(&cwd_short, CWD_C), vis(&cwd_short)).0,
-        seg(&tc(&branch_short, BRANCH_C), vis(&branch_short)).0,
+        tcs("──".to_string(), DELIM),
+        seg(&tc(&cwd_display, CWD_C), cwd_vis).0,
+        tcs("──".to_string(), DELIM),
+        seg(&tc(&branch_short, BRANCH_C), branch_vis).0,
+        tcs("─".repeat(panel_w.saturating_sub(total_vis)), DELIM),
     );
 
     // ── Row 1: usage ─────────────────────────────────────────────────────────
