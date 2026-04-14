@@ -139,11 +139,11 @@ fn tcs(s: String, (r, g, b): Rgb) -> String {
     format!("{}", s.truecolor(r, g, b))
 }
 
-/// Wrap inner content in dim `( )` parens
+/// Wrap inner content in thin ▏▕ vertical bar delimiters (U+258F / U+2595)
 /// inner_vis = visible char count of `inner` (not counting ANSI codes)
 fn seg(inner: &str, inner_vis: usize) -> (String, usize) {
-    let s = format!("{} {} {}", tc("(", DELIM), inner, tc(")", DELIM));
-    (s, inner_vis + 4) // "( " + " )"
+    let s = format!("{}{}{}", tc("▏", DELIM), inner, tc("▕", DELIM));
+    (s, inner_vis + 2) // ▏(1col) + content + ▕(1col)
 }
 
 fn bar_rgb(pct: f64) -> Rgb {
@@ -369,7 +369,6 @@ fn render_full<W: Write>(
         .or_else(|| current_dir_short())
         .unwrap_or_else(|| "~".to_string());
     let cwd_short = shorten_path(&to_home_rel(&cwd_raw), 22);
-    let branch_short = shorten_str(&branch, 20);
 
     let art_lines: Vec<&str> = village.ascii_small.lines().collect();
 
@@ -407,6 +406,15 @@ fn render_full<W: Write>(
         }
         _ => (tc("—", STAT_VAL), 1),
     };
+
+    // Branch gets remaining space after model + cwd segments + gaps
+    // seg overhead = 2 per segment (▏▕), gaps between 3 segs = 2+2=4
+    let model_seg_vis = model_inner.1 + 2;
+    let cwd_seg_vis   = vis(&cwd_short) + 2;
+    let branch_budget = panel_w
+        .saturating_sub(model_seg_vis + 2 + cwd_seg_vis + 2 + 2) // 2=gap, 2=gap, 2=▏▕
+        .max(8);
+    let branch_short = shorten_str(&branch, branch_budget);
 
     let row0_info = format!("{}  {}  {}",
         seg(&model_inner.0, model_inner.1).0,
@@ -462,15 +470,18 @@ fn render_full<W: Write>(
 
     // ── Row 5: footer ─────────────────────────────────────────────────────────
 
-    let cf_ver = format!("v{}", env!("CARGO_PKG_VERSION"));
+    // Claude Code version from JSON (e.g. "1.9.2"), fallback to "—"
+    let cc_ver = data.version.as_deref()
+        .map(|v| format!("v{}", v))
+        .unwrap_or_else(|| "—".to_string());
     let mem_vis = vis("Memory:") + 1 + vis("active");
-    let cv_vis = vis(&cf_ver);
+    let cv_vis = vis(&cc_ver);
     let pad = panel_w.saturating_sub(mem_vis + cv_vis + 2);
     let row5_info = format!("{} {}{}{}",
         tc("Memory:", STAT_LBL),
         tc_bold("active", MEM_ACT),
         " ".repeat(pad.max(1)),
-        tc(&cf_ver, DELIM),
+        tc(&cc_ver, DELIM),
     );
 
     // ── 組裝 rows，art 欄只有 0-3 有，4-5 是 None ────────────────────────────
