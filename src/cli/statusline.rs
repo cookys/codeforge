@@ -1,5 +1,5 @@
-/// Statusline — position-based 兩欄渲染
-/// art 欄（col 0）與 info 欄（col ART_W+2）獨立定位寫入，不需要 blank padding
+/// Statusline — 兩欄渲染：info（左）+ art（右）
+/// info 欄 pad 到 panel_w，後接 2 空格，再寫 art（已 pad 到 ART_W）
 /// UX Pro palette: 三層亮度 (Tier1=222-231 身份, Tier2=71-179 狀態, Tier3=236-246 背景)
 use anyhow::Result;
 use crate::db;
@@ -38,6 +38,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
 struct StatusInput {
     raw: serde_json::Value,
     model: Option<String>,
+    model_date: Option<String>,        // YYYYMMDD from model.id suffix
     cwd: Option<String>,
     version: Option<String>,
     context_pct: Option<f64>,          // 0.0–1.0
@@ -62,6 +63,16 @@ fn read_status_input() -> StatusInput {
                 .or_else(|| v["model"].as_str())
                 .map(|s| s.replace("claude-", "").replace("-20", " 20"));
 
+            // Extract 8-digit YYYYMMDD suffix from model.id (e.g. "claude-sonnet-4-6-20251001")
+            let model_date = v["model"]["id"].as_str()
+                .or_else(|| v["model"].as_str())
+                .and_then(|id| {
+                    let b = id.as_bytes();
+                    let len = b.len();
+                    (len >= 8 && b[len-8..].iter().all(|c| c.is_ascii_digit()))
+                        .then(|| id[len-8..].to_string())
+                });
+
             let context_pct = v["context_window"]["used_percentage"].as_f64()
                 .map(|p| p / 100.0);
             let context_window_size = v["context_window"]["context_window_size"].as_u64();
@@ -75,6 +86,7 @@ fn read_status_input() -> StatusInput {
             return StatusInput {
                 raw: v.clone(),
                 model,
+                model_date,
                 cwd: v["cwd"].as_str()
                     .or_else(|| v["workspace"]["current_dir"].as_str())
                     .map(|s| s.to_string()),
@@ -200,6 +212,40 @@ fn fmt_ctx_window(n: u64) -> String {
     else { format!("{}", n) }
 }
 
+/// Strip ANSI escape sequences (ESC [ ... m) from a string
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next(); // consume '['
+            for c2 in chars.by_ref() {
+                if c2 == 'm' { break; }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Visible column width of an ANSI string (excludes escape codes)
+fn ansi_vis(s: &str) -> usize { vis(&strip_ansi(s)) }
+
+/// Pad an ANSI string to at least `width` visible columns with trailing spaces
+fn pad_to_vis(s: &str, width: usize) -> String {
+    let w = ansi_vis(s);
+    if w < width { format!("{}{}", s, " ".repeat(width - w)) } else { s.to_string() }
+}
+
+/// Returns true if the model date string (YYYYMMDD) is older than 90 days
+fn model_is_outdated(date_str: &str) -> bool {
+    chrono::NaiveDate::parse_from_str(date_str, "%Y%m%d")
+        .ok()
+        .map(|d| (chrono::Utc::now().date_naive() - d).num_days() > 90)
+        .unwrap_or(false)
+}
+
 fn fmt_remaining(resets_at: i64) -> String {
     let secs = (resets_at - chrono::Utc::now().timestamp()).max(0) as u64;
     if secs >= 86400 { format!("{}d{}h", secs / 86400, (secs % 86400) / 3600) }
@@ -269,18 +315,16 @@ struct Row {
     info: String,
 }
 
-/// 核心渲染引擎：art 行 pad 到 art_w 寬，後接 2 空格，再寫 info
+/// 核心渲染引擎：info 欄（左）pad 到 info_w 寬，後接 2 空格，再寫 art（右）
 ///
-/// art 已在 art() closure 中 pad 到 art_w，所以每行 info 起始列一致。
+/// art 已在 art() closure 中 pad 到 ART_W，讓右側欄對齊。
 /// 不需要 MoveToColumn — 純 write! + writeln!，相容所有環境。
-/// art_w=0（render_no_pet）時 None 行直接輸出 info，不加前置空格。
-fn render_rows<W: Write>(out: &mut W, rows: &[Row], art_w: usize) -> Result<()> {
-    let blank = " ".repeat(art_w);
+/// info_w=0（render_no_pet）時 None art 行直接輸出 info，不加尾端空格。
+fn render_rows<W: Write>(out: &mut W, rows: &[Row], info_w: usize) -> Result<()> {
     for row in rows {
         match &row.art {
-            Some(art) => writeln!(out, "{}  {}", art, row.info)?,
-            None if art_w == 0 => writeln!(out, "{}", row.info)?,
-            None      => writeln!(out, "{}  {}", blank, row.info)?,
+            Some(art) => writeln!(out, "{}  {}", pad_to_vis(&row.info, info_w), art)?,
+            None      => writeln!(out, "{}", row.info)?,
         }
     }
     Ok(())
@@ -331,22 +375,35 @@ fn render_full<W: Write>(
 
     // ── Row 0: identity ──────────────────────────────────────────────────────
 
+    // Amber if model date > 90 days old, normal gold otherwise
+    let model_rgb = data.model_date.as_deref()
+        .filter(|d| model_is_outdated(d))
+        .map(|_| (0xFF_u8, 0xAF_u8, 0x00_u8))   // amber — outdated
+        .unwrap_or(MODEL_C);
+
+    // Date suffix in dim DELIM color (e.g. "20251001")
+    let (date_str, date_vis) = match &data.model_date {
+        Some(d) => (format!(" {}", tc(d, DELIM)), 1 + vis(d)),
+        None    => (String::new(), 0),
+    };
+
     let model_inner = match (&data.model, data.context_window_size) {
         (Some(m), Some(cw)) => {
-            let m_s = shorten_str(m, 16);
+            let m_s = shorten_str(m, 18);
             let cw_s = fmt_ctx_window(cw);
-            let vis_w = vis(&m_s) + 3 + vis(&cw_s); // "m (cw)"
-            (format!("{} {}{}{}",
-                tc_bold(&m_s, MODEL_C),
+            let inner_vis = vis(&m_s) + date_vis + 3 + vis(&cw_s);
+            (format!("{}{} {}{}{}",
+                tc_bold(&m_s, model_rgb),
+                date_str,
                 tc("(", DELIM),
                 tc(&cw_s, CTX_SZ),
                 tc(")", DELIM)
-            ), vis_w)
+            ), inner_vis)
         }
         (Some(m), None) => {
-            let m_s = shorten_str(m, 18);
-            let l = vis(&m_s);
-            (tc_bold(&m_s, MODEL_C), l)
+            let m_s = shorten_str(m, 16);
+            let inner_vis = vis(&m_s) + date_vis;
+            (format!("{}{}", tc_bold(&m_s, model_rgb), date_str), inner_vis)
         }
         _ => (tc("—", STAT_VAL), 1),
     };
@@ -405,15 +462,15 @@ fn render_full<W: Write>(
 
     // ── Row 5: footer ─────────────────────────────────────────────────────────
 
-    let footer_model = data.model.as_deref().unwrap_or("—");
+    let cf_ver = format!("v{}", env!("CARGO_PKG_VERSION"));
     let mem_vis = vis("Memory:") + 1 + vis("active");
-    let fm_vis = vis(footer_model);
-    let pad = panel_w.saturating_sub(mem_vis + fm_vis + 2);
+    let cv_vis = vis(&cf_ver);
+    let pad = panel_w.saturating_sub(mem_vis + cv_vis + 2);
     let row5_info = format!("{} {}{}{}",
         tc("Memory:", STAT_LBL),
         tc_bold("active", MEM_ACT),
         " ".repeat(pad.max(1)),
-        tc(footer_model, DELIM),
+        tc(&cf_ver, DELIM),
     );
 
     // ── 組裝 rows，art 欄只有 0-3 有，4-5 是 None ────────────────────────────
@@ -436,7 +493,7 @@ fn render_full<W: Write>(
         Row { art: art(5), info: row5_info },
     ];
 
-    render_rows(out, &rows, ART_W)
+    render_rows(out, &rows, panel_w)
 }
 
 // ─── Usage line builder ────────────────────────────────────────────────────────
