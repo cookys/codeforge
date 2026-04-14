@@ -41,8 +41,7 @@ struct StatusInput {
     model_date: Option<String>,        // YYYYMMDD from model.id suffix
     cwd: Option<String>,
     version: Option<String>,           // current Claude Code version
-    update_available: bool,            // Claude Code has a newer version
-    latest_version: Option<String>,    // the newer version string
+    update_available: bool,            // ~/.claude/.update_available file exists
     context_pct: Option<f64>,          // 0.0–1.0
     context_window_size: Option<u64>,
     five_hour_pct: Option<f64>,
@@ -85,16 +84,6 @@ fn read_status_input() -> StatusInput {
                 .map(|p| p / 100.0);
             let seven_day_resets_at = v["rate_limits"]["seven_day"]["resets_at"].as_i64();
 
-            // Claude Code update info (several field layouts observed in the wild)
-            let update_available = v["update_available"].as_bool()
-                .or_else(|| v["claude"]["update_available"].as_bool())
-                .or_else(|| v["update"]["available"].as_bool())
-                .unwrap_or(false);
-            let latest_version = v["latest_version"].as_str()
-                .or_else(|| v["claude"]["latest_version"].as_str())
-                .or_else(|| v["update"]["version"].as_str())
-                .map(|s| s.to_string());
-
             return StatusInput {
                 raw: v.clone(),
                 model,
@@ -102,9 +91,8 @@ fn read_status_input() -> StatusInput {
                 cwd: v["cwd"].as_str()
                     .or_else(|| v["workspace"]["current_dir"].as_str())
                     .map(|s| s.to_string()),
-                version: v["version"].as_str().map(|s| s.to_string()),
-                update_available,
-                latest_version,
+                version: claude_version(),
+                update_available: claude_update_available(),
                 context_pct,
                 context_window_size,
                 five_hour_pct,
@@ -137,7 +125,6 @@ const PET_LV:   Rgb = (0xFF, 0xD7, 0x87); // 222 — "Lv.N"
 const STAT_LBL: Rgb = (0x58, 0x58, 0x58); // 240 — "ATK:"
 const STAT_VAL: Rgb = (0x94, 0x94, 0x94); // 246 — stat numbers
 const MEM_ACT:  Rgb = (0x5F, 0xAF, 0x5F); // 71  — memory active
-const MEM_INACT:Rgb = (0xD7, 0x5F, 0x5F); // 167 — memory inactive
 const UPDATE_C: Rgb = (0xFF, 0xAF, 0x00); // 214 — amber update banner
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
@@ -253,19 +240,33 @@ fn pad_to_vis(s: &str, width: usize) -> String {
     if w < width { format!("{}{}", s, " ".repeat(width - w)) } else { s.to_string() }
 }
 
-/// Returns true if the model date string (YYYYMMDD) is older than 90 days
-fn model_is_outdated(date_str: &str) -> bool {
-    chrono::NaiveDate::parse_from_str(date_str, "%Y%m%d")
-        .ok()
-        .map(|d| (chrono::Utc::now().date_naive() - d).num_days() > 90)
-        .unwrap_or(false)
-}
-
 fn fmt_remaining(resets_at: i64) -> String {
     let secs = (resets_at - chrono::Utc::now().timestamp()).max(0) as u64;
     if secs >= 86400 { format!("{}d{}h", secs / 86400, (secs % 86400) / 3600) }
     else if secs >= 3600 { format!("{}h{}m", secs / 3600, (secs % 3600) / 60) }
     else { format!("{}m", secs / 60) }
+}
+
+/// Get Claude Code version by running `claude --version`
+/// Output format: "2.1.105 (Claude Code)" → strip suffix → "2.1.105"
+fn claude_version() -> Option<String> {
+    std::process::Command::new("claude")
+        .arg("--version")
+        .output().ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim()
+            .trim_start_matches("claude ")
+            .trim_end_matches(" (Claude Code)")
+            .to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Update available if ~/.claude/.update_available file exists (written by Claude Code)
+fn claude_update_available() -> bool {
+    dirs::home_dir()
+        .map(|h| h.join(".claude").join(".update_available").exists())
+        .unwrap_or(false)
 }
 
 fn git_branch() -> Option<String> {
@@ -290,12 +291,7 @@ fn current_dir_short() -> Option<String> {
 
 // ─── Usage segment builder ────────────────────────────────────────────────────
 
-struct UsageSeg {
-    ansi: String,
-    vis_w: usize,
-}
-
-fn usage_seg(label: &str, pct: f64, remain: Option<String>) -> UsageSeg {
+fn usage_seg(label: &str, pct: f64, remain: Option<String>) -> String {
     let bar = colored_bar(pct, 6);
     let pct_num = format!("{:.0}%", pct * 100.0);
     let (r, g, b) = bar_rgb(pct);
@@ -316,8 +312,7 @@ fn usage_seg(label: &str, pct: f64, remain: Option<String>) -> UsageSeg {
     // vis: label(N) + 1 + 6(bar) + 1 + pct_num.len() + remain_vis
     let inner_vis = vis(label) + 1 + 6 + 1 + vis(&pct_num) + remain_vis;
 
-    let (ansi, vis_w) = seg(&inner, inner_vis);
-    UsageSeg { ansi, vis_w }
+    seg(&inner, inner_vis).0
 }
 
 // ─── Position-based renderer ──────────────────────────────────────────────────
@@ -484,21 +479,14 @@ fn render_full<W: Write>(
         .map(|v| format!("v{}", v))
         .unwrap_or_else(|| "—".to_string());
 
-    // Footer right side: show version; if update available add ⬆ v{latest} in amber
+    // Footer right side: show version; if update available add ⬆ in amber
     let ver_right = if data.update_available {
-        let latest = data.latest_version.as_deref().unwrap_or("new");
-        let upd = format!("v{}", latest);
-        format!("{} {} {}",
-            tc(&cc_ver, DELIM),
-            tc_bold("⬆", UPDATE_C),
-            tc_bold(&upd, UPDATE_C),
-        )
+        format!("{} {}", tc(&cc_ver, UPDATE_C), tc_bold("⬆", UPDATE_C))
     } else {
         tc(&cc_ver, DELIM)
     };
     let ver_right_vis = if data.update_available {
-        let latest = data.latest_version.as_deref().unwrap_or("new");
-        vis(&cc_ver) + 3 + vis(latest) + 1  // "vcur ⬆ vnew"
+        vis(&cc_ver) + 2  // "vcur ⬆"
     } else {
         vis(&cc_ver)
     };
@@ -536,15 +524,13 @@ fn render_full<W: Write>(
     // ── 更新橫幅（主內容下方，全寬） ─────────────────────────────────────────
 
     if data.update_available {
-        let latest = data.latest_version.as_deref().unwrap_or("new version");
-        let ver_str = if latest.starts_with('v') { latest.to_string() } else { format!("v{}", latest) };
-        let label = format!(" ⬆  Claude Code {} available ", ver_str);
+        let label = " ⬆  Claude Code update available ";
         let hint  = " restart to update ";
-        let fill  = width.saturating_sub(vis(&label) + vis(&hint));
+        let fill  = width.saturating_sub(vis(label) + vis(hint));
         writeln!(out, "{}{}{}",
-            tc_bold(&label, UPDATE_C),
+            tc_bold(label, UPDATE_C),
             tcs("─".repeat(fill), UPDATE_C),
-            tc_bold(&hint, UPDATE_C),
+            tc_bold(hint, UPDATE_C),
         )?;
     }
 
@@ -558,17 +544,14 @@ fn build_usage_line(data: &StatusInput, _panel_w: usize) -> String {
 
     if let Some(pct) = data.five_hour_pct {
         let remain = data.five_hour_resets_at.map(fmt_remaining);
-        let s = usage_seg("5h", pct, remain);
-        segs.push(s.ansi);
+        segs.push(usage_seg("5h", pct, remain));
     }
     if let Some(pct) = data.seven_day_pct {
         let remain = data.seven_day_resets_at.map(fmt_remaining);
-        let s = usage_seg("7d", pct, remain);
-        segs.push(s.ansi);
+        segs.push(usage_seg("7d", pct, remain));
     }
     if let Some(pct) = data.context_pct {
-        let s = usage_seg("ctx", pct, None);
-        segs.push(s.ansi);
+        segs.push(usage_seg("ctx", pct, None));
     }
 
     if segs.is_empty() {
