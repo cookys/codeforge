@@ -279,6 +279,20 @@ fn current_dir_short() -> Option<String> {
 
 // ─── Usage segment builder ────────────────────────────────────────────────────
 
+/// Usage segment WITHOUT ▏▕ wrappers — for box layout row 1
+fn usage_bare(label: &str, pct: f64, remain: Option<String>) -> String {
+    let bar = colored_bar(pct, 6);
+    let pct_num = format!("{:.0}%", pct * 100.0);
+    let (r, g, b) = bar_rgb(pct);
+    let remain_part = match &remain {
+        Some(s) => format!(" {}", tc(s, REMAIN)),
+        None => String::new(),
+    };
+    format!("{} {} {}{}",
+        tc(label, BAR_LBL), bar, tc(&pct_num, (r, g, b)), remain_part,
+    )
+}
+
 fn usage_seg(label: &str, pct: f64, remain: Option<String>) -> String {
     let bar = colored_bar(pct, 6);
     let pct_num = format!("{:.0}%", pct * 100.0);
@@ -368,85 +382,91 @@ fn render_full<W: Write>(
         .unwrap_or_else(|| "~".to_string());
     let cwd_home = to_home_rel(&cwd_raw);
 
+    // Helper: wrap content in box row │ content {pad} │ = exactly panel_w visible
+    let box_mid = |content: &str, left: &str, right: &str| -> String {
+        let pad = panel_w.saturating_sub(vis(left) + ansi_vis(content) + vis(right));
+        format!("{}{}{}{}", tc(left, DELIM), content, " ".repeat(pad), tc(right, DELIM))
+    };
+
     let art_lines: Vec<&str> = village.ascii_small.lines().collect();
 
-    // ── Row 0: dash-fill identity line ──────────────────────────────────────────
+    // ── Row 0: top border ╭─ model ─── cwd ─── branch ─────────────────────────╮
     //
-    // ──▏Sonnet 4.6 (200k)▕──▏~/projects/codepower▕──▏feature/phase1▕────────────
-    // cwd truncates before branch when space is tight (Architect recommendation)
+    // Box-drawing corners connect continuously — no ▏▕ vs ── conflict.
+    // Overhead: "╭─ "(3) + " ─── "(5) + " ─── "(5) + "──╮"(3) = 16
 
-    const DASH_FIXED: usize = 6;   // lead(2) + gap(2) + gap(2)
-    const MIN_BRANCH: usize = 8;   // min visible chars for branch
-    const MIN_TRAIL:  usize = 2;   // at least ── after last segment
-
-    let model_inner = match (&data.model, data.context_window_size) {
+    let (model_text, model_vis) = match (&data.model, data.context_window_size) {
         (Some(m), Some(cw)) => {
             let m_s = shorten_str(m, 18);
             let cw_s = fmt_ctx_window(cw);
-            let inner_vis = vis(&m_s) + 3 + vis(&cw_s); // "m (cw)"
+            let v = vis(&m_s) + 3 + vis(&cw_s); // "m (cw)"
             (format!("{} {}{}{}",
                 tc_bold(&m_s, MODEL_C),
-                tc("(", DELIM),
-                tc(&cw_s, CTX_SZ),
-                tc(")", DELIM)
-            ), inner_vis)
+                tc("(", DELIM), tc(&cw_s, CTX_SZ), tc(")", DELIM),
+            ), v)
         }
         (Some(m), None) => {
             let m_s = shorten_str(m, 18);
-            let inner_vis = vis(&m_s);
-            (tc_bold(&m_s, MODEL_C), inner_vis)
+            let v = vis(&m_s);
+            (tc_bold(&m_s, MODEL_C), v)
         }
         _ => (tc("—", STAT_VAL), 1),
     };
-    let model_seg_vis = model_inner.1 + 2; // +2 for ▏▕
 
-    // If full cwd leaves < MIN_BRANCH for branch, truncate cwd first
+    // cwd: try full, truncate if branch would get < 6 chars
     let cwd_full_vis = vis(&cwd_home);
-    let branch_avail_full = panel_w
-        .saturating_sub(DASH_FIXED + model_seg_vis + (cwd_full_vis + 2) + 2 + MIN_TRAIL);
-    let (cwd_display, cwd_vis) = if branch_avail_full >= MIN_BRANCH {
+    let branch_budget_full = panel_w.saturating_sub(16 + model_vis + cwd_full_vis);
+    let (cwd_display, cwd_vis) = if branch_budget_full >= 6 {
         (cwd_home.clone(), cwd_full_vis)
     } else {
-        let max_cwd = panel_w
-            .saturating_sub(DASH_FIXED + model_seg_vis + 4 + MIN_BRANCH + MIN_TRAIL)
-            .max(5);
-        let s = shorten_path(&cwd_home, max_cwd);
+        let max = panel_w.saturating_sub(16 + model_vis + 6).max(5);
+        let s = shorten_path(&cwd_home, max);
         let v = vis(&s);
         (s, v)
     };
-
-    // Branch fills remaining, with minimum trailing dashes
-    let branch_avail = panel_w
-        .saturating_sub(DASH_FIXED + model_seg_vis + (cwd_vis + 2) + 2 + MIN_TRAIL)
-        .max(MIN_BRANCH);
+    let branch_avail = panel_w.saturating_sub(16 + model_vis + cwd_vis).max(4);
     let branch_short = shorten_str(&branch, branch_avail);
-    let branch_vis = vis(&branch_short);
+    let branch_vis   = vis(&branch_short);
+    let r0_fill = panel_w.saturating_sub(16 + model_vis + cwd_vis + branch_vis);
 
-    // Trailing dashes fill to exactly panel_w
-    let total_vis = DASH_FIXED + model_seg_vis + (cwd_vis + 2) + (branch_vis + 2);
-    let row0_info = format!("{}{}{}{}{}{}{}",
-        tcs("──".to_string(), DELIM),
-        seg(&model_inner.0, model_inner.1).0,
-        tcs("──".to_string(), DELIM),
-        seg(&tc(&cwd_display, CWD_C), cwd_vis).0,
-        tcs("──".to_string(), DELIM),
-        seg(&tc(&branch_short, BRANCH_C), branch_vis).0,
-        tcs("─".repeat(panel_w.saturating_sub(total_vis)), DELIM),
+    let row0_info = format!("{}{}{}{}{}{}{}{}",
+        tc("╭─ ", DELIM),
+        model_text,
+        tc(" ─── ", DELIM),
+        tc(&cwd_display, CWD_C),
+        tc(" ─── ", DELIM),
+        tc(&branch_short, BRANCH_C),
+        tcs("─".repeat(r0_fill), DELIM),
+        tc("──╮", DELIM),
     );
 
-    // ── Row 1: usage ─────────────────────────────────────────────────────────
+    // ── Row 1: usage bars inside box │ 5h ▮▯ 5%  7d ▮▮ 39%  ctx ▮▮▮ 54%   │
 
-    let row1_info = build_usage_line(data, panel_w);
+    let row1_info = {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(pct) = data.five_hour_pct {
+            parts.push(usage_bare("5h", pct, data.five_hour_resets_at.map(fmt_remaining)));
+        }
+        if let Some(pct) = data.seven_day_pct {
+            parts.push(usage_bare("7d", pct, data.seven_day_resets_at.map(fmt_remaining)));
+        }
+        if let Some(pct) = data.context_pct {
+            parts.push(usage_bare("ctx", pct, None));
+        }
+        let content = parts.join("  ");
+        box_mid(&content, "│ ", "│")
+    };
 
-    // ── Row 2: village divider ────────────────────────────────────────────────
+    // ── Row 2: village divider ├─ The Forge-Ruins ──────────────────────────┤
 
     let vname = village.display_name;
-    let fill_vis = panel_w.saturating_sub(4 + vis(vname) + 1);
-    let row2_info = format!("{}{}{}{}",
-        tc("── ", DELIM),
+    let r2_fill = panel_w.saturating_sub(3 + vis(vname) + 1 + 1); // ├─ + name + space + ┤
+    let row2_info = format!("{}{}{}{}{}",
+        tc("├─ ", DELIM),
         tc_bold(vname, vrgb),
         tc(" ", DELIM),
-        tcs("─".repeat(fill_vis), DELIM),
+        tcs("─".repeat(r2_fill), DELIM),
+        tc("┤", DELIM),
     );
 
     // ── Row 3: pet HP / XP ───────────────────────────────────────────────────
@@ -455,14 +475,14 @@ fn render_full<W: Write>(
     let hp_filled = (hp_pct * 6.0) as usize;
     let hp_bar = format!("{}{}",
         tcs("█".repeat(hp_filled), hp_rgb(pet.hp)),
-        tcs("░".repeat(6 - hp_filled), BAR_EMPTY)
+        tcs("░".repeat(6 - hp_filled), BAR_EMPTY),
     );
     let xp_filled = ((pet.xp as f64 / pet.xp_to_next as f64).clamp(0.0, 1.0) * 6.0) as usize;
     let xp_bar = format!("{}{}",
         tcs("█".repeat(xp_filled), vrgb),
-        tcs("░".repeat(6 - xp_filled), BAR_EMPTY)
+        tcs("░".repeat(6 - xp_filled), BAR_EMPTY),
     );
-    let row3_info = format!("{} {}  {} {} {}  {} {} {}/{}",
+    let r3_content = format!("{} {}  {} {} {}  {} {} {}/{}",
         tc_bold(&pet.name, PET_NAME),
         tc(&format!("Lv.{}", pet.level), PET_LV),
         tc("HP", STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
@@ -470,42 +490,39 @@ fn render_full<W: Write>(
         tc(&pet.xp.to_string(), vrgb),
         tc(&pet.xp_to_next.to_string(), STAT_VAL),
     );
+    let row3_info = box_mid(&r3_content, "│ ", "│");
 
     // ── Row 4: stats ─────────────────────────────────────────────────────────
 
-    let row4_info = format!("{} {}  {} {}  {} {}  {} {}",
+    let r4_content = format!("{} {}  {} {}  {} {}  {} {}",
         tc("ATK:", STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
         tc("DEF:", STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
         tc("SUP:", STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
         tc("VER:", STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
     );
+    let row4_info = box_mid(&r4_content, "│ ", "│");
 
-    // ── Row 5: footer ─────────────────────────────────────────────────────────
+    // ── Row 5: bottom border ╰─ Memory: active ─────────────── v2.1.105 ──╯
 
-    // Claude Code version from JSON (e.g. "1.9.2"), fallback to "—"
     let cc_ver = data.version.as_deref()
         .map(|v| format!("v{}", v))
         .unwrap_or_else(|| "—".to_string());
-
-    // Footer right side: show version; if update available add ⬆ in amber
-    let ver_right = if data.update_available {
+    let ver_str = if data.update_available {
         format!("{} {}", tc(&cc_ver, UPDATE_C), tc_bold("⬆", UPDATE_C))
     } else {
         tc(&cc_ver, DELIM)
     };
-    let ver_right_vis = if data.update_available {
-        vis(&cc_ver) + 2  // "vcur ⬆"
-    } else {
-        vis(&cc_ver)
-    };
+    let ver_vis = if data.update_available { vis(&cc_ver) + 2 } else { vis(&cc_ver) };
 
-    let mem_vis = vis("Memory:") + 1 + vis("active");
-    let pad = panel_w.saturating_sub(mem_vis + ver_right_vis + 2);
-    let row5_info = format!("{} {}{}{}",
+    // "╰─ "(3) + "Memory:"(7) + " "(1) + "active"(6) + pad + ver + " ──╯"(4)
+    let r5_pad = panel_w.saturating_sub(17 + ver_vis + 4);
+    let row5_info = format!("{}{}{}{}{}{}",
+        tc("╰─ ", DELIM),
         tc("Memory:", STAT_LBL),
-        tc_bold("active", MEM_ACT),
-        " ".repeat(pad.max(1)),
-        ver_right,
+        tc_bold(" active", MEM_ACT),
+        " ".repeat(r5_pad),
+        ver_str,
+        tc(" ──╯", DELIM),
     );
 
     // ── 組裝 rows，每行 art pad 到 ART_W 寬 ──────────────────────────────────
