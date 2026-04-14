@@ -237,9 +237,48 @@ fn fmt_remaining(resets_at: i64) -> String {
     else { format!("{}m", secs / 60) }
 }
 
-/// Get Claude Code version by running `claude --version`
-/// Output format: "2.1.105 (Claude Code)" → strip suffix → "2.1.105"
-fn claude_version() -> Option<String> {
+/// Extract Claude version from a binary path like:
+///   /home/user/.local/share/claude/versions/2.1.107
+fn extract_claude_ver(path: &str) -> Option<String> {
+    let after = path.split("/versions/").nth(1)?;
+    let ver = after.split('/').next()?;
+    if ver.starts_with(|c: char| c.is_ascii_digit()) {
+        Some(ver.to_string())
+    } else {
+        None
+    }
+}
+
+/// Walk up the /proc process tree to find the Claude Code binary version.
+/// Claude Code uses a symlink model: ~/.local/share/claude/versions/X.Y.Z
+/// The running session's ancestor process has that path as its exe.
+#[cfg(target_os = "linux")]
+fn claude_session_version() -> Option<String> {
+    fn ppid(pid: u32) -> Option<u32> {
+        let s = std::fs::read_to_string(format!("/proc/{}/status", pid)).ok()?;
+        s.lines()
+            .find(|l| l.starts_with("PPid:\t"))
+            .and_then(|l| l.split('\t').nth(1)?.trim().parse().ok())
+    }
+    let mut pid = std::process::id();
+    for _ in 0..10 {
+        pid = ppid(pid)?;
+        if pid <= 1 { break; }
+        if let Ok(exe) = std::fs::read_link(format!("/proc/{}/exe", pid)) {
+            if let Some(ver) = extract_claude_ver(&exe.to_string_lossy()) {
+                return Some(ver);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "linux"))]
+fn claude_session_version() -> Option<String> { None }
+
+/// Version of the Claude binary on disk — follows symlink to latest installed.
+/// Output format: "2.1.107 (Claude Code)" → strip → "2.1.107"
+fn claude_latest_version() -> Option<String> {
     std::process::Command::new("claude")
         .arg("--version")
         .output().ok()
@@ -252,11 +291,19 @@ fn claude_version() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Update available if ~/.claude/.update_available file exists (written by Claude Code)
+/// Version shown in statusline = the running session's version (from process tree).
+/// Falls back to latest if process tree walk fails (e.g. non-Linux, or direct invocation).
+fn claude_version() -> Option<String> {
+    claude_session_version().or_else(claude_latest_version)
+}
+
+/// Update available = session is running an older version than the latest on disk.
+/// Uses /proc process tree (Linux) — robust against the symlink-swap update model.
 fn claude_update_available() -> bool {
-    dirs::home_dir()
-        .map(|h| h.join(".claude").join(".update_available").exists())
-        .unwrap_or(false)
+    match (claude_session_version(), claude_latest_version()) {
+        (Some(session), Some(latest)) => session != latest,
+        _ => false,
+    }
 }
 
 fn git_branch() -> Option<String> {
