@@ -40,7 +40,9 @@ struct StatusInput {
     model: Option<String>,
     model_date: Option<String>,        // YYYYMMDD from model.id suffix
     cwd: Option<String>,
-    version: Option<String>,
+    version: Option<String>,           // current Claude Code version
+    update_available: bool,            // Claude Code has a newer version
+    latest_version: Option<String>,    // the newer version string
     context_pct: Option<f64>,          // 0.0–1.0
     context_window_size: Option<u64>,
     five_hour_pct: Option<f64>,
@@ -83,6 +85,16 @@ fn read_status_input() -> StatusInput {
                 .map(|p| p / 100.0);
             let seven_day_resets_at = v["rate_limits"]["seven_day"]["resets_at"].as_i64();
 
+            // Claude Code update info (several field layouts observed in the wild)
+            let update_available = v["update_available"].as_bool()
+                .or_else(|| v["claude"]["update_available"].as_bool())
+                .or_else(|| v["update"]["available"].as_bool())
+                .unwrap_or(false);
+            let latest_version = v["latest_version"].as_str()
+                .or_else(|| v["claude"]["latest_version"].as_str())
+                .or_else(|| v["update"]["version"].as_str())
+                .map(|s| s.to_string());
+
             return StatusInput {
                 raw: v.clone(),
                 model,
@@ -91,6 +103,8 @@ fn read_status_input() -> StatusInput {
                     .or_else(|| v["workspace"]["current_dir"].as_str())
                     .map(|s| s.to_string()),
                 version: v["version"].as_str().map(|s| s.to_string()),
+                update_available,
+                latest_version,
                 context_pct,
                 context_window_size,
                 five_hour_pct,
@@ -124,6 +138,7 @@ const STAT_LBL: Rgb = (0x58, 0x58, 0x58); // 240 — "ATK:"
 const STAT_VAL: Rgb = (0x94, 0x94, 0x94); // 246 — stat numbers
 const MEM_ACT:  Rgb = (0x5F, 0xAF, 0x5F); // 71  — memory active
 const MEM_INACT:Rgb = (0xD7, 0x5F, 0x5F); // 167 — memory inactive
+const UPDATE_C: Rgb = (0xFF, 0xAF, 0x00); // 214 — amber update banner
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 
@@ -374,20 +389,10 @@ fn render_full<W: Write>(
 
     // ── Row 0: identity ──────────────────────────────────────────────────────
 
-    // Amber if model date > 90 days old, normal gold otherwise
-    let model_rgb = data.model_date.as_deref()
-        .filter(|d| model_is_outdated(d))
-        .map(|_| (0xFF_u8, 0xAF_u8, 0x00_u8))   // amber — outdated
-        .unwrap_or(MODEL_C);
-
     // Date suffix in dim DELIM color (e.g. "20251001")
-    // Date display: dim if fresh, amber + ⬆ if outdated (>90 days)
     let (date_str, date_vis) = match &data.model_date {
-        Some(d) if model_is_outdated(d) =>
-            (format!(" {} {}", tc(d, model_rgb), tc("⬆", model_rgb)), 1 + vis(d) + 2),
-        Some(d) =>
-            (format!(" {}", tc(d, DELIM)), 1 + vis(d)),
-        None => (String::new(), 0),
+        Some(d) => (format!(" {}", tc(d, DELIM)), 1 + vis(d)),
+        None    => (String::new(), 0),
     };
 
     let model_inner = match (&data.model, data.context_window_size) {
@@ -396,7 +401,7 @@ fn render_full<W: Write>(
             let cw_s = fmt_ctx_window(cw);
             let inner_vis = vis(&m_s) + date_vis + 3 + vis(&cw_s);
             (format!("{}{} {}{}{}",
-                tc_bold(&m_s, model_rgb),
+                tc_bold(&m_s, MODEL_C),
                 date_str,
                 tc("(", DELIM),
                 tc(&cw_s, CTX_SZ),
@@ -406,7 +411,7 @@ fn render_full<W: Write>(
         (Some(m), None) => {
             let m_s = shorten_str(m, 16);
             let inner_vis = vis(&m_s) + date_vis;
-            (format!("{}{}", tc_bold(&m_s, model_rgb), date_str), inner_vis)
+            (format!("{}{}", tc_bold(&m_s, MODEL_C), date_str), inner_vis)
         }
         _ => (tc("—", STAT_VAL), 1),
     };
@@ -478,19 +483,37 @@ fn render_full<W: Write>(
     let cc_ver = data.version.as_deref()
         .map(|v| format!("v{}", v))
         .unwrap_or_else(|| "—".to_string());
+
+    // Footer right side: show version; if update available add ⬆ v{latest} in amber
+    let ver_right = if data.update_available {
+        let latest = data.latest_version.as_deref().unwrap_or("new");
+        let upd = format!("v{}", latest);
+        format!("{} {} {}",
+            tc(&cc_ver, DELIM),
+            tc_bold("⬆", UPDATE_C),
+            tc_bold(&upd, UPDATE_C),
+        )
+    } else {
+        tc(&cc_ver, DELIM)
+    };
+    let ver_right_vis = if data.update_available {
+        let latest = data.latest_version.as_deref().unwrap_or("new");
+        vis(&cc_ver) + 3 + vis(latest) + 1  // "vcur ⬆ vnew"
+    } else {
+        vis(&cc_ver)
+    };
+
     let mem_vis = vis("Memory:") + 1 + vis("active");
-    let cv_vis = vis(&cc_ver);
-    let pad = panel_w.saturating_sub(mem_vis + cv_vis + 2);
+    let pad = panel_w.saturating_sub(mem_vis + ver_right_vis + 2);
     let row5_info = format!("{} {}{}{}",
         tc("Memory:", STAT_LBL),
         tc_bold("active", MEM_ACT),
         " ".repeat(pad.max(1)),
-        tc(&cc_ver, DELIM),
+        ver_right,
     );
 
-    // ── 組裝 rows，art 欄只有 0-3 有，4-5 是 None ────────────────────────────
+    // ── 組裝 rows，每行 art pad 到 ART_W 寬 ──────────────────────────────────
 
-    // 每行 art 都 pad 到 ART_W 寬，讓 info 欄起始列一致
     let art = |i: usize| -> Option<String> {
         art_lines.get(i).map(|s| {
             let w = vis(s);
@@ -508,7 +531,24 @@ fn render_full<W: Write>(
         Row { art: art(5), info: row5_info },
     ];
 
-    render_rows(out, &rows, panel_w)
+    render_rows(out, &rows, panel_w)?;
+
+    // ── 更新橫幅（主內容下方，全寬） ─────────────────────────────────────────
+
+    if data.update_available {
+        let latest = data.latest_version.as_deref().unwrap_or("new version");
+        let ver_str = if latest.starts_with('v') { latest.to_string() } else { format!("v{}", latest) };
+        let label = format!(" ⬆  Claude Code {} available ", ver_str);
+        let hint  = " restart to update ";
+        let fill  = width.saturating_sub(vis(&label) + vis(&hint));
+        writeln!(out, "{}{}{}",
+            tc_bold(&label, UPDATE_C),
+            tcs("─".repeat(fill), UPDATE_C),
+            tc_bold(&hint, UPDATE_C),
+        )?;
+    }
+
+    Ok(())
 }
 
 // ─── Usage line builder ────────────────────────────────────────────────────────
