@@ -471,7 +471,7 @@ fn render_full<W: Write>(
         tc("┤", DELIM),
     );
 
-    // ── Version info (needed in both rows-3-5 paths) ─────────────────────────
+    // ── Version info ─────────────────────────────────────────────────────────
 
     let cc_ver = data.version.as_deref()
         .map(|v| format!("v{}", v))
@@ -483,59 +483,82 @@ fn render_full<W: Write>(
     };
     let ver_vis = if data.update_available { vis(&cc_ver) + 2 } else { vis(&cc_ver) };
 
-    // ── Rows 3-5: pet stats or speech bubble overlay ──────────────────────────
-    //
-    // When message is Some, bubble intrudes from the LEFT covering rows 3-4.
-    // Row 5 bottom border is SHARED: bubble's ╰ = frame's ╰ (seamless merge).
-    //
-    //   Normal:
-    //     │ Ferris Lv.1  HP █░░ ...                                             │
-    //     │ ATK: 18  DEF: 20  ...                                               │
-    //     ╰─ Memory: active ─────────────────────────────────────── v2.1.105 ──╯
-    //
-    //   With bubble:
-    //     ╭────────────────────────────╮                                         │
-    //     │ Hello! Let's code today!   │                                         │
-    //     ╰────────────────────────────╯─ Memory: active ──────────── v2.1.105 ──╯
+    // ── Art helper: pad art line to ART_W, colored with village rgb ──────────
 
-    let (row3_info, row4_info, row5_info) = if let Some(msg) = data.message.as_deref() {
-        let msg_vis = vis(msg);
-        // Bubble width: │ + space + msg + space + │ = msg_vis + 4
-        // Cap so bubble never fills the full panel (leave at least frame │ on right)
-        let bw = (msg_vis + 4).min(panel_w.saturating_sub(2)).max(6);
-        let inner_pad = bw.saturating_sub(4 + msg_vis); // trailing spaces inside bubble
-        // Space between bubble right edge and right frame border (1 char for │)
-        let r_gap = panel_w.saturating_sub(bw + 1);
+    let art = |i: usize| -> Option<String> {
+        art_lines.get(i).map(|s| {
+            let w = vis(s);
+            let pad = if w < ART_W { " ".repeat(ART_W - w) } else { String::new() };
+            format!("{}{}", tcs(s.to_string(), vrgb), pad)
+        })
+    };
+    let art_s = |i: usize| -> String {
+        art(i).unwrap_or_else(|| " ".repeat(ART_W))
+    };
 
-        // Row 3: ╭{─×(bw-2)}╮{gap spaces}│
+    // ── Rows 3-5: pet stats or speech bubble ─────────────────────────────────
+    //
+    // Normal:
+    //   │ Ferris Lv.1  HP █░░ ...                                    │  art[3]
+    //   │ ATK: 18  DEF: 20  ...                                       │  art[4]
+    //   ╰─ Memory: active ──────────────────────────────── v2.1.105 ──╯  art[5]
+    //
+    // With bubble (right-aligned, tail in 2-char gap → right-pointing):
+    //   │              ╭──────────────────────────╮\  art[3]
+    //   │              │ Hello! Let's code today! │ > art[4]
+    //   ╰─ Memory: active ──────────────────────────── v2.1.105 ──╯/  art[5]
+    //
+    // Tail shape in gap (cols panel_w, panel_w+1):
+    //   row3: \·   row4: ·>   row5: /·   → reading down: \ / > \ /
+
+    if let Some(msg) = data.message.as_deref() {
+        // Write rows 0-2 with normal render_rows
+        render_rows(out, &[
+            Row { art: art(0), info: row0_info },
+            Row { art: art(1), info: row1_info },
+            Row { art: art(2), info: row2_info },
+        ], panel_w)?;
+
+        // Bubble geometry (right-aligned: right edge at panel_w-1)
+        let msg_vis_w = vis(msg);
+        // bw = bubble width: │ + space + msg + space + │
+        let bw = (msg_vis_w + 4).min(panel_w.saturating_sub(3)).max(6);
+        let inner_pad = bw.saturating_sub(4 + msg_vis_w);
+        // Frame left overhead: │(1) + space(1) = 2
+        let left_fill = panel_w.saturating_sub(2 + bw);
+
+        // Row 3: │ {left}╭{─×bw-2}╮  — bubble top, right edge at panel_w-1
+        // Width: 2 + left_fill + bw = panel_w ✓
         let r3 = format!("{}{}{}{}{}",
+            tc("│ ", DELIM),
+            " ".repeat(left_fill),
             tc("╭", vrgb),
             tcs("─".repeat(bw.saturating_sub(2)), vrgb),
             tc("╮", vrgb),
-            " ".repeat(r_gap),
-            tc("│", DELIM),
         );
+        // Gap: `\ ` → \ at panel_w, space at panel_w+1
+        writeln!(out, "{}{} {}", pad_to_vis(&r3, panel_w), tc("\\", vrgb), art_s(3))?;
 
-        // Row 4: │ {msg}{inner_pad} │{gap spaces}│
-        let r4 = format!("{}{}{}{}{}{}",
+        // Row 4: │ {left}│ {msg}{pad}·│  — bubble content
+        // Width: 2 + left_fill + 2 + msg_vis_w + inner_pad + 1 + 1 = panel_w ✓
+        let r4 = format!("{}{}{}{}{}{}{}",
+            tc("│ ", DELIM),
+            " ".repeat(left_fill),
             tc("│ ", vrgb),
             tc(msg, PET_NAME),
             " ".repeat(inner_pad),
-            tc(" │", vrgb),
-            " ".repeat(r_gap),
-            tc("│", DELIM),
+            tc(" ", vrgb),
+            tc("│", vrgb),
         );
+        // Gap: ` >` → space at panel_w, > at panel_w+1
+        writeln!(out, "{} {}{}", pad_to_vis(&r4, panel_w), tc(">", vrgb), art_s(4))?;
 
-        // Row 5: ╰{─×(bw-2)}╯─ Memory: active {fill} ver ──╯
-        // Fixed = bw + (─ )(2) + (Memory:)(7) + ( active)(7) + ( )(1) + fill + ( )(1) + ver + ( ──╯)(4)
-        //       = bw + 22 + fill + ver_vis = panel_w
-        // → fill = panel_w - bw - 22 - ver_vis
-        let r5_fill = panel_w.saturating_sub(bw + 22 + ver_vis);
-        let r5 = format!("{}{}{}{}{}{}{}{}{}{}",
-            tc("╰", vrgb),
-            tcs("─".repeat(bw.saturating_sub(2)), vrgb),
-            tc("╯", vrgb),
-            tc("─ ", DELIM),
+        // Row 5: normal frame bottom border, tail `/` in gap
+        // "╰─ "(3) + "Memory:"(7) + " active"(7) + " "(1) + fill + " "(1) + ver + " ──╯"(4)
+        // fixed = 23 + ver_vis, fill = panel_w - 23 - ver_vis
+        let r5_fill = panel_w.saturating_sub(23 + ver_vis);
+        let r5 = format!("{}{}{}{}{}{}{}",
+            tc("╰─ ", DELIM),
             tc("Memory:", STAT_LBL),
             tc_bold(" active", MEM_ACT),
             tc(" ", DELIM),
@@ -543,8 +566,9 @@ fn render_full<W: Write>(
             tc(" ", DELIM),
             format!("{}{}", ver_str, tc(" ──╯", DELIM)),
         );
+        // Gap: `/ ` → / at panel_w, space at panel_w+1
+        writeln!(out, "{}{} {}", pad_to_vis(&r5, panel_w), tc("/", vrgb), art_s(5))?;
 
-        (r3, r4, r5)
     } else {
         // ── Row 3: pet HP / XP ───────────────────────────────────────────────
 
@@ -579,9 +603,9 @@ fn render_full<W: Write>(
         );
         let row4_info = box_mid(&r4_content, "│ ", "│");
 
-        // ── Row 5: bottom border ╰─ Memory: active ──────────── v2.1.105 ──╯
+        // ── Row 5: bottom border ─────────────────────────────────────────────
         // "╰─ "(3) + "Memory:"(7) + " active"(7) + " "(1) + fill + " "(1) + ver + " ──╯"(4)
-        // total fixed = 23 + ver_vis, fill = panel_w - 23 - ver_vis
+        // fixed = 23 + ver_vis, fill = panel_w - 23 - ver_vis
         let r5_fill = panel_w.saturating_sub(23 + ver_vis);
         let row5_info = format!("{}{}{}{}{}{}{}",
             tc("╰─ ", DELIM),
@@ -593,29 +617,16 @@ fn render_full<W: Write>(
             format!("{}{}", ver_str, tc(" ──╯", DELIM)),
         );
 
-        (row3_info, row4_info, row5_info)
-    };
-
-    // ── 組裝 rows，每行 art pad 到 ART_W 寬 ──────────────────────────────────
-
-    let art = |i: usize| -> Option<String> {
-        art_lines.get(i).map(|s| {
-            let w = vis(s);
-            let pad = if w < ART_W { " ".repeat(ART_W - w) } else { String::new() };
-            format!("{}{}", tcs(s.to_string(), vrgb), pad)
-        })
-    };
-
-    let rows = vec![
-        Row { art: art(0), info: row0_info },
-        Row { art: art(1), info: row1_info },
-        Row { art: art(2), info: row2_info },
-        Row { art: art(3), info: row3_info },
-        Row { art: art(4), info: row4_info },
-        Row { art: art(5), info: row5_info },
-    ];
-
-    render_rows(out, &rows, panel_w)?;
+        let rows = vec![
+            Row { art: art(0), info: row0_info },
+            Row { art: art(1), info: row1_info },
+            Row { art: art(2), info: row2_info },
+            Row { art: art(3), info: row3_info },
+            Row { art: art(4), info: row4_info },
+            Row { art: art(5), info: row5_info },
+        ];
+        render_rows(out, &rows, panel_w)?;
+    }
 
     // ── 更新橫幅（主內容下方，全寬） ─────────────────────────────────────────
 
