@@ -514,15 +514,18 @@ fn render_full<W: Write>(
     };
     let ver_vis = if data.update_available { vis(&cc_ver) + 2 } else { vis(&cc_ver) };
 
-    // "╰─ "(3) + "Memory:"(7) + " "(1) + "active"(6) + pad + ver + " ──╯"(4)
-    let r5_pad = panel_w.saturating_sub(17 + ver_vis + 4);
-    let row5_info = format!("{}{}{}{}{}{}",
+    // ╰─ Memory: active ────────────────────────────────── v2.1.105 ──╯
+    // "╰─ "(3) + "Memory:"(7) + " active"(7) + " "(1) + fill + " "(1) + ver + " ──╯"(4)
+    // total fixed = 23 + ver_vis, fill = panel_w - 23 - ver_vis
+    let r5_fill = panel_w.saturating_sub(23 + ver_vis);
+    let row5_info = format!("{}{}{}{}{}{}{}",
         tc("╰─ ", DELIM),
         tc("Memory:", STAT_LBL),
         tc_bold(" active", MEM_ACT),
-        " ".repeat(r5_pad),
-        ver_str,
-        tc(" ──╯", DELIM),
+        tc(" ", DELIM),
+        tcs("─".repeat(r5_fill), DELIM),
+        tc(" ", DELIM),
+        format!("{}{}", ver_str, tc(" ──╯", DELIM)),
     );
 
     // ── 組裝 rows，每行 art pad 到 ART_W 寬 ──────────────────────────────────
