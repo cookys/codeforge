@@ -381,9 +381,13 @@ fn render_full<W: Write>(
         .unwrap_or(MODEL_C);
 
     // Date suffix in dim DELIM color (e.g. "20251001")
+    // Date display: dim if fresh, amber + ⬆ if outdated (>90 days)
     let (date_str, date_vis) = match &data.model_date {
-        Some(d) => (format!(" {}", tc(d, DELIM)), 1 + vis(d)),
-        None    => (String::new(), 0),
+        Some(d) if model_is_outdated(d) =>
+            (format!(" {} {}", tc(d, model_rgb), tc("⬆", model_rgb)), 1 + vis(d) + 2),
+        Some(d) =>
+            (format!(" {}", tc(d, DELIM)), 1 + vis(d)),
+        None => (String::new(), 0),
     };
 
     let model_inner = match (&data.model, data.context_window_size) {
