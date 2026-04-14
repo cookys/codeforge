@@ -41,6 +41,7 @@ struct StatusInput {
     cwd: Option<String>,
     version: Option<String>,           // current Claude Code version
     update_available: bool,            // ~/.claude/.update_available file exists
+    message: Option<String>,           // pet speech bubble (from JSON "message" field)
     context_pct: Option<f64>,          // 0.0–1.0
     context_window_size: Option<u64>,
     five_hour_pct: Option<f64>,
@@ -81,6 +82,7 @@ fn read_status_input() -> StatusInput {
                     .map(|s| s.to_string()),
                 version: claude_version(),
                 update_available: claude_update_available(),
+                message: v["message"].as_str().map(|s| s.to_string()),
                 context_pct,
                 context_window_size,
                 five_hour_pct,
@@ -469,40 +471,7 @@ fn render_full<W: Write>(
         tc("┤", DELIM),
     );
 
-    // ── Row 3: pet HP / XP ───────────────────────────────────────────────────
-
-    let hp_pct = (pet.hp as f64 / 100.0).clamp(0.0, 1.0);
-    let hp_filled = (hp_pct * 6.0) as usize;
-    let hp_bar = format!("{}{}",
-        tcs("█".repeat(hp_filled), hp_rgb(pet.hp)),
-        tcs("░".repeat(6 - hp_filled), BAR_EMPTY),
-    );
-    let xp_filled = ((pet.xp as f64 / pet.xp_to_next as f64).clamp(0.0, 1.0) * 6.0) as usize;
-    let xp_bar = format!("{}{}",
-        tcs("█".repeat(xp_filled), vrgb),
-        tcs("░".repeat(6 - xp_filled), BAR_EMPTY),
-    );
-    let r3_content = format!("{} {}  {} {} {}  {} {} {}/{}",
-        tc_bold(&pet.name, PET_NAME),
-        tc(&format!("Lv.{}", pet.level), PET_LV),
-        tc("HP", STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
-        tc("XP", STAT_LBL), xp_bar,
-        tc(&pet.xp.to_string(), vrgb),
-        tc(&pet.xp_to_next.to_string(), STAT_VAL),
-    );
-    let row3_info = box_mid(&r3_content, "│ ", "│");
-
-    // ── Row 4: stats ─────────────────────────────────────────────────────────
-
-    let r4_content = format!("{} {}  {} {}  {} {}  {} {}",
-        tc("ATK:", STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
-        tc("DEF:", STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
-        tc("SUP:", STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
-        tc("VER:", STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
-    );
-    let row4_info = box_mid(&r4_content, "│ ", "│");
-
-    // ── Row 5: bottom border ╰─ Memory: active ─────────────── v2.1.105 ──╯
+    // ── Version info (needed in both rows-3-5 paths) ─────────────────────────
 
     let cc_ver = data.version.as_deref()
         .map(|v| format!("v{}", v))
@@ -514,19 +483,118 @@ fn render_full<W: Write>(
     };
     let ver_vis = if data.update_available { vis(&cc_ver) + 2 } else { vis(&cc_ver) };
 
-    // ╰─ Memory: active ────────────────────────────────── v2.1.105 ──╯
-    // "╰─ "(3) + "Memory:"(7) + " active"(7) + " "(1) + fill + " "(1) + ver + " ──╯"(4)
-    // total fixed = 23 + ver_vis, fill = panel_w - 23 - ver_vis
-    let r5_fill = panel_w.saturating_sub(23 + ver_vis);
-    let row5_info = format!("{}{}{}{}{}{}{}",
-        tc("╰─ ", DELIM),
-        tc("Memory:", STAT_LBL),
-        tc_bold(" active", MEM_ACT),
-        tc(" ", DELIM),
-        tcs("─".repeat(r5_fill), DELIM),
-        tc(" ", DELIM),
-        format!("{}{}", ver_str, tc(" ──╯", DELIM)),
-    );
+    // ── Rows 3-5: pet stats or speech bubble overlay ──────────────────────────
+    //
+    // When message is Some, bubble intrudes from the LEFT covering rows 3-4.
+    // Row 5 bottom border is SHARED: bubble's ╰ = frame's ╰ (seamless merge).
+    //
+    //   Normal:
+    //     │ Ferris Lv.1  HP █░░ ...                                             │
+    //     │ ATK: 18  DEF: 20  ...                                               │
+    //     ╰─ Memory: active ─────────────────────────────────────── v2.1.105 ──╯
+    //
+    //   With bubble:
+    //     ╭────────────────────────────╮                                         │
+    //     │ Hello! Let's code today!   │                                         │
+    //     ╰────────────────────────────╯─ Memory: active ──────────── v2.1.105 ──╯
+
+    let (row3_info, row4_info, row5_info) = if let Some(msg) = data.message.as_deref() {
+        let msg_vis = vis(msg);
+        // Bubble width: │ + space + msg + space + │ = msg_vis + 4
+        // Cap so bubble never fills the full panel (leave at least frame │ on right)
+        let bw = (msg_vis + 4).min(panel_w.saturating_sub(2)).max(6);
+        let inner_pad = bw.saturating_sub(4 + msg_vis); // trailing spaces inside bubble
+        // Space between bubble right edge and right frame border (1 char for │)
+        let r_gap = panel_w.saturating_sub(bw + 1);
+
+        // Row 3: ╭{─×(bw-2)}╮{gap spaces}│
+        let r3 = format!("{}{}{}{}{}",
+            tc("╭", vrgb),
+            tcs("─".repeat(bw.saturating_sub(2)), vrgb),
+            tc("╮", vrgb),
+            " ".repeat(r_gap),
+            tc("│", DELIM),
+        );
+
+        // Row 4: │ {msg}{inner_pad} │{gap spaces}│
+        let r4 = format!("{}{}{}{}{}{}",
+            tc("│ ", vrgb),
+            tc(msg, PET_NAME),
+            " ".repeat(inner_pad),
+            tc(" │", vrgb),
+            " ".repeat(r_gap),
+            tc("│", DELIM),
+        );
+
+        // Row 5: ╰{─×(bw-2)}╯─ Memory: active {fill} ver ──╯
+        // Fixed = bw + (─ )(2) + (Memory:)(7) + ( active)(7) + ( )(1) + fill + ( )(1) + ver + ( ──╯)(4)
+        //       = bw + 22 + fill + ver_vis = panel_w
+        // → fill = panel_w - bw - 22 - ver_vis
+        let r5_fill = panel_w.saturating_sub(bw + 22 + ver_vis);
+        let r5 = format!("{}{}{}{}{}{}{}{}{}{}",
+            tc("╰", vrgb),
+            tcs("─".repeat(bw.saturating_sub(2)), vrgb),
+            tc("╯", vrgb),
+            tc("─ ", DELIM),
+            tc("Memory:", STAT_LBL),
+            tc_bold(" active", MEM_ACT),
+            tc(" ", DELIM),
+            tcs("─".repeat(r5_fill), DELIM),
+            tc(" ", DELIM),
+            format!("{}{}", ver_str, tc(" ──╯", DELIM)),
+        );
+
+        (r3, r4, r5)
+    } else {
+        // ── Row 3: pet HP / XP ───────────────────────────────────────────────
+
+        let hp_pct = (pet.hp as f64 / 100.0).clamp(0.0, 1.0);
+        let hp_filled = (hp_pct * 6.0) as usize;
+        let hp_bar = format!("{}{}",
+            tcs("█".repeat(hp_filled), hp_rgb(pet.hp)),
+            tcs("░".repeat(6 - hp_filled), BAR_EMPTY),
+        );
+        let xp_filled = ((pet.xp as f64 / pet.xp_to_next as f64).clamp(0.0, 1.0) * 6.0) as usize;
+        let xp_bar = format!("{}{}",
+            tcs("█".repeat(xp_filled), vrgb),
+            tcs("░".repeat(6 - xp_filled), BAR_EMPTY),
+        );
+        let r3_content = format!("{} {}  {} {} {}  {} {} {}/{}",
+            tc_bold(&pet.name, PET_NAME),
+            tc(&format!("Lv.{}", pet.level), PET_LV),
+            tc("HP", STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
+            tc("XP", STAT_LBL), xp_bar,
+            tc(&pet.xp.to_string(), vrgb),
+            tc(&pet.xp_to_next.to_string(), STAT_VAL),
+        );
+        let row3_info = box_mid(&r3_content, "│ ", "│");
+
+        // ── Row 4: stats ─────────────────────────────────────────────────────
+
+        let r4_content = format!("{} {}  {} {}  {} {}  {} {}",
+            tc("ATK:", STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
+            tc("DEF:", STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
+            tc("SUP:", STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
+            tc("VER:", STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
+        );
+        let row4_info = box_mid(&r4_content, "│ ", "│");
+
+        // ── Row 5: bottom border ╰─ Memory: active ──────────── v2.1.105 ──╯
+        // "╰─ "(3) + "Memory:"(7) + " active"(7) + " "(1) + fill + " "(1) + ver + " ──╯"(4)
+        // total fixed = 23 + ver_vis, fill = panel_w - 23 - ver_vis
+        let r5_fill = panel_w.saturating_sub(23 + ver_vis);
+        let row5_info = format!("{}{}{}{}{}{}{}",
+            tc("╰─ ", DELIM),
+            tc("Memory:", STAT_LBL),
+            tc_bold(" active", MEM_ACT),
+            tc(" ", DELIM),
+            tcs("─".repeat(r5_fill), DELIM),
+            tc(" ", DELIM),
+            format!("{}{}", ver_str, tc(" ──╯", DELIM)),
+        );
+
+        (row3_info, row4_info, row5_info)
+    };
 
     // ── 組裝 rows，每行 art pad 到 ART_W 寬 ──────────────────────────────────
 
