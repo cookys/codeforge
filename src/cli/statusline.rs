@@ -675,19 +675,6 @@ fn render_full<W: Write>(
         render_rows(out, &rows, panel_w)?;
     }
 
-    // ── 更新橫幅（主內容下方，全寬） ─────────────────────────────────────────
-
-    if data.update_available {
-        let label = " ⬆  Claude Code update available ";
-        let hint  = " restart to update ";
-        let fill  = width.saturating_sub(vis(label) + vis(hint));
-        writeln!(out, "{}{}{}",
-            tc_bold(label, UPDATE_C),
-            tcs("─".repeat(fill), UPDATE_C),
-            tc_bold(hint, UPDATE_C),
-        )?;
-    }
-
     Ok(())
 }
 
