@@ -39,8 +39,9 @@ struct StatusInput {
     raw: serde_json::Value,
     model: Option<String>,
     cwd: Option<String>,
-    version: Option<String>,           // current Claude Code version
-    update_available: bool,            // ~/.claude/.update_available file exists
+    version: Option<String>,           // running session version (from /proc tree)
+    latest_version: Option<String>,    // latest installed version (symlink target)
+    update_available: bool,            // latest > session version
     message: Option<String>,           // pet speech bubble (from JSON "message" field)
     context_pct: Option<f64>,          // 0.0–1.0
     context_window_size: Option<u64>,
@@ -81,6 +82,7 @@ fn read_status_input() -> StatusInput {
                     .or_else(|| v["workspace"]["current_dir"].as_str())
                     .map(|s| s.to_string()),
                 version: claude_version(),
+                latest_version: claude_latest_version(),
                 update_available: claude_update_available(),
                 message: v["message"].as_str().map(|s| s.to_string()),
                 context_pct,
@@ -520,15 +522,22 @@ fn render_full<W: Write>(
 
     // ── Version info ─────────────────────────────────────────────────────────
 
-    let cc_ver = data.version.as_deref()
-        .map(|v| format!("v{}", v))
-        .unwrap_or_else(|| "—".to_string());
-    let ver_str = if data.update_available {
-        format!("{} {}", tc(&cc_ver, UPDATE_C), tc_bold("⬆", UPDATE_C))
+    // When update available: show "⬆ vX.Y.Z" (latest = upgrade target)
+    // When up to date:       show "vX.Y.Z"   (current running, dimmed)
+    let (ver_str, ver_vis) = if data.update_available {
+        let latest = data.latest_version.as_deref()
+            .map(|v| format!("v{}", v))
+            .unwrap_or_else(|| "—".to_string());
+        let s = format!("{} {}", tc_bold("⬆", UPDATE_C), tc(&latest, UPDATE_C));
+        let w = 2 + vis(&latest); // ⬆(1) + space(1) + version
+        (s, w)
     } else {
-        tc(&cc_ver, DELIM)
+        let cur = data.version.as_deref()
+            .map(|v| format!("v{}", v))
+            .unwrap_or_else(|| "—".to_string());
+        let w = vis(&cur);
+        (tc(&cur, DELIM), w)
     };
-    let ver_vis = if data.update_available { vis(&cc_ver) + 2 } else { vis(&cc_ver) };
 
     // ── Art helper: pad art line to ART_W, colored with village rgb ──────────
 
