@@ -1,0 +1,72 @@
+// CodeForge game content — English
+// Layer 2 (runtime game content) — loaded by daemon at startup
+// This file is a TEMPLATE/PLACEHOLDER for Phase 2 daemon implementation.
+//
+// Format: RON (Rusty Object Notation) — typed deserialization via serde
+// Schema: content::VillageContent (to be defined in Phase 2)
+//
+// Each village entry will eventually contain:
+//   - room_desc: short description shown in statusline speech bubble on arrival
+//   - lore: extended lore text for pet card / TUI
+//   - mob_names: names of enemies found here (per tier)
+//   - arrival_message: what the pet says when entering this village
+
+(
+    villages: [
+        (
+            id: "rust",
+            room_desc: "Twisted iron spires rise from the slag heaps. Borrow checker golems patrol the perimeter.",
+            arrival_message: "The compiler demands tribute. Shall we appease it?",
+            lore: "Once a thriving smithy, The Forge-Ruins fell when a lifetime annotation went unchecked. Now only the disciplined survive.",
+            mob_tiers: [
+                (name: "Borrow Checker Golem", tier: Weak),
+                (name: "Lifetime Wraith",       tier: Medium),
+                (name: "The Borrow Checker",    tier: Boss),
+            ],
+        ),
+        (
+            id: "python",
+            room_desc: "Towering scrolls of parchment lean in every direction. The air smells of whitespace.",
+            arrival_message: "IndentationError lurks nearby. Watch your step.",
+            lore: "Scriptorium Vast was built by a thousand scribes who disagreed on tabs vs spaces. Most never left.",
+            mob_tiers: [
+                (name: "Indent Demon",  tier: Weak),
+                (name: "None-Walker",   tier: Medium),
+                (name: "The GIL",       tier: Boss),
+            ],
+        ),
+        (
+            id: "typescript",
+            room_desc: "Stone watchtowers bristle with type annotations. Every gate demands a contract.",
+            arrival_message: "Your types check out. For now.",
+            lore: "Border Garrison was erected to keep the untyped hordes at bay. The garrison never sleeps.",
+            mob_tiers: [
+                (name: "Type Guard",    tier: Weak),
+                (name: "any Phantom",   tier: Medium),
+                (name: "The Compiler",  tier: Boss),
+            ],
+        ),
+        (
+            id: "go",
+            room_desc: "Cranes and dockworkers move in perfect concurrent harmony. Goroutines drift like fog.",
+            arrival_message: "Simple tools, complex problems. Let's get to work.",
+            lore: "Dockside Workshop was built on the principle that fewer features ship faster. They were right.",
+            mob_tiers: [
+                (name: "Goroutine Ghost",      tier: Weak),
+                (name: "Nil Pointer Imp",      tier: Medium),
+                (name: "The Race Condition",   tier: Boss),
+            ],
+        ),
+        (
+            id: "javascript",
+            room_desc: "A chaotic bazaar where types spontaneously convert and callbacks echo endlessly.",
+            arrival_message: "typeof null === 'object'. Welcome.",
+            lore: "Strata Bazaar grew overnight when someone discovered you could run code in a browser. Nobody planned it.",
+            mob_tiers: [
+                (name: "NaN Sprite",          tier: Weak),
+                (name: "Undefined Poltergeist", tier: Medium),
+                (name: "The Event Loop",      tier: Boss),
+            ],
+        ),
+    ],
+)
