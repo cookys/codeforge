@@ -1,0 +1,9 @@
+# CodeForge UI strings — Traditional Chinese (zh-TW)
+# Only keys that differ from en.yaml need to be listed here.
+
+# Village taglines (translated from village.rs hardcoded strings)
+village.rust.tagline: "所有權是責任，錯誤是公民"
+village.python.tagline: "凡事皆物件，空白定義秩序"
+village.typescript.tagline: "型別是合約，Promise 是承諾"
+village.go.tagline: "簡單即道，並發是天性"
+village.javascript.tagline: "null ≠ undefined，callback 是歷史"

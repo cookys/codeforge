@@ -1,0 +1,30 @@
+# CodeForge UI strings — English (base locale)
+# All keys must exist here. Other locales only need to override what they translate.
+
+# UI chrome
+ui.memory_label: "Memory:"
+ui.status_active: "active"
+ui.status_inactive: "inactive"
+
+# Stat labels (include punctuation — e.g. colon — so locales can use different separators)
+stat.atk: "ATK:"
+stat.def: "DEF:"
+stat.sup: "SUP:"
+stat.ver: "VER:"
+stat.hp: "HP"
+stat.xp: "XP"
+stat.lv: "Lv."
+
+# Village display names
+village.rust.name: "The Forge-Ruins"
+village.python.name: "Scriptorium Vast"
+village.typescript.name: "Border Garrison"
+village.go.name: "Dockside Workshop"
+village.javascript.name: "Strata Bazaar"
+
+# Village taglines
+village.rust.tagline: "Ownership is responsibility, errors are citizens"
+village.python.tagline: "All things are objects, whitespace defines order"
+village.typescript.tagline: "Types are contracts, Promises are promises"
+village.go.tagline: "Simplicity is the way, concurrency is nature"
+village.javascript.tagline: "null ≠ undefined, callbacks are history"

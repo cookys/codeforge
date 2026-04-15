@@ -8,6 +8,7 @@ use crate::pet::village::VILLAGES;
 use owo_colors::OwoColorize;
 use unicode_width::UnicodeWidthStr;
 use std::io::{self, Write};
+use rust_i18n::t;
 
 pub fn run(ctx: &db::Context) -> Result<()> {
     let data = read_status_input();
@@ -510,11 +511,13 @@ fn render_full<W: Write>(
 
     // ── Row 2: village divider ├─ The Forge-Ruins ──────────────────────────┤
 
-    let vname = village.display_name;
-    let r2_fill = panel_w.saturating_sub(3 + vis(vname) + 1 + 1); // ├─ + name + space + ┤
+    let vkey = format!("village.{}.name", village.id);
+    let vname = t!(&vkey);
+    let vname_vis = vis(&*vname);
+    let r2_fill = panel_w.saturating_sub(3 + vname_vis + 1 + 1); // ├─ + name + space + ┤
     let row2_info = format!("{}{}{}{}{}",
         tc("├─ ", DELIM),
-        tc_bold(vname, vrgb),
+        tc_bold(&*vname, vrgb),
         tc(" ", DELIM),
         tcs("─".repeat(r2_fill), DELIM),
         tc("┤", DELIM),
@@ -610,13 +613,15 @@ fn render_full<W: Write>(
         writeln!(out, "{} {}{}", pad_to_vis(&r4, panel_w), tc(">", vrgb), art_s(4))?;
 
         // Row 5: normal frame bottom border, tail `/` in gap
-        // "╰─ "(3) + "Memory:"(7) + " active"(7) + " "(1) + fill + " "(1) + ver + " ──╯"(4)
-        // fixed = 23 + ver_vis, fill = panel_w - 23 - ver_vis
-        let r5_fill = panel_w.saturating_sub(23 + ver_vis);
+        // "╰─ "(3) + mem_label + " " + mem_status + " "(1) + fill + " "(1) + ver + " ──╯"(4)
+        let mem_label = t!("ui.memory_label").to_string();
+        let mem_status = t!("ui.status_active").to_string();
+        let r5_fixed = 3 + vis(&mem_label) + 1 + vis(&mem_status) + 2 + ver_vis + 4;
+        let r5_fill = panel_w.saturating_sub(r5_fixed);
         let r5 = format!("{}{}{}{}{}{}{}",
             tc("╰─ ", DELIM),
-            tc("Memory:", STAT_LBL),
-            tc_bold(" active", MEM_ACT),
+            tc(&mem_label, STAT_LBL),
+            tc_bold(&format!(" {}", mem_status), MEM_ACT),
             tc(" ", DELIM),
             tcs("─".repeat(r5_fill), DELIM),
             tc(" ", DELIM),
@@ -641,9 +646,9 @@ fn render_full<W: Write>(
         );
         let r3_content = format!("{} {}  {} {} {}  {} {} {}/{}",
             tc_bold(&pet.name, PET_NAME),
-            tc(&format!("Lv.{}", pet.level), PET_LV),
-            tc("HP", STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
-            tc("XP", STAT_LBL), xp_bar,
+            tc(&format!("{}{}", t!("stat.lv"), pet.level), PET_LV),
+            tc(&*t!("stat.hp"), STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
+            tc(&*t!("stat.xp"), STAT_LBL), xp_bar,
             tc(&pet.xp.to_string(), vrgb),
             tc(&pet.xp_to_next.to_string(), STAT_VAL),
         );
@@ -652,21 +657,23 @@ fn render_full<W: Write>(
         // ── Row 4: stats ─────────────────────────────────────────────────────
 
         let r4_content = format!("{} {}  {} {}  {} {}  {} {}",
-            tc("ATK:", STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
-            tc("DEF:", STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
-            tc("SUP:", STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
-            tc("VER:", STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
+            tc(&*t!("stat.atk"), STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
+            tc(&*t!("stat.def"), STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
+            tc(&*t!("stat.sup"), STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
+            tc(&*t!("stat.ver"), STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
         );
         let row4_info = box_mid(&r4_content, "│ ", "│");
 
         // ── Row 5: bottom border ─────────────────────────────────────────────
-        // "╰─ "(3) + "Memory:"(7) + " active"(7) + " "(1) + fill + " "(1) + ver + " ──╯"(4)
-        // fixed = 23 + ver_vis, fill = panel_w - 23 - ver_vis
-        let r5_fill = panel_w.saturating_sub(23 + ver_vis);
+        // "╰─ "(3) + mem_label + " " + mem_status + " "(1) + fill + " "(1) + ver + " ──╯"(4)
+        let mem_label = t!("ui.memory_label").to_string();
+        let mem_status = t!("ui.status_active").to_string();
+        let r5_fixed = 3 + vis(&mem_label) + 1 + vis(&mem_status) + 2 + ver_vis + 4;
+        let r5_fill = panel_w.saturating_sub(r5_fixed);
         let row5_info = format!("{}{}{}{}{}{}{}",
             tc("╰─ ", DELIM),
-            tc("Memory:", STAT_LBL),
-            tc_bold(" active", MEM_ACT),
+            tc(&mem_label, STAT_LBL),
+            tc_bold(&format!(" {}", mem_status), MEM_ACT),
             tc(" ", DELIM),
             tcs("─".repeat(r5_fill), DELIM),
             tc(" ", DELIM),
