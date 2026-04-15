@@ -614,6 +614,8 @@ fn render_full<W: Write>(
 
         // Row 5: normal frame bottom border, tail `/` in gap
         // "╰─ "(3) + mem_label + " " + mem_status + " "(1) + fill + " "(1) + ver + " ──╯"(4)
+        // vis() is unicode-width-aware so translations auto-adapt, but keep
+        // ui.memory_label + ui.status_active short (≤8 vis each) to avoid panel overflow.
         let mem_label = t!("ui.memory_label").to_string();
         let mem_status = t!("ui.status_active").to_string();
         let r5_fixed = 3 + vis(&mem_label) + 1 + vis(&mem_status) + 2 + ver_vis + 4;
@@ -666,6 +668,8 @@ fn render_full<W: Write>(
 
         // ── Row 5: bottom border ─────────────────────────────────────────────
         // "╰─ "(3) + mem_label + " " + mem_status + " "(1) + fill + " "(1) + ver + " ──╯"(4)
+        // vis() is unicode-width-aware so translations auto-adapt, but keep
+        // ui.memory_label + ui.status_active short (≤8 vis each) to avoid panel overflow.
         let mem_label = t!("ui.memory_label").to_string();
         let mem_status = t!("ui.status_active").to_string();
         let r5_fixed = 3 + vis(&mem_label) + 1 + vis(&mem_status) + 2 + ver_vis + 4;
