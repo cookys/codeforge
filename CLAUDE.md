@@ -136,6 +136,43 @@ src/
 | 3c | AI Commentary (Haiku) | planned |
 | 4 | Zoa 3D pet animation | planned |
 
+## CodePower ↔ CodeForge Interaction
+
+CodeForge and CodePower are used together. Understanding the relationship prevents confusion:
+
+### Statusline (global)
+
+`codeforge statusline` is invoked by **all Claude Code sessions** across all projects — not just the CodeForge repo. The statusline hook in `~/.claude/settings.json` (CodePower) calls `codeforge statusline` to display the 6-line pet panel. Changes to the statusline affect every project's session header.
+
+### Dream (session-end, all projects)
+
+`codeforge dream --quiet` runs at session end in **any** project that has the SessionEnd hook configured. This means memory and pet XP are updated from activity in CodePower, or any other project — not just the CodeForge codebase. The `--quiet` flag is mandatory for hook use (suppresses all stdout).
+
+### Learn (any project → codeforge memory)
+
+`codeforge learn "..."` can be run from any directory. Where the signal lands depends on `CODEFORGE_DIR`:
+- **`CODEFORGE_DIR` not set**: L0 signal written to `$CWD/.codeforge/signals/` — each project has its own memory store. Learnings from a CodePower session land in CodePower's `.codeforge/`, not the CodeForge repo.
+- **`CODEFORGE_DIR` set** (e.g. `~/.codeforge/global`): all projects share a single memory store at that path, regardless of CWD. This is the "global memory" pattern documented in `.env.example`.
+
+### CodePower as Phase 2 Test Zone
+
+The CodePower repo is the primary test environment for Phase 2 features:
+- The MUD daemon will first be piloted in CodePower sessions
+- Phase 2 TUI will render in the CodePower terminal context
+- This allows testing with real workload before generalizing
+
+### Shared API Key
+
+Both projects use the same `ANTHROPIC_API_KEY`. The key is set in `~/.claude/` environment or shell profile — not per-project `.env`. The `.env.example` in CodeForge documents this pattern.
+
+### Dev Rule: Keep projects independent
+
+Do NOT import CodePower's codebase into CodeForge tests or vice versa. CodeForge must be self-contained. The interaction is at the **runtime level** (hooks + CLI invocation), not at the code level.
+
+### Hook Path Note
+
+`.claude/settings.json` contains absolute paths to the session scripts (e.g. `/home/codepower/projects/codeforge/.claude/scripts/check-improvements.js`). These must be updated if the repo is moved or cloned to a different machine. Claude Code hooks do not support relative paths.
+
 ## Knowledge Management
 
 `.claude/knowledge/` — record non-obvious issues and solutions.
