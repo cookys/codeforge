@@ -4,7 +4,6 @@
 # UI chrome
 ui.memory_label: "記憶："
 ui.status_active: "運作中"
-ui.status_inactive: "離線"
 
 # Stat labels
 stat.atk: "攻："
