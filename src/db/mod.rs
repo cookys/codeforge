@@ -75,3 +75,71 @@ pub mod migrations {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn open_migrated_memory_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("in-memory DB");
+        migrations::run(&conn).expect("migrations");
+        conn
+    }
+
+    #[test]
+    fn migrations_run_clean() {
+        let conn = open_migrated_memory_db();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
+             AND name IN ('pet','xp_events','badges','dream_runs','signal_cursors','settings')",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 6);
+    }
+
+    #[test]
+    fn schema_version_seeded() {
+        let conn = open_migrated_memory_db();
+        let v: i64 = conn.query_row(
+            "SELECT version FROM schema_version WHERE version=1",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(v, 1);
+    }
+
+    #[test]
+    fn default_settings_seeded() {
+        let conn = open_migrated_memory_db();
+        let theme: String = conn.query_row(
+            "SELECT value FROM settings WHERE key='theme'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(theme, "amber");
+
+        let width: String = conn.query_row(
+            "SELECT value FROM settings WHERE key='statusline_width'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(width, "100");
+    }
+
+    #[test]
+    fn db_opens_with_wal_mode() {
+        let tmp = tempfile::tempdir().unwrap();
+        let conn = Connection::open(tmp.path().join("test.db")).unwrap();
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+        ).unwrap();
+        let mode: String = conn.query_row(
+            "PRAGMA journal_mode",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(mode, "wal");
+    }
+}

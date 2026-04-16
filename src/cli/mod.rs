@@ -42,6 +42,9 @@ pub enum Commands {
         /// 只跑特定操作（compile/lint/dedup/absorb/decay/track）
         #[arg(long)]
         only: Option<String>,
+        /// 靜默模式（session-end hook 使用，不輸出任何文字）
+        #[arg(long)]
+        quiet: bool,
     },
     /// 批量匯入知識來源（web chat export、markdown 檔）
     Ingest {
@@ -83,7 +86,7 @@ pub fn run(cli: Cli) -> Result<()> {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),
             MemoryAction::Status => search::status(&ctx),
         },
-        Commands::Dream { only } => dream::run(&ctx, only.as_deref()),
+        Commands::Dream { only, quiet } => dream::run(&ctx, only.as_deref(), quiet),
         Commands::Ingest { path, source } => ingest::run(&ctx, &path, &source),
         Commands::Adopt => adopt::run(&ctx),
         Commands::Pet => pet::run(&ctx),

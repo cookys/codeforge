@@ -1,10 +1,30 @@
 {
   "hooks": {
+    "SessionStart": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "node /home/codepower/projects/codeforge/.claude/scripts/check-improvements.js",
+        "timeout": 10000
+      }]
+    }],
+    "PreCompact": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "node /home/codepower/projects/codeforge/.claude/scripts/session-digest.js",
+        "timeout": 30000
+      }]
+    }],
     "SessionEnd": [{
       "matcher": "",
       "hooks": [{
         "type": "command",
         "command": "codeforge dream --quiet 2>/dev/null || true",
+        "timeout": 30000
+      }, {
+        "type": "command",
+        "command": "node /home/codepower/projects/codeforge/.claude/scripts/session-digest.js",
         "timeout": 30000
       }]
     }]
