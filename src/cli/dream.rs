@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::db;
 use crate::dream::runner::DreamRunner;
 
-pub fn run(ctx: &db::Context, only: Option<&str>) -> Result<()> {
+pub fn run(ctx: &db::Context, only: Option<&str>, quiet: bool) -> Result<()> {
     ctx.ensure_initialized()?;
 
     let ops: Vec<&str> = match only {
@@ -10,7 +10,7 @@ pub fn run(ctx: &db::Context, only: Option<&str>) -> Result<()> {
         None => vec!["compile", "lint", "dedup", "absorb", "decay", "track"],
     };
 
-    let runner = DreamRunner::new(ctx);
+    let runner = DreamRunner::new(ctx, quiet);
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(runner.run(&ops))?;
 

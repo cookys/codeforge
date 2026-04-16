@@ -93,3 +93,55 @@ impl PetState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn baseline_pet() -> PetState {
+        PetState {
+            village: "rust".to_string(),
+            name: "Ferris".to_string(),
+            level: 1,
+            xp: 0,
+            xp_to_next: 100,
+            atk: 10, hp: 10, def: 10, sup: 10, ver: 10,
+        }
+    }
+
+    #[test]
+    fn xp_overflow_does_not_infinite_loop() {
+        let mut pet = baseline_pet();
+        pet.add_xp(u32::MAX);
+        // Must terminate and xp must be valid (< xp_to_next)
+        assert!(pet.xp < pet.xp_to_next);
+        assert!(pet.level > 1);
+        assert_eq!(pet.xp_to_next, 10_000_000);
+    }
+
+    #[test]
+    fn level_up_increments_stats() {
+        let mut pet = baseline_pet();
+        pet.add_xp(100);
+        assert_eq!(pet.level, 2);
+        assert_eq!(pet.atk, 11);
+        assert_eq!(pet.xp, 0);
+    }
+
+    #[test]
+    fn xp_to_next_caps_at_10m() {
+        let mut pet = baseline_pet();
+        for _ in 0..200 {
+            pet.add_xp(1_000_000);
+        }
+        assert!(pet.xp_to_next <= 10_000_000);
+    }
+
+    #[test]
+    fn partial_xp_no_level_up() {
+        let mut pet = baseline_pet();
+        pet.add_xp(50);
+        assert_eq!(pet.level, 1);
+        assert_eq!(pet.xp, 50);
+    }
+}

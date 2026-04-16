@@ -72,6 +72,75 @@ Before starting Phase 2+ work, confirm you have read:
 | Architecture decisions | `autopilot:think-tank` |
 | Tech survey (e.g. crossterm vs ratatui) | `autopilot:survey` |
 
+## Mandatory Task Checklist (ALL sizes)
+
+**ENFORCEMENT RULE**: Task creation is NOT optional for L/H workflows. At L-3 project setup, ALL tasks below MUST be created via TaskCreate. Skipping task creation = skipping the review gate = process violation.
+
+### S workflow
+```
+- [ ] Phase work
+- [ ] Quality gate: cargo check
+- [ ] Review loop: code review agent → fix findings
+- [ ] Commit + push
+```
+
+### L workflow (create ALL these tasks at L-3 project setup — MANDATORY)
+```
+- [ ] Phase 1..N tasks (one per phase)
+- [ ] Quality gate: cargo check + cargo clippy + cargo test  [blockedBy: all phase tasks]
+- [ ] Review loop: invoke code-review skill (max 3 rounds)   [blockedBy: quality-gate]
+- [ ] Fix review findings: CRITICAL + IMPORTANT              [blockedBy: review-loop]
+- [ ] Review round 2: verify fixes pass                      [blockedBy: fix-findings]
+- [ ] Merge to main                                          [blockedBy: review-round-2]
+- [ ] Post-merge verify: git diff main~1..main
+- [ ] Archive project + BACKLOG reconciliation
+- [ ] Push
+```
+
+### H workflow
+```
+- [ ] Fix
+- [ ] Quality gate: cargo check + cargo test
+- [ ] Review loop: code-review Critical only    [blockedBy: quality-gate]
+- [ ] Merge + push                              [blockedBy: review-loop]
+```
+
+### HARD RULES
+
+1. **Review blocks merge**: Review loop task MUST be completed BEFORE Merge can start. Use `addBlockedBy`. No exceptions.
+2. **Round 2 required**: After fixing findings, a verification round MUST run. Only then can merge proceed.
+3. **Self-check before merge**: Before marking "Merge" as in_progress — "Is the Review loop task completed?" If NO → STOP.
+
+## BACKLOG Hygiene
+
+### Session End — BACKLOG Pickup
+```bash
+git log --oneline $(cat .claude/session-start-sha 2>/dev/null || echo "HEAD~10")..HEAD
+```
+Check if any BACKLOG items have their trigger condition met by these changes.
+
+### BACKLOG Staleness (periodic)
+If `Last audited:` in `doc/BACKLOG.md` is >14 days ago: flag to user for full audit.
+
+## Proposals Hygiene
+
+Check `doc/proposals/*.md`. For each proposal >60 days old and not referenced by any active plan/project → flag for review.
+
+## Scope Creep Detection
+
+After every commit, self-check:
+```
+Has the scope grown beyond original S-size?
+  - 3+ commits already made
+  - 3+ files in different modules changed
+  - User asked for additional features beyond original goal
+
+If yes → re-evaluate as L-size:
+  - Create project dir + README + INDEX (retroactive)
+  - Record prior commits as completed phases
+  - Continue with L workflow tracking
+```
+
 ## Phase 2 Readiness Checklist
 
 Before starting Phase 2a (daemon):
