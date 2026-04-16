@@ -176,6 +176,77 @@ codeforge strategy scholar
 
 ---
 
+## 2.5 Pet Ability 系統
+
+### 設計原則
+
+- Ability 依**等級**解鎖，升等本身有實質意義
+- 分 **Passive**（永遠生效）和 **Active**（有 cooldown）
+- **Village 專屬 ability**（Lv 50）讓不同 Nation 的寵物有戰力個性差異
+- 主寵才有 ability 生效；待機寵物不觸發 ability
+
+### 通用 Ability 解鎖表
+
+| 等級 | Ability | 類型 | 效果 |
+|------|---------|------|------|
+| Lv 5 | **Quick Eye** | Passive | 自動識別 Ghost MOB（dead code），命中率 +30% |
+| Lv 10 | **Focus Strike** | Active（3 tick CD） | 對 Boss MOB 暴擊 2x damage |
+| Lv 15 | **Tome Sense** | Passive | Scholar 策略下 Loot 掉率 +20% |
+| Lv 20 | **Village Aura** | Passive | 在 home Village Zone 時，所有 stat +15% |
+| Lv 30 | **Memory Recall** | Passive | 戰鬥 loot 有機率直接寫入 L1 memory（跳過 dream compile） |
+
+### Village 專屬 Ability（Lv 50，限定）
+
+每個 Village 有唯一的 Legendary ability，只有從該 Nation 獲得且升到 Lv 50 的寵物才能解鎖：
+
+| Village | Ability | 效果 |
+|---------|---------|------|
+| Rust 🦀 | **Iron Skin** | DEF 翻倍，Boss 攻擊有 20% 機率反傷 |
+| Python 🐍 | **Scripted** | 每 tick 額外掃描一次 Ghost MOB |
+| Go 🐹 | **Concurrent** | 同時攻擊最多 3 個 Zombie MOB |
+| TypeScript 🔷 | **Type Guard** | 完全免疫 Void Creature（missing test）的 DEF drain |
+| ML 🧠 | **Gradient** | 每次升等後隨機強化一個現有 ability（+10% 效果） |
+| 開源基金會 🐙 | **Community** | 蒐集到的 Tome 品質提升，L1 memory 寫入成功率 +50% |
+
+### 戰鬥計算更新（含 Ability）
+
+```
+一個 tick 的戰鬥結果：
+
+  # 基礎（原有）
+  hit_chance = (pet.ATK + pet.VER) / (mob.DEF + difficulty)
+  damage     = pet.ATK * strategy_multiplier * rng(0.8..1.2)
+
+  # Ability 疊加
+  if pet.has_ability("quick_eye") && mob.type == Ghost:
+      hit_chance *= 1.3
+
+  if pet.has_ability("focus_strike") && mob.type == Boss && cooldown_ready:
+      damage *= 2.0
+      set_cooldown("focus_strike", 3)
+
+  if pet.has_ability("village_aura") && current_zone == pet.home_village:
+      all_stats *= 1.15
+```
+
+### 主寵 vs 待機寵物
+
+```
+主寵（active slot）：
+  - 在 tmux split 裡顯示、有動畫
+  - 參與戰鬥、獲得 XP
+  - Ability 生效
+  - 說話（AI commentary 或 口音系統）
+
+待機寵物（collection）：
+  - 存在 Codeforge SQLite
+  - 不參與戰鬥、不成長（Phase 2）
+  - 可隨時切換為主寵（codeforge pet switch <name>）
+  - 未來考慮：極慢速放牧 XP（Phase 3+）
+```
+
+---
+
 ## 3. AI Commentary（垃圾話系統）
 
 ### 觸發條件
