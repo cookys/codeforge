@@ -201,8 +201,8 @@ fn shorten_str(s: &str, max_cols: usize) -> String {
 fn to_home_rel(path: &str) -> String {
     if let Some(home) = dirs::home_dir() {
         let h = home.to_string_lossy();
-        if path.starts_with(h.as_ref()) {
-            return format!("~{}", &path[h.len()..]);
+        if let Some(rest) = path.strip_prefix(h.as_ref()) {
+            return format!("~{}", rest);
         }
     }
     path.to_string()
@@ -307,21 +307,6 @@ fn claude_latest_version() -> Option<String> {
             t.to_string()
         })
         .filter(|s| !s.is_empty() && s.starts_with(|c: char| c.is_ascii_digit()))
-}
-
-/// Version shown in statusline = the running session's version (from process tree).
-/// Falls back to latest if process tree walk fails (e.g. non-Linux, or direct invocation).
-fn claude_version() -> Option<String> {
-    claude_session_version().or_else(claude_latest_version)
-}
-
-/// Update available = session is running an older version than the latest on disk.
-/// Uses /proc process tree (Linux) — robust against the symlink-swap update model.
-fn claude_update_available() -> bool {
-    match (claude_session_version(), claude_latest_version()) {
-        (Some(session), Some(latest)) => session != latest,
-        _ => false,
-    }
 }
 
 fn git_branch() -> Option<String> {

@@ -47,7 +47,7 @@ impl Context {
         }
         let conn = Connection::open(&self.db_path)
             .with_context(|| format!("開啟 DB 失敗：{}", self.db_path.display()))?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")?;
         Ok(conn)
     }
 

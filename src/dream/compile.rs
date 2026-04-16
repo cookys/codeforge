@@ -71,7 +71,7 @@ pub async fn run(ctx: &db::Context, conn: &Connection) -> Result<CompileResult> 
                 // signal 品質不足，存在 L0 但不升至 L1
             }
             Err(e) => {
-                eprintln!("  警告：compile signal {} 失敗：{}", &signal.id[..8], e);
+                eprintln!("  警告：compile signal {} 失敗：{}", signal.id.chars().take(8).collect::<String>(), e);
             }
         }
     }
