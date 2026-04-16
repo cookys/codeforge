@@ -76,15 +76,22 @@ fn read_status_input() -> StatusInput {
                 .map(|p| p / 100.0);
             let seven_day_resets_at = v["rate_limits"]["seven_day"]["resets_at"].as_i64();
 
+            // Compute version info once — avoids triple subprocess spawn.
+            // session_v: running CC version from /proc tree; latest_v: from `claude --version`
+            let session_v = claude_session_version();
+            let latest_v  = claude_latest_version();
+            let update_available = matches!((&session_v, &latest_v),
+                (Some(s), Some(l)) if s != l);
+
             return StatusInput {
                 raw: v.clone(),
                 model,
                 cwd: v["cwd"].as_str()
                     .or_else(|| v["workspace"]["current_dir"].as_str())
                     .map(|s| s.to_string()),
-                version: claude_version(),
-                latest_version: claude_latest_version(),
-                update_available: claude_update_available(),
+                version: session_v.or_else(|| latest_v.clone()),
+                latest_version: latest_v,
+                update_available,
                 message: v["message"].as_str().map(|s| s.to_string()),
                 context_pct,
                 context_window_size,
@@ -207,15 +214,20 @@ fn fmt_ctx_window(n: u64) -> String {
     else { format!("{}", n) }
 }
 
-/// Strip ANSI escape sequences (ESC [ ... m) from a string
+/// Strip ANSI/VT escape sequences from a string for visible-width measurement.
+/// Handles CSI sequences (ESC [ ... <final>) where final byte is 0x40–0x7E,
+/// covering SGR (colors/bold), cursor movement, erase, etc.
+/// Note: OSC sequences (ESC ] ... BEL/ST) are not produced by owo_colors and
+/// are not handled here — callers must only pass owo_colors output.
 fn strip_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '\x1b' && chars.peek() == Some(&'[') {
             chars.next(); // consume '['
+            // Consume until ANSI CSI final byte (0x40–0x7E = '@'–'~')
             for c2 in chars.by_ref() {
-                if c2 == 'm' { break; }
+                if ('\x40'..='\x7e').contains(&c2) { break; }
             }
         } else {
             out.push(c);
@@ -287,11 +299,14 @@ fn claude_latest_version() -> Option<String> {
         .output().ok()
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim()
-            .trim_start_matches("claude ")
-            .trim_end_matches(" (Claude Code)")
-            .to_string())
-        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let t = s.trim();
+            // strip_prefix/strip_suffix: one-shot match, unlike trim_*_matches which repeats
+            let t = t.strip_prefix("claude ").unwrap_or(t);
+            let t = t.strip_suffix(" (Claude Code)").unwrap_or(t);
+            t.to_string()
+        })
+        .filter(|s| !s.is_empty() && s.starts_with(|c: char| c.is_ascii_digit()))
 }
 
 /// Version shown in statusline = the running session's version (from process tree).
@@ -476,6 +491,9 @@ fn render_full<W: Write>(
         let v = vis(&s);
         (s, v)
     };
+    // branch_avail.max(4) ensures branch always gets ≥4 cols, but if panel_w is
+    // very small the row may slightly exceed panel_w (r0_fill saturates to 0).
+    // Not addressed for degenerate terminals — default width is 100.
     let branch_avail = panel_w.saturating_sub(16 + model_vis + cwd_vis).max(4);
     let branch_short = shorten_str(&branch, branch_avail);
     let branch_vis   = vis(&branch_short);
@@ -579,7 +597,11 @@ fn render_full<W: Write>(
         ], panel_w)?;
 
         // Bubble geometry (right-aligned: right edge at panel_w-1)
-        let msg_vis_w = vis(msg);
+        // Clamp message to max safe width to prevent row overflow.
+        // Max safe = panel_w - 7: bw_max(panel_w-3) - 4 content overhead
+        let max_msg = panel_w.saturating_sub(7).max(1);
+        let msg_display = shorten_str(msg, max_msg);
+        let msg_vis_w = vis(&msg_display);
         // bw = bubble width: │ + space + msg + space + │
         let bw = (msg_vis_w + 4).min(panel_w.saturating_sub(3)).max(6);
         let inner_pad = bw.saturating_sub(4 + msg_vis_w);
@@ -604,7 +626,7 @@ fn render_full<W: Write>(
             tc("│ ", DELIM),
             " ".repeat(left_fill),
             tc("│ ", vrgb),
-            tc(msg, PET_NAME),
+            tc(&msg_display, PET_NAME),
             " ".repeat(inner_pad),
             tc(" ", vrgb),
             tc("│", vrgb),

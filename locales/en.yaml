@@ -4,7 +4,7 @@
 # UI chrome
 ui.memory_label: "Memory:"
 ui.status_active: "active"
-ui.status_inactive: "inactive"
+# ui.status_inactive not used: statusline only renders when CC is active
 
 # Stat labels (include punctuation — e.g. colon — so locales can use different separators)
 stat.atk: "ATK:"
