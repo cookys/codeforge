@@ -83,7 +83,8 @@ impl PetState {
             self.xp -= self.xp_to_next;
             self.level += 1;
             // 升等：xp_to_next 增加 50%，屬性各 +1
-            self.xp_to_next = (self.xp_to_next as f32 * 1.5) as u32;
+            // cap at 10M to prevent f32 precision loss and u32 overflow infinite loop
+            self.xp_to_next = ((self.xp_to_next as f64 * 1.5) as u64).min(10_000_000) as u32;
             self.atk += 1;
             self.hp  += 1;
             self.def += 1;

@@ -21,7 +21,7 @@ pub fn run(ctx: &db::Context, query: &str, limit: usize) -> Result<()> {
         println!("     {}", r.file_path);
         if let Some(snippet) = &r.snippet {
             let s = snippet.replace('\n', " ");
-            let s = if s.len() > 120 { format!("{}…", &s[..120]) } else { s };
+            let s = if s.chars().count() > 120 { format!("{}…", s.chars().take(120).collect::<String>()) } else { s };
             println!("     {}", s);
         }
         println!();

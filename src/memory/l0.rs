@@ -92,7 +92,7 @@ impl<'a> SignalWriter<'a> {
 
         let preview = truncate_str(&signal.content, 80);
 
-        writeln!(f, "- `{}` [{}] {} — {}", signal.id[..8].to_string(), source_str, signal.timestamp, preview)?;
+        writeln!(f, "- `{}` [{}] {} — {}", signal.id.chars().take(8).collect::<String>(), source_str, signal.timestamp, preview)?;
         Ok(())
     }
 }
