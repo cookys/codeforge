@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "SessionEnd": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "codeforge dream --quiet 2>/dev/null || true",
+        "timeout": 30000
+      }]
+    }]
+  }
+}
