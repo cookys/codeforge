@@ -73,6 +73,7 @@ pub mod migrations {
     pub fn run(conn: &Connection) -> Result<()> {
         conn.execute_batch(include_str!("schema.sql"))?;
         upgrade_mobs_origin_path(conn)?;
+        upgrade_pet_snapshot_mood(conn)?;
         Ok(())
     }
 
@@ -85,6 +86,29 @@ pub mod migrations {
         let has_column = column_exists(conn, "mobs", "origin_path")?;
         if !has_column {
             conn.execute("ALTER TABLE mobs ADD COLUMN origin_path TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    /// Phase 3d upgrade: existing DBs lack `pet_snapshot.mood` and
+    /// `mood_tick_stamp`. Greenfield installs already have them via
+    /// CREATE TABLE. Same ALTER-guard pattern as phase2c.
+    ///
+    /// NOTE: SQLite's ALTER TABLE ADD COLUMN forbids non-constant DEFAULTs,
+    /// but literal integers are fine, so the upgrade and CREATE TABLE
+    /// produce identical column state.
+    fn upgrade_pet_snapshot_mood(conn: &Connection) -> Result<()> {
+        if !column_exists(conn, "pet_snapshot", "mood")? {
+            conn.execute(
+                "ALTER TABLE pet_snapshot ADD COLUMN mood INTEGER NOT NULL DEFAULT 60",
+                [],
+            )?;
+        }
+        if !column_exists(conn, "pet_snapshot", "mood_tick_stamp")? {
+            conn.execute(
+                "ALTER TABLE pet_snapshot ADD COLUMN mood_tick_stamp INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
         }
         Ok(())
     }
@@ -472,6 +496,184 @@ mod tests {
             )
             .unwrap();
         assert_eq!(v4, 4);
+    }
+
+    // ─── Phase 3d migration tests ─────────────────────────────────
+
+    #[test]
+    fn phase3d_version_seeded() {
+        let conn = open_migrated_memory_db();
+        let v5: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=5",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v5, 5);
+    }
+
+    #[test]
+    fn phase3d_first_events_table_created() {
+        let conn = open_migrated_memory_db();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='first_events'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn phase3d_first_events_pk_enforces_idempotency() {
+        // event_id is PK — INSERT OR IGNORE means duplicate triggers are
+        // silently no-ops. This is the core invariant for §3.8.
+        let conn = open_migrated_memory_db();
+        let inserted = conn
+            .execute(
+                "INSERT OR IGNORE INTO first_events (event_id, triggered_at, tick_count)
+                 VALUES ('first_boss_kill', '2026-04-17 12:00:00', 100)",
+                [],
+            )
+            .unwrap();
+        assert_eq!(inserted, 1);
+        // Second call returns 0 rows affected and does NOT error.
+        let inserted_again = conn
+            .execute(
+                "INSERT OR IGNORE INTO first_events (event_id, triggered_at, tick_count)
+                 VALUES ('first_boss_kill', '2099-99-99', 9999)",
+                [],
+            )
+            .unwrap();
+        assert_eq!(inserted_again, 0, "duplicate event_id must be ignored");
+        let (ts, tick): (String, i64) = conn
+            .query_row(
+                "SELECT triggered_at, tick_count FROM first_events WHERE event_id='first_boss_kill'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(ts, "2026-04-17 12:00:00");
+        assert_eq!(tick, 100);
+    }
+
+    #[test]
+    fn phase3d_mood_columns_on_fresh_install() {
+        let conn = open_migrated_memory_db();
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(pet_snapshot)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.contains(&"mood".to_string()));
+        assert!(cols.contains(&"mood_tick_stamp".to_string()));
+    }
+
+    #[test]
+    fn phase3d_mood_default_60_on_insert() {
+        let conn = open_migrated_memory_db();
+        conn.execute(
+            "INSERT INTO pet_snapshot
+                 (id, village, level, hp, hp_max, xp, xp_to_next,
+                  atk, def, sup, ver)
+             VALUES (1, 'rust', 1, 10, 10, 0, 100, 10, 10, 10, 10)",
+            [],
+        )
+        .unwrap();
+        let (mood, ts): (i64, i64) = conn
+            .query_row(
+                "SELECT mood, mood_tick_stamp FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(mood, 60);
+        assert_eq!(ts, 0);
+    }
+
+    #[test]
+    fn phase3d_mood_check_constraint_rejects_out_of_range() {
+        let conn = open_migrated_memory_db();
+        let err = conn
+            .execute(
+                "INSERT INTO pet_snapshot
+                     (id, village, level, hp, hp_max, xp, xp_to_next,
+                      atk, def, sup, ver, mood)
+                 VALUES (1, 'rust', 1, 10, 10, 0, 100, 10, 10, 10, 10, 150)",
+                [],
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().to_lowercase().contains("check"),
+            "expected CHECK constraint, got: {err}"
+        );
+    }
+
+    #[test]
+    fn phase3d_upgrade_path_adds_mood_columns_to_existing_snapshot() {
+        // Simulate an existing Phase 2c DB: pet_snapshot table without
+        // mood / mood_tick_stamp. Migration must ALTER them in without
+        // dropping data, and default existing rows to mood=60, ts=0.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER NOT NULL, applied_at TEXT);
+             CREATE UNIQUE INDEX idx_schema_version_version ON schema_version(version);
+             INSERT INTO schema_version (version, applied_at) VALUES (4, '2026-04-17');
+
+             -- Phase 2c-era pet_snapshot (no mood columns)
+             CREATE TABLE pet_snapshot (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 village TEXT NOT NULL,
+                 level INTEGER NOT NULL,
+                 hp INTEGER NOT NULL,
+                 hp_max INTEGER NOT NULL,
+                 xp INTEGER NOT NULL,
+                 xp_to_next INTEGER NOT NULL,
+                 atk INTEGER NOT NULL,
+                 def INTEGER NOT NULL,
+                 sup INTEGER NOT NULL,
+                 ver INTEGER NOT NULL,
+                 last_message TEXT,
+                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );
+             INSERT INTO pet_snapshot
+                 (id, village, level, hp, hp_max, xp, xp_to_next,
+                  atk, def, sup, ver, last_message)
+             VALUES (1, 'python', 5, 50, 50, 200, 500,
+                     18, 14, 12, 16, 'legacy');",
+        )
+        .unwrap();
+
+        migrations::run(&conn).unwrap();
+
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(pet_snapshot)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.contains(&"mood".to_string()));
+        assert!(cols.contains(&"mood_tick_stamp".to_string()));
+
+        // Existing row preserved + defaults applied
+        let (village, mood, ts): (String, i64, i64) = conn
+            .query_row(
+                "SELECT village, mood, mood_tick_stamp FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(village, "python");
+        assert_eq!(mood, 60);
+        assert_eq!(ts, 0);
+
+        // Second run stays idempotent
+        migrations::run(&conn).unwrap();
     }
 
     #[test]

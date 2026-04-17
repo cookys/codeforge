@@ -4,7 +4,9 @@
 
 ## Active
 
-_（none — ready for next phase）_
+| Project | Description | Started |
+|---------|------------|---------|
+| [phase3d-stickiness](2026-04-17-phase3d-stickiness/README.md) | 黏著度機制 — Welcome Back / Mood Decay / Next Unlock / First-Time Moments（spec §3.1/3.2/3.4/3.8） | 2026-04-17 |
 
 ## Archived
 

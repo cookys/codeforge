@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-_（none — ready for next phase）_
+| Plan | Created | Project |
+|------|---------|---------|
+| [phase3d-stickiness](2026-04-17-phase3d-stickiness.md) | 2026-04-17 | [2026-04-17-phase3d-stickiness](../projects/2026-04-17-phase3d-stickiness/) |
 
 ---
 
