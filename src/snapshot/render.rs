@@ -121,12 +121,12 @@ fn zone_lines(zones: &[ZoneStats]) -> Vec<String> {
 }
 
 fn zone_cell(z: &ZoneStats) -> String {
-    let name = village_short_name(&z.village_id);
-    if z.unlocked {
-        format!("[{}]", name)
-    } else {
-        format!("[{}]", name)
-    }
+    // The cell name itself is the same whether unlocked or not — the
+    // rank line below is where the lock state surfaces visually. Kept
+    // as a function instead of inlining so callers read naturally and
+    // future spec changes (locked zone showing `???` name etc) land in
+    // one place.
+    format!("[{}]", village_short_name(&z.village_id))
 }
 
 fn rank_cell(z: &ZoneStats) -> String {
