@@ -12,6 +12,10 @@ use crate::db::Context;
 use anyhow::{anyhow, Context as AnyhowContext, Result};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Hook events are metadata blobs — not content. 64KiB upper bound
+/// protects the inbox from runaway hook scripts or malformed JSON.
+pub const MAX_PAYLOAD_BYTES: usize = 65_536;
+
 /// Emit an event.
 ///
 /// Modes:
@@ -21,6 +25,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub fn run(ctx: &Context, event: Option<String>, fields: Vec<String>, json: Option<String>) -> Result<()> {
     let payload = match (json, event) {
         (Some(j), _) => {
+            if j.len() > MAX_PAYLOAD_BYTES {
+                return Err(anyhow!(
+                    "--json payload 超過 {}B 上限（實際 {}B）",
+                    MAX_PAYLOAD_BYTES,
+                    j.len()
+                ));
+            }
             // Validate it parses as an object (catches typos early)
             let parsed: serde_json::Value = serde_json::from_str(&j)
                 .with_context(|| format!("--json 參數不是合法 JSON：{}", j))?;
@@ -29,7 +40,17 @@ pub fn run(ctx: &Context, event: Option<String>, fields: Vec<String>, json: Opti
             }
             j
         }
-        (None, Some(name)) => build_payload(&name, &fields)?,
+        (None, Some(name)) => {
+            let built = build_payload(&name, &fields)?;
+            if built.len() > MAX_PAYLOAD_BYTES {
+                return Err(anyhow!(
+                    "組裝後 payload 超過 {}B 上限（實際 {}B）",
+                    MAX_PAYLOAD_BYTES,
+                    built.len()
+                ));
+            }
+            built
+        }
         (None, None) => {
             return Err(anyhow!(
                 "必須指定 event 名稱或 --json payload"
@@ -102,6 +123,14 @@ mod tests {
         let fields = vec!["no_equals_sign".to_string()];
         let err = build_payload("x", &fields).unwrap_err();
         assert!(err.to_string().contains("KEY=VALUE"));
+    }
+
+    #[test]
+    fn build_payload_roundtrip_under_limit() {
+        // Normal-sized payload with ~10 fields fits well under cap
+        let fields: Vec<String> = (0..10).map(|i| format!("k{i}=v{i}")).collect();
+        let s = build_payload("x", &fields).unwrap();
+        assert!(s.len() < MAX_PAYLOAD_BYTES);
     }
 
     #[test]

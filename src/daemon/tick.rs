@@ -3,11 +3,13 @@
 //! Phase 2a P3: drains event_inbox, dispatches events through ECS systems,
 //! serializes pet state, and advances the `last_tick_at` anchor.
 //!
-//! Panic safety: if execution fails partway (panic or Err return), the
-//! `last_tick_at` row is NOT updated. On next daemon startup, the catch-up
-//! logic replays the missed tick. For events already drained but not
-//! committed, the `seen_at` write is atomic per drain, so they won't
-//! double-count on replay.
+//! **Transactional atomicity (fixed post-review C1)**: the entire tick body
+//! runs inside a single SQLite transaction. Drain-UPDATE, pet_snapshot
+//! upsert, and last_tick_at advance all commit atomically. If any step
+//! fails (Err or panic), the tx is dropped without commit — events remain
+//! `seen_at IS NULL`, pet_snapshot stays on the prior value, and
+//! `last_tick_at` is unchanged. Next startup catch-up replays the missed
+//! tick against the un-drained events. No XP loss, no double-counting.
 
 use super::{ecs::GameWorld, events, inbox, systems};
 use anyhow::Result;
@@ -16,30 +18,33 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Run one game tick against the given connection and world.
 pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
-    // 1. Drain events. drain_once marks rows as seen atomically.
-    let drained = inbox::drain_once(conn)?;
+    let tx = conn.unchecked_transaction()?;
 
-    // 2. Dispatch events → ECS state changes
+    // 1. Drain events. Within the tx: SELECT unseen + UPDATE seen_at.
+    let drained = inbox::drain_once(&tx)?;
+
+    // 2. Dispatch events → ECS state changes (in-memory, no DB)
     for ev in &drained {
         events::dispatch(world, ev);
     }
 
-    // 3. Per-tick systems
+    // 3. Per-tick systems (in-memory only)
     systems::regen_hp(world);
     systems::check_levelup(world);
 
-    // 4. Serialize to pet_snapshot (single-row upsert)
-    world.serialize_to_db(conn)?;
+    // 4. Serialize to pet_snapshot (single-row upsert, in tx)
+    world.serialize_to_db(&tx)?;
 
-    // 5. Advance the anchor LAST. If anything above fails, the anchor
-    // stays on the previous tick's timestamp, so catch-up replays.
+    // 5. Advance the anchor
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
-    conn.execute(
+    tx.execute(
         "INSERT INTO last_tick_at (id, tick_at, tick_count) VALUES (1, ?1, 1)
          ON CONFLICT(id) DO UPDATE SET tick_at = ?1, tick_count = tick_count + 1",
         rusqlite::params![now],
     )?;
 
+    // Atomic commit — all-or-nothing
+    tx.commit()?;
     Ok(())
 }
 

@@ -72,16 +72,21 @@ fn stop(ctx: &Context) -> Result<()> {
     }
     let pid = lifecycle::read_pidfile(&pidfile)?;
     if !lifecycle::pid_alive(pid) {
-        // Stale pidfile — just clean up
+        // Stale pidfile — clean up and report
         lifecycle::release_pidfile(&pidfile);
         return Err(anyhow::anyhow!(
-            "pidfile 指向 pid {} 但該 process 已不存在。清理並視為已停止。",
-            pid
+            "pidfile 指向 pid {pid} 但該 process 已不存在。清理並視為已停止。"
         ));
     }
 
-    lifecycle::send_sigterm(pid, Duration::from_secs(10))?;
-    lifecycle::release_pidfile(&pidfile);
+    // Send SIGTERM and wait. Use 12s internal timeout so systemd's
+    // TimeoutStopSec=15s is the outer boundary.
+    lifecycle::send_sigterm(pid, Duration::from_secs(12))?;
+    // Do NOT release the pidfile here. The daemon's own shutdown path
+    // calls release_pidfile in start() after run_tick_loop returns.
+    // Removing it here races with a fresh `daemon start` issued
+    // immediately after stop returns — could delete the NEW daemon's
+    // pidfile. Let the dying daemon own its own cleanup.
     eprintln!("codeforge daemon stopped (pid={pid})");
     Ok(())
 }
