@@ -103,7 +103,11 @@ fn test(conn: &Connection, kind_arg: Option<&str>) -> Result<()> {
     };
     let generated = generator::generate_rule_based(conn, &gen_ctx, now as u64, now)?;
 
-    // Persist so the statusline/TUI surface it in the next refresh.
+    // Persist to commentary_feed so the statusline/TUI surface it next
+    // refresh. Deliberately do NOT call record_history — `commentary test`
+    // is an "escape hatch" to verify the pipeline; if it updated dedup
+    // history, repeated debugging invocations would silently burn real
+    // boss-kill phrases out of the 30-day rotation window.
     repo::insert_feed(
         conn,
         InsertFeed {
@@ -116,11 +120,11 @@ fn test(conn: &Connection, kind_arg: Option<&str>) -> Result<()> {
             source: generated.source,
         },
     )?;
-    repo::record_history(conn, &generated.phrase_hash, kind, now)?;
 
     println!("✓ 測試 commentary（{}, {}）：", kind.as_str(), generated.source.as_str());
     println!("  {}", generated.phrase);
     println!("  已寫入 commentary_feed，下次 statusline / TUI refresh 可見。");
+    println!("  注意：test 不會更新 commentary_history 的 30-day dedup 窗。");
     Ok(())
 }
 
@@ -138,12 +142,11 @@ fn synth_trigger(kind: Kind, level: u32) -> crate::commentary::trigger::Trigger 
         Kind::SessionLong => Trigger::SessionLong { duration_secs: 14_400 },
         Kind::LongIdle => Trigger::LongIdle { absence_secs: 1800 },
         Kind::ZoneUnlock => Trigger::ZoneUnlock { zone_id: "test".into() },
-        // For ManualTest, use a BossKill-shaped trigger so the rule pool
-        // has something non-trivial to render.
-        Kind::ManualTest => Trigger::BossKill {
-            mob_name: "pipeline".into(),
-            mob_kind: MobKind::Boss,
-        },
+        // Dedicated ManualTest variant (added in review r1 finding #5 fix)
+        // means pool selection keys on Kind::ManualTest and the
+        // ManualTest-specific phrase pool is reached, rather than
+        // accidentally rendering BossKill phrases.
+        Kind::ManualTest => Trigger::ManualTest,
     }
 }
 
@@ -271,14 +274,14 @@ mod tests {
     }
 
     #[test]
-    fn test_command_inserts_feed_row() {
+    fn test_command_inserts_feed_row_but_not_history() {
+        // Phase 3c review r1 finding #2: test must NOT pollute dedup history.
         let conn = fresh();
-        // Silences stdout by calling test() then checking DB state
         test(&conn, Some("manual_test")).unwrap();
         let rows = crate::commentary::display::recent_commentary(&conn, 5).unwrap();
         assert_eq!(rows.len(), 1);
         assert!(!rows[0].phrase.is_empty());
-        // History recorded
+        // commentary_history must stay empty — test writes are not real emissions.
         let hits: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM commentary_history",
@@ -286,7 +289,27 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(hits, 1);
+        assert_eq!(hits, 0, "test() must not update commentary_history");
+    }
+
+    #[test]
+    fn test_command_does_not_burn_real_dedup_window() {
+        // Spec: the user can spam `commentary test boss_kill` without
+        // affecting the real boss-kill 30-day dedup pool.
+        let conn = fresh();
+        for _ in 0..5 {
+            test(&conn, Some("boss_kill")).unwrap();
+        }
+        // History still empty.
+        let hits: i64 = conn
+            .query_row("SELECT COUNT(*) FROM commentary_history", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(hits, 0);
+        // Feed has 5 rows (5 test invocations).
+        let feed: i64 = conn
+            .query_row("SELECT COUNT(*) FROM commentary_feed", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(feed, 5);
     }
 
     #[test]

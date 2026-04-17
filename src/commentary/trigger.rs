@@ -44,6 +44,12 @@ pub enum Trigger {
     ZoneUnlock {
         zone_id: String,
     },
+    /// Manual trigger from `codeforge commentary test`. Never produced by
+    /// `detect` — only the CLI constructs this variant. Kept in the enum
+    /// (rather than forcing CLI test to reuse BossKill-shaped triggers)
+    /// so pool selection keys on `Kind::ManualTest` and flows through
+    /// the ManualTest-specific pool (review r1 finding #5).
+    ManualTest,
 }
 
 impl Trigger {
@@ -54,6 +60,7 @@ impl Trigger {
             Self::SessionLong { .. } => Kind::SessionLong,
             Self::LongIdle { .. } => Kind::LongIdle,
             Self::ZoneUnlock { .. } => Kind::ZoneUnlock,
+            Self::ManualTest => Kind::ManualTest,
         }
     }
 
