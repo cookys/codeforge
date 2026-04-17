@@ -4,12 +4,15 @@
 
 ## Active
 
-_（none — ready for next phase）_
+| Project | Description | Branch | Started |
+|---------|------------|--------|---------|
+| *(no active projects)* | — | — | — |
 
 ## Archived
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [phase3a-world-map](_archive/2026-04-18-phase3a-world-map/README.md) | World Map + Zone unlock — L1 語言分佈 analyzer、`codeforge world` ASCII map、Zone Mastery rank、Explorer strategy cross-zone revisit，P1-P4 + QG + r1 2 fixes + r2 clean | 2026-04-18 ✅ |
 | [phase3c-ai-commentary](_archive/2026-04-18-phase3c-ai-commentary/README.md) | AI Commentary — Haiku pet talk + 30-day dedup + 1/hour global budget + strategy-aware tone；statusline bubble / TUI combat_log 整合，P1-P6 + QG + r1 4 fixes + r2 clean | 2026-04-18 ✅ |
 | [phase3b-strategy](_archive/2026-04-18-phase3b-strategy/README.md) | Strategy Mode — 4 種打法（Aggressive / Defensive / Explorer / Scholar）× ATK/DEF 乘子 + MOB 優先序（spec §2），P1-P3 + QG + 2 輪 review | 2026-04-18 ✅ |
 | [phase3d-stickiness](_archive/2026-04-17-phase3d-stickiness/README.md) | 黏著度機制 — Welcome Back / Mood Decay / Next Unlock / First-Time Moments（spec §3.1/3.2/3.4/3.8），P1-P5 + QG + 1 輪 clean review | 2026-04-17 ✅ |
