@@ -17,7 +17,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::db;
 use crate::pet::live_state::LiveState;
-use crate::pet::village::{Village, VILLAGES};
+use crate::pet::village::VILLAGES;
 use crate::world::{self, ZoneRank, ZoneStats};
 
 /// Fixed inner width of each card (columns between the `│` borders,
@@ -293,13 +293,6 @@ fn clip_visible(s: &str, max_cols: usize) -> String {
 mod tests {
     use super::*;
     use crate::db::migrations;
-    use rusqlite::Connection;
-
-    fn fresh() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        migrations::run(&conn).unwrap();
-        conn
-    }
 
     #[test]
     fn pad_visible_ascii_pads_to_width() {
