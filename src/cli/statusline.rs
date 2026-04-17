@@ -3,6 +3,7 @@
 /// UX Pro palette: 三層亮度 (Tier1=222-231 身份, Tier2=71-179 狀態, Tier3=236-246 背景)
 use anyhow::Result;
 use crate::db;
+use crate::pet::ability::next_unlock;
 use crate::pet::live_state::LiveState;
 use crate::pet::state::PetState;
 use crate::pet::village::VILLAGES;
@@ -667,13 +668,31 @@ fn render_full<W: Write>(
             tcs("█".repeat(xp_filled), vrgb),
             tcs("░".repeat(6 - xp_filled), BAR_EMPTY),
         );
-        let r3_content = format!("{} {}  {} {} {}  {} {} {}/{}",
+        // Phase 3d §3.4: next unlock anchor. Formatted compactly so it tails
+        // the XP bar without blowing the panel width budget. Omit gracefully
+        // past the last tier.
+        let unlock_suffix = next_unlock(pet.level)
+            .map(|u| {
+                let name = shorten_str(u.name, 16);
+                let lv_label = t!("stat.lv");
+                format!(
+                    "  {} {}{} {}",
+                    tc("→", DELIM),
+                    tc(&lv_label, STAT_LBL),
+                    tc(&u.required_level.to_string(), PET_LV),
+                    tc(&name, STAT_VAL),
+                )
+            })
+            .unwrap_or_default();
+
+        let r3_content = format!("{} {}  {} {} {}  {} {} {}/{}{}",
             tc_bold(&pet.name, PET_NAME),
             tc(&format!("{}{}", t!("stat.lv"), pet.level), PET_LV),
             tc(&*t!("stat.hp"), STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
             tc(&*t!("stat.xp"), STAT_LBL), xp_bar,
             tc(&pet.xp.to_string(), vrgb),
             tc(&pet.xp_to_next.to_string(), STAT_VAL),
+            unlock_suffix,
         );
         let row3_info = box_mid(&r3_content, "│ ", "│");
 
