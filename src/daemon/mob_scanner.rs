@@ -49,21 +49,56 @@ pub fn rate_limited_scan(
     zone_id: &str,
     tick_count: u64,
 ) -> Result<usize> {
+    rate_limited_scan_with_dir(tx, zone_id, tick_count, resolve_scan_dir().as_deref())
+}
+
+/// Same as `rate_limited_scan` but with the scan root injected — keeps
+/// tests free of the `CODEFORGE_SCAN_DIR` env-var dance, which under
+/// `cargo test`'s parallel runner would let parallel scanner tests see
+/// each other's tempdirs.
+pub fn rate_limited_scan_with_dir(
+    tx: &Connection,
+    zone_id: &str,
+    tick_count: u64,
+    dir_override: Option<&Path>,
+) -> Result<usize> {
     if !should_scan_this_tick(tick_count) {
         return Ok(0);
     }
-    let dir = match resolve_scan_dir() {
-        Some(d) => d,
+    let dir = match dir_override {
+        Some(d) => d.to_path_buf(),
         None => return Ok(0),
     };
-    let specs = match scan_dir(&dir, zone_id) {
+    let mut specs = match scan_dir(&dir, zone_id) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("codeforge daemon: scanner error on {}: {e}", dir.display());
             return Ok(0);
         }
     };
+    // Phase 3e Ghost Repellent: when an active `suppress_ghost_spawn`
+    // effect covers this zone (or is global), drop every Ghost from the
+    // newly scanned batch before persisting. Existing alive Ghost mobs
+    // are untouched — the item only stops *new* spawns, matching the
+    // spec wording "不再在此 Zone 生成".
+    let now = unix_now();
+    if crate::craft::is_effect_active(
+        tx,
+        crate::craft::EffectKind::SuppressGhostSpawn,
+        zone_id,
+        now,
+    )? {
+        specs.retain(|s| s.kind != crate::daemon::mob::MobKind::Ghost);
+    }
     persist_scan(tx, &specs)
+}
+
+fn unix_now() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 /// Reads `CODEFORGE_SCAN_DIR`. Absent = scanner no-op (daemon run via
@@ -652,5 +687,74 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
             .query_row("SELECT COUNT(*) FROM mobs", [], |r| r.get(0))
             .unwrap();
         assert_eq!(total, 2);
+    }
+
+    // ─── Phase 3e: Ghost Repellent integration ────────────────────────
+
+    #[test]
+    fn rate_limited_scan_drops_ghosts_when_repellent_active() {
+        // Seeds an active Ghost Repellent effect for zone rust, scans a
+        // directory with exactly one ghost-producing file, and confirms
+        // the persist step skipped it. Uses `rate_limited_scan_with_dir`
+        // to inject the tempdir directly so no env-var mutation leaks
+        // under parallel `cargo test` runs.
+        let conn = fresh_conn();
+        let tmp = tempdir().unwrap();
+        write(
+            &tmp.path().join("src/ghost.rs"),
+            "use std::collections::HashMap;\n\nfn main() {}\n",
+        );
+
+        // Apply Ghost Repellent scoped to rust with expires_at far
+        // enough into the future that `unix_now()` reads it as active.
+        // i64::MAX avoids any "wall clock drifted past my test constant"
+        // flake class.
+        conn.execute(
+            "INSERT INTO active_effects
+                 (effect_kind, zone_id, applied_at, expires_at, source_item)
+             VALUES ('suppress_ghost_spawn', 'rust', 0, ?1, 'Ghost Repellent')",
+            rusqlite::params![i64::MAX],
+        )
+        .unwrap();
+
+        rate_limited_scan_with_dir(&conn, "rust", 1, Some(tmp.path())).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM mobs WHERE kind = 'ghost' AND defeated_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0, "Ghost Repellent must suppress new ghost spawns");
+    }
+
+    #[test]
+    fn rate_limited_scan_admits_ghosts_when_repellent_expired() {
+        // Same setup as above but the effect row has already expired.
+        let conn = fresh_conn();
+        let tmp = tempdir().unwrap();
+        write(
+            &tmp.path().join("src/ghost.rs"),
+            "use std::collections::HashMap;\n\nfn main() {}\n",
+        );
+
+        // expires_at=1 → very long ago by the time unix_now() fires.
+        conn.execute(
+            "INSERT INTO active_effects
+                 (effect_kind, zone_id, applied_at, expires_at, source_item)
+             VALUES ('suppress_ghost_spawn', 'rust', 0, 1, 'Ghost Repellent')",
+            [],
+        )
+        .unwrap();
+
+        rate_limited_scan_with_dir(&conn, "rust", 1, Some(tmp.path())).unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM mobs WHERE kind = 'ghost' AND defeated_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(n >= 1, "expired repellent must no longer suppress spawns");
     }
 }
