@@ -1,9 +1,25 @@
 # CodeForge Phase 2b — MOB 生成 + Auto-Combat + Loot
 
+> 狀態：✅ **完成並合併**（2026-04-17，merge commit `9d15df2`）
 > 建立：2026-04-17
-> Branch：`feature/phase2b-combat`
+> Branch：`feature/phase2b-combat`（已合併，待清理）
 > 前置：Phase 2a ✅（daemon 框架 + event_inbox + live read path）
 > Spec 參考：`doc/specs/codeforge-mud-engine.md` §2（戰鬥系統）
+
+## Completion Summary
+
+All 6 phases (P1-P6) + QG + 2 review rounds done in a single session.
+
+- **Tests**: 156 passing (baseline 91 → +65). Stable across 3 consecutive runs.
+- **Perf**: `tick_budget_under_10ms_average` passes in debug; release binary builds clean.
+- **Clippy**: zero warnings on Phase 2b files. Pre-existing Phase 1 warnings untouched.
+- **Review**: round 1 surfaced 4 IMPORTANT findings (defeated_at semantic, scanner OOM, read_tick_context error masking, LastMessage stuck forever); round 2 verified all RESOLVED. Merged with `--no-ff` to preserve phase history.
+
+### Post-review fix highlights
+- `mobs.defeated_at` now stores real unix seconds (was rng_salt aka tick_count).
+- Scanner caps per-file reads at 2 MiB via stat-before-read.
+- `read_tick_context` only collapses `QueryReturnedNoRows` to `salt=1`; other errors propagate.
+- `LastMessage` carries `tick_stamp` + 5-tick TTL, so the statusline speech bubble clears after a few minutes instead of pinning forever.
 
 ## Project Goal
 
@@ -45,29 +61,29 @@
 
 | KR | 驗證 | 狀態 |
 |----|------|------|
-| Schema migration 新增 `mobs` / `loot_inventory` table 通過 | `cargo test migrations_*` 全綠 | TBD |
-| Scanner 對含 TODO × 6 的假 codebase → 產生 ≥ 1 Zombie MOB | `src/daemon/mob_scanner.rs` unit test | TBD |
-| Scanner 對含 120 行函式的假檔 → 產生 1 Boss MOB | scanner unit test | TBD |
-| Combat tick 對 hp=1 的 MOB 在 pet.atk 正常下 > 50% 機率擊殺 | 重複 tick 解算，統計 kill rate | TBD |
-| MOB 死亡後 loot roll 至少一筆 entry 進 loot_inventory | combat + loot integration test | TBD |
-| Boss 死亡保證掉 Rare Item + XP；Zombie 掉 XP + TODO Cleaner | loot table unit test per kind | TBD |
-| Pet 吃 MOB 傷害 HP 下降但不會 < 0 | combat unit test，注入強 MOB | TBD |
-| `codeforge pet` 輸出含 "最近擊殺" + "Inventory" 兩段 | smoke test | TBD |
-| Tick budget < 10ms 在 100 MOB 下仍達標（spec §設計約束 5） | perf test with 100 mobs | TBD |
-| Scanner 不會每 tick 跑（cap：10 tick 一次）| scanner call counter test | TBD |
-| Full tick transaction atomic：combat + loot + snapshot 一起 commit 或一起 rollback | tx test with forced error injection | TBD |
+| Schema migration 新增 `mobs` / `loot_inventory` table 通過 | `cargo test migrations_*` 全綠 | ✅ |
+| Scanner 對含 TODO × 6 的假 codebase → 產生 ≥ 1 Zombie MOB | `src/daemon/mob_scanner.rs` unit test | ✅ |
+| Scanner 對含 120 行函式的假檔 → 產生 1 Boss MOB | scanner unit test | ✅ |
+| Combat tick 對 hp=1 的 MOB 在 pet.atk 正常下 > 50% 機率擊殺 | 重複 tick 解算，統計 kill rate | ✅ |
+| MOB 死亡後 loot roll 至少一筆 entry 進 loot_inventory | combat + loot integration test | ✅ |
+| Boss 死亡保證掉 Rare Item + XP；Zombie 掉 XP + TODO Cleaner | loot table unit test per kind | ✅ |
+| Pet 吃 MOB 傷害 HP 下降但不會 < 0 | combat unit test，注入強 MOB | ✅ |
+| `codeforge pet` 輸出含 "最近擊殺" + "Inventory" 兩段 | smoke test | ✅ |
+| Tick budget < 10ms 在 100 MOB 下仍達標（spec §設計約束 5） | perf test with 100 mobs | ✅ |
+| Scanner 不會每 tick 跑（cap：10 tick 一次）| scanner call counter test | ✅ |
+| Full tick transaction atomic：combat + loot + snapshot 一起 commit 或一起 rollback | tx test with forced error injection | ✅ |
 
 ## Phases
 
 | # | Phase | Activities | Status |
 |---|-------|-----------|--------|
-| P1 | Schema + migrations | `mobs` table（id/zone_id/kind/name/hp/hp_max/atk/def/difficulty/spawned_at/defeated_at）+ `loot_inventory`；migration version 3 | pending |
-| P2 | MOB scanner | `src/daemon/mob_scanner.rs`：glob source files、count TODO/FIXME、function length、dead import heuristic；產出 MobSpec vec；rate-limit（every 10 ticks）| pending |
-| P3 | Combat system | `src/daemon/combat.rs`：per-tick attack/damage/defeat；integrate into tick.rs；deterministic RNG | pending |
-| P4 | Loot system | `src/daemon/loot.rs`：per-kind loot table；insert into `loot_inventory`；apply XP to ECS | pending |
-| P5 | CLI integration | `codeforge pet` 擴充：最近擊殺 + inventory；optional `codeforge mobs` list | pending |
-| P6 | Statusline integration | daemon 寫 last_message = 最新戰鬥敘述；statusline 已經會讀（Phase 2a 已有 last_message 欄） | pending |
-| QG | Quality gate | `cargo check + clippy + test` + perf KR | pending |
+| P1 | Schema + migrations | `mobs` table（id/zone_id/kind/name/hp/hp_max/atk/def/difficulty/spawned_at/defeated_at）+ `loot_inventory`；migration version 3 | ✅ |
+| P2 | MOB scanner | `src/daemon/mob_scanner.rs`：glob source files、count TODO/FIXME、function length、dead import heuristic；產出 MobSpec vec；rate-limit（every 10 ticks）| ✅ |
+| P3 | Combat system | `src/daemon/combat.rs`：per-tick attack/damage/defeat；integrate into tick.rs；deterministic RNG | ✅ |
+| P4 | Loot system | `src/daemon/loot.rs`：per-kind loot table；insert into `loot_inventory`；apply XP to ECS | ✅ |
+| P5 | CLI integration | `codeforge pet` 擴充：最近擊殺 + inventory；optional `codeforge mobs` list | ✅ |
+| P6 | Statusline integration | daemon 寫 last_message = 最新戰鬥敘述；statusline 已經會讀（Phase 2a 已有 last_message 欄） | ✅ |
+| QG | Quality gate | `cargo check + clippy + test` + perf KR | ✅ |
 
 ## Known risks / open questions
 
