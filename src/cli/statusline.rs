@@ -2,6 +2,7 @@
 /// info 欄 pad 到 panel_w，後接 2 空格，再寫 art（已 pad 到 ART_W）
 /// UX Pro palette: 三層亮度 (Tier1=222-231 身份, Tier2=71-179 狀態, Tier3=236-246 背景)
 use anyhow::Result;
+use crate::commentary::display::statusline_override;
 use crate::daemon::strategy::{Strategy, DEFAULT_STRATEGY};
 use crate::db;
 use crate::pet::ability::next_unlock;
@@ -64,11 +65,17 @@ pub fn run(ctx: &db::Context) -> Result<()> {
 
     match loaded {
         Some(live) => {
-            // P6: prefer stdin "message" (explicit caller intent); fall back
-            // to daemon-authored last_message so combat narration surfaces
-            // without requiring every caller to inject JSON.
+            // Phase 3c P5: commentary bubble. Priority order when picking
+            // the speech-bubble text:
+            //   1. stdin "message" (explicit caller intent — never stomped)
+            //   2. Commentary feed (5% roll, ≤1h old, opt-in gate)
+            //   3. daemon-authored last_message (combat narration)
             if data.message.is_none() {
-                data.message = live.last_message.clone();
+                if let Ok(Some(phrase)) = statusline_override(&conn, now_unix) {
+                    data.message = Some(phrase);
+                } else {
+                    data.message = live.last_message.clone();
+                }
             }
             let village = VILLAGES
                 .iter()
