@@ -5,11 +5,13 @@ use anyhow::Result;
 use crate::db;
 use crate::pet::ability::next_unlock;
 use crate::pet::live_state::LiveState;
+use crate::pet::session::{get_last_seen, update_last_seen, WelcomeBackSummary};
 use crate::pet::state::PetState;
 use crate::pet::village::VILLAGES;
 use owo_colors::OwoColorize;
 use unicode_width::UnicodeWidthStr;
 use std::io::{self, Write};
+use std::time::{SystemTime, UNIX_EPOCH};
 use rust_i18n::t;
 
 pub fn run(ctx: &db::Context) -> Result<()> {
@@ -27,6 +29,38 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     // with an overlay of unseen event_inbox XP — so the pet number reacts
     // to hook events immediately, without waiting for the daemon tick.
     let loaded = if has_pet { LiveState::load(&conn).ok().flatten() } else { None };
+
+    // Phase 3d §3.1: Welcome Back Report. Compute BEFORE updating
+    // last_seen — otherwise the first post-gap call overwrites its own
+    // baseline. Only rendered when the session gap ≥ ABSENCE_THRESHOLD,
+    // so intra-session statusline refreshes (~every 5s) stay silent.
+    let now_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let hp_snapshot = loaded
+        .as_ref()
+        .and_then(|l| l.mood.map(|_| (l.state.hp, l.state.hp.max(1))));
+    // hp_max isn't exposed on LiveState yet — PetState lacks it too since
+    // Phase 1 only had hp. The snapshot does, but adding a field is beyond
+    // P5 scope. Pass None so render_lines skips the HP line rather than
+    // fabricating a misleading percentage. P3d follow-up in backlog.
+    let _ = hp_snapshot;
+    if let Ok(Some(last)) = get_last_seen(&conn) {
+        if let Ok(Some(summary)) = WelcomeBackSummary::build(&conn, last, now_unix, None) {
+            if summary.has_content() || summary.absence_seconds >= 3600 {
+                // Print each line plainly — avoids fighting the panel's
+                // ANSI framing. Prefix with a soft indicator so the user
+                // spots it amid normal output.
+                for line in summary.render_lines() {
+                    writeln!(out, "{}", line)?;
+                }
+            }
+        }
+    }
+    // Window is closed — next statusline call sees a fresh baseline.
+    let _ = update_last_seen(&conn, now_unix);
+
     match loaded {
         Some(live) => {
             // P6: prefer stdin "message" (explicit caller intent); fall back
