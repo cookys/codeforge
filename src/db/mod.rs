@@ -1043,6 +1043,90 @@ mod tests {
         migrations::run(&conn).unwrap();
     }
 
+    // ─── Phase 3e migration tests ─────────────────────────────────
+
+    #[test]
+    fn phase3e_version_seeded() {
+        let conn = open_migrated_memory_db();
+        let v9: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=9",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v9, 9);
+    }
+
+    #[test]
+    fn phase3e_active_effects_table_present() {
+        let conn = open_migrated_memory_db();
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(active_effects)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        for expected in [
+            "id",
+            "effect_kind",
+            "zone_id",
+            "applied_at",
+            "expires_at",
+            "source_item",
+        ] {
+            assert!(
+                cols.contains(&expected.to_string()),
+                "active_effects missing {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn phase3e_upgrade_path_from_v8_seeds_active_effects() {
+        // Simulate a pre-Phase-3e DB at v8 without the active_effects table
+        // (Phase 3e never added columns to old tables, so the upgrade path
+        // is purely "CREATE TABLE IF NOT EXISTS" via the schema batch).
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER NOT NULL, applied_at TEXT);
+             CREATE UNIQUE INDEX idx_schema_version_version ON schema_version(version);
+             INSERT INTO schema_version (version, applied_at) VALUES (8, '2026-04-18');",
+        )
+        .unwrap();
+
+        migrations::run(&conn).unwrap();
+
+        // v9 seeded
+        let v9: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=9",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v9, 9);
+
+        // active_effects created — verify insert works under the
+        // CHECK constraints from the schema
+        conn.execute(
+            "INSERT INTO active_effects
+                 (effect_kind, zone_id, applied_at, expires_at, source_item)
+             VALUES ('suppress_ghost_spawn', 'rust', 100, 200, 'Ghost Repellent')",
+            [],
+        )
+        .unwrap();
+
+        // Idempotent second run
+        migrations::run(&conn).unwrap();
+
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM active_effects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1, "re-run must not drop or duplicate existing rows");
+    }
+
     #[test]
     fn db_opens_with_wal_mode() {
         let tmp = tempfile::tempdir().unwrap();
