@@ -34,8 +34,7 @@ pub fn render(rooms: &[RoomSummary], width: usize, max_rows: usize) -> Vec<Strin
         let dir = if body_w == 0 {
             String::new()
         } else {
-            let padded = pad_to_width(&room.directory, body_w);
-            padded
+            pad_to_width(&room.directory, body_w)
         };
         let line = format!("{marker}{dir} {badge}");
         out.push(pad_to_width(&line, width));

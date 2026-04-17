@@ -254,6 +254,59 @@ mod tests {
         assert!(!sink.is_empty(), "paint must write something");
     }
 
+    /// Perf KR: a full `build_frame` + `paint` to an in-memory sink
+    /// should average well under 16ms (60 FPS budget) on typical
+    /// workloads. Prime one frame to warm caches; measure the next 50.
+    #[test]
+    fn render_budget_under_16ms_average() {
+        let conn = fresh();
+        // Seed realistic state: 1 pet_snapshot + 20 combat_log + 10 mobs
+        conn.execute(
+            "INSERT INTO pet_snapshot
+                (id, village, level, hp, hp_max, xp, xp_to_next,
+                 atk, def, sup, ver, last_message, updated_at)
+             VALUES (1, 'rust', 5, 80, 100, 420, 1000,
+                     18, 12, 10, 11, NULL, datetime('now'))",
+            [],
+        )
+        .unwrap();
+        for i in 0..20 {
+            conn.execute(
+                "INSERT INTO combat_log
+                    (zone_id, mob_kind, mob_name, xp_gained, occurred_at)
+                 VALUES ('rust', 'ghost', ?1, ?2, '2026-04-17 14:00:00')",
+                rusqlite::params![format!("mob-{i}"), i * 5],
+            )
+            .unwrap();
+        }
+        for i in 0..10 {
+            conn.execute(
+                "INSERT INTO mobs
+                    (zone_id, kind, name, hp, hp_max, atk, def, spawned_at, origin_path)
+                 VALUES ('rust', 'zombie', ?1, 10, 10, 1, 1, 100, ?2)",
+                rusqlite::params![format!("m-{i}"), format!("src/m{i}.rs")],
+            )
+            .unwrap();
+        }
+
+        // Prime
+        let _ = build_frame(&conn, Path::new("/repo"), None, 100, 40).unwrap();
+        let mut sink: Vec<u8> = Vec::new();
+
+        const N: u32 = 50;
+        let start = std::time::Instant::now();
+        for _ in 0..N {
+            let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40).unwrap();
+            sink.clear();
+            paint(&frame, &mut sink).unwrap();
+        }
+        let avg_us = start.elapsed().as_micros() / N as u128;
+        assert!(
+            avg_us < 16_000,
+            "render avg {avg_us}µs exceeds 16ms budget (60 FPS target)"
+        );
+    }
+
     #[test]
     fn build_frame_tiny_terminal_does_not_panic() {
         let conn = fresh();
