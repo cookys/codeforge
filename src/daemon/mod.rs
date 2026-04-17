@@ -27,10 +27,14 @@ pub mod tick;
 
 use anyhow::Result;
 use rusqlite::Connection;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 use tokio::time::{interval, MissedTickBehavior};
+
+use crate::commentary::budget::OPT_IN_ENV;
+use crate::commentary::dispatch;
 
 pub const TICK_INTERVAL_SECS: u64 = 60;
 pub const CATCHUP_BURST_MS: u64 = 100;
@@ -39,10 +43,14 @@ pub const CATCHUP_BURST_MS: u64 = 100;
 ///
 /// Holds a GameWorld in memory across ticks. Initial load pulls from the
 /// Phase 1 `pet` table (CLI-owned) or seeds defaults for fresh installs.
+///
+/// `db_path` is needed so async commentary dispatches (spawned outside
+/// the tick tx, per Phase 3c P4) can open their own SQLite connection.
 pub async fn run_tick_loop(
     conn: &mut Connection,
     tick_interval: Duration,
     shutdown: Arc<Notify>,
+    db_path: PathBuf,
 ) -> Result<()> {
     let mut world = ecs::GameWorld::load_or_init(conn)?;
 
@@ -50,6 +58,10 @@ pub async fn run_tick_loop(
     let _ = inbox::cleanup_expired(conn, inbox::RETENTION_SECS);
 
     startup_catchup(conn, &mut world).await?;
+
+    // Used by the SessionLong commentary trigger. Recorded once here rather
+    // than read every tick — daemon uptime is an in-memory fact.
+    let session_started_at = now_unix_secs() as i64;
 
     let mut ticker = interval(tick_interval);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Burst);
@@ -60,13 +72,37 @@ pub async fn run_tick_loop(
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                tick::run_one(conn, &mut world)?;
+                let env = tick::TickEnv {
+                    session_started_at,
+                    emit_commentary: true,
+                };
+                let pending = tick::run_one_with_env(conn, &mut world, env)?;
+                if let Some(pending) = pending {
+                    spawn_commentary_dispatch(db_path.clone(), pending);
+                }
             }
             _ = shutdown.notified() => {
                 return Ok(());
             }
         }
     }
+}
+
+/// Fire off the async dispatcher. Errors are logged to stderr — we never
+/// let a commentary failure crash the daemon. Commentary is cosmetic; the
+/// tick already committed, so the game state is intact either way.
+fn spawn_commentary_dispatch(db_path: PathBuf, pending: dispatch::PendingDispatch) {
+    let api_key = std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty());
+    // Keep the kind for the error log — pending is moved into the future.
+    let kind_tag = pending.kind.as_str();
+    tokio::spawn(async move {
+        if let Err(e) = dispatch::execute_dispatch(db_path, pending, api_key).await {
+            eprintln!(
+                "codeforge commentary dispatch failed (kind={kind_tag}, opt_in_env={}): {e:#}",
+                std::env::var(OPT_IN_ENV).unwrap_or_default()
+            );
+        }
+    });
 }
 
 async fn startup_catchup(conn: &mut Connection, world: &mut ecs::GameWorld) -> Result<()> {
@@ -196,9 +232,14 @@ mod tests {
             trigger.notify_one();
         });
 
-        run_tick_loop(&mut conn, Duration::from_millis(10), shutdown)
-            .await
-            .unwrap();
+        run_tick_loop(
+            &mut conn,
+            Duration::from_millis(10),
+            shutdown,
+            PathBuf::from(":memory:"),
+        )
+        .await
+        .unwrap();
 
         let count: i64 = conn
             .query_row("SELECT tick_count FROM last_tick_at WHERE id = 1", [], |r| r.get(0))

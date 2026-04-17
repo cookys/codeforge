@@ -16,12 +16,57 @@
 
 use super::ecs::{GameWorld, LastMessage, PetIdentity, PetLevel};
 use super::{combat, events, first_events, inbox, loot, mob_scanner, mood, systems};
+use crate::commentary::dispatch::{self, PendingDispatch};
 use anyhow::Result;
 use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Per-tick environment. Keeps the growing set of side-channel inputs
+/// (commentary opt-in, session uptime, etc.) off the `run_one` argument
+/// list so live daemon, catch-up replay, and tests can pick their own
+/// defaults.
+///
+/// `emit_commentary = false` short-circuits commentary processing entirely
+/// — used for catch-up ticks (history replay shouldn't narrate) and for
+/// test harnesses that don't want to touch the dispatch tables.
+#[derive(Debug, Clone, Copy)]
+pub struct TickEnv {
+    /// Unix seconds when the daemon process started. Drives the
+    /// SessionLong trigger.
+    pub session_started_at: i64,
+    pub emit_commentary: bool,
+}
+
+impl Default for TickEnv {
+    /// Catch-up / test default: commentary suppressed, session_started_at
+    /// set to `i64::MAX` so any saturating_sub yields 0 — SessionLong never
+    /// fires even if `emit_commentary` were accidentally flipped.
+    fn default() -> Self {
+        Self {
+            session_started_at: i64::MAX,
+            emit_commentary: false,
+        }
+    }
+}
+
 /// Run one game tick against the given connection and world.
+/// Thin wrapper that discards the commentary-dispatch return value —
+/// retained for callers (catch-up, tests) that don't care about commentary.
 pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
+    let _ = run_one_with_env(conn, world, TickEnv::default())?;
+    Ok(())
+}
+
+/// Like `run_one`, but honours a `TickEnv` and returns any commentary
+/// decision made during the tick. The caller is expected to `tokio::spawn`
+/// `dispatch::execute_dispatch` with the returned pending — the async
+/// dispatch opens its own DB connection and never races with subsequent
+/// ticks because every field in `PendingDispatch` is owned/cloned.
+pub fn run_one_with_env(
+    conn: &Connection,
+    world: &mut GameWorld,
+    env: TickEnv,
+) -> Result<Option<PendingDispatch>> {
     let tx = conn.unchecked_transaction()?;
 
     // 1. Drain events. Within the tx: SELECT unseen + UPDATE seen_at.
@@ -85,6 +130,25 @@ pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
         tick_count_next,
     )?;
 
+    // 6d. Phase 3c P4: commentary decision. Runs inside the tx so the
+    // budget reservation commits atomically with the rest of tick state.
+    // Returns a `PendingDispatch` if we should emit — actual phrase
+    // generation + feed insertion happens asynchronously outside the tx.
+    let commentary_pending = if env.emit_commentary {
+        dispatch::decide_and_reserve(
+            &tx,
+            world,
+            &summary.defeats,
+            level_before,
+            level_after,
+            env.session_started_at,
+            tick_count_next,
+            now,
+        )?
+    } else {
+        None
+    };
+
     // 7. Serialize to pet_snapshot (single-row upsert, in tx).
     // Pass current tick so serialize_to_db can apply the LastMessage TTL.
     world.serialize_to_db(&tx, tick_count_next)?;
@@ -96,9 +160,11 @@ pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
         rusqlite::params![now],
     )?;
 
-    // Atomic commit — all-or-nothing
+    // Atomic commit — all-or-nothing. If commit fails, `commentary_pending`
+    // never escapes (the `?` propagates) so no orphan dispatch is spawned
+    // against a non-durable budget reservation.
     tx.commit()?;
-    Ok(())
+    Ok(commentary_pending)
 }
 
 /// Returns (pet's zone_id, next tick_count). Next = current + 1 so the

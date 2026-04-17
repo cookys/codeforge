@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod adopt;
+mod commentary;
 mod daemon;
 mod dream;
 mod emit;
@@ -87,6 +88,30 @@ pub enum Commands {
         /// 省略時顯示當前策略
         name: Option<String>,
     },
+    /// Phase 3c AI Commentary — pet 垃圾話 / 感性評論系統
+    Commentary {
+        #[command(subcommand)]
+        action: CommentaryAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum CommentaryAction {
+    /// 啟用 commentary（settings.commentary_opt_in = 1）
+    On,
+    /// 關閉 commentary
+    Off,
+    /// 列出最近 N 條 commentary（預設 10）
+    List {
+        #[arg(short = 'n', long, default_value = "10")]
+        n: u32,
+    },
+    /// 手動觸發一條 commentary（繞過 rate limit；用於驗證 pipeline）
+    Test {
+        /// 指定 kind（boss_kill/level_up/session_long/long_idle/zone_unlock/manual_test）
+        /// 省略時預設 manual_test
+        kind: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -139,5 +164,11 @@ pub fn run(cli: Cli) -> Result<()> {
         }),
         Commands::Tui => tui::run(&ctx),
         Commands::Strategy { name } => strategy::run(&ctx, name.as_deref()),
+        Commands::Commentary { action } => commentary::run(&ctx, match action {
+            CommentaryAction::On => commentary::CommentaryCmd::On,
+            CommentaryAction::Off => commentary::CommentaryCmd::Off,
+            CommentaryAction::List { n } => commentary::CommentaryCmd::List { n },
+            CommentaryAction::Test { kind } => commentary::CommentaryCmd::Test { kind },
+        }),
     }
 }

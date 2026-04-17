@@ -102,7 +102,10 @@ CREATE TABLE IF NOT EXISTS settings (
 -- 預設設定
 INSERT OR IGNORE INTO settings (key, value) VALUES
     ('theme', 'amber'),
-    ('statusline_width', '100');
+    ('statusline_width', '100'),
+    -- Phase 3c: AI Commentary opt-in flag. '0' = off, '1' = on. Env var
+    -- CODEFORGE_COMMENTARY=1 also enables; the daemon ORs the two sources.
+    ('commentary_opt_in', '0');
 
 -- ═══════════════════════════════════════════════════════════════
 -- Phase 2a — Daemon schema (version 2)
@@ -279,3 +282,66 @@ INSERT OR IGNORE INTO schema_version (version) VALUES (5);
 -- ═══════════════════════════════════════════════════════════════
 
 INSERT OR IGNORE INTO schema_version (version) VALUES (6);
+
+-- ═══════════════════════════════════════════════════════════════
+-- Phase 3c — AI Commentary (version 7)
+-- Three new tables; no ALTERs needed for existing installs because
+-- CREATE TABLE IF NOT EXISTS covers both greenfield and upgrade.
+-- settings.commentary_opt_in is seeded via INSERT OR IGNORE above.
+-- ═══════════════════════════════════════════════════════════════
+
+-- ─── Commentary Feed (display + history view) ───────────────────
+-- Append-only log of phrases emitted to the player. Statusline and
+-- TUI read the latest N rows; ordering by id DESC (autoinc) is
+-- stable and matches emission time without requiring a created_at
+-- index separately from the PK.
+
+CREATE TABLE IF NOT EXISTS commentary_feed (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at      INTEGER NOT NULL,               -- unix seconds
+    tick_count      INTEGER NOT NULL,               -- daemon tick_count snapshot
+    kind            TEXT NOT NULL,                  -- boss_kill | level_up | session_long | long_idle | zone_unlock | manual_test
+    tone            TEXT NOT NULL,                  -- "{village}:{strategy}" composite key
+    phrase          TEXT NOT NULL,
+    phrase_hash     TEXT NOT NULL,                  -- SHA-1 of normalized phrase (dedup key)
+    source          TEXT NOT NULL,                  -- 'haiku' | 'rule'
+    displayed_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_commentary_feed_created
+    ON commentary_feed(created_at DESC);
+
+-- ─── Commentary History (30-day phrase dedup) ──────────────────
+-- One row per (kind, phrase_hash). SHA-1 over normalized text keeps
+-- punctuation/whitespace variants from bloating the pool. last_used_at
+-- drives the 30-day window filter.
+
+CREATE TABLE IF NOT EXISTS commentary_history (
+    phrase_hash   TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    first_used_at INTEGER NOT NULL,
+    last_used_at  INTEGER NOT NULL,
+    use_count     INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (phrase_hash, kind)
+);
+
+CREATE INDEX IF NOT EXISTS idx_commentary_history_recent
+    ON commentary_history(last_used_at DESC);
+
+-- ─── Commentary Budget (global 1/hour rate limit) ──────────────
+-- Single-row state: last_emit_at is unix seconds of last successful
+-- emission. A reservation model: daemon writes last_emit_at before
+-- dispatching a Haiku call; on failure, unreserve() restores the
+-- prior value so a transient HTTP error doesn't burn the 1h window.
+
+CREATE TABLE IF NOT EXISTS commentary_budget (
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    last_emit_at     INTEGER,                       -- nullable: never emitted yet
+    consecutive_skip INTEGER NOT NULL DEFAULT 0     -- telemetry: rate-limited triggers
+);
+
+-- Seed the single row so upsert paths can UPDATE unconditionally.
+INSERT OR IGNORE INTO commentary_budget (id, last_emit_at, consecutive_skip)
+    VALUES (1, NULL, 0);
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (7);

@@ -1,13 +1,14 @@
+mod brain;
 mod cli;
+mod commentary;
 mod daemon;
 mod db;
-mod memory;
 mod dream;
 mod import;
-mod brain;
-mod projection;
+mod memory;
 mod pet;
 mod power;
+mod projection;
 mod tui;
 
 use anyhow::Result;
