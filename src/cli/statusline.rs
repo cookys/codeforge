@@ -3,6 +3,7 @@
 /// UX Pro palette: 三層亮度 (Tier1=222-231 身份, Tier2=71-179 狀態, Tier3=236-246 背景)
 use anyhow::Result;
 use crate::db;
+use crate::pet::live_state::LiveState;
 use crate::pet::state::PetState;
 use crate::pet::village::VILLAGES;
 use owo_colors::OwoColorize;
@@ -13,7 +14,7 @@ use rust_i18n::t;
 pub fn run(ctx: &db::Context) -> Result<()> {
     let data = read_status_input();
     let conn = ctx.open_db()?;
-    let has_pet = PetState::exists(&conn).unwrap_or(false);
+    let has_pet = LiveState::exists(&conn).unwrap_or(false);
 
     let width: usize = std::env::var("CODEFORGE_WIDTH")
         .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
@@ -21,12 +22,19 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
-    if !has_pet {
-        render_no_pet(&mut out, &data, width)?;
-    } else {
-        let pet = PetState::load(&conn).unwrap_or_default();
-        let village = VILLAGES.iter().find(|v| v.id == pet.village).unwrap_or(&VILLAGES[2]);
-        render_full(&mut out, &data, &pet, village, width)?;
+    // LiveState composes daemon-authored pet_snapshot (fallback: Phase 1 pet)
+    // with an overlay of unseen event_inbox XP — so the pet number reacts
+    // to hook events immediately, without waiting for the daemon tick.
+    let loaded = if has_pet { LiveState::load(&conn).ok().flatten() } else { None };
+    match loaded {
+        Some(live) => {
+            let village = VILLAGES
+                .iter()
+                .find(|v| v.id == live.state.village)
+                .unwrap_or(&VILLAGES[2]);
+            render_full(&mut out, &data, &live.state, village, width)?;
+        }
+        None => render_no_pet(&mut out, &data, width)?,
     }
 
     out.flush()?;

@@ -100,14 +100,131 @@ mod tests {
     }
 
     #[test]
+    fn phase2a_tables_created() {
+        let conn = open_migrated_memory_db();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
+             AND name IN ('pet_snapshot','game_world','combat_log','event_inbox','last_tick_at')",
+            [],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(count, 5);
+    }
+
+    #[test]
+    fn event_inbox_unseen_index_exists() {
+        let conn = open_migrated_memory_db();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type='index' AND name='idx_event_inbox_unseen'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn event_inbox_write_shape() {
+        // Hook 端：INSERT 只寫 payload + created_at；seen_at 留 NULL
+        let conn = open_migrated_memory_db();
+        conn.execute(
+            "INSERT INTO event_inbox (payload, created_at) VALUES (?1, ?2)",
+            rusqlite::params!["{\"event\":\"git_commit\"}", 1_700_000_000i64],
+        ).unwrap();
+        let (payload, created_at, seen_at): (String, i64, Option<i64>) = conn.query_row(
+            "SELECT payload, created_at, seen_at FROM event_inbox WHERE id=1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        ).unwrap();
+        assert_eq!(payload, "{\"event\":\"git_commit\"}");
+        assert_eq!(created_at, 1_700_000_000);
+        assert_eq!(seen_at, None);
+
+        // Daemon 端：UPDATE seen_at，不動 payload 欄位（寫入集不重疊）
+        conn.execute(
+            "UPDATE event_inbox SET seen_at = ?1 WHERE id = ?2",
+            rusqlite::params![1_700_000_001i64, 1],
+        ).unwrap();
+        let seen_at: Option<i64> = conn.query_row(
+            "SELECT seen_at FROM event_inbox WHERE id=1",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(seen_at, Some(1_700_000_001));
+    }
+
+    #[test]
+    fn migrations_dedup_phase1_duplicates() {
+        // Simulates an existing Phase-1 DB where schema_version got multiple
+        // rows with version=1 (because INSERT OR IGNORE had no UNIQUE to key off).
+        // Running the new migration on such a DB must dedup before CREATE INDEX.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("
+            CREATE TABLE schema_version (
+                version INTEGER NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO schema_version (version) VALUES (1);
+            INSERT INTO schema_version (version) VALUES (1);
+            INSERT INTO schema_version (version) VALUES (1);
+        ").unwrap();
+
+        // Should succeed (dedup first, then create UNIQUE index)
+        migrations::run(&conn).unwrap();
+
+        let v1_rows: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM schema_version WHERE version=1",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(v1_rows, 1, "duplicate version=1 rows should be deduped");
+    }
+
+    #[test]
+    fn migrations_are_idempotent() {
+        // 同一個連線跑兩次 migration 不應該錯、也不應該重複 seed
+        let conn = Connection::open_in_memory().unwrap();
+        migrations::run(&conn).unwrap();
+        migrations::run(&conn).unwrap();
+
+        let theme_rows: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM settings WHERE key='theme'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(theme_rows, 1);
+
+        let v1_rows: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM schema_version WHERE version=1",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(v1_rows, 1);
+
+        let v2_rows: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM schema_version WHERE version=2",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(v2_rows, 1);
+    }
+
+    #[test]
     fn schema_version_seeded() {
         let conn = open_migrated_memory_db();
-        let v: i64 = conn.query_row(
+        let v1: i64 = conn.query_row(
             "SELECT version FROM schema_version WHERE version=1",
             [],
             |r| r.get(0),
         ).unwrap();
-        assert_eq!(v, 1);
+        assert_eq!(v1, 1);
+
+        let v2: i64 = conn.query_row(
+            "SELECT version FROM schema_version WHERE version=2",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(v2, 2);
     }
 
     #[test]

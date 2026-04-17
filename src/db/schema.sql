@@ -6,6 +6,17 @@ CREATE TABLE IF NOT EXISTS schema_version (
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- version 需 UNIQUE，INSERT OR IGNORE 才有依據（修正 Phase 1 疏失）
+-- 先清除 Phase 1 疏失期間留下的重複 row，再建 UNIQUE index；
+-- UNIQUE index 若看到既存重複資料會直接 fail
+DELETE FROM schema_version
+WHERE rowid NOT IN (
+    SELECT MIN(rowid) FROM schema_version GROUP BY version
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_version_version
+    ON schema_version(version);
+
 -- 插入初始版本（若不存在）
 INSERT OR IGNORE INTO schema_version (version) VALUES (1);
 
@@ -92,3 +103,76 @@ CREATE TABLE IF NOT EXISTS settings (
 INSERT OR IGNORE INTO settings (key, value) VALUES
     ('theme', 'amber'),
     ('statusline_width', '100');
+
+-- ═══════════════════════════════════════════════════════════════
+-- Phase 2a — Daemon schema (version 2)
+-- 新增 tables：daemon 的 ECS serialize 目的地、zone state、combat log、
+-- hook→daemon event 通道（Option D）、tick anchor
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (2);
+
+-- ─── Pet Snapshot（daemon tick 序列化目的地）────────────────
+-- 由 daemon 獨占寫入；CLI statusline 唯讀。
+-- Phase 1 的 `pet` 表保留作 legacy；Phase 2+ 逐步遷移 statusline 讀這張表
+
+CREATE TABLE IF NOT EXISTS pet_snapshot (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    village      TEXT NOT NULL,
+    level        INTEGER NOT NULL,
+    hp           INTEGER NOT NULL,
+    hp_max       INTEGER NOT NULL,
+    xp           INTEGER NOT NULL,
+    xp_to_next   INTEGER NOT NULL,
+    atk          INTEGER NOT NULL,
+    def          INTEGER NOT NULL,
+    sup          INTEGER NOT NULL,
+    ver          INTEGER NOT NULL,
+    last_message TEXT,
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ─── Game World（zone 狀態、Zone Mastery 聲望）─────────────
+-- zone_id: rust / python / typescript / go / javascript
+
+CREATE TABLE IF NOT EXISTS game_world (
+    zone_id       TEXT PRIMARY KEY,
+    unlocked      INTEGER NOT NULL DEFAULT 0,   -- 0 = locked, 1 = unlocked
+    kill_count    INTEGER NOT NULL DEFAULT 0,   -- 累積擊殺（Zone Mastery 依據）
+    last_visit_at TEXT
+);
+
+-- ─── Combat Log（MOB 擊殺紀錄，Phase 2b 會填）──────────────
+
+CREATE TABLE IF NOT EXISTS combat_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_id     TEXT NOT NULL,
+    mob_name    TEXT NOT NULL,
+    mob_kind    TEXT NOT NULL,                  -- weak / medium / boss
+    xp_gained   INTEGER NOT NULL DEFAULT 0,
+    loot        TEXT,                           -- JSON blob
+    occurred_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ─── Event Inbox（hook → daemon 通道，Option D）────────────
+-- 兩寫者縮窄版：hook INSERT (id/payload/created_at)，
+-- daemon UPDATE (seen_at)。欄位不重疊，SQLite WAL 直接處理。
+
+CREATE TABLE IF NOT EXISTS event_inbox (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    payload    TEXT NOT NULL,                   -- JSON blob
+    created_at INTEGER NOT NULL,                -- unix ts (seconds)
+    seen_at    INTEGER                          -- unix ts；NULL = 未處理
+);
+
+CREATE INDEX IF NOT EXISTS idx_event_inbox_unseen
+    ON event_inbox(id) WHERE seen_at IS NULL;
+
+-- ─── Last Tick Anchor（daemon crash recovery）──────────────
+-- 由 daemon 每 tick 完成後更新；catch-up 邏輯從這裡讀起點
+
+CREATE TABLE IF NOT EXISTS last_tick_at (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    tick_at    INTEGER NOT NULL,                -- unix ts 最後成功 tick
+    tick_count INTEGER NOT NULL DEFAULT 0       -- 累積 tick 次數
+);
