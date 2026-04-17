@@ -15,9 +15,10 @@ pub mod render;
 use anyhow::Result;
 use std::io;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
+use tokio::sync::mpsc;
 use tokio::time::{interval, MissedTickBehavior};
 
 use crate::db::Context;
@@ -39,17 +40,24 @@ pub async fn run(ctx: &Context) -> Result<()> {
     let scan_root = scan_root_for_tui();
     let cwd = std::env::current_dir().ok();
 
-    let shutdown = Arc::new(Notify::new());
-    let keyboard = events::spawn_keyboard_task(shutdown.clone());
+    // Buffered mpsc channel: capacity 1 means a quit-key pressed before
+    // the main loop first polls rx.recv() is still delivered (unlike
+    // Notify::notify_waiters which drops when no waiter is registered).
+    let (tx, mut rx) = mpsc::channel::<()>(1);
+    // Shared flag: keyboard task checks between polls so it returns
+    // within ~100ms after the main loop signals exit, instead of
+    // continuing to consume keystrokes from the user's shell post-TUI.
+    let running = Arc::new(AtomicBool::new(true));
+    let keyboard = events::spawn_keyboard_task(tx, running.clone());
 
     // Paint one frame immediately so the user doesn't stare at a blank
     // alt-screen for up to REFRESH_INTERVAL before the first tick.
     paint_once(ctx, scan_root.as_deref(), cwd.as_deref())?;
 
     let mut ticker = interval(REFRESH_INTERVAL);
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     // First immediate tick already paid for by paint_once — skip it so
     // the next tick actually waits REFRESH_INTERVAL.
-    ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
     ticker.tick().await;
 
     loop {
@@ -61,12 +69,17 @@ pub async fn run(ctx: &Context) -> Result<()> {
                     eprintln!("render error: {e}");
                 }
             }
-            _ = shutdown.notified() => {
-                keyboard.abort();
+            _ = rx.recv() => {
                 break;
             }
         }
     }
+    // Signal the keyboard task to exit at its next poll boundary so it
+    // doesn't eat the user's next shell keystroke. Then await the task
+    // with a bounded timeout as a belt-and-suspenders — `running` alone
+    // is sufficient, but awaiting gives us a clean handoff.
+    running.store(false, Ordering::Release);
+    let _ = tokio::time::timeout(Duration::from_millis(200), keyboard).await;
     Ok(())
 }
 
