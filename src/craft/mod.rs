@@ -16,10 +16,8 @@
 pub mod effects;
 pub mod recipes;
 
-pub use effects::{
-    active_effects_for_zone, apply_effect, is_effect_active, ActiveEffect, EffectKind,
-};
-pub use recipes::{find_recipe, recipes, Ingredient, Recipe};
+pub use effects::{active_effects_for_zone, is_effect_active, ActiveEffect, EffectKind};
+pub use recipes::{find_recipe, recipes, Recipe};
 
 use anyhow::{bail, Result};
 use rusqlite::Connection;
@@ -125,18 +123,13 @@ pub fn use_item(
             rusqlite::params![remaining, recipe.product.kind, item_name],
         )?;
     }
-    let expires_at = now + effect.duration_days * 24 * 60 * 60;
-    tx.execute(
-        "INSERT INTO active_effects
-             (effect_kind, zone_id, applied_at, expires_at, source_item)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![
-            effect.kind.as_str(),
-            zone_id,
-            now,
-            expires_at,
-            item_name,
-        ],
+    let expires_at = effects::apply_effect(
+        &tx,
+        effect.kind,
+        zone_id,
+        now,
+        effect.duration_days,
+        item_name,
     )?;
     tx.commit()?;
     Ok(expires_at)
