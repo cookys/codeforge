@@ -7,3 +7,4 @@
 pub mod guard;
 pub mod layout;
 pub mod local_map;
+pub mod panels;
