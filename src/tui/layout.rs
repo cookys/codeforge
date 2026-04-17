@@ -37,6 +37,9 @@ pub struct Rect {
 
 impl Rect {
     /// True if the rectangle has zero area. Renderers should no-op on these.
+    /// Currently only consumed by unit tests that assert clamping behavior;
+    /// kept pub so downstream code (P3a World Map layout) can query it.
+    #[allow(dead_code)]
     pub fn is_empty(self) -> bool {
         self.width == 0 || self.height == 0
     }
