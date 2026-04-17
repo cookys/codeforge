@@ -11,6 +11,7 @@ mod learn;
 mod pet;
 mod search;
 mod statusline;
+mod strategy;
 mod tui;
 
 #[derive(Parser)]
@@ -81,6 +82,11 @@ pub enum Commands {
     },
     /// 啟動 alt-screen TUI 面板（pet / local map / combat log）
     Tui,
+    /// 切換或查看戰鬥策略（aggressive / defensive / explorer / scholar）
+    Strategy {
+        /// 省略時顯示當前策略
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -132,5 +138,6 @@ pub fn run(cli: Cli) -> Result<()> {
             DaemonAction::Install => daemon::DaemonCmd::Install,
         }),
         Commands::Tui => tui::run(&ctx),
+        Commands::Strategy { name } => strategy::run(&ctx, name.as_deref()),
     }
 }
