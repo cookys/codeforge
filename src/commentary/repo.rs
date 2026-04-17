@@ -135,8 +135,13 @@ pub fn budget_reserve(conn: &Connection, now: i64) -> Result<Option<i64>> {
     Ok(prev)
 }
 
-/// Restore the prior `last_emit_at` after a failed LLM dispatch. Safe to call
-/// with `None` — NULL is a valid value (never emitted yet).
+/// Restore the prior `last_emit_at`. Kept despite the optimistic-reserve
+/// design (no current caller) because:
+///   (a) repo_reserve's return value is documented as "prior for unreserve",
+///   (b) tests exercise it to verify the round-trip,
+///   (c) a future Haiku-retry policy may want to unreserve on double-failure.
+/// Audit target for Phase 3f+; remove if still unused then.
+#[allow(dead_code)]
 pub fn budget_unreserve(conn: &Connection, prev: Option<i64>) -> Result<()> {
     conn.execute(
         "UPDATE commentary_budget SET last_emit_at = ?1 WHERE id = 1",

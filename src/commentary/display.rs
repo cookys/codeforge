@@ -48,7 +48,7 @@ pub fn should_show(now: i64) -> bool {
     x ^= x >> 27;
     x = x.wrapping_mul(0x94D0_49BB_1331_11EB);
     x ^= x >> 31;
-    (x % 20) == 0
+    x.is_multiple_of(20)
 }
 
 /// One row from the commentary feed, stripped for TUI consumption. Unlike

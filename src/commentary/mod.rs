@@ -14,11 +14,15 @@
 //!
 //! Phase 3c P2+ modules (trigger, budget, generator) land in sibling files.
 
-// P1 ships the scaffolding only; the daemon tick integration (P4) and CLI
-// (P6) wire everything up. Suppress unused-warnings until P2 starts calling
-// in — each subsequent phase removes the corresponding item's implicit
-// allowance via actual usage.
-#![allow(dead_code)]
+// Public API surface — consumer list as of Phase 3c P6:
+//   tick.rs / daemon/mod.rs → decide_and_reserve, execute_dispatch, PendingDispatch
+//   cli/commentary.rs       → Kind, Source, Tone, repo::*, generator::*, display::*
+//   cli/statusline.rs       → display::statusline_override
+//   tui/panels/combat_log.rs → display::CommentaryEntry
+//   tui/render.rs           → display::recent_commentary
+// Some repo helpers (budget_unreserve, budget_incr_skip's read side) are
+// defensive API we don't currently exercise — kept for future Haiku
+// retry logic. If a review asks, prune them then.
 
 use sha1::{Digest, Sha1};
 
@@ -48,6 +52,11 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// Every variant in insertion order. Used by roundtrip tests; kept
+    /// as a pub const so any future generator/display that wants to
+    /// enumerate kinds (e.g. Phase 3f monthly-report aggregations) has
+    /// one source of truth.
+    #[allow(dead_code)]
     pub const ALL: [Kind; 6] = [
         Self::BossKill,
         Self::LevelUp,
@@ -128,7 +137,11 @@ impl Tone {
     }
 }
 
-/// One row of `commentary_feed`. `id` is `None` before insertion.
+/// One row of `commentary_feed`. `id` is `None` before insertion. Fields
+/// are pub so any future consumer (monthly-snapshot aggregations, debug
+/// dump commands) can read them without going through repo; a few are
+/// currently unused downstream — kept to mirror the DB schema faithfully.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct FeedRow {
     pub id: Option<i64>,
