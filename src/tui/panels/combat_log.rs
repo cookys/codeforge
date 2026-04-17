@@ -4,7 +4,7 @@
 //! `[HH:MM] kind — name · +XP XP` lines. Pure function of a pre-loaded
 //! `Vec<CombatLogRow>` so tests can feed fixtures without hitting SQLite.
 
-use super::{pad_to_width, vis_width};
+use super::pad_to_width;
 
 /// A single combat_log row loaded from DB. The DB loader lives in P5;
 /// having the struct here keeps the renderer testable in isolation.
@@ -68,6 +68,7 @@ fn short_time(ts: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::vis_width;
 
     fn row(kind: &str, name: &str, xp: i64, loot: Option<&str>) -> CombatLogRow {
         CombatLogRow {

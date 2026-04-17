@@ -3,7 +3,7 @@
 //! Renders a 3-line block summarizing the pet: name/level, HP/XP bars,
 //! five-stat row. Pure function of `PetState` + width; no terminal IO.
 
-use super::{pad_to_width, vis_width};
+use super::pad_to_width;
 use crate::pet::state::PetState;
 
 /// Render the 3-row PetStatus panel as bare strings, each padded to
@@ -45,6 +45,7 @@ fn bar(current: u32, max: u32, cells: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::vis_width;
 
     fn sample() -> PetState {
         PetState {
