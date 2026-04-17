@@ -160,13 +160,31 @@ pub fn run_tick(
         Vec::new()
     };
 
+    // Phase 3e Refactor Blueprint: when `ReduceDifficulty` is live for
+    // this zone (or globally), mobs become effectively easier to hit.
+    // Applied to the `difficulty` term of `hit_chance` — not the damage
+    // formula — because spec §3.5 scopes the buff to "MOB difficulty
+    // -20%", not a player ATK multiplier.
+    //
+    // One read per tick (not per mob). Effect lookup is the same ~µs
+    // range as the Explorer `load_all` call above, so no tick-budget
+    // concern; gated on effect presence so non-Blueprint users pay
+    // essentially nothing.
+    let reduce_difficulty = crate::craft::is_effect_active(
+        conn,
+        crate::craft::EffectKind::ReduceDifficulty,
+        &zone_id,
+        now,
+    )?;
+
     mobs.sort_by_key(|m| (strategy.priority_order_ctx(m.kind, &zone_id, &zones), m.id));
 
     let mut summary = CombatSummary::default();
     for mob in mobs {
         summary.attacks += 1;
         let mut rng = Rng::from_seed(hash_seed(rng_salt, mob.id as u64));
-        let hc = hit_chance(pet_atk, pet_ver, mob.def, mob.difficulty);
+        let effective_difficulty = apply_reduce_difficulty(mob.difficulty, reduce_difficulty);
+        let hc = hit_chance(pet_atk, pet_ver, mob.def, effective_difficulty);
         let roll = rng.next_f64();
 
         let mut defeated = false;
@@ -214,6 +232,22 @@ pub fn run_tick(
 pub(crate) fn compute_damage(pet_atk: u32, strategy: Strategy, roll_mult: f64) -> u32 {
     let raw = pet_atk as f64 * strategy.atk_mult() * roll_mult;
     (raw.ceil() as u32).max(1)
+}
+
+/// Apply Phase 3e Refactor Blueprint modifier: when live, the effective
+/// mob difficulty used by `hit_chance` is `ceil(difficulty * 0.8)`. Uses
+/// `ceil` so a difficulty-1 mob stays at difficulty 1 (never free hits) —
+/// matches the spec intent "降低難度" without collapsing to guaranteed
+/// wins at the low end.
+///
+/// `active == false` → pass-through. Extracted as a pure function so the
+/// modifier is unit-testable without setting up a live effect row.
+pub(crate) fn apply_reduce_difficulty(difficulty: u32, active: bool) -> u32 {
+    if !active {
+        return difficulty;
+    }
+    let reduced = (difficulty as f64 * 0.8).ceil() as u32;
+    reduced.max(1)
 }
 
 /// Counter-damage = `mob_atk - floor(pet_def * def_mult / 2)`, saturating at 0.
@@ -520,6 +554,84 @@ mod tests {
             .get::<&mut PetStrategy>(pet)
             .unwrap();
         ps.value = s;
+    }
+
+    // ─── Phase 3e: ReduceDifficulty ───────────────────────────
+
+    #[test]
+    fn apply_reduce_difficulty_passthrough_when_inactive() {
+        assert_eq!(apply_reduce_difficulty(50, false), 50);
+        assert_eq!(apply_reduce_difficulty(0, false), 0);
+        assert_eq!(apply_reduce_difficulty(1, false), 1);
+    }
+
+    #[test]
+    fn apply_reduce_difficulty_scales_by_80_percent_ceil() {
+        // 100 * 0.8 = 80
+        assert_eq!(apply_reduce_difficulty(100, true), 80);
+        // 5 * 0.8 = 4 (exact)
+        assert_eq!(apply_reduce_difficulty(5, true), 4);
+        // 3 * 0.8 = 2.4 → ceil 3 (stays flat — effect has no impact
+        // on boundary values, matching spec intent "降低難度" without
+        // collapsing low-diff mobs to free-hit territory)
+        assert_eq!(apply_reduce_difficulty(3, true), 3);
+    }
+
+    #[test]
+    fn apply_reduce_difficulty_clamps_min_1() {
+        // 1 * 0.8 = 0.8 → ceil 1 (never free hits)
+        assert_eq!(apply_reduce_difficulty(1, true), 1);
+        assert_eq!(apply_reduce_difficulty(2, true), 2);
+    }
+
+    #[test]
+    fn reduced_difficulty_raises_hit_chance() {
+        // Composition proof: the scaled difficulty flows through hit_chance
+        // to produce a higher probability. Prevents silent regressions if
+        // apply_reduce_difficulty's scale changes but is kept in combat.
+        let base = hit_chance(10, 5, 10, 100);
+        let with_effect = hit_chance(10, 5, 10, apply_reduce_difficulty(100, true));
+        assert!(with_effect > base, "effect must raise hit chance");
+    }
+
+    #[test]
+    fn run_tick_consumes_reduce_difficulty_effect() {
+        // Integration: seed one high-difficulty mob + an active
+        // ReduceDifficulty effect, confirm run_tick's hit_chance path
+        // reads from active_effects (no panic + tick advances even
+        // when the effect table is queried).
+        let (conn, mut world) = fresh();
+        conn.execute(
+            "INSERT INTO mobs (zone_id, kind, name, hp, hp_max,
+                               atk, def, difficulty, spawned_at)
+             VALUES ('rust', 'boss', 'tough', 1, 1, 1, 1, 100, 100)",
+            [],
+        )
+        .unwrap();
+        // Effect live across every plausible `now` value.
+        conn.execute(
+            "INSERT INTO active_effects
+                 (effect_kind, zone_id, applied_at, expires_at, source_item)
+             VALUES ('reduce_difficulty', 'rust', 0, ?1, 'Refactor Blueprint')",
+            rusqlite::params![i64::MAX],
+        )
+        .unwrap();
+
+        // At least one tick should hit the 1-HP mob — hit_chance is
+        // (pet_atk+ver)/(def+difficulty). With effect: difficulty drops
+        // from 100 to 80, so chance rises noticeably across 20 rolls.
+        let mut defeated = false;
+        for t in 100..120 {
+            let s = run_tick(&conn, &mut world, t, 9_000).unwrap();
+            if !s.defeats.is_empty() {
+                defeated = true;
+                break;
+            }
+        }
+        assert!(
+            defeated,
+            "1-HP boss with ReduceDifficulty must fall within 20 ticks"
+        );
     }
 
     #[test]

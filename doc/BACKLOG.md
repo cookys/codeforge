@@ -80,3 +80,12 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 **Area**: Build tooling / `src/` conventions
 **Premise**: CJK truncation bug hit 4 files in Phase 1. A custom clippy lint or grep CI check would prevent recurrence.
 **Trigger**: Pick up when Phase 2 code volume increases (more new files = more risk). S-size: add to a `scripts/check-cjk-safe.sh`.
+
+---
+
+## B10 — Doppelganger Split + `SuppressDoppelgangerSplit` Runtime
+
+**Area**: `src/daemon/mob.rs`, `src/daemon/combat.rs`, `src/db/schema.sql`
+**Premise**: Phase 3e 的 `Doppelganger Ward` item 可 craft + use，`active_effects` table 正確寫入，但 daemon 沒有 doppelganger split 邏輯 —— 整個 split mechanic（on-defeat spawn / cascade / stats 繼承）在 spec §2 只有一行，需要先補 design 才能寫 code。Ward 目前 storage-only，`codeforge inventory` 會顯示警語提醒玩家。
+**Trigger**: `doc/proposals/2026-04-18-doppelganger-split.md` 有 `## Decision` 區塊 —— user 回答三個參數（`split_trigger` / `max_children` / `child_stat_ratio`）後可直接進入 L-size 實作。
+**Status 2026-04-18**: Proposal 已寫，等 user decision。預設答案（A/A/A）列在 proposal 文末。
