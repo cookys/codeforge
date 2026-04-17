@@ -22,6 +22,7 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, MissedTickBehavior};
 
 use crate::db::Context;
+use crate::pet::session::{get_last_seen, update_last_seen, WelcomeBackSummary};
 
 /// Refresh interval — 1 Hz matches the pace of daemon-driven state
 /// changes (daemon ticks every 60s, event_inbox overlay is cheap to
@@ -40,6 +41,19 @@ pub async fn run(ctx: &Context) -> Result<()> {
     let scan_root = scan_root_for_tui();
     let cwd = std::env::current_dir().ok();
 
+    // Phase 3d §3.1: compute welcome-back BEFORE alt-screen takeover so
+    // the SQL work doesn't flash an empty frame. `update_last_seen` closes
+    // the window immediately — if the user relaunches TUI seconds later,
+    // no stale welcome-back will re-show.
+    let welcome_lines = compute_welcome_lines(ctx).unwrap_or_default();
+    // Hold the first-paint lines behind a Cell-like swap via take-on-use.
+    // Avoids Arc<Mutex> for a single-threaded state transition.
+    let mut welcome_once: Option<Vec<String>> = if welcome_lines.is_empty() {
+        None
+    } else {
+        Some(welcome_lines)
+    };
+
     // Buffered mpsc channel: capacity 1 means a quit-key pressed before
     // the main loop first polls rx.recv() is still delivered (unlike
     // Notify::notify_waiters which drops when no waiter is registered).
@@ -52,7 +66,15 @@ pub async fn run(ctx: &Context) -> Result<()> {
 
     // Paint one frame immediately so the user doesn't stare at a blank
     // alt-screen for up to REFRESH_INTERVAL before the first tick.
-    paint_once(ctx, scan_root.as_deref(), cwd.as_deref())?;
+    paint_once(
+        ctx,
+        scan_root.as_deref(),
+        cwd.as_deref(),
+        welcome_once.as_deref(),
+    )?;
+    // Welcome-back lives for exactly one paint. Dropping it here means
+    // subsequent ticker-driven paints show the normal combat log.
+    welcome_once = None;
 
     let mut ticker = interval(REFRESH_INTERVAL);
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -63,7 +85,12 @@ pub async fn run(ctx: &Context) -> Result<()> {
     loop {
         tokio::select! {
             _ = ticker.tick() => {
-                if let Err(e) = paint_once(ctx, scan_root.as_deref(), cwd.as_deref()) {
+                if let Err(e) = paint_once(
+                    ctx,
+                    scan_root.as_deref(),
+                    cwd.as_deref(),
+                    welcome_once.as_deref(),
+                ) {
                     // One bad frame shouldn't kill the TUI — log to stderr
                     // (goes to alt-screen too, will be cleared next frame).
                     eprintln!("render error: {e}");
@@ -100,12 +127,36 @@ fn paint_once(
     ctx: &Context,
     scan_root: Option<&std::path::Path>,
     cwd: Option<&std::path::Path>,
+    welcome_override: Option<&[String]>,
 ) -> Result<()> {
     let conn = ctx.open_db()?;
     let (cols, rows) = crossterm::terminal::size().unwrap_or((100, 40));
     let root = scan_root.unwrap_or_else(|| std::path::Path::new("."));
-    let frame = render::build_frame(&conn, root, cwd, cols, rows)?;
+    let frame = render::build_frame(&conn, root, cwd, cols, rows, welcome_override)?;
     let mut stdout = io::stdout();
     render::paint(&frame, &mut stdout)?;
     Ok(())
+}
+
+/// Compute the 2-3 line welcome-back greeting if the player's been away
+/// long enough, and close the window via `update_last_seen`. Silent on
+/// any DB error — a broken welcome-back must not block the TUI from
+/// opening.
+fn compute_welcome_lines(ctx: &Context) -> Result<Vec<String>> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let conn = ctx.open_db()?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let mut lines: Vec<String> = Vec::new();
+    if let Ok(Some(last)) = get_last_seen(&conn) {
+        if let Ok(Some(summary)) = WelcomeBackSummary::build(&conn, last, now, None) {
+            if summary.has_content() || summary.absence_seconds >= 3600 {
+                lines = summary.render_lines();
+            }
+        }
+    }
+    let _ = update_last_seen(&conn, now);
+    Ok(lines)
 }

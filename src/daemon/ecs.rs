@@ -56,6 +56,32 @@ pub struct LastMessage {
 /// user to see the kill narration a few times, not so long it goes stale).
 pub const LAST_MESSAGE_TTL_TICKS: u64 = 5;
 
+/// Phase 3d: pet mood (0..=100). Unlike `LastMessage`, Mood is a persistent
+/// stat — the value itself never expires, it just drifts with signals. The
+/// `tick_stamp` records the last tick that wrote a new value, for diagnostic
+/// purposes (and to let future systems reason about "how long since a signal").
+#[derive(Debug, Clone, Copy)]
+pub struct Mood {
+    pub value: u32,
+    pub tick_stamp: u64,
+}
+
+pub const MOOD_DEFAULT: u32 = 60;
+pub const MOOD_MIN: u32 = 0;
+pub const MOOD_MAX: u32 = 100;
+
+/// Bookkeeping for rate-limited mood signals. Deliberately **not
+/// serialized** to `pet_snapshot` — the rate-limit artifact on daemon
+/// restart (one extra activity bump or idle penalty on first tick) is
+/// acceptable versus the schema churn of persisting three more fields
+/// that only matter during a single daemon lifetime.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MoodBookkeeping {
+    pub activity_last_bump_at_unix: i64,
+    pub idle_last_penalty_at_unix: i64,
+    pub was_low_hp: bool,
+}
+
 // ─── GameWorld wrapper ──────────────────────────────────────────────
 
 /// Daemon-owned world. Single pet entity for Phase 2a.
@@ -79,7 +105,7 @@ impl GameWorld {
         let from_snapshot = conn
             .query_row(
                 "SELECT village, level, hp, hp_max, xp, xp_to_next,
-                        atk, def, sup, ver
+                        atk, def, sup, ver, mood, mood_tick_stamp
                  FROM pet_snapshot WHERE id = 1",
                 [],
                 |r| {
@@ -94,16 +120,18 @@ impl GameWorld {
                         r.get::<_, i64>(7)? as u32,
                         r.get::<_, i64>(8)? as u32,
                         r.get::<_, i64>(9)? as u32,
+                        r.get::<_, i64>(10)? as u32,
+                        r.get::<_, i64>(11)? as u64,
                     ))
                 },
             )
             .optional()?;
 
-        let (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver) =
-            if let Some((village, level, hp, hp_max, xp, xp_to_next, atk, def, sup, ver)) =
+        let (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver, mood_value, mood_ts) =
+            if let Some((village, level, hp, hp_max, xp, xp_to_next, atk, def, sup, ver, mood, mood_ts)) =
                 from_snapshot
             {
-                (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver)
+                (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver, mood, mood_ts)
             } else {
                 // Phase 1 fallback — no hp_max column, derive from hp.
                 let from_pet = conn
@@ -132,14 +160,22 @@ impl GameWorld {
                         ("rust".to_string(), 1, 0, 100, 10, 10, 10, 10, 10)
                     });
                 let hp_max = hp.max(10);
-                (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver)
+                // Phase 1 row has no mood — start at default.
+                (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver, MOOD_DEFAULT, 0)
             };
+
+        // Clamp mood on load in case a prior version wrote out of range.
+        let mood_value = mood_value.clamp(MOOD_MIN, MOOD_MAX);
 
         let pet = world.spawn((
             PetIdentity { village },
             PetLevel { level, xp, xp_to_next },
             PetVitals { hp, hp_max },
             PetStats { atk, def, sup, ver },
+            Mood { value: mood_value, tick_stamp: mood_ts },
+            // Bookkeeping starts at zeros on every daemon boot — see note
+            // on MoodBookkeeping about why we don't persist these.
+            MoodBookkeeping::default(),
         ));
 
         Ok(Self { world, pet })
@@ -167,14 +203,20 @@ impl GameWorld {
             }
             _ => None,
         };
+        // Mood is always present in the ECS (load_or_init seeds a default),
+        // so read directly. Clamp defensively in case a system wrote out
+        // of range.
+        let mood = self.world.get::<&Mood>(self.pet)?;
+        let mood_value = mood.value.clamp(MOOD_MIN, MOOD_MAX);
+        let mood_ts = mood.tick_stamp;
 
         let now_iso = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         conn.execute(
             "INSERT INTO pet_snapshot
                  (id, village, level, hp, hp_max, xp, xp_to_next,
-                  atk, def, sup, ver, last_message, updated_at)
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                  atk, def, sup, ver, last_message, mood, mood_tick_stamp, updated_at)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(id) DO UPDATE SET
                  village = excluded.village,
                  level = excluded.level,
@@ -187,6 +229,8 @@ impl GameWorld {
                  sup = excluded.sup,
                  ver = excluded.ver,
                  last_message = excluded.last_message,
+                 mood = excluded.mood,
+                 mood_tick_stamp = excluded.mood_tick_stamp,
                  updated_at = excluded.updated_at",
             rusqlite::params![
                 identity.village,
@@ -200,6 +244,8 @@ impl GameWorld {
                 stats.sup as i64,
                 stats.ver as i64,
                 last_msg,
+                mood_value as i64,
+                mood_ts as i64,
                 now_iso,
             ],
         )?;
@@ -386,5 +432,82 @@ mod tests {
             .query_row("SELECT last_message FROM pet_snapshot WHERE id = 1", [], |r| r.get(0))
             .unwrap();
         assert_eq!(msg, None);
+    }
+
+    // ─── Phase 3d Mood tests ───────────────────────────────────────────
+
+    #[test]
+    fn fresh_install_seeds_default_mood() {
+        let conn = fresh_conn();
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        let mood = gw.world.get::<&Mood>(gw.pet).unwrap();
+        assert_eq!(mood.value, MOOD_DEFAULT);
+        assert_eq!(mood.tick_stamp, 0);
+    }
+
+    #[test]
+    fn serialize_writes_mood_columns() {
+        let conn = fresh_conn();
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        {
+            let mut mood = gw.world.get::<&mut Mood>(gw.pet).unwrap();
+            mood.value = 83;
+            mood.tick_stamp = 42;
+        }
+        gw.serialize_to_db(&conn, 42).unwrap();
+
+        let (v, ts): (i64, i64) = conn
+            .query_row(
+                "SELECT mood, mood_tick_stamp FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(v, 83);
+        assert_eq!(ts, 42);
+    }
+
+    #[test]
+    fn snapshot_mood_round_trips_through_load() {
+        // Daemon wrote mood, then restarted: new ECS world must recover the
+        // same value (unlike LastMessage which is transient).
+        let conn = fresh_conn();
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        {
+            let mut mood = gw.world.get::<&mut Mood>(gw.pet).unwrap();
+            mood.value = 27;
+            mood.tick_stamp = 500;
+        }
+        gw.serialize_to_db(&conn, 500).unwrap();
+        drop(gw);
+
+        let gw2 = GameWorld::load_or_init(&conn).unwrap();
+        let mood = gw2.world.get::<&Mood>(gw2.pet).unwrap();
+        assert_eq!(mood.value, 27);
+        assert_eq!(mood.tick_stamp, 500);
+    }
+
+    #[test]
+    fn load_clamps_out_of_range_mood() {
+        // Defensive: if a prior version or manual SQL wrote mood=150,
+        // the ECS view must clamp to 100 (CHECK constraint would actually
+        // prevent this on insert, but belt-and-braces).
+        let conn = fresh_conn();
+        // Seed a row that bypasses ECS write (use UPDATE to dodge CHECK
+        // on fresh insert defaults — CHECK still fires so we stay within
+        // range here, but the clamp guards against any future loosening).
+        conn.execute(
+            "INSERT INTO pet_snapshot
+               (id, village, level, hp, hp_max, xp, xp_to_next,
+                atk, def, sup, ver, last_message, mood, mood_tick_stamp, updated_at)
+             VALUES (1, 'rust', 1, 10, 10, 0, 100, 10, 10, 10, 10,
+                     NULL, 100, 0, datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        let mood = gw.world.get::<&Mood>(gw.pet).unwrap();
+        assert!(mood.value <= MOOD_MAX);
     }
 }

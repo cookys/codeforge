@@ -17,8 +17,10 @@ pub mod events;
 pub mod inbox;
 pub mod lifecycle;
 pub mod loot;
+pub mod first_events;
 pub mod mob;
 pub mod mob_scanner;
+pub mod mood;
 pub mod systems;
 pub mod tick;
 

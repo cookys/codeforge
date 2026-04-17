@@ -14,8 +14,8 @@
 //! `last_tick_at` is unchanged. Next startup catch-up replays the missed
 //! tick. No XP loss, no double-counting, no orphan loot.
 
-use super::ecs::{GameWorld, LastMessage, PetIdentity};
-use super::{combat, events, inbox, loot, mob_scanner, systems};
+use super::ecs::{GameWorld, LastMessage, PetIdentity, PetLevel};
+use super::{combat, events, first_events, inbox, loot, mob_scanner, mood, systems};
 use anyhow::Result;
 use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -54,8 +54,30 @@ pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
         set_last_message_from_defeats(world, &summary.defeats, xp, tick_count_next);
     }
 
-    // 6. Level-up check AFTER combat XP is applied
+    // 6. Level-up check AFTER combat XP is applied. Snapshot level either
+    // side of the check — first_events uses the delta to detect crossings
+    // that the cascade may jump over in one tick.
+    let level_before = world.world().get::<&PetLevel>(world.pet()).map(|l| l.level).unwrap_or(0);
     systems::check_levelup(world);
+    let level_after = world.world().get::<&PetLevel>(world.pet()).map(|l| l.level).unwrap_or(level_before);
+
+    // 6b. Phase 3d: mood decay. Runs after combat so boss kills and
+    // post-counter HP are final, and before serialize so the new mood
+    // value lands in this tick's snapshot row.
+    mood::update_mood(world, &summary.defeats, &tx, now, tick_count_next)?;
+
+    // 6c. Phase 3d §3.8: one-shot milestone events. Runs *after* the
+    // generic kill message so first_* commentary overrides it on the
+    // single tick a milestone fires.
+    first_events::check_and_trigger(
+        world,
+        &tx,
+        &summary.defeats,
+        level_before,
+        level_after,
+        &zone_id,
+        tick_count_next,
+    )?;
 
     // 7. Serialize to pet_snapshot (single-row upsert, in tx).
     // Pass current tick so serialize_to_db can apply the LastMessage TTL.
@@ -335,12 +357,27 @@ mod tests {
     fn tick_writes_last_message_on_defeat() {
         use super::super::ecs::LastMessage;
         let (conn, mut world) = fresh();
-        spawn_mob(&conn, "rust", "ghost", "unused @ x.rs", 1);
+        // Drain the first-tick zone-entry milestone (Phase 3d §3.8) first —
+        // otherwise its感性 line overwrites the generic defeat commentary
+        // on the one and only tick it fires. This mirrors real usage: a
+        // running daemon crosses into a zone long before its first kill.
+        run_one(&conn, &mut world).unwrap();
 
+        spawn_mob(&conn, "rust", "ghost", "unused @ x.rs", 1);
         for _ in 0..30 {
             run_one(&conn, &mut world).unwrap();
-            let pet = world.pet();
-            if let Ok(msg) = world.world().get::<&LastMessage>(pet) {
+            // Wait for the mob to actually be defeated before asserting —
+            // otherwise the zone-entry or earlier combat state confuses
+            // the check.
+            let defeated: Option<i64> = conn
+                .query_row(
+                    "SELECT defeated_at FROM mobs WHERE name = 'unused @ x.rs'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            if defeated.is_some() {
+                let msg = world.world().get::<&LastMessage>(world.pet()).unwrap();
                 assert!(msg.text.contains("擊殺"), "got: {}", msg.text);
                 return;
             }
