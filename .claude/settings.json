@@ -8,6 +8,14 @@
         "timeout": 10000
       }]
     }],
+    "PreToolUse": [{
+      "matcher": "Edit|Write|Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "node /home/codepower/projects/codeforge/.claude/scripts/check-dev-flow.js",
+        "timeout": 5000
+      }]
+    }],
     "PreCompact": [{
       "matcher": "",
       "hooks": [{
