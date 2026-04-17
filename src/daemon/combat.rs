@@ -104,10 +104,15 @@ pub fn hit_chance(pet_atk: u32, pet_ver: u32, mob_def: u32, difficulty: u32) -> 
 /// Run one combat tick. Reads alive mobs from DB, applies attacks, writes
 /// back hp/defeated_at. Returns a summary — loot handling happens in
 /// `loot.rs` against `summary.defeats`.
+///
+/// `rng_salt` must be monotonic per tick (use `tick_count`, not `tick_at`
+/// seconds — multiple ticks in the same second would share a seed and
+/// produce correlated outcomes, masking bugs in tests and causing
+/// surprising streaks in production).
 pub fn run_tick(
     conn: &Connection,
     world: &mut GameWorld,
-    tick_at: i64,
+    rng_salt: u64,
 ) -> Result<CombatSummary> {
     let zone_id = {
         let id = world.world().get::<&PetIdentity>(world.pet())?;
@@ -126,7 +131,7 @@ pub fn run_tick(
     let mut summary = CombatSummary::default();
     for mob in mobs {
         summary.attacks += 1;
-        let mut rng = Rng::from_seed(hash_seed(tick_at as u64, mob.id as u64));
+        let mut rng = Rng::from_seed(hash_seed(rng_salt, mob.id as u64));
         let hc = hit_chance(pet_atk, pet_ver, mob.def, mob.difficulty);
         let roll = rng.next_f64();
 
@@ -137,7 +142,11 @@ pub fn run_tick(
             let damage = ((pet_atk as f64 * mult).ceil() as u32).max(1);
             let new_hp = mob.hp.saturating_sub(damage);
             if new_hp == 0 {
-                mark_defeated(conn, mob.id, tick_at)?;
+                // `defeated_at` gets its real unix-seconds timestamp in the
+                // caller's combat_log write — keep `mobs.defeated_at` as
+                // a non-null monotonic marker (rng_salt = tick_count is
+                // monotonic, non-zero)
+                mark_defeated(conn, mob.id, rng_salt as i64)?;
                 defeated = true;
             } else {
                 update_mob_hp(conn, mob.id, new_hp)?;
