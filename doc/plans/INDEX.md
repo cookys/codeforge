@@ -2,9 +2,7 @@
 
 ## Active Plans
 
-| Plan | Created | Project |
-|------|---------|---------|
-| [phase3d-stickiness](2026-04-17-phase3d-stickiness.md) | 2026-04-17 | [2026-04-17-phase3d-stickiness](../projects/2026-04-17-phase3d-stickiness/) |
+_（none — ready for next phase）_
 
 ---
 
@@ -12,6 +10,7 @@
 
 | Plan | Created | Moved to Project |
 |------|---------|-----------------|
+| [phase3d-stickiness](2026-04-17-phase3d-stickiness.md) | 2026-04-17 | [2026-04-17-phase3d-stickiness](../projects/_archive/2026-04-17-phase3d-stickiness/) |
 | [phase2c-tui](2026-04-17-phase2c-tui.md) | 2026-04-17 | [2026-04-17-phase2c-tui](../projects/_archive/2026-04-17-phase2c-tui/) |
 | [phase2b-combat](2026-04-17-phase2b-combat.md) | 2026-04-17 | [2026-04-17-phase2b-combat](../projects/_archive/2026-04-17-phase2b-combat/) |
 | [phase2a-daemon](2026-04-17-phase2a-daemon.md) | 2026-04-17 | [2026-04-17-phase2a-daemon](../projects/_archive/2026-04-17-phase2a-daemon/) |
