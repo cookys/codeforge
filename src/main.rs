@@ -9,6 +9,7 @@ mod memory;
 mod pet;
 mod power;
 mod projection;
+mod snapshot;
 mod tui;
 mod world;
 
