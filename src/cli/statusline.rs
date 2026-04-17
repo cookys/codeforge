@@ -22,19 +22,19 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
-    if !has_pet {
-        render_no_pet(&mut out, &data, width)?;
-    } else {
-        // LiveState composes daemon-authored pet_snapshot (fallback: Phase 1 pet)
-        // with an overlay of unseen event_inbox XP — so the pet number reacts
-        // to hook events immediately, without waiting for the daemon tick.
-        let live = LiveState::load(&conn).unwrap_or_else(|_| LiveState {
-            state: PetState::default(),
-            pending_events: 0,
-            pending_xp: 0,
-        });
-        let village = VILLAGES.iter().find(|v| v.id == live.state.village).unwrap_or(&VILLAGES[2]);
-        render_full(&mut out, &data, &live.state, village, width)?;
+    // LiveState composes daemon-authored pet_snapshot (fallback: Phase 1 pet)
+    // with an overlay of unseen event_inbox XP — so the pet number reacts
+    // to hook events immediately, without waiting for the daemon tick.
+    let loaded = if has_pet { LiveState::load(&conn).ok().flatten() } else { None };
+    match loaded {
+        Some(live) => {
+            let village = VILLAGES
+                .iter()
+                .find(|v| v.id == live.state.village)
+                .unwrap_or(&VILLAGES[2]);
+            render_full(&mut out, &data, &live.state, village, width)?;
+        }
+        None => render_no_pet(&mut out, &data, width)?,
     }
 
     out.flush()?;

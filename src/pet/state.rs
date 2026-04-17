@@ -78,7 +78,12 @@ impl PetState {
 
     /// 增加 XP，自動升等
     pub fn add_xp(&mut self, amount: u32) {
-        self.xp += amount;
+        self.xp = self.xp.saturating_add(amount);
+        // Guard: a default-constructed PetState has xp_to_next=0, which would
+        // loop forever. Bail out instead of hanging.
+        if self.xp_to_next == 0 {
+            return;
+        }
         while self.xp >= self.xp_to_next {
             self.xp -= self.xp_to_next;
             self.level += 1;
@@ -86,7 +91,10 @@ impl PetState {
             // cap at 10M to prevent f32 precision loss and u32 overflow infinite loop
             self.xp_to_next = ((self.xp_to_next as f64 * 1.5) as u64).min(10_000_000) as u32;
             self.atk += 1;
-            self.hp  += 1;
+            // HP is a vitals resource (regen + heal on level-up), not a stat.
+            // Daemon's `check_levelup` handles hp_max/hp properly using ECS
+            // PetVitals; keeping HP untouched here avoids the live-overlay vs
+            // daemon-tick HP-jump divergence flagged in review round 2.
             self.def += 1;
             self.sup += 1;
             self.ver += 1;

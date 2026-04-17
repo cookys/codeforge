@@ -9,12 +9,13 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     ctx.ensure_initialized()?;
     let conn = ctx.open_db()?;
 
-    if !LiveState::exists(&conn)? {
-        println!("還沒有本命寵物！執行 `codeforge adopt` 選擇你的村落");
-        return Ok(());
-    }
-
-    let live = LiveState::load(&conn)?;
+    let live = match LiveState::load(&conn)? {
+        Some(s) => s,
+        None => {
+            println!("還沒有本命寵物！執行 `codeforge adopt` 選擇你的村落");
+            return Ok(());
+        }
+    };
     let pet = &live.state;
     let village = VILLAGES.iter().find(|v| v.id == pet.village).unwrap_or(&VILLAGES[2]);
 
