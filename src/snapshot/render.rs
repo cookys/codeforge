@@ -34,6 +34,9 @@ pub const CARD_WIDTH: usize = 58;
 
 /// The four mob kinds the card breaks out explicitly. Ordered Boss →
 /// Ghost so the line reads dangerous-first, matching the spec sample.
+/// Labels kept short — the full "X 擊殺：N" form overflows CARD_WIDTH
+/// once four columns are joined. Header row states "擊殺" once, body
+/// uses label + count.
 const KIND_COLUMNS: &[(&str, &str)] = &[
     ("boss", "Boss"),
     ("elite", "Elite"),
@@ -138,19 +141,26 @@ fn rank_cell(z: &ZoneStats) -> String {
     }
 }
 
-/// Short-form village name combining language + a sliver of the flavor
-/// name: "Rust Forge-Ruins", "Python Scriptorium", etc. Used in the card
-/// header where horizontal space is tight.
+/// Short-form village name combining language + a compact place name.
+/// The raw `display_name` like "The Forge-Ruins" / "Border Garrison"
+/// contains filler words that `first_word` would strip to the wrong
+/// token; this mapping picks the flavourful noun per village so the
+/// card reads like the spec sample ("Rust Forge-Ruins", "Python
+/// Scriptorium", etc).
 fn village_short_name(village_id: &str) -> String {
-    let village = VILLAGES.iter().find(|v| v.id == village_id);
-    match village {
-        Some(v) => format!("{} {}", v.language, first_word(v.display_name)),
-        None => village_id.to_string(),
-    }
-}
-
-fn first_word(s: &str) -> String {
-    s.split_whitespace().next().unwrap_or(s).to_string()
+    let village = match VILLAGES.iter().find(|v| v.id == village_id) {
+        Some(v) => v,
+        None => return village_id.to_string(),
+    };
+    let place = match village.id {
+        "rust" => "Forge-Ruins",
+        "python" => "Scriptorium",
+        "typescript" => "Garrison",
+        "go" => "Dockside",
+        "javascript" => "Strata",
+        _ => village.display_name,
+    };
+    format!("{} {}", village.language, place)
 }
 
 fn kill_breakdown_line(data: &SnapshotData) -> String {
@@ -158,10 +168,12 @@ fn kill_breakdown_line(data: &SnapshotData) -> String {
         .iter()
         .map(|(key, label)| {
             let count = data.kills_by_kind.get(*key).copied().unwrap_or(0);
-            format!("{} 擊殺：{}", label, count)
+            format!("{} {}", label, count)
         })
         .collect();
-    format!("→ {}", parts.join("   "))
+    // " · " joiner keeps the line under CARD_WIDTH even at 4-digit kill
+    // counts, while the leading "→ 擊殺：" labels the row semantically.
+    format!("→ 擊殺：{}", parts.join(" · "))
 }
 
 fn streak_line(streak: &StreakRecord) -> Option<String> {
@@ -178,9 +190,7 @@ fn footer_lines(data: &SnapshotData) -> Vec<String> {
     let (identity, tagline) = match &data.pet {
         Some(pet) => {
             let village = VILLAGES.iter().find(|v| v.id == pet.village_id);
-            let zone_name = village
-                .map(|v| format!("{} {}", v.language, first_word(v.display_name)))
-                .unwrap_or_else(|| pet.village_id.clone());
+            let zone_name = village_short_name(&pet.village_id);
             let identity = format!("{} · {} · Lv.{}", pet.name, zone_name, pet.level);
             let tagline = village.map(|v| v.tagline).unwrap_or("在程式的國度遊蕩");
             (identity, format!("「{}」", tagline))
@@ -283,9 +293,10 @@ mod tests {
     #[test]
     fn render_contains_known_kill_counts() {
         let out = render(&sample_data());
-        assert!(out.contains("Boss 擊殺：12"));
-        assert!(out.contains("Elite 擊殺：87"));
-        assert!(out.contains("Zombie 擊殺：341"));
+        assert!(out.contains("Boss 12"));
+        assert!(out.contains("Elite 87"));
+        assert!(out.contains("Zombie 341"));
+        assert!(out.contains("擊殺"));
     }
 
     #[test]
@@ -352,7 +363,7 @@ mod tests {
         data.kills_by_kind.remove("elite");
         let out = render(&data);
         assert!(
-            out.contains("Elite 擊殺：0"),
+            out.contains("Elite 0"),
             "absent kind must render as 0 for consistent layout"
         );
     }
@@ -379,17 +390,36 @@ mod tests {
     }
 
     #[test]
-    fn first_word_stops_at_space() {
-        assert_eq!(first_word("The Forge-Ruins"), "The");
-        assert_eq!(first_word("Python"), "Python");
-    }
-
-    #[test]
-    fn village_short_name_blends_lang_and_first_word() {
-        assert_eq!(village_short_name("rust"), "Rust The");
+    fn village_short_name_uses_compact_place_nouns() {
+        // Per-village mapping — the raw display_name prefix "The" /
+        // "Border" / "Dockside" / "Strata" isn't useful, so we pick
+        // the flavourful noun per id.
+        assert_eq!(village_short_name("rust"), "Rust Forge-Ruins");
         assert_eq!(village_short_name("python"), "Python Scriptorium");
+        assert_eq!(village_short_name("typescript"), "TypeScript Garrison");
+        assert_eq!(village_short_name("go"), "Go Dockside");
+        assert_eq!(village_short_name("javascript"), "JavaScript Strata");
         // Unknown id falls through to raw id so we never blow up on a
         // stale DB row.
         assert_eq!(village_short_name("nonexistent"), "nonexistent");
+    }
+
+    #[test]
+    fn kill_breakdown_fits_card_width_at_4_digit_counts() {
+        let mut data = sample_data();
+        data.kills_by_kind.insert("zombie".to_string(), 9999);
+        data.kills_by_kind.insert("ghost".to_string(), 9999);
+        let out = render(&data);
+        for line in out.lines() {
+            if !line.starts_with('║') {
+                continue;
+            }
+            let inner: String = line.chars().skip(1).take(line.chars().count() - 2).collect();
+            assert_eq!(
+                UnicodeWidthStr::width(inner.as_str()),
+                CARD_WIDTH,
+                "line overflowed at 4-digit kill counts: {line:?}"
+            );
+        }
     }
 }
