@@ -10,6 +10,7 @@ mod pet;
 mod power;
 mod projection;
 mod tui;
+mod world;
 
 use anyhow::Result;
 use clap::Parser;
