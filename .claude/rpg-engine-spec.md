@@ -21,11 +21,11 @@
 └─────────────────────────────────────────────────────┘
 ```
 
-**Two-writer rule (hard constraint):**
-- ONLY daemon writes game state tables
+**Two-writer rule (narrowed 2026-04-17):**
+- ONLY daemon writes **derived/game state** tables: `pet_snapshot`, `combat_log`, `game_world`
 - ONLY CLI writes user preference tables (locale, display settings)
-- These are separate tables with zero overlap
-- Rationale: eliminates all SQLite write contention; no IPC needed
+- **`event_inbox` is shared** (Phase 2a, Option D): hooks INSERT (write cols `id/payload/created_at`), daemon UPDATE (write col `seen_at`). Write column sets are disjoint — SQLite WAL + `busy_timeout=5000` handles it.
+- Rationale: original "two-writer" was partially cargo-culted; the load-bearing invariant is ECS-serialization exclusivity (only daemon writes derived state), not "only daemon writes anything". Audit result in `doc/projects/2026-04-17-phase2a-daemon/ipc-research.md`.
 
 ## Tick System
 
@@ -117,7 +117,7 @@ Single row, updated by daemon each tick. CLI reads on every `statusline` render.
 
 | Decision | Rationale |
 |----------|-----------|
-| No IPC (polling SQLite) | Zero dependencies, works with existing SQLite infra |
+| Hook → daemon via SQLite event_inbox + 500ms poll (Option D, 2026-04-17) | Zero new failure domains; daemon-down durable; reuses existing SQLite infra. Supersedes earlier "No IPC (polling SQLite)" row — now specific to event channel, not blanket. |
 | hecs over bevy_ecs | Minimal deps, no renderer needed, fits CLI tool |
 | 60s tick | Sweet spot between responsiveness and overhead |
 | 240-tick cap | Prevents exponential idle exploitation; sqrt tail is fair |
