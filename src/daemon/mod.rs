@@ -39,6 +39,9 @@ pub async fn run_tick_loop(
 ) -> Result<()> {
     let mut world = ecs::GameWorld::load_or_init(conn)?;
 
+    // Opportunistic retention cleanup on startup — keeps inbox bounded.
+    let _ = inbox::cleanup_expired(conn, inbox::RETENTION_SECS);
+
     startup_catchup(conn, &mut world).await?;
 
     let mut ticker = interval(tick_interval);

@@ -135,4 +135,47 @@ mod tests {
             .unwrap();
         assert_eq!(rows, 1);
     }
+
+    /// KR: `Tick 計算 < 10ms` per mud-engine spec §設計約束 5.
+    /// Not Criterion-quality, but catches regressions orders of magnitude off.
+    #[test]
+    fn tick_budget_under_10ms_average() {
+        let (conn, mut world) = fresh();
+        // Prime: first tick pays schema cache costs
+        run_one(&conn, &mut world).unwrap();
+
+        const N: u32 = 50;
+        let start = std::time::Instant::now();
+        for _ in 0..N {
+            run_one(&conn, &mut world).unwrap();
+        }
+        let elapsed = start.elapsed();
+        let avg_us = elapsed.as_micros() / N as u128;
+        assert!(
+            avg_us < 10_000,
+            "tick avg {avg_us}µs exceeds 10ms budget (spec §設計約束 5)"
+        );
+    }
+
+    /// Verifies tick budget holds even with a realistic event burst
+    /// (e.g., git_commit after a long idle that queued 50 events).
+    #[test]
+    fn tick_budget_survives_event_burst() {
+        let (conn, mut world) = fresh();
+        for i in 0..50 {
+            conn.execute(
+                "INSERT INTO event_inbox (payload, created_at) VALUES (?1, ?2)",
+                rusqlite::params![r#"{"event":"git_commit"}"#, 100i64 + i],
+            )
+            .unwrap();
+        }
+
+        let start = std::time::Instant::now();
+        run_one(&conn, &mut world).unwrap();
+        let elapsed_ms = start.elapsed().as_millis();
+        assert!(
+            elapsed_ms < 50,
+            "tick with 50-event burst took {elapsed_ms}ms (should be well under tick interval)"
+        );
+    }
 }
