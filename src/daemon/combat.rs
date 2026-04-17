@@ -1,16 +1,22 @@
-//! Auto-combat — Phase 2b P3.
+//! Auto-combat — Phase 2b P3 + Phase 3b.
 //!
-//! Per tick: load alive mobs in pet's zone, run one attack per mob, apply
-//! counter-damage, mark defeats. Loot rolls + XP award live in `loot.rs`.
+//! Per tick: load alive mobs in pet's zone, sort by the active Strategy's
+//! priority, run one attack per mob with Strategy-scaled damage, apply
+//! counter-damage with Strategy-scaled absorption, mark defeats. Loot rolls
+//! + XP award live in `loot.rs`.
 //!
-//! RNG is deterministic: `Xorshift64*` seeded per-mob from `(tick_at, mob.id)`.
-//! No external crate — tests can re-derive outcomes.
+//! RNG is deterministic: `Xorshift64*` seeded per-mob from `(tick_count, mob.id)`.
+//! The `tick_count` source is critical — using `tick_at` seconds produces
+//! seed collisions across catchup ticks that fire within the same second
+//! (see project memory `rng-salt-monotonic`). No external RNG crate — tests
+//! can re-derive outcomes from the seed formula.
 
 use anyhow::Result;
 use rusqlite::Connection;
 
-use super::ecs::{GameWorld, PetIdentity, PetStats, PetVitals};
+use super::ecs::{GameWorld, PetIdentity, PetStats, PetStrategy, PetVitals};
 use super::mob::MobKind;
+use super::strategy::Strategy;
 
 /// Max mobs attacked per tick. Protects the 10ms tick budget against a
 /// huge zone of mobs; the remainder get their turn on the next tick.
@@ -127,15 +133,21 @@ pub fn run_tick(
         let id = world.world().get::<&PetIdentity>(world.pet())?;
         id.village.clone()
     };
-    let mobs = load_alive_mobs(conn, &zone_id, MAX_ATTACKS_PER_TICK)?;
+    let mut mobs = load_alive_mobs(conn, &zone_id, MAX_ATTACKS_PER_TICK)?;
     if mobs.is_empty() {
         return Ok(CombatSummary::default());
     }
 
-    let (pet_atk, pet_ver, pet_def) = {
+    let (pet_atk, pet_ver, pet_def, strategy) = {
         let stats = world.world().get::<&PetStats>(world.pet())?;
-        (stats.atk, stats.ver, stats.def)
+        let strat = world.world().get::<&PetStrategy>(world.pet())?;
+        (stats.atk, stats.ver, stats.def, strat.value)
     };
+
+    // Strategy priority: lower priority_order → attack first. Mob.id is the
+    // stable tiebreaker (same ordering as the SQL ORDER BY id fallback, so
+    // Explorer produces identical behaviour to the pre-strategy baseline).
+    mobs.sort_by_key(|m| (strategy.priority_order(m.kind), m.id));
 
     let mut summary = CombatSummary::default();
     for mob in mobs {
@@ -147,8 +159,8 @@ pub fn run_tick(
         let mut defeated = false;
         if roll < hc {
             summary.hits += 1;
-            let mult = rng.range_f64(0.8, 1.2);
-            let damage = ((pet_atk as f64 * mult).ceil() as u32).max(1);
+            let roll_mult = rng.range_f64(0.8, 1.2);
+            let damage = compute_damage(pet_atk, strategy, roll_mult);
             let new_hp = mob.hp.saturating_sub(damage);
             if new_hp == 0 {
                 mark_defeated(conn, mob.id, now)?;
@@ -158,8 +170,11 @@ pub fn run_tick(
             }
         }
 
-        // Counter-attack: mob hits back even on pet miss (pet always engages)
-        let counter = mob.atk.saturating_sub(pet_def / 2);
+        // Counter-attack: mob hits back even on pet miss (pet always engages).
+        // Strategy DEF multiplier scales the effective armor: Defensive absorbs
+        // more, Aggressive absorbs less. Formula keeps ceil/floor sane across
+        // all multipliers in [0.8, 1.4].
+        let counter = compute_counter(mob.atk, pet_def, strategy);
         if counter > 0 {
             apply_pet_damage(world, counter);
             summary.pet_damage_taken = summary.pet_damage_taken.saturating_add(counter);
@@ -176,6 +191,33 @@ pub fn run_tick(
     }
 
     Ok(summary)
+}
+
+// ─── Strategy-aware formula helpers ─────────────────────────────────
+
+/// `damage = ceil(pet_atk * strategy.atk_mult() * roll_mult)`, clamped to ≥ 1
+/// so even a 1-atk Scholar pet ticks at least one HP per hit. Extracted so
+/// tests can exercise the multiplier without touching rng/DB.
+pub(crate) fn compute_damage(pet_atk: u32, strategy: Strategy, roll_mult: f64) -> u32 {
+    let raw = pet_atk as f64 * strategy.atk_mult() * roll_mult;
+    (raw.ceil() as u32).max(1)
+}
+
+/// Counter-damage = `mob_atk - floor(pet_def * def_mult / 2)`, saturating at 0.
+///
+/// The `/ 2` divisor preserves the Phase 2b baseline (`counter = mob_atk -
+/// pet_def / 2`), halving defender armor so that combat tick-throughput
+/// stays non-trivial for early-game low-DEF pets. Phase 3b adds the
+/// `strategy.def_mult()` factor so Defensive (1.4x) effectively raises
+/// absorbed DEF by 40 % and Aggressive (0.8x) lowers it by 20 %.
+///
+/// The `floor` on the multiplier product keeps integer-math behavior
+/// identical to Phase 2b when `def_mult == 1.0`. `saturating_sub` guards
+/// against underflow if a future strategy pushed `def_mult` above 2.0 —
+/// not used today, but cheap insurance.
+pub(crate) fn compute_counter(mob_atk: u32, pet_def: u32, strategy: Strategy) -> u32 {
+    let absorbed = ((pet_def as f64 * strategy.def_mult()) / 2.0).floor() as u32;
+    mob_atk.saturating_sub(absorbed)
 }
 
 // ─── DB helpers ─────────────────────────────────────────────────────
@@ -453,5 +495,215 @@ mod tests {
             }
         }
         panic!("defeat didn't happen within 30 ticks");
+    }
+
+    // ─── Phase 3b: Strategy integration ────────────────────────────
+
+    /// Helper: set pet's strategy without going through the CLI.
+    fn set_strategy(world: &mut GameWorld, s: Strategy) {
+        let pet = world.pet();
+        let mut ps = world
+            .world_mut()
+            .get::<&mut PetStrategy>(pet)
+            .unwrap();
+        ps.value = s;
+    }
+
+    #[test]
+    fn compute_damage_scales_with_strategy_atk_mult() {
+        // Fixed roll_mult=1.0 isolates the strategy multiplier contribution.
+        let aggro = compute_damage(100, Strategy::Aggressive, 1.0);
+        let exp = compute_damage(100, Strategy::Explorer, 1.0);
+        let def = compute_damage(100, Strategy::Defensive, 1.0);
+        let sch = compute_damage(100, Strategy::Scholar, 1.0);
+
+        assert!(aggro > exp, "Aggressive 1.3x should outhit Explorer 1.0x");
+        assert!(exp > def, "Explorer 1.0x should outhit Defensive 0.9x");
+        assert!(def > sch, "Defensive 0.9x should outhit Scholar 0.8x");
+
+        assert_eq!(aggro, 130);
+        assert_eq!(exp, 100);
+        assert_eq!(def, 90);
+        assert_eq!(sch, 80);
+    }
+
+    #[test]
+    fn compute_damage_floors_at_one() {
+        // Scholar 0.8x × 1 atk × 1.0 roll = 0.8 → ceil 1, clamped to 1
+        assert_eq!(compute_damage(1, Strategy::Scholar, 1.0), 1);
+        // Even below-1 intermediate must not drop to zero
+        assert_eq!(compute_damage(0, Strategy::Aggressive, 1.0), 1);
+    }
+
+    #[test]
+    fn compute_counter_inverse_to_def_mult() {
+        // mob_atk=50, pet_def=20
+        //   Aggressive def_mult 0.8 → absorbed floor(20*0.8/2)=8 → counter 42
+        //   Explorer    1.0        → floor(10) = 10 → counter 40
+        //   Defensive   1.4        → floor(14) = 14 → counter 36
+        let aggro = compute_counter(50, 20, Strategy::Aggressive);
+        let exp = compute_counter(50, 20, Strategy::Explorer);
+        let def = compute_counter(50, 20, Strategy::Defensive);
+
+        assert_eq!(aggro, 42);
+        assert_eq!(exp, 40);
+        assert_eq!(def, 36);
+        assert!(aggro > exp, "Aggressive takes more counter");
+        assert!(exp > def, "Defensive absorbs more counter");
+    }
+
+    #[test]
+    fn compute_counter_saturates_when_armor_exceeds_mob_atk() {
+        // Massive def + Defensive multiplier absorbs the entire hit
+        assert_eq!(compute_counter(5, 100, Strategy::Defensive), 0);
+    }
+
+    #[test]
+    fn aggressive_prioritises_boss_in_mixed_zone() {
+        let (conn, mut world) = fresh();
+        set_strategy(&mut world, Strategy::Aggressive);
+        // Low-HP mobs so a single successful hit defeats each. Mixed order
+        // in insert: zombie first (lower id), boss second. Aggressive must
+        // flip this so Boss is attacked first.
+        let zombie = spawn_mob(&conn, "rust", MobKind::Zombie, "z", 1, 1, 1);
+        let boss = spawn_mob(&conn, "rust", MobKind::Boss, "b", 1, 1, 1);
+        assert!(zombie < boss, "insertion order check");
+
+        // Run enough ticks to produce a defeat with 95%-clamp hit rate
+        for t in 100..120 {
+            let s = run_tick(&conn, &mut world, t, 9_000).unwrap();
+            if !s.defeats.is_empty() {
+                assert_eq!(
+                    s.defeats[0].kind,
+                    MobKind::Boss,
+                    "Aggressive first defeat must be Boss, got {:?}",
+                    s.defeats[0].kind
+                );
+                return;
+            }
+        }
+        panic!("no defeats within 20 ticks");
+    }
+
+    #[test]
+    fn defensive_prioritises_ghost_in_mixed_zone() {
+        let (conn, mut world) = fresh();
+        set_strategy(&mut world, Strategy::Defensive);
+        let elite = spawn_mob(&conn, "rust", MobKind::Elite, "e", 1, 1, 1);
+        let ghost = spawn_mob(&conn, "rust", MobKind::Ghost, "g", 1, 1, 1);
+        assert!(elite < ghost);
+
+        for t in 100..120 {
+            let s = run_tick(&conn, &mut world, t, 9_000).unwrap();
+            if !s.defeats.is_empty() {
+                assert_eq!(s.defeats[0].kind, MobKind::Ghost);
+                return;
+            }
+        }
+        panic!("no defeats within 20 ticks");
+    }
+
+    #[test]
+    fn scholar_prioritises_tome_dropper() {
+        let (conn, mut world) = fresh();
+        set_strategy(&mut world, Strategy::Scholar);
+        // Zombie + Boss; Scholar prefers Boss (tome dropper)
+        let _zombie = spawn_mob(&conn, "rust", MobKind::Zombie, "z", 1, 1, 1);
+        let _boss = spawn_mob(&conn, "rust", MobKind::Boss, "b", 1, 1, 1);
+
+        for t in 100..120 {
+            let s = run_tick(&conn, &mut world, t, 9_000).unwrap();
+            if !s.defeats.is_empty() {
+                assert_eq!(s.defeats[0].kind, MobKind::Boss);
+                return;
+            }
+        }
+        panic!("no defeats within 20 ticks");
+    }
+
+    #[test]
+    fn explorer_preserves_id_order() {
+        // Explorer has no priority bias — first spawned = first attacked.
+        let (conn, mut world) = fresh();
+        set_strategy(&mut world, Strategy::Explorer);
+        let _zombie = spawn_mob(&conn, "rust", MobKind::Zombie, "z", 1, 1, 1);
+        let _boss = spawn_mob(&conn, "rust", MobKind::Boss, "b", 1, 1, 1);
+
+        for t in 100..120 {
+            let s = run_tick(&conn, &mut world, t, 9_000).unwrap();
+            if !s.defeats.is_empty() {
+                assert_eq!(
+                    s.defeats[0].kind,
+                    MobKind::Zombie,
+                    "Explorer must preserve spawn (id) order"
+                );
+                return;
+            }
+        }
+        panic!("no defeats within 20 ticks");
+    }
+
+    #[test]
+    fn aggressive_damages_mobs_faster_than_scholar() {
+        // Same seed, same mob — Aggressive should leave mob at lower HP than
+        // Scholar after one tick that hits. Use a large HP sponge so one hit
+        // never kills.
+        fn tick_one_hit_damage(strategy: Strategy) -> u32 {
+            let (conn, mut world) = fresh();
+            set_strategy(&mut world, strategy);
+            // Give the pet enough atk that clamped 95% hit rate applies
+            {
+                let pet = world.pet();
+                let mut stats = world
+                    .world_mut()
+                    .get::<&mut PetStats>(pet)
+                    .unwrap();
+                stats.atk = 100;
+                stats.ver = 100;
+            }
+            // Sponge mob with hp_max much bigger than any tick's damage
+            spawn_mob(&conn, "rust", MobKind::Boss, "sponge", 10_000, 1, 1);
+            // Run 1 tick — rng_salt fixed so both strategies see same roll
+            run_tick(&conn, &mut world, 42, 1_000).unwrap();
+            let hp: i64 = conn
+                .query_row("SELECT hp FROM mobs WHERE id = 1", [], |r| r.get(0))
+                .unwrap();
+            10_000 - (hp as u32)
+        }
+
+        let aggro_dmg = tick_one_hit_damage(Strategy::Aggressive);
+        let scholar_dmg = tick_one_hit_damage(Strategy::Scholar);
+        // Both should have hit (95% clamp + fixed seed); aggressive > scholar
+        assert!(
+            aggro_dmg > scholar_dmg,
+            "Aggressive ({aggro_dmg}) should outdamage Scholar ({scholar_dmg})"
+        );
+    }
+
+    #[test]
+    fn defensive_absorbs_more_counter_than_aggressive() {
+        // Identical mob + pet def; Defensive should take less HP damage.
+        fn tick_one_hit_counter(strategy: Strategy) -> u32 {
+            let (conn, mut world) = fresh();
+            set_strategy(&mut world, strategy);
+            {
+                let pet = world.pet();
+                let mut stats = world
+                    .world_mut()
+                    .get::<&mut PetStats>(pet)
+                    .unwrap();
+                stats.def = 20;
+            }
+            spawn_mob(&conn, "rust", MobKind::Boss, "hitter", 10_000, 50, 1);
+            let s = run_tick(&conn, &mut world, 99, 1_000).unwrap();
+            s.pet_damage_taken
+        }
+
+        let aggro_taken = tick_one_hit_counter(Strategy::Aggressive);
+        let defensive_taken = tick_one_hit_counter(Strategy::Defensive);
+        assert!(
+            aggro_taken > defensive_taken,
+            "Aggressive ({aggro_taken}) should take more counter than Defensive ({defensive_taken})"
+        );
     }
 }
