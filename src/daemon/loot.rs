@@ -116,12 +116,16 @@ pub fn roll_drops(kind: MobKind, rng: &mut Rng) -> Vec<LootDrop> {
 /// Process all defeats: insert combat_log rows, upsert inventory, sum XP.
 ///
 /// Returns total XP to award to the pet (caller feeds into `systems::apply_xp`).
-/// Loot RNG is seeded from `(tick_at XOR salt, mob_id)` — distinct from the
-/// combat seed so hit/loot rolls aren't correlated.
+/// Loot RNG is seeded from `(rng_salt XOR constant, mob_id)` — distinct from
+/// the combat seed (extra XOR) so hit/loot rolls aren't correlated.
+/// `rng_salt` should be the same monotonic value combat used (`tick_count`)
+/// so tests can reproduce outcomes; `tick_at` is unix seconds, used only
+/// for DB timestamp fields.
 pub fn apply_for_defeats(
     conn: &Connection,
     zone_id: &str,
     defeats: &[DefeatedMob],
+    rng_salt: u64,
     tick_at: i64,
 ) -> Result<u32> {
     if defeats.is_empty() {
@@ -129,10 +133,8 @@ pub fn apply_for_defeats(
     }
     let mut total_xp: u32 = 0;
     for def in defeats {
-        // Salt: different from combat seed so loot isn't predictable
-        // from hit/miss rolls
         let mut rng = Rng::from_seed(hash_seed(
-            (tick_at as u64) ^ 0xA11_10_07_BADC_0FFE,
+            rng_salt ^ 0xA11_10_07_BADC_0FFE,
             def.id as u64,
         ));
         let drops = roll_drops(def.kind, &mut rng);
@@ -304,7 +306,7 @@ mod tests {
     #[test]
     fn apply_zero_defeats_is_noop() {
         let conn = fresh_conn();
-        let total = apply_for_defeats(&conn, "rust", &[], 1000).unwrap();
+        let total = apply_for_defeats(&conn, "rust", &[], 1, 1000).unwrap();
         assert_eq!(total, 0);
         let rows: i64 = conn
             .query_row("SELECT COUNT(*) FROM combat_log", [], |r| r.get(0))
@@ -316,7 +318,7 @@ mod tests {
     fn apply_one_zombie_adds_xp_and_logs() {
         let conn = fresh_conn();
         let defeats = vec![dm(1, MobKind::Zombie, "TODOs × 8 @ x.rs")];
-        let total = apply_for_defeats(&conn, "rust", &defeats, 1000).unwrap();
+        let total = apply_for_defeats(&conn, "rust", &defeats, 1, 1000).unwrap();
         assert_eq!(total, 10);
 
         let log_count: i64 = conn
@@ -329,7 +331,7 @@ mod tests {
     fn apply_boss_adds_rare_item_to_inventory() {
         let conn = fresh_conn();
         let defeats = vec![dm(42, MobKind::Boss, "src/huge.rs")];
-        apply_for_defeats(&conn, "rust", &defeats, 2000).unwrap();
+        apply_for_defeats(&conn, "rust", &defeats, 2, 2000).unwrap();
 
         let qty: i64 = conn
             .query_row(
@@ -350,7 +352,7 @@ mod tests {
             dm(2, MobKind::Ghost, "b.rs"),
             dm(3, MobKind::Ghost, "c.rs"),
         ];
-        apply_for_defeats(&conn, "rust", &defeats, 3000).unwrap();
+        apply_for_defeats(&conn, "rust", &defeats, 3, 3000).unwrap();
 
         let rows: i64 = conn
             .query_row(
@@ -374,7 +376,7 @@ mod tests {
     fn apply_combat_log_includes_zone_mob_and_xp() {
         let conn = fresh_conn();
         let defeats = vec![dm(7, MobKind::Boss, "boss.rs")];
-        apply_for_defeats(&conn, "python", &defeats, 5000).unwrap();
+        apply_for_defeats(&conn, "python", &defeats, 5, 5000).unwrap();
 
         let (zone, mob_name, mob_kind, xp): (String, String, String, i64) = conn
             .query_row(
@@ -392,8 +394,8 @@ mod tests {
     #[test]
     fn first_acquired_at_stays_on_aggregate() {
         let conn = fresh_conn();
-        apply_for_defeats(&conn, "rust", &[dm(1, MobKind::Ghost, "a.rs")], 1000).unwrap();
-        apply_for_defeats(&conn, "rust", &[dm(2, MobKind::Ghost, "b.rs")], 2000).unwrap();
+        apply_for_defeats(&conn, "rust", &[dm(1, MobKind::Ghost, "a.rs")], 1, 1000).unwrap();
+        apply_for_defeats(&conn, "rust", &[dm(2, MobKind::Ghost, "b.rs")], 2, 2000).unwrap();
 
         let (first, last): (i64, i64) = conn
             .query_row(

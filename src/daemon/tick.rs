@@ -37,13 +37,15 @@ pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
     let (zone_id, tick_count_next) = read_tick_context(&tx, world)?;
     mob_scanner::rate_limited_scan(&tx, &zone_id, tick_count_next)?;
 
-    // 4. Phase 2b: combat — attack alive mobs, counter-damage
+    // 4. Phase 2b: combat — attack alive mobs, counter-damage.
+    // RNG salt uses `tick_count_next` (monotonic) instead of wall-clock seconds
+    // so successive in-test ticks within the same second don't share a seed.
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
-    let summary = combat::run_tick(&tx, world, now)?;
+    let summary = combat::run_tick(&tx, world, tick_count_next)?;
 
     // 5. Phase 2b: loot for defeats — XP + inventory + combat_log
     if !summary.defeats.is_empty() {
-        let xp = loot::apply_for_defeats(&tx, &zone_id, &summary.defeats, now)?;
+        let xp = loot::apply_for_defeats(&tx, &zone_id, &summary.defeats, tick_count_next, now)?;
         if xp > 0 {
             systems::apply_xp(world, xp);
         }
