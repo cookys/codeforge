@@ -15,6 +15,8 @@ pub mod ecs;
 pub mod events;
 pub mod inbox;
 pub mod lifecycle;
+pub mod mob;
+pub mod mob_scanner;
 pub mod systems;
 pub mod tick;
 
