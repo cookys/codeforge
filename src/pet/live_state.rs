@@ -36,30 +36,42 @@ pub struct LiveState {
 
 impl LiveState {
     /// Returns true if either `pet_snapshot` or Phase 1 `pet` has a row.
+    /// Propagates SQL errors — callers shouldn't conflate "no pet" with
+    /// "DB locked / schema missing / IO failure".
     pub fn exists(conn: &Connection) -> Result<bool> {
         let snap: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pet_snapshot WHERE id = 1", [], |r| r.get(0))
-            .unwrap_or(0);
+            .query_row("SELECT COUNT(*) FROM pet_snapshot WHERE id = 1", [], |r| {
+                r.get(0)
+            })?;
         if snap > 0 {
             return Ok(true);
         }
-        let pet: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pet WHERE id = 1", [], |r| r.get(0))
-            .unwrap_or(0);
+        let pet: i64 = conn.query_row("SELECT COUNT(*) FROM pet WHERE id = 1", [], |r| {
+            r.get(0)
+        })?;
         Ok(pet > 0)
     }
 
-    pub fn load(conn: &Connection) -> Result<Self> {
-        let mut state = load_base(conn)?.unwrap_or_default();
+    /// Load the composed live state.
+    ///
+    /// Returns `Ok(None)` when no pet exists in either source — callers can
+    /// then distinguish that from a database error. (Previous behavior was
+    /// to return a zero-filled `PetState` whose `xp_to_next=0` hit an
+    /// infinite loop on `add_xp`; guarded at that layer now, but making the
+    /// absence explicit is cleaner for the two current call sites.)
+    pub fn load(conn: &Connection) -> Result<Option<Self>> {
+        let Some(mut state) = load_base(conn)? else {
+            return Ok(None);
+        };
         let (pending_events, pending_xp) = sum_unseen_xp(conn)?;
         if pending_xp > 0 {
             state.add_xp(pending_xp);
         }
-        Ok(Self {
+        Ok(Some(Self {
             state,
             pending_events,
             pending_xp,
-        })
+        }))
     }
 }
 
@@ -202,7 +214,7 @@ mod tests {
         seed_pet_phase1(&conn, 50);
         seed_snapshot(&conn, 200, 5);
 
-        let live = LiveState::load(&conn).unwrap();
+        let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.state.xp, 200);
         assert_eq!(live.state.level, 5);
         assert_eq!(live.state.village, "python");
@@ -212,7 +224,7 @@ mod tests {
     fn falls_back_to_pet_when_no_snapshot() {
         let conn = fresh();
         seed_pet_phase1(&conn, 75);
-        let live = LiveState::load(&conn).unwrap();
+        let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.state.xp, 75);
         assert_eq!(live.state.level, 3);
         assert_eq!(live.state.village, "rust");
@@ -225,7 +237,7 @@ mod tests {
         insert_event(&conn, r#"{"event":"git_commit"}"#); // +20
         insert_event(&conn, r#"{"event":"session_end"}"#); // +10
 
-        let live = LiveState::load(&conn).unwrap();
+        let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.pending_events, 2);
         assert_eq!(live.pending_xp, 30);
         // base xp 10 + pending 30 = 40 (no level-up at xp_to_next=100)
@@ -241,7 +253,7 @@ mod tests {
         insert_event(&conn, r#"{"event":"git_commit"}"#);
         insert_event(&conn, r#"{"event":"git_commit"}"#);
 
-        let live = LiveState::load(&conn).unwrap();
+        let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.pending_xp, 40);
         // Level up happened during overlay
         assert_eq!(live.state.level, 2);
@@ -261,7 +273,7 @@ mod tests {
             &conn,
             r#"{"event":"xp_award","xp":3,"source":"search"}"#,
         );
-        let live = LiveState::load(&conn).unwrap();
+        let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.pending_xp, 10);
         assert_eq!(live.state.xp, 15);
     }
@@ -274,7 +286,7 @@ mod tests {
         insert_event(&conn, "not-json");
         insert_event(&conn, r#"{"no_event_key":"x"}"#);
 
-        let live = LiveState::load(&conn).unwrap();
+        let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.pending_events, 3);
         assert_eq!(live.pending_xp, 0);
         assert_eq!(live.state.xp, 50);
@@ -291,17 +303,53 @@ mod tests {
         )
         .unwrap();
 
-        let live = LiveState::load(&conn).unwrap();
+        let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.pending_events, 0);
         assert_eq!(live.pending_xp, 0);
         assert_eq!(live.state.xp, 10);
     }
 
     #[test]
-    fn empty_db_returns_defaults() {
+    fn empty_db_returns_none() {
         let conn = fresh();
         let live = LiveState::load(&conn).unwrap();
-        assert_eq!(live.pending_events, 0);
-        assert_eq!(live.state.level, 0); // Default::default() — 0, not 1
+        assert!(live.is_none(), "no pet anywhere → None, not zero-filled state");
+    }
+
+    #[test]
+    fn empty_db_overlay_never_hangs_on_infinite_loop() {
+        // Regression: default PetState has xp_to_next=0, which caused
+        // add_xp's while-loop to spin forever. We now return None before
+        // overlay runs when there's no base pet — this just guards the
+        // guarantee with an explicit test.
+        let conn = fresh();
+        insert_event(&conn, r#"{"event":"git_commit"}"#);
+        let live = LiveState::load(&conn).unwrap();
+        assert!(live.is_none());
+    }
+
+    #[test]
+    fn load_base_none_skips_overlay_even_with_pending_events() {
+        // If someone adds a pet after events are already queued, the events
+        // are still preserved in the inbox (daemon will drain them); load
+        // just returns None since there's no pet to apply them to yet.
+        let conn = fresh();
+        insert_event(&conn, r#"{"event":"xp_award","xp":5}"#);
+        insert_event(&conn, r#"{"event":"git_commit"}"#);
+        assert!(LiveState::load(&conn).unwrap().is_none());
+
+        // Once a pet exists, the overlay picks them up (not lost).
+        seed_snapshot(&conn, 0, 1);
+        let live = LiveState::load(&conn).unwrap().unwrap();
+        assert_eq!(live.pending_xp, 25);
+    }
+
+    #[test]
+    fn exists_propagates_sql_errors() {
+        // With no schema, the COUNT query errors — should propagate, not
+        // silently report "no pet".
+        let conn = Connection::open_in_memory().unwrap();
+        let result = LiveState::exists(&conn);
+        assert!(result.is_err(), "missing table must surface, not return false");
     }
 }
