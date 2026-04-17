@@ -815,6 +815,128 @@ mod tests {
         migrations::run(&conn).unwrap();
     }
 
+    // ─── Phase 3c migration tests ─────────────────────────────────
+
+    #[test]
+    fn phase3c_version_seeded() {
+        let conn = open_migrated_memory_db();
+        let v7: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=7",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v7, 7);
+    }
+
+    #[test]
+    fn phase3c_commentary_tables_created() {
+        let conn = open_migrated_memory_db();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
+                 AND name IN ('commentary_feed','commentary_history','commentary_budget')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn phase3c_budget_single_row_seeded() {
+        let conn = open_migrated_memory_db();
+        let (id, last): (i64, Option<i64>) = conn
+            .query_row(
+                "SELECT id, last_emit_at FROM commentary_budget",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(id, 1);
+        assert_eq!(last, None);
+    }
+
+    #[test]
+    fn phase3c_commentary_opt_in_default_off() {
+        let conn = open_migrated_memory_db();
+        let v: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key='commentary_opt_in'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v, "0");
+    }
+
+    #[test]
+    fn phase3c_upgrade_path_from_v6_seeds_new_tables() {
+        // Simulate a Phase 3b DB on v6. The migration should create the
+        // three v7 tables without touching existing rows, then seed the
+        // budget row + opt-in flag.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER NOT NULL, applied_at TEXT);
+             CREATE UNIQUE INDEX idx_schema_version_version ON schema_version(version);
+             INSERT INTO schema_version (version, applied_at) VALUES (6, '2026-04-18');
+
+             CREATE TABLE settings (
+                 key TEXT PRIMARY KEY,
+                 value TEXT NOT NULL,
+                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );
+             INSERT INTO settings (key, value) VALUES ('theme','amber');",
+        )
+        .unwrap();
+
+        migrations::run(&conn).unwrap();
+
+        // v7 row lands in schema_version
+        let v7: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=7",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v7, 7);
+
+        // Three new tables exist
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
+                 AND name IN ('commentary_feed','commentary_history','commentary_budget')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3);
+
+        // Budget single-row seeded, opt-in default off
+        let last: Option<i64> = conn
+            .query_row(
+                "SELECT last_emit_at FROM commentary_budget WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(last, None);
+
+        let flag: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key='commentary_opt_in'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(flag, "0");
+
+        // Idempotent second run
+        migrations::run(&conn).unwrap();
+    }
+
     #[test]
     fn db_opens_with_wal_mode() {
         let tmp = tempfile::tempdir().unwrap();

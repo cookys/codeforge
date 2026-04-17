@@ -4,7 +4,9 @@
 
 ## Active
 
-_（none — ready for next phase）_
+| Project | Description | Branch | Started |
+|---------|------------|--------|---------|
+| [phase3c-ai-commentary](2026-04-18-phase3c-ai-commentary/README.md) | AI Commentary — Haiku-driven pet talk：opt-in + global 1/hour + strategy-aware 語氣 + 30-day phrase dedup + rule-based offline fallback；statusline footer / TUI combat_log 顯示 | `feature/phase3c-ai-commentary` | 2026-04-18 |
 
 ## Archived
 
