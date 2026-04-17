@@ -7,6 +7,13 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 
 -- version 需 UNIQUE，INSERT OR IGNORE 才有依據（修正 Phase 1 疏失）
+-- 先清除 Phase 1 疏失期間留下的重複 row，再建 UNIQUE index；
+-- UNIQUE index 若看到既存重複資料會直接 fail
+DELETE FROM schema_version
+WHERE rowid NOT IN (
+    SELECT MIN(rowid) FROM schema_version GROUP BY version
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_version_version
     ON schema_version(version);
 

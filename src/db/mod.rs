@@ -154,6 +154,33 @@ mod tests {
     }
 
     #[test]
+    fn migrations_dedup_phase1_duplicates() {
+        // Simulates an existing Phase-1 DB where schema_version got multiple
+        // rows with version=1 (because INSERT OR IGNORE had no UNIQUE to key off).
+        // Running the new migration on such a DB must dedup before CREATE INDEX.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("
+            CREATE TABLE schema_version (
+                version INTEGER NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO schema_version (version) VALUES (1);
+            INSERT INTO schema_version (version) VALUES (1);
+            INSERT INTO schema_version (version) VALUES (1);
+        ").unwrap();
+
+        // Should succeed (dedup first, then create UNIQUE index)
+        migrations::run(&conn).unwrap();
+
+        let v1_rows: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM schema_version WHERE version=1",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(v1_rows, 1, "duplicate version=1 rows should be deduped");
+    }
+
+    #[test]
     fn migrations_are_idempotent() {
         // 同一個連線跑兩次 migration 不應該錯、也不應該重複 seed
         let conn = Connection::open_in_memory().unwrap();

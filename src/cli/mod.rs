@@ -1,13 +1,14 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod adopt;
+mod dream;
+mod emit;
+mod ingest;
 mod init;
 mod learn;
-mod search;
-mod dream;
-mod ingest;
-mod adopt;
 mod pet;
+mod search;
 mod statusline;
 
 #[derive(Parser)]
@@ -60,6 +61,17 @@ pub enum Commands {
     Pet,
     /// 輸出 statusline（Claude Code 呼叫）
     Statusline,
+    /// 送一筆事件進 event_inbox（Claude Code hook 用）
+    Emit {
+        /// 事件名稱（如 session_start / file_saved / git_commit）
+        event: Option<String>,
+        /// 額外欄位，重複使用（--field sha=abc --field files=7）
+        #[arg(short = 'f', long = "field", value_name = "KEY=VALUE")]
+        fields: Vec<String>,
+        /// 直接傳完整 JSON payload（與 event/fields 互斥）
+        #[arg(long, conflicts_with_all = ["event", "fields"])]
+        json: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -91,5 +103,6 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Adopt => adopt::run(&ctx),
         Commands::Pet => pet::run(&ctx),
         Commands::Statusline => statusline::run(&ctx),
+        Commands::Emit { event, fields, json } => emit::run(&ctx, event, fields, json),
     }
 }
