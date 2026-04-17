@@ -10,6 +10,7 @@
 //! - Panic safety: `last_tick_at` only advances after a tick body succeeds
 
 pub mod catchup;
+pub mod inbox;
 pub mod tick;
 
 use anyhow::Result;
