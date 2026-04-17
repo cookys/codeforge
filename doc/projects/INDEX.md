@@ -12,6 +12,7 @@
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [phase3f-snapshot](_archive/2026-04-18-phase3f-snapshot/README.md) | `codeforge snapshot` — 可分享 ASCII 月報卡（spec §3.6），pet 名 + 2×2 Zone grid + 月擊殺 + 連勝 streak + tagline 引言；`--days N` 滾動窗口；純 stdout 無 OAuth，P1-P3 + QG + r1 1 fix + r2 clean | 2026-04-18 ✅ |
 | [phase3a-world-map](_archive/2026-04-18-phase3a-world-map/README.md) | World Map + Zone unlock — L1 語言分佈 analyzer、`codeforge world` ASCII map、Zone Mastery rank、Explorer strategy cross-zone revisit，P1-P4 + QG + r1 2 fixes + r2 clean | 2026-04-18 ✅ |
 | [phase3c-ai-commentary](_archive/2026-04-18-phase3c-ai-commentary/README.md) | AI Commentary — Haiku pet talk + 30-day dedup + 1/hour global budget + strategy-aware tone；statusline bubble / TUI combat_log 整合，P1-P6 + QG + r1 4 fixes + r2 clean | 2026-04-18 ✅ |
 | [phase3b-strategy](_archive/2026-04-18-phase3b-strategy/README.md) | Strategy Mode — 4 種打法（Aggressive / Defensive / Explorer / Scholar）× ATK/DEF 乘子 + MOB 優先序（spec §2），P1-P3 + QG + 2 輪 review | 2026-04-18 ✅ |
