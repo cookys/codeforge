@@ -20,6 +20,10 @@ use super::mob::{MobKind, MobSpec};
 pub const MAX_FILES_TO_SCAN: usize = 1000;
 /// Max MOBs emitted per single scan — keeps the zone manageable.
 pub const MAX_MOBS_PER_SCAN: usize = 20;
+/// Per-file byte cap for the full-read heuristics below. Any single file
+/// exceeding this is skipped rather than loaded — prevents a bundled
+/// `dist/*.min.js` or a generated `.rs` from blowing out daemon memory.
+pub const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 /// Scanner runs on tick_count 1, 11, 21, ... (every N ticks).
 pub const SCAN_EVERY_N_TICKS: u64 = 10;
 /// Zombie threshold — TODO/FIXME lines per file.
@@ -81,6 +85,14 @@ pub fn scan_dir(root: &Path, zone_id: &str) -> std::io::Result<Vec<MobSpec>> {
     for path in files {
         if specs.len() >= MAX_MOBS_PER_SCAN {
             break;
+        }
+        // Stat first — skip files larger than MAX_FILE_BYTES before loading.
+        // Any stat error (permission denied, broken symlink) is treated the
+        // same as a read error below: skip silently, continue the scan.
+        match fs::metadata(&path) {
+            Ok(m) if m.len() > MAX_FILE_BYTES => continue,
+            Err(_) => continue,
+            _ => {}
         }
         let text = match fs::read_to_string(&path) {
             Ok(t) => t,
