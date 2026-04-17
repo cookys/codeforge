@@ -1,4 +1,5 @@
 mod cli;
+mod daemon;
 mod db;
 mod memory;
 mod dream;
