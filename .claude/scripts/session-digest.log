@@ -1,0 +1,11 @@
+[2026-04-17T05:14:54.559Z] [INFO] Improvement queue: 0 checks triggered, 2 total pending items
+[2026-04-17T05:14:54.559Z] [INFO] Processing session adfa6bf5-dfee-49c7-9b73-f381f4b22060, transcript: /home/codepower/.claude/projects/-home-codepower-projects-codeforge/adfa6bf5-dfee-49c7-9b73-f381f4b22060.jsonl
+[2026-04-17T05:14:54.589Z] [INFO] Parsed 755 messages (451 assistant)
+[2026-04-17T05:14:54.594Z] [INFO] Extracted 2 signals: 1 error-recovery, 1 user-correction, 0 self-correction
+[2026-04-17T05:14:54.595Z] [INFO] Wrote digest: /home/codepower/.claude/session-digests/2026-04-17-adfa6bf5.json
+[2026-04-17T08:11:04.899Z] [INFO] Improvement queue: 0 checks triggered, 2 total pending items
+[2026-04-17T08:11:04.899Z] [INFO] Processing session adfa6bf5-dfee-49c7-9b73-f381f4b22060, transcript: /home/codepower/.claude/projects/-home-codepower-projects-codeforge/adfa6bf5-dfee-49c7-9b73-f381f4b22060.jsonl
+[2026-04-17T08:11:04.946Z] [INFO] Parsed 1296 messages (767 assistant)
+[2026-04-17T08:11:04.949Z] [INFO] Transcript checks: 1 new items (48 files edited, 4 skills invoked, 7 error types)
+[2026-04-17T08:11:04.953Z] [INFO] Extracted 5 signals: 3 error-recovery, 2 user-correction, 0 self-correction
+[2026-04-17T08:11:04.953Z] [INFO] Wrote digest: /home/codepower/.claude/session-digests/2026-04-17-adfa6bf5.json
