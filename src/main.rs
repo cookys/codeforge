@@ -8,6 +8,7 @@ mod brain;
 mod projection;
 mod pet;
 mod power;
+mod tui;
 
 use anyhow::Result;
 use clap::Parser;
