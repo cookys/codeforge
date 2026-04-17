@@ -72,7 +72,33 @@ pub mod migrations {
 
     pub fn run(conn: &Connection) -> Result<()> {
         conn.execute_batch(include_str!("schema.sql"))?;
+        upgrade_mobs_origin_path(conn)?;
         Ok(())
+    }
+
+    /// Phase 2c upgrade: existing Phase 2b DBs have a `mobs` table without
+    /// `origin_path`. Greenfield installs already include the column via
+    /// CREATE TABLE (schema.sql), so check before ALTERing. SQLite has no
+    /// `ALTER TABLE ADD COLUMN IF NOT EXISTS` — we inspect `PRAGMA
+    /// table_info` ourselves.
+    fn upgrade_mobs_origin_path(conn: &Connection) -> Result<()> {
+        let has_column = column_exists(conn, "mobs", "origin_path")?;
+        if !has_column {
+            conn.execute("ALTER TABLE mobs ADD COLUMN origin_path TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == column {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 
@@ -334,6 +360,118 @@ mod tests {
             |r| r.get(0),
         ).unwrap();
         assert_eq!(width, "100");
+    }
+
+    // ─── Phase 2c migration tests ─────────────────────────────────
+
+    #[test]
+    fn phase2c_origin_path_on_fresh_install() {
+        let conn = open_migrated_memory_db();
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(mobs)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.contains(&"origin_path".to_string()));
+    }
+
+    #[test]
+    fn phase2c_origin_path_nullable() {
+        // Fresh install: INSERT without origin_path must succeed.
+        let conn = open_migrated_memory_db();
+        conn.execute(
+            "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
+             VALUES ('rust', 'ghost', 'x', 1, 1, 1, 1, 100)",
+            [],
+        )
+        .unwrap();
+        let path: Option<String> = conn
+            .query_row("SELECT origin_path FROM mobs WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert!(path.is_none(), "origin_path must default to NULL");
+    }
+
+    #[test]
+    fn phase2c_origin_path_round_trips() {
+        let conn = open_migrated_memory_db();
+        conn.execute(
+            "INSERT INTO mobs
+                (zone_id, kind, name, hp, hp_max, atk, def, spawned_at, origin_path)
+             VALUES ('rust', 'zombie', 'TODO@src/lib.rs', 30, 30, 5, 5, 100, ?1)",
+            rusqlite::params!["src/lib.rs"],
+        )
+        .unwrap();
+        let path: String = conn
+            .query_row("SELECT origin_path FROM mobs WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(path, "src/lib.rs");
+    }
+
+    #[test]
+    fn phase2c_upgrade_path_adds_origin_path_column() {
+        // Simulate an existing Phase 2b DB: the mobs table lacks origin_path.
+        // Running migrations must not drop data and must produce the column.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE mobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                zone_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                hp INTEGER NOT NULL,
+                hp_max INTEGER NOT NULL,
+                atk INTEGER NOT NULL,
+                def INTEGER NOT NULL,
+                difficulty INTEGER NOT NULL DEFAULT 1,
+                spawned_at INTEGER NOT NULL,
+                defeated_at INTEGER
+             );
+             INSERT INTO mobs
+                (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
+                VALUES ('rust', 'boss', 'legacy', 100, 100, 10, 10, 100);",
+        )
+        .unwrap();
+
+        migrations::run(&conn).unwrap();
+
+        // Column now exists
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(mobs)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.contains(&"origin_path".to_string()));
+
+        // Legacy row preserved, origin_path = NULL
+        let (name, path): (String, Option<String>) = conn
+            .query_row(
+                "SELECT name, origin_path FROM mobs WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(name, "legacy");
+        assert!(path.is_none());
+
+        // Second run must be idempotent (already has column → no error)
+        migrations::run(&conn).unwrap();
+    }
+
+    #[test]
+    fn phase2c_version_seeded() {
+        let conn = open_migrated_memory_db();
+        let v4: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=4",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v4, 4);
     }
 
     #[test]

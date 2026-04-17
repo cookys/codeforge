@@ -98,11 +98,18 @@ pub fn scan_dir(root: &Path, zone_id: &str) -> std::io::Result<Vec<MobSpec>> {
             Ok(t) => t,
             Err(_) => continue,
         };
+        // origin_path: path relative to scan root, using forward slashes so
+        // Local Map can group by "src", "doc", etc. regardless of OS.
+        let rel = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
         for spec in analyze_file(&path, &text, zone_id) {
             if specs.len() >= MAX_MOBS_PER_SCAN {
                 break;
             }
-            specs.push(spec);
+            specs.push(spec.with_origin_path(rel.clone()));
         }
     }
     Ok(specs)
@@ -123,8 +130,9 @@ pub fn persist_scan(conn: &Connection, specs: &[MobSpec]) -> Result<usize> {
     for s in specs {
         let n = conn.execute(
             "INSERT OR IGNORE INTO mobs
-                 (zone_id, kind, name, hp, hp_max, atk, def, difficulty, spawned_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 (zone_id, kind, name, hp, hp_max, atk, def, difficulty,
+                  spawned_at, origin_path)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 s.zone_id,
                 s.kind.as_str(),
@@ -135,6 +143,7 @@ pub fn persist_scan(conn: &Connection, specs: &[MobSpec]) -> Result<usize> {
                 s.def as i64,
                 s.difficulty as i64,
                 now,
+                s.origin_path,
             ],
         )?;
         inserted += n;
@@ -580,6 +589,54 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
             .query_row("SELECT COUNT(*) FROM mobs", [], |r| r.get(0))
             .unwrap();
         assert_eq!(rows, 1);
+    }
+
+    #[test]
+    fn persist_scan_writes_origin_path() {
+        let conn = fresh_conn();
+        let specs = vec![MobSpec::new("rust", MobKind::Boss, "foo".to_string())
+            .with_origin_path("src/foo.rs")];
+        persist_scan(&conn, &specs).unwrap();
+        let path: Option<String> = conn
+            .query_row("SELECT origin_path FROM mobs LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(path.as_deref(), Some("src/foo.rs"));
+    }
+
+    #[test]
+    fn persist_scan_leaves_origin_path_null_when_unset() {
+        let conn = fresh_conn();
+        let specs = vec![MobSpec::new("rust", MobKind::Void, "untested".to_string())];
+        persist_scan(&conn, &specs).unwrap();
+        let path: Option<String> = conn
+            .query_row("SELECT origin_path FROM mobs LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        assert!(path.is_none());
+    }
+
+    #[test]
+    fn scan_dir_populates_origin_path_as_relative_forward_slash() {
+        // Build a temp tree with a single .rs file containing TODOs → Zombie.
+        let tmp = tempfile::tempdir().unwrap();
+        let subdir = tmp.path().join("src");
+        fs::create_dir(&subdir).unwrap();
+        let file = subdir.join("x.rs");
+        let todos = (0..10)
+            .map(|i| format!("// TODO: item {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&file, todos).unwrap();
+
+        let specs = scan_dir(tmp.path(), "rust").unwrap();
+        assert!(!specs.is_empty(), "fixture should spawn at least one mob");
+        let p = specs[0].origin_path.as_deref().expect("origin_path set");
+        // Forward-slash normalized relative path
+        assert_eq!(p, "src/x.rs");
+        // Never absolute
+        assert!(
+            !p.starts_with('/'),
+            "origin_path must be relative, got {p}"
+        );
     }
 
     #[test]
