@@ -4,7 +4,9 @@
 
 ## Active
 
-_（none — ready for next phase）_
+| Project | Description | Started |
+|---------|------------|---------|
+| [phase2c-tui](2026-04-17-phase2c-tui/README.md) | TUI + Local Map — alt-screen 面板、pet status / combat log / local map 三區塊、1 Hz refresh、鍵盤 quit（spec §1 + §5）| 2026-04-17 |
 
 ## Archived
 

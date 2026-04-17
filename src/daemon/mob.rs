@@ -78,6 +78,9 @@ pub struct MobSpec {
     pub atk: u32,
     pub def: u32,
     pub difficulty: u32,
+    /// Phase 2c: relative path from the scan root. Enables Local Map to
+    /// group MOBs by top-level directory. None for legacy / non-file mobs.
+    pub origin_path: Option<String>,
 }
 
 impl MobSpec {
@@ -92,7 +95,14 @@ impl MobSpec {
             atk,
             def,
             difficulty,
+            origin_path: None,
         }
+    }
+
+    /// Phase 2c: attach a repo-relative origin path (builder-style).
+    pub fn with_origin_path(mut self, path: impl Into<String>) -> Self {
+        self.origin_path = Some(path.into());
+        self
     }
 }
 

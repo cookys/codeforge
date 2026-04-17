@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-_（none — ready for next phase）_
+| Plan | Created | Project |
+|------|---------|---------|
+| [phase2c-tui](2026-04-17-phase2c-tui.md) | 2026-04-17 | [phase2c-tui](../projects/2026-04-17-phase2c-tui/) |
 
 ---
 
