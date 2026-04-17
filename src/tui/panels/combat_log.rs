@@ -1,10 +1,12 @@
-//! CombatLog panel — Phase 2c P4.
+//! CombatLog panel — Phase 2c P4; Phase 3c P5 adds commentary rows.
 //!
-//! Reads the last N rows from `combat_log` and formats them as
-//! `[HH:MM] kind — name · +XP XP` lines. Pure function of a pre-loaded
-//! `Vec<CombatLogRow>` so tests can feed fixtures without hitting SQLite.
+//! Reads the last N rows from `combat_log` and (Phase 3c) interleaves
+//! them with `commentary_feed` entries, newest-first. Pure function of
+//! pre-loaded slices so tests can feed fixtures without hitting SQLite.
 
 use super::pad_to_width;
+use crate::commentary::display::CommentaryEntry;
+use chrono::{TimeZone, Utc};
 
 /// A single combat_log row loaded from DB. The DB loader lives in P5;
 /// having the struct here keeps the renderer testable in isolation.
@@ -63,6 +65,122 @@ fn short_time(ts: &str) -> String {
         .and_then(|hms| hms.get(..5))
         .unwrap_or(ts)
         .to_string()
+}
+
+/// Phase 3c P5: combined combat + commentary renderer. Caller passes both
+/// sources newest-first; the panel merges them by timestamp, keeps the
+/// most recent `max_rows - 1` (one line reserved for the header), and
+/// prefixes each line with an icon so the two streams are visually
+/// distinct (`⚔` combat, `💬` commentary).
+pub fn render_mixed(
+    combat: &[CombatLogRow],
+    commentary: &[CommentaryEntry],
+    width: usize,
+    max_rows: usize,
+) -> Vec<String> {
+    let mut out = Vec::with_capacity(max_rows + 1);
+    out.push(pad_to_width("⚔ Combat Log", width));
+    if max_rows == 0 {
+        return out;
+    }
+
+    // Merge newest-first. Both sources are already ordered newest-first
+    // individually, so we walk them pairwise using a peek-compare loop —
+    // avoids allocating a combined Vec for sorting.
+    let merged = merge_newest_first(combat, commentary);
+    if merged.is_empty() {
+        out.push(pad_to_width("  (no activity yet)", width));
+        while out.len() < max_rows {
+            out.push(pad_to_width("", width));
+        }
+        return out;
+    }
+
+    for entry in merged.into_iter().take(max_rows.saturating_sub(1)) {
+        let line = match entry {
+            MergedEntry::Combat(row) => format_combat_line(row),
+            MergedEntry::Commentary(entry) => format_commentary_line(entry),
+        };
+        out.push(pad_to_width(&line, width));
+    }
+    while out.len() < max_rows {
+        out.push(pad_to_width("", width));
+    }
+    out
+}
+
+enum MergedEntry<'a> {
+    Combat(&'a CombatLogRow),
+    Commentary(&'a CommentaryEntry),
+}
+
+fn merge_newest_first<'a>(
+    combat: &'a [CombatLogRow],
+    commentary: &'a [CommentaryEntry],
+) -> Vec<MergedEntry<'a>> {
+    let mut out = Vec::with_capacity(combat.len() + commentary.len());
+    let mut i = 0;
+    let mut j = 0;
+    while i < combat.len() && j < commentary.len() {
+        let combat_ts = parse_combat_ts(&combat[i].occurred_at);
+        let commentary_ts = commentary[j].created_at;
+        if combat_ts >= commentary_ts {
+            out.push(MergedEntry::Combat(&combat[i]));
+            i += 1;
+        } else {
+            out.push(MergedEntry::Commentary(&commentary[j]));
+            j += 1;
+        }
+    }
+    while i < combat.len() {
+        out.push(MergedEntry::Combat(&combat[i]));
+        i += 1;
+    }
+    while j < commentary.len() {
+        out.push(MergedEntry::Commentary(&commentary[j]));
+        j += 1;
+    }
+    out
+}
+
+fn format_combat_line(row: &CombatLogRow) -> String {
+    let time = short_time(&row.occurred_at);
+    let loot_tail = row
+        .loot
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .map(|l| format!(" · {l}"))
+        .unwrap_or_default();
+    format!(
+        "⚔ [{time}] {kind} — {name} (+{xp}){loot_tail}",
+        kind = row.mob_kind,
+        name = row.mob_name,
+        xp = row.xp_gained,
+    )
+}
+
+fn format_commentary_line(entry: &CommentaryEntry) -> String {
+    let time = short_time_from_unix(entry.created_at);
+    format!("💬 [{time}] {}", entry.phrase)
+}
+
+fn short_time_from_unix(ts: i64) -> String {
+    match Utc.timestamp_opt(ts, 0).single() {
+        Some(dt) => dt.format("%H:%M").to_string(),
+        // Unrepresentable epochs fall back to the raw number; the panel
+        // will render an ugly but non-panicking line.
+        None => ts.to_string(),
+    }
+}
+
+/// Reverse of `short_time`: best-effort parse of a "YYYY-MM-DD HH:MM:SS"
+/// timestamp to unix seconds. Malformed input returns `0` so merge stays
+/// total — the row will sort as "very old" but nothing panics.
+fn parse_combat_ts(ts: &str) -> i64 {
+    match chrono::NaiveDateTime::parse_from_str(ts, "%Y-%m-%d %H:%M:%S") {
+        Ok(dt) => dt.and_utc().timestamp(),
+        Err(_) => 0,
+    }
 }
 
 #[cfg(test)]
@@ -159,5 +277,90 @@ mod tests {
         let lines = render(&[row("boss", &long_name, 50, None)], 50, 3);
         assert_eq!(vis_width(&lines[1]), 50);
         assert!(lines[1].contains('…'));
+    }
+
+    // ── Phase 3c P5: render_mixed tests ───────────────────────────
+
+    fn combat_row(time: &str, kind: &str, name: &str) -> CombatLogRow {
+        CombatLogRow {
+            mob_kind: kind.into(),
+            mob_name: name.into(),
+            xp_gained: 10,
+            loot: None,
+            occurred_at: time.into(),
+        }
+    }
+
+    fn commentary_entry(ts: i64, phrase: &str) -> CommentaryEntry {
+        CommentaryEntry {
+            phrase: phrase.into(),
+            created_at: ts,
+            kind: crate::commentary::Kind::BossKill,
+        }
+    }
+
+    #[test]
+    fn mixed_merges_newest_first_across_sources() {
+        // 14:20 commentary, 14:25 combat, 14:30 commentary — interleaved
+        let combat = vec![combat_row("2026-04-18 14:25:00", "boss", "x")];
+        let commentary = vec![
+            commentary_entry(ts("2026-04-18 14:30:00"), "newest phrase"),
+            commentary_entry(ts("2026-04-18 14:20:00"), "oldest phrase"),
+        ];
+        let lines = render_mixed(&combat, &commentary, 80, 5);
+        // header + 3 entries
+        assert!(lines[0].contains("Combat Log"));
+        assert!(lines[1].contains("💬") && lines[1].contains("newest phrase"));
+        assert!(lines[2].contains("⚔") && lines[2].contains("boss"));
+        assert!(lines[3].contains("💬") && lines[3].contains("oldest phrase"));
+    }
+
+    #[test]
+    fn mixed_empty_shows_activity_placeholder() {
+        let lines = render_mixed(&[], &[], 40, 5);
+        assert!(lines[1].contains("no activity yet"));
+    }
+
+    #[test]
+    fn mixed_commentary_only_renders_with_icon() {
+        let commentary = vec![commentary_entry(ts("2026-04-18 10:00:00"), "hello")];
+        let lines = render_mixed(&[], &commentary, 60, 3);
+        assert!(lines[1].starts_with("💬"));
+        assert!(lines[1].contains("hello"));
+    }
+
+    #[test]
+    fn mixed_combat_only_gains_icon_prefix() {
+        // render_mixed prefixes combat lines with `⚔ `, unlike legacy render
+        let combat = vec![combat_row("2026-04-18 14:25:00", "ghost", "x")];
+        let lines = render_mixed(&combat, &[], 60, 3);
+        assert!(lines[1].starts_with("⚔"));
+    }
+
+    #[test]
+    fn mixed_caps_at_max_rows_minus_header() {
+        // 10 commentary entries, max_rows=5 → header + 4 entries
+        let commentary: Vec<_> = (0..10)
+            .map(|i| commentary_entry(1000 + i, &format!("msg{i}")))
+            .collect();
+        let lines = render_mixed(&[], &commentary, 40, 5);
+        assert_eq!(lines.len(), 5);
+    }
+
+    #[test]
+    fn mixed_width_enforced() {
+        let commentary = vec![commentary_entry(1000, "x")];
+        let combat = vec![combat_row("2026-04-18 14:25:00", "ghost", "y")];
+        let lines = render_mixed(&combat, &commentary, 55, 5);
+        for l in &lines {
+            assert_eq!(vis_width(l), 55);
+        }
+    }
+
+    fn ts(s: &str) -> i64 {
+        chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+            .unwrap()
+            .and_utc()
+            .timestamp()
     }
 }

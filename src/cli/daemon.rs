@@ -48,8 +48,13 @@ fn start(ctx: &Context) -> Result<()> {
 
     let result = rt.block_on(async {
         let shutdown = lifecycle::install_signal_handlers();
-        daemon::run_tick_loop(&mut conn, Duration::from_secs(daemon::TICK_INTERVAL_SECS), shutdown)
-            .await
+        daemon::run_tick_loop(
+            &mut conn,
+            Duration::from_secs(daemon::TICK_INTERVAL_SECS),
+            shutdown,
+            ctx.db_path.clone(),
+        )
+        .await
     });
 
     lifecycle::release_pidfile(&pidfile);

@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-_（none — ready for next phase）_
+| Plan | Created | Status |
+|------|---------|--------|
+| [phase3c-ai-commentary](2026-04-18-phase3c-ai-commentary.md) | 2026-04-18 | 🟡 in progress |
 
 ---
 
