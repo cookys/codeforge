@@ -32,6 +32,9 @@ pub struct LiveState {
     /// purpose as `pending_events`.
     #[allow(dead_code)]
     pub pending_xp: u32,
+    /// Daemon-authored pet speech (e.g. "擊殺 ghost ..."). Statusline uses
+    /// this as the speech bubble when the stdin JSON has no "message" field.
+    pub last_message: Option<String>,
 }
 
 impl LiveState {
@@ -60,7 +63,7 @@ impl LiveState {
     /// infinite loop on `add_xp`; guarded at that layer now, but making the
     /// absence explicit is cleaner for the two current call sites.)
     pub fn load(conn: &Connection) -> Result<Option<Self>> {
-        let Some(mut state) = load_base(conn)? else {
+        let Some((mut state, last_message)) = load_base(conn)? else {
             return Ok(None);
         };
         let (pending_events, pending_xp) = sum_unseen_xp(conn)?;
@@ -71,22 +74,24 @@ impl LiveState {
             state,
             pending_events,
             pending_xp,
+            last_message,
         }))
     }
 }
 
 /// Prefer daemon snapshot, fall back to Phase 1 pet table.
-fn load_base(conn: &Connection) -> Result<Option<PetState>> {
-    if let Some(p) = load_from_snapshot(conn)? {
-        return Ok(Some(p));
+/// Returns (state, last_message) — last_message only comes from the snapshot.
+fn load_base(conn: &Connection) -> Result<Option<(PetState, Option<String>)>> {
+    if let Some(pair) = load_from_snapshot(conn)? {
+        return Ok(Some(pair));
     }
-    load_from_pet(conn)
+    Ok(load_from_pet(conn)?.map(|p| (p, None)))
 }
 
-fn load_from_snapshot(conn: &Connection) -> Result<Option<PetState>> {
+fn load_from_snapshot(conn: &Connection) -> Result<Option<(PetState, Option<String>)>> {
     let row = conn
         .query_row(
-            "SELECT village, level, hp, xp, xp_to_next, atk, def, sup, ver
+            "SELECT village, level, hp, xp, xp_to_next, atk, def, sup, ver, last_message
              FROM pet_snapshot WHERE id = 1",
             [],
             |r| {
@@ -100,17 +105,18 @@ fn load_from_snapshot(conn: &Connection) -> Result<Option<PetState>> {
                     r.get::<_, u32>(6)?,
                     r.get::<_, u32>(7)?,
                     r.get::<_, u32>(8)?,
+                    r.get::<_, Option<String>>(9)?,
                 ))
             },
         )
         .optional()?;
-    Ok(row.map(|(village, level, hp, xp, xp_to_next, atk, def, sup, ver)| {
+    Ok(row.map(|(village, level, hp, xp, xp_to_next, atk, def, sup, ver, last_message)| {
         let name = VILLAGES
             .iter()
             .find(|v| v.id == village)
             .map(|v| v.pet_name.to_string())
             .unwrap_or_default();
-        PetState {
+        let state = PetState {
             village,
             name,
             level,
@@ -121,7 +127,8 @@ fn load_from_snapshot(conn: &Connection) -> Result<Option<PetState>> {
             def,
             sup,
             ver,
-        }
+        };
+        (state, last_message)
     }))
 }
 
@@ -175,6 +182,18 @@ mod tests {
              VALUES (1, 'python', ?1, 50, 60, ?2, 100,
                      20, 18, 15, 14, NULL, datetime('now'))",
             rusqlite::params![level, xp],
+        )
+        .unwrap();
+    }
+
+    fn seed_snapshot_with_message(conn: &Connection, msg: &str) {
+        conn.execute(
+            "INSERT INTO pet_snapshot
+               (id, village, level, hp, hp_max, xp, xp_to_next,
+                atk, def, sup, ver, last_message, updated_at)
+             VALUES (1, 'rust', 1, 50, 60, 0, 100,
+                     20, 18, 15, 14, ?1, datetime('now'))",
+            rusqlite::params![msg],
         )
         .unwrap();
     }
@@ -342,6 +361,35 @@ mod tests {
         seed_snapshot(&conn, 0, 1);
         let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.pending_xp, 25);
+    }
+
+    #[test]
+    fn last_message_round_trips_from_snapshot() {
+        let conn = fresh();
+        seed_snapshot_with_message(&conn, "擊殺 ghost 「dead code」（+5 XP）");
+        let live = LiveState::load(&conn).unwrap().unwrap();
+        assert_eq!(
+            live.last_message.as_deref(),
+            Some("擊殺 ghost 「dead code」（+5 XP）")
+        );
+    }
+
+    #[test]
+    fn last_message_none_when_absent() {
+        let conn = fresh();
+        seed_snapshot(&conn, 0, 1); // seeds NULL last_message
+        let live = LiveState::load(&conn).unwrap().unwrap();
+        assert!(live.last_message.is_none());
+    }
+
+    #[test]
+    fn last_message_none_for_phase1_fallback() {
+        // Phase 1 pet table has no last_message column — fallback path
+        // returns None for the field regardless of snapshot state.
+        let conn = fresh();
+        seed_pet_phase1(&conn, 42);
+        let live = LiveState::load(&conn).unwrap().unwrap();
+        assert!(live.last_message.is_none());
     }
 
     #[test]
