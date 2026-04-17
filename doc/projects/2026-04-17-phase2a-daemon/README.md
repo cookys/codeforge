@@ -19,6 +19,7 @@
 | Catch-up cap | 240 ticks + sqrt tail（per `rpg-engine-spec.md`） | Phase 1 |
 | ECS crate | hecs | Phase 1 |
 | Daemon deploy | systemd user unit（Linux）/ launchd plist（macOS，Phase 2 後期） | `rpg-engine-spec.md` |
+| Daemon DB 位置 | **固定 global 模式**：daemon 寫入 `$CODEFORGE_DIR/codeforge.db`（預設 `~/.codeforge/codeforge.db`）。CLI 仍可兩種模式都用，但 daemon 不跟 CWD。 | Phase 2a（daemon 是 per-user 長駐，不能 per-project） |
 
 ## Success Criteria (KR)
 
