@@ -23,6 +23,7 @@
 use sha1::{Digest, Sha1};
 
 pub mod budget;
+pub mod generator;
 pub mod repo;
 pub mod trigger;
 
