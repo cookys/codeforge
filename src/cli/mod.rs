@@ -11,6 +11,7 @@ mod init;
 mod learn;
 mod pet;
 mod search;
+mod snapshot;
 mod statusline;
 mod strategy;
 mod tui;
@@ -100,6 +101,12 @@ pub enum Commands {
         #[arg(long)]
         refresh: bool,
     },
+    /// 印出可分享的 ASCII 月報卡（spec §3.6，本月戰績 + 世界地圖 + pet 身份）
+    Snapshot {
+        /// 自訂回顧天數（預設 30 天）
+        #[arg(long)]
+        days: Option<i64>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -178,5 +185,6 @@ pub fn run(cli: Cli) -> Result<()> {
             CommentaryAction::Test { kind } => commentary::CommentaryCmd::Test { kind },
         }),
         Commands::World { refresh } => world::run(&ctx, refresh),
+        Commands::Snapshot { days } => snapshot::run(&ctx, days),
     }
 }
