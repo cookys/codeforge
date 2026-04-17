@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-_（none — ready for next phase）_
+| Plan | Created | Status |
+|------|---------|--------|
+| *(no active plans)* | — | — |
 
 ---
 
@@ -10,6 +12,7 @@ _（none — ready for next phase）_
 
 | Plan | Created | Moved to Project |
 |------|---------|-----------------|
+| [phase3a-world-map](2026-04-18-phase3a-world-map.md) | 2026-04-18 | [2026-04-18-phase3a-world-map](../projects/_archive/2026-04-18-phase3a-world-map/) |
 | [phase3c-ai-commentary](2026-04-18-phase3c-ai-commentary.md) | 2026-04-18 | [2026-04-18-phase3c-ai-commentary](../projects/_archive/2026-04-18-phase3c-ai-commentary/) |
 | [phase3b-strategy](2026-04-18-phase3b-strategy.md) | 2026-04-18 | [2026-04-18-phase3b-strategy](../projects/_archive/2026-04-18-phase3b-strategy/) |
 | [phase3d-stickiness](2026-04-17-phase3d-stickiness.md) | 2026-04-17 | [2026-04-17-phase3d-stickiness](../projects/_archive/2026-04-17-phase3d-stickiness/) |
