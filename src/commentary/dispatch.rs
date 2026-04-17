@@ -204,9 +204,13 @@ fn write_feed_and_history(
 
 fn open_dispatch_conn(db_path: &std::path::Path) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
-    // Match Context::open_db — WAL + busy_timeout so we coexist cleanly with
-    // the daemon's main tx stream.
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;")?;
+    // Match Context::open_db verbatim — WAL + FK + busy_timeout. FK is
+    // currently a no-op (commentary tables define no FKs today) but
+    // consistent PRAGMA state across connections avoids surprise when
+    // Phase 5 Nation plugin tables reference commentary kinds.
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+    )?;
     Ok(conn)
 }
 

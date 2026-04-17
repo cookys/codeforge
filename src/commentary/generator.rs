@@ -67,35 +67,42 @@ pub fn generate_rule_based(
         ));
     }
 
-    // First pass: filter out recently-used phrases. Dedup compares on
-    // the *rendered* phrase (placeholders resolved) so a template that
-    // emits "Lv.5 紀念" and "Lv.6 紀念" is correctly treated as two
-    // distinct phrases rather than one collapsed template.
-    let mut candidates: Vec<&'static str> = Vec::with_capacity(pool.len());
+    // Render every pool phrase once, filtering out recently-used rows
+    // against the 30-day dedup history. Storing the rendered string + its
+    // hash in one place means we never need a second `fill_context` pass
+    // — historical bug (review r1 finding #3) where the chosen template
+    // was re-rendered with a potentially mutated context is now
+    // structurally impossible.
+    struct Candidate {
+        rendered: String,
+        hash: String,
+    }
+    let mut candidates: Vec<Candidate> = Vec::with_capacity(pool.len());
     for phrase in pool {
         let rendered = fill_context(phrase, ctx);
         let hash = phrase_hash_hex(&rendered);
         if !repo::seen_within(conn, &hash, kind, now, PHRASE_DEDUP_WINDOW_SECS)? {
-            candidates.push(phrase);
+            candidates.push(Candidate { rendered, hash });
         }
     }
 
-    let chosen = if !candidates.is_empty() {
+    let (phrase, phrase_hash) = if !candidates.is_empty() {
         let idx = (rng_salt as usize) % candidates.len();
-        candidates[idx]
+        let c = candidates.swap_remove(idx);
+        (c.rendered, c.hash)
     } else {
-        // Everything in the pool has been said recently. Fall back to the
-        // whole pool — dedup is a nice-to-have; silence is worse.
+        // Everything in the pool has been said recently. Render one
+        // fresh — silence is worse UX than a 30-day-window repeat.
         let idx = (rng_salt as usize) % pool.len();
-        pool[idx]
+        let rendered = fill_context(pool[idx], ctx);
+        let hash = phrase_hash_hex(&rendered);
+        (rendered, hash)
     };
 
-    let rendered = fill_context(chosen, ctx);
-    let hash = phrase_hash_hex(&rendered);
     Ok(Generated {
-        phrase: rendered,
+        phrase,
         source: Source::Rule,
-        phrase_hash: hash,
+        phrase_hash,
     })
 }
 
@@ -160,6 +167,7 @@ fn build_prompt(ctx: &GenContext<'_>) -> String {
             format!("主人已離開 {} 分鐘", absence_secs / 60)
         }
         Trigger::ZoneUnlock { zone_id } => format!("解鎖了新 Zone：{}", zone_id),
+        Trigger::ManualTest => "手動觸發的測試 commentary".to_string(),
     };
 
     format!(
