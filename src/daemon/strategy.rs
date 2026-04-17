@@ -6,7 +6,7 @@
 //! |------------|----------|----------|--------------------------------|
 //! | Aggressive | 1.3x     | 0.8x     | Boss > Elite > Zombie > rest   |
 //! | Defensive  | 0.9x     | 1.4x     | Ghost > Zombie > Elite > rest  |
-//! | Explorer   | 1.0x     | 1.0x     | no bias (id order)             |
+//! | Explorer   | 1.0x     | 1.0x     | no bias within zone (id order) |
 //! | Scholar    | 0.8x     | 1.0x     | Boss > Elite > rest (tome)     |
 //!
 //! Explorer = the Phase 2b baseline — chosen as default so upgrading from v5
@@ -104,6 +104,11 @@ impl Strategy {
                 MobKind::Elite => 2,
                 _ => 3,
             },
+            // Spec §2 describes Explorer as "優先未探索 Zone 的 MOB"
+            // (cross-zone priority). Phase 3b is single-zone (pet's home
+            // village), so the cross-zone dimension has no meaning yet —
+            // Explorer degenerates to within-zone id order. Phase 3a adds
+            // Zone unlock + multi-zone raids and will revisit this branch.
             Self::Explorer => 0,
             // Scholar chases tome-dropping mobs (Boss + Elite per spec §2
             // Loot table). Zombies/Ghosts drop cleaner-class items that

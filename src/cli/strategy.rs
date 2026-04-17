@@ -69,16 +69,20 @@ pub(crate) fn read_current(conn: &rusqlite::Connection) -> Result<Strategy> {
 /// has ever written a snapshot row (fresh adopt → strategy flip before
 /// first tick). For a greenfield row we seed reasonable defaults that
 /// the daemon will overwrite on first tick; for an existing row we touch
-/// only the strategy column.
+/// only the strategy column. `updated_at` is set explicitly (rather than
+/// leaning on the column DEFAULT) so both branches write the same value
+/// and there's no risk of a CHECK/NOT NULL regression if the schema
+/// default is ever relaxed.
 fn upsert_strategy(conn: &rusqlite::Connection, s: Strategy) -> Result<()> {
     conn.execute(
         "INSERT INTO pet_snapshot
              (id, village, level, hp, hp_max, xp, xp_to_next,
-              atk, def, sup, ver, strategy)
-         VALUES (1, 'rust', 1, 10, 10, 0, 100, 10, 10, 10, 10, ?1)
+              atk, def, sup, ver, strategy, updated_at)
+         VALUES (1, 'rust', 1, 10, 10, 0, 100, 10, 10, 10, 10, ?1,
+                 datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
              strategy = excluded.strategy,
-             updated_at = datetime('now')",
+             updated_at = excluded.updated_at",
         rusqlite::params![s.as_str()],
     )?;
     Ok(())
