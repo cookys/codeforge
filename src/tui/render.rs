@@ -34,12 +34,17 @@ pub struct PositionedLine {
 /// terminal size. Does not touch stdout; callable from tests. When the
 /// pet snapshot / combat log are missing (fresh install) we render a
 /// graceful placeholder instead of returning an error.
+///
+/// `welcome_override`: when `Some`, the Welcome Back Report lines (Phase
+/// 3d §3.1) take over the combat-log region for that frame. Callers are
+/// expected to pass `Some` on the very first paint and `None` thereafter.
 pub fn build_frame(
     conn: &Connection,
     scan_root: &Path,
     cwd: Option<&Path>,
     cols: u16,
     rows: u16,
+    welcome_override: Option<&[String]>,
 ) -> Result<Frame> {
     let layout = compute(cols, rows);
 
@@ -59,16 +64,42 @@ pub fn build_frame(
         layout.local_map.height as usize,
     );
 
-    let log_rows = load_combat_log(conn, layout.combat_log.height as usize)?;
-    let log_lines = combat_log::render(
-        &log_rows,
-        layout.combat_log.width as usize,
-        layout.combat_log.height as usize,
-    );
+    let log_lines = match welcome_override {
+        Some(welcome) => render_welcome_lines(
+            welcome,
+            layout.combat_log.width as usize,
+            layout.combat_log.height as usize,
+        ),
+        None => {
+            let log_rows = load_combat_log(conn, layout.combat_log.height as usize)?;
+            combat_log::render(
+                &log_rows,
+                layout.combat_log.width as usize,
+                layout.combat_log.height as usize,
+            )
+        }
+    };
 
     Ok(Frame {
         lines: compose(&layout, &pet_lines, &map_lines, &log_lines),
     })
+}
+
+/// Pad a welcome-back greeting to the combat-log panel's dimensions. The
+/// greeting arrives from `pet::session::WelcomeBackSummary::render_lines`
+/// as plain strings; here we add a panel title, cap to `max_rows`, and
+/// pad short lines to `width`.
+fn render_welcome_lines(welcome: &[String], width: usize, max_rows: usize) -> Vec<String> {
+    use super::panels::pad_to_width;
+    let mut out = Vec::with_capacity(max_rows);
+    out.push(pad_to_width("💤 歸來摘要", width));
+    for line in welcome.iter().take(max_rows.saturating_sub(1)) {
+        out.push(pad_to_width(line, width));
+    }
+    while out.len() < max_rows {
+        out.push(pad_to_width("", width));
+    }
+    out
 }
 
 /// Paint a pre-built frame to stdout. Clears the alt screen once before
@@ -168,7 +199,7 @@ mod tests {
     #[test]
     fn build_frame_on_empty_db_shows_placeholder() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None).unwrap();
         // Top row should be the no-pet placeholder
         let top = frame
             .lines
@@ -190,7 +221,7 @@ mod tests {
             [],
         )
         .unwrap();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None).unwrap();
         let has_ferris = frame.lines.iter().any(|l| l.text.contains("Ferris"));
         assert!(has_ferris, "pet name must appear in frame");
     }
@@ -198,14 +229,14 @@ mod tests {
     #[test]
     fn build_frame_includes_local_map_header() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None).unwrap();
         assert!(frame.lines.iter().any(|l| l.text.contains("Local Map")));
     }
 
     #[test]
     fn build_frame_includes_combat_log_header() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None).unwrap();
         assert!(frame.lines.iter().any(|l| l.text.contains("Combat Log")));
     }
 
@@ -221,7 +252,7 @@ mod tests {
             )
             .unwrap();
         }
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None).unwrap();
         // Most-recent-first: "mob-2" should be in frame somewhere
         assert!(frame.lines.iter().any(|l| l.text.contains("mob-2")));
     }
@@ -229,7 +260,7 @@ mod tests {
     #[test]
     fn build_frame_respects_layout_positions() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40, None).unwrap();
         // Pet status lines should be at rows 0..3
         let pet_rows: Vec<u16> = frame
             .lines
@@ -248,7 +279,7 @@ mod tests {
     #[test]
     fn paint_does_not_panic_on_in_memory_sink() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 60, 15).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 60, 15, None).unwrap();
         let mut sink: Vec<u8> = Vec::new();
         paint(&frame, &mut sink).unwrap();
         assert!(!sink.is_empty(), "paint must write something");
@@ -290,13 +321,13 @@ mod tests {
         }
 
         // Prime
-        let _ = build_frame(&conn, Path::new("/repo"), None, 100, 40).unwrap();
+        let _ = build_frame(&conn, Path::new("/repo"), None, 100, 40, None).unwrap();
         let mut sink: Vec<u8> = Vec::new();
 
         const N: u32 = 50;
         let start = std::time::Instant::now();
         for _ in 0..N {
-            let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40).unwrap();
+            let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40, None).unwrap();
             sink.clear();
             paint(&frame, &mut sink).unwrap();
         }
@@ -311,9 +342,60 @@ mod tests {
     fn build_frame_tiny_terminal_does_not_panic() {
         let conn = fresh();
         // 10x3 — only pet row, no bottom panels
-        let frame = build_frame(&conn, Path::new("/repo"), None, 10, 3).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 10, 3, None).unwrap();
         // Frame should contain pet rows; bottom panels may be 0-height so
         // their lines are all empty strings (we skip empty at paint time).
         assert!(frame.lines.iter().any(|l| l.row < 3));
+    }
+
+    #[test]
+    fn build_frame_with_welcome_override_replaces_combat_log_header() {
+        let conn = fresh();
+        // Seed a real combat_log row that would normally appear.
+        conn.execute(
+            "INSERT INTO combat_log (zone_id, mob_kind, mob_name, xp_gained, occurred_at)
+             VALUES ('rust', 'ghost', 'x', 5, '2026-04-17 14:00:00')",
+            [],
+        )
+        .unwrap();
+
+        let welcome = vec![
+            "你不在的 8 小時：".to_string(),
+            "  → 擊殺 ghost ×5".to_string(),
+        ];
+        let frame =
+            build_frame(&conn, Path::new("/repo"), None, 100, 30, Some(&welcome)).unwrap();
+
+        // The welcome-back title must appear (it replaces the normal
+        // "⚔ Combat Log" header).
+        assert!(
+            frame.lines.iter().any(|l| l.text.contains("歸來摘要")),
+            "welcome-back title must appear in frame"
+        );
+        // The real combat_log row should NOT appear in the override frame.
+        assert!(
+            !frame.lines.iter().any(|l| l.text.contains("ghost — x")),
+            "override frame must not show real combat_log content"
+        );
+    }
+
+    #[test]
+    fn build_frame_without_welcome_override_shows_real_combat_log() {
+        let conn = fresh();
+        conn.execute(
+            "INSERT INTO combat_log (zone_id, mob_kind, mob_name, xp_gained, occurred_at)
+             VALUES ('rust', 'ghost', 'unique-marker', 5, '2026-04-17 14:00:00')",
+            [],
+        )
+        .unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None).unwrap();
+        assert!(
+            frame.lines.iter().any(|l| l.text.contains("unique-marker")),
+            "normal frame must surface real combat_log rows"
+        );
+        assert!(
+            !frame.lines.iter().any(|l| l.text.contains("歸來摘要")),
+            "no welcome-back title without override"
+        );
     }
 }
