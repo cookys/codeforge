@@ -1,6 +1,6 @@
 # CodeForge Backlog
 
-Last audited: 2026-04-16
+Last audited: 2026-04-17
 
 Items confirmed low-priority or blocked by external dependencies. Each item has a trigger condition for when to pick it up.
 
@@ -12,6 +12,7 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 **Premise**: If two `codeforge dream` calls run simultaneously (e.g. SessionEnd hook + manual), the signal cursor may be read twice before either write completes, causing duplicate L1 entries.
 **Trigger**: Pick up when Phase 2 daemon is implemented (daemon will own all write operations, eliminating concurrent CLI calls).
 **Mitigation in place**: `PRAGMA busy_timeout=5000` ensures one waits; risk is low for Phase 1 single-user.
+**Status 2026-04-17**: Phase 2a shipped. Daemon now owns derived-state writes (`pet_snapshot`, `combat_log`, `game_world`), but `signal_cursors` are still CLI-written by `dream compile` — this item remains open with unchanged scope.
 
 ---
 
@@ -64,12 +65,13 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 
 ---
 
-## B8 — Phase 2 Planning: Daemon Framework
+## ~~B8 — Phase 2 Planning: Daemon Framework~~ ✅ Done 2026-04-17
 
-**Area**: New — `src/daemon/`
-**Premise**: Phase 2a daemon requires tokio runtime, unix socket IPC, 60s tick loop, and crossterm TUI. Significant L-size work.
-**Trigger**: Pick up after Phase 1 is stable for 2+ weeks in production use. Read `doc/specs/codeforge-mud-engine.md` first.
-**Prerequisites**: think-tank for IPC design, survey for TUI library choice (crossterm vs ratatui).
+Shipped as Phase 2a (`_archive/2026-04-17-phase2a-daemon`). Final design
+diverged from initial scope: IPC is SQLite `event_inbox` (Option D) +
+tick-driven drain; real-time UX comes from a live read path
+(`pet::live_state::LiveState` overlays unseen `event_inbox` XP on top
+of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 
 ---
 
