@@ -1,0 +1,83 @@
+//! Dispatch drained InboxEvents into GameWorld state changes.
+//!
+//! Phase 2a P3: basic XP awards per event type. Future phases refine
+//! (combat from file_saved, commentary from commit patterns, etc.).
+
+use super::ecs::GameWorld;
+use super::inbox::InboxEvent;
+use super::systems;
+
+/// XP awarded per event type. Keep conservative — Phase 2b+ will rebalance.
+pub fn xp_for_event(event_name: &str) -> u32 {
+    match event_name {
+        "git_commit" => 20,
+        "session_end" => 10,
+        "session_start" => 3,
+        "file_saved" => 1,
+        _ => 0,
+    }
+}
+
+/// Dispatch one event. Returns the XP awarded (for logging/testing).
+pub fn dispatch(gw: &mut GameWorld, event: &InboxEvent) -> u32 {
+    let name = parse_event_name(&event.payload).unwrap_or_default();
+    let xp = xp_for_event(&name);
+    if xp > 0 {
+        systems::apply_xp(gw, xp);
+    }
+    xp
+}
+
+fn parse_event_name(payload: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(payload).ok()?;
+    v.get("event")?.as_str().map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::migrations;
+    use rusqlite::Connection;
+
+    fn fresh_world() -> GameWorld {
+        let conn = Connection::open_in_memory().unwrap();
+        migrations::run(&conn).unwrap();
+        GameWorld::load_or_init(&conn).unwrap()
+    }
+
+    fn ev(id: i64, payload: &str) -> InboxEvent {
+        InboxEvent { id, payload: payload.to_string(), created_at: 0 }
+    }
+
+    #[test]
+    fn git_commit_awards_xp() {
+        let mut gw = fresh_world();
+        let awarded = dispatch(&mut gw, &ev(1, r#"{"event":"git_commit","sha":"abc"}"#));
+        assert_eq!(awarded, 20);
+        let l = gw.world().get::<&crate::daemon::ecs::PetLevel>(gw.pet()).unwrap();
+        assert_eq!(l.xp, 20);
+    }
+
+    #[test]
+    fn unknown_event_is_noop() {
+        let mut gw = fresh_world();
+        let awarded = dispatch(&mut gw, &ev(1, r#"{"event":"never_heard_of_it"}"#));
+        assert_eq!(awarded, 0);
+        let l = gw.world().get::<&crate::daemon::ecs::PetLevel>(gw.pet()).unwrap();
+        assert_eq!(l.xp, 0);
+    }
+
+    #[test]
+    fn malformed_payload_is_noop() {
+        let mut gw = fresh_world();
+        let awarded = dispatch(&mut gw, &ev(1, "not-json"));
+        assert_eq!(awarded, 0);
+    }
+
+    #[test]
+    fn missing_event_key_is_noop() {
+        let mut gw = fresh_world();
+        let awarded = dispatch(&mut gw, &ev(1, r#"{"foo":"bar"}"#));
+        assert_eq!(awarded, 0);
+    }
+}
