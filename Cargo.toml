@@ -35,6 +35,9 @@ crossterm = "0.29"
 # Async runtime (for dream compile LLM calls)
 tokio = { version = "1", features = ["full"] }
 
+# ECS — daemon game state (Phase 2a P3)
+hecs = "0.10"
+
 # HTTP client (for Claude Agent SDK in dream compile)
 reqwest = { version = "0.12", features = ["json"] }
 
