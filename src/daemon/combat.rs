@@ -63,6 +63,10 @@ pub fn hash_seed(a: u64, b: u64) -> u64 {
 #[derive(Debug, Clone)]
 pub struct AliveMob {
     pub id: i64,
+    /// Zone the mob belongs to. Loaded from DB but not read in current tick
+    /// logic (combat filters by zone in the SQL query). Kept for upcoming
+    /// Strategy Mode (Phase 3b) where cross-zone raids may reference it.
+    #[allow(dead_code)]
     pub zone_id: String,
     pub kind: MobKind,
     pub name: String,

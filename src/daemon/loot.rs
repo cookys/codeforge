@@ -134,7 +134,7 @@ pub fn apply_for_defeats(
     let mut total_xp: u32 = 0;
     for def in defeats {
         let mut rng = Rng::from_seed(hash_seed(
-            rng_salt ^ 0xA11_10_07_BADC_0FFE,
+            rng_salt ^ 0x0A11_1007_BADC_0FFE,
             def.id as u64,
         ));
         let drops = roll_drops(def.kind, &mut rng);
