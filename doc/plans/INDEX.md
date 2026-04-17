@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-*(none)*
+| Plan | Created | Project |
+|------|---------|---------|
+| [phase2a-daemon](2026-04-17-phase2a-daemon.md) | 2026-04-17 | [phase2a-daemon](../projects/2026-04-17-phase2a-daemon/) |
 
 ---
 

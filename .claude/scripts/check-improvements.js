@@ -17,13 +17,25 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+const crypto = require('crypto');
+
 const digestDir = path.join(os.homedir(), '.claude', 'session-digests');
 const queuePath = path.join(os.homedir(), '.claude', 'improvement-queue.json');
+
+const PROJECT_ROOT = '/home/codepower/projects/codeforge';
+const projectHash = crypto.createHash('sha1').update(PROJECT_ROOT).digest('hex').slice(0, 12);
+const devFlowMarker = path.join(os.homedir(), '.claude', `.dev-flow-warned-${projectHash}`);
 
 async function main() {
   // Drain stdin (required by Claude Code hooks — must consume before exiting)
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
+
+  // Reset dev-flow gate marker so check-dev-flow.js re-warns on first
+  // code-touch of this new session
+  try {
+    if (fs.existsSync(devFlowMarker)) fs.unlinkSync(devFlowMarker);
+  } catch (_) {}
 
   const output = [];
 
