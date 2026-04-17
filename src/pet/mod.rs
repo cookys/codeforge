@@ -1,3 +1,4 @@
+pub mod ability;
 pub mod village;
 pub mod state;
 pub mod xp;

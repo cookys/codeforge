@@ -117,19 +117,23 @@ INSERT OR IGNORE INTO schema_version (version) VALUES (2);
 -- Phase 1 的 `pet` 表保留作 legacy；Phase 2+ 逐步遷移 statusline 讀這張表
 
 CREATE TABLE IF NOT EXISTS pet_snapshot (
-    id           INTEGER PRIMARY KEY CHECK (id = 1),
-    village      TEXT NOT NULL,
-    level        INTEGER NOT NULL,
-    hp           INTEGER NOT NULL,
-    hp_max       INTEGER NOT NULL,
-    xp           INTEGER NOT NULL,
-    xp_to_next   INTEGER NOT NULL,
-    atk          INTEGER NOT NULL,
-    def          INTEGER NOT NULL,
-    sup          INTEGER NOT NULL,
-    ver          INTEGER NOT NULL,
-    last_message TEXT,
-    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    village         TEXT NOT NULL,
+    level           INTEGER NOT NULL,
+    hp              INTEGER NOT NULL,
+    hp_max          INTEGER NOT NULL,
+    xp              INTEGER NOT NULL,
+    xp_to_next      INTEGER NOT NULL,
+    atk             INTEGER NOT NULL,
+    def             INTEGER NOT NULL,
+    sup             INTEGER NOT NULL,
+    ver             INTEGER NOT NULL,
+    last_message    TEXT,
+    -- Phase 3d: Mood（0..=100），預設 60 落在「正常」區間
+    mood            INTEGER NOT NULL DEFAULT 60
+                      CHECK (mood BETWEEN 0 AND 100),
+    mood_tick_stamp INTEGER NOT NULL DEFAULT 0,
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- ─── Game World（zone 狀態、Zone Mastery 聲望）─────────────
@@ -239,3 +243,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_loot_dedupe
 -- ═══════════════════════════════════════════════════════════════
 
 INSERT OR IGNORE INTO schema_version (version) VALUES (4);
+
+-- ═══════════════════════════════════════════════════════════════
+-- Phase 3d — Stickiness (version 5)
+-- pet_snapshot.mood + pet_snapshot.mood_tick_stamp added inline in
+-- the CREATE TABLE above for greenfield installs. Upgrade path for
+-- existing DBs is handled in src/db/mod.rs::migrations::run (SQLite
+-- has no ALTER TABLE ADD COLUMN IF NOT EXISTS).
+-- first_events is a new table — CREATE TABLE IF NOT EXISTS is enough.
+-- ═══════════════════════════════════════════════════════════════
+
+-- ─── First-Time Events（spec §3.8 — 一次性情感里程碑）──────────
+-- event_id PRIMARY KEY 天然 idempotent：daemon 用 INSERT OR IGNORE，
+-- 就算分身重啟也不會重複觸發。
+
+CREATE TABLE IF NOT EXISTS first_events (
+    event_id     TEXT PRIMARY KEY,   -- e.g. "first_boss_kill", "first_level_10"
+    triggered_at TEXT NOT NULL,      -- ISO timestamp
+    tick_count   INTEGER NOT NULL,   -- daemon tick when triggered
+    payload      TEXT                -- JSON blob, optional context (zone_id/mob_name)
+);
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (5);
