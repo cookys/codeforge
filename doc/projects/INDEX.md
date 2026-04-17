@@ -4,14 +4,13 @@
 
 ## Active
 
-| Project | Description | Branch | Started |
-|---------|------------|--------|---------|
-| [phase3c-ai-commentary](2026-04-18-phase3c-ai-commentary/README.md) | AI Commentary — Haiku-driven pet talk：opt-in + global 1/hour + strategy-aware 語氣 + 30-day phrase dedup + rule-based offline fallback；statusline footer / TUI combat_log 顯示 | `feature/phase3c-ai-commentary` | 2026-04-18 |
+_（none — ready for next phase）_
 
 ## Archived
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [phase3c-ai-commentary](_archive/2026-04-18-phase3c-ai-commentary/README.md) | AI Commentary — Haiku pet talk + 30-day dedup + 1/hour global budget + strategy-aware tone；statusline bubble / TUI combat_log 整合，P1-P6 + QG + r1 4 fixes + r2 clean | 2026-04-18 ✅ |
 | [phase3b-strategy](_archive/2026-04-18-phase3b-strategy/README.md) | Strategy Mode — 4 種打法（Aggressive / Defensive / Explorer / Scholar）× ATK/DEF 乘子 + MOB 優先序（spec §2），P1-P3 + QG + 2 輪 review | 2026-04-18 ✅ |
 | [phase3d-stickiness](_archive/2026-04-17-phase3d-stickiness/README.md) | 黏著度機制 — Welcome Back / Mood Decay / Next Unlock / First-Time Moments（spec §3.1/3.2/3.4/3.8），P1-P5 + QG + 1 輪 clean review | 2026-04-17 ✅ |
 | [phase2c-tui](_archive/2026-04-17-phase2c-tui/README.md) | TUI + Local Map — alt-screen 面板、pet status / combat log / local map 三區塊、1 Hz refresh、鍵盤 quit（P1-P6 + QG + 兩輪 review，spec §1 + §5）| 2026-04-17 ✅ |
