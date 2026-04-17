@@ -12,6 +12,7 @@
 
 | Plan | Created | Moved to Project |
 |------|---------|-----------------|
+| [phase3e-crafting](2026-04-18-phase3e-crafting.md) | 2026-04-18 | [2026-04-18-phase3e-crafting](../projects/_archive/2026-04-18-phase3e-crafting/) |
 | [phase3f-snapshot](2026-04-18-phase3f-snapshot.md) | 2026-04-18 | [2026-04-18-phase3f-snapshot](../projects/_archive/2026-04-18-phase3f-snapshot/) |
 | [phase3a-world-map](2026-04-18-phase3a-world-map.md) | 2026-04-18 | [2026-04-18-phase3a-world-map](../projects/_archive/2026-04-18-phase3a-world-map/) |
 | [phase3c-ai-commentary](2026-04-18-phase3c-ai-commentary.md) | 2026-04-18 | [2026-04-18-phase3c-ai-commentary](../projects/_archive/2026-04-18-phase3c-ai-commentary/) |
