@@ -49,7 +49,14 @@ pub fn build_frame(
     let layout = compute(cols, rows);
 
     let pet_lines = match LiveState::load(conn)? {
-        Some(live) => pet_panel::render(&live.state, layout.pet_status.width as usize),
+        Some(live) => {
+            // Phase 3b: strategy falls back to the baseline Explorer when
+            // the snapshot predates v6 (wait-for-tick window is <60s).
+            let strategy = live.strategy.unwrap_or(
+                crate::daemon::strategy::DEFAULT_STRATEGY,
+            );
+            pet_panel::render(&live.state, strategy, layout.pet_status.width as usize)
+        }
         None => placeholder_lines(
             "尚未 adopt 任何寵物 — 執行 `codeforge adopt`",
             layout.pet_status.width as usize,

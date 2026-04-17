@@ -1,17 +1,19 @@
-//! PetStatus panel — Phase 2c P4 / Phase 3d P3.
+//! PetStatus panel — Phase 2c P4 / Phase 3d P3 / Phase 3b P3.
 //!
 //! Renders a 3-line block summarizing the pet: name/level, HP/XP bars with
-//! the next-unlock anchor (§3.4), and the five-stat row. Pure function of
-//! `PetState` + width; no terminal IO.
+//! the next-unlock anchor (§3.4), and the five-stat row with the current
+//! Strategy (§2). Pure function of `PetState` + `Strategy` + width; no
+//! terminal IO.
 
 use super::pad_to_width;
+use crate::daemon::strategy::Strategy;
 use crate::pet::ability::next_unlock;
 use crate::pet::state::PetState;
 
 /// Render the 3-row PetStatus panel as bare strings, each padded to
 /// exactly `width` visible columns. The panel never exceeds 3 lines —
 /// callers that ask for taller regions pad with blanks themselves.
-pub fn render(pet: &PetState, width: usize) -> Vec<String> {
+pub fn render(pet: &PetState, strategy: Strategy, width: usize) -> Vec<String> {
     let header = format!("{}  Lv.{}", pet.name, pet.level);
     let bars = format!(
         "HP {}  XP {} {}/{}{}",
@@ -21,9 +23,11 @@ pub fn render(pet: &PetState, width: usize) -> Vec<String> {
         pet.xp_to_next,
         next_unlock_suffix(pet.level),
     );
+    // Phase 3b: full-name strategy tag trailing the stat row. Capitalised
+    // for TUI visual weight (the panel has room; statusline uses short_tag).
     let stats = format!(
-        "ATK:{:3}  DEF:{:3}  SUP:{:3}  VER:{:3}",
-        pet.atk, pet.def, pet.sup, pet.ver
+        "ATK:{:3}  DEF:{:3}  SUP:{:3}  VER:{:3}  strat:{}",
+        pet.atk, pet.def, pet.sup, pet.ver, strategy.as_str()
     );
 
     vec![
@@ -75,15 +79,19 @@ mod tests {
         }
     }
 
+    fn s_explorer() -> Strategy {
+        Strategy::Explorer
+    }
+
     #[test]
     fn renders_exactly_three_lines() {
-        let lines = render(&sample(), 50);
+        let lines = render(&sample(), s_explorer(), 50);
         assert_eq!(lines.len(), 3);
     }
 
     #[test]
     fn every_line_matches_requested_width() {
-        let lines = render(&sample(), 60);
+        let lines = render(&sample(), s_explorer(), 60);
         for l in &lines {
             assert_eq!(vis_width(l), 60, "line must be padded/clipped to 60");
         }
@@ -91,14 +99,14 @@ mod tests {
 
     #[test]
     fn header_contains_name_and_level() {
-        let lines = render(&sample(), 50);
+        let lines = render(&sample(), s_explorer(), 50);
         assert!(lines[0].contains("Ferris"));
         assert!(lines[0].contains("Lv.5"));
     }
 
     #[test]
     fn bars_reflect_values() {
-        let lines = render(&sample(), 60);
+        let lines = render(&sample(), s_explorer(), 60);
         // HP=82/100 → ceil(0.82*6) = 5 filled
         assert!(lines[1].contains("█████░"), "got: {}", lines[1]);
     }
@@ -109,7 +117,7 @@ mod tests {
         let mut p = sample();
         p.xp_to_next = 0;
         p.xp = 0;
-        let lines = render(&p, 60);
+        let lines = render(&p, s_explorer(), 60);
         assert_eq!(lines.len(), 3);
     }
 
@@ -117,14 +125,14 @@ mod tests {
     fn overflow_hp_is_clamped_in_bar() {
         let mut p = sample();
         p.hp = 500; // > max
-        let lines = render(&p, 60);
+        let lines = render(&p, s_explorer(), 60);
         // Bar should be fully filled (6 █, 0 ░)
         assert!(lines[1].contains("██████"), "got: {}", lines[1]);
     }
 
     #[test]
     fn narrow_width_clips_with_ellipsis() {
-        let lines = render(&sample(), 10);
+        let lines = render(&sample(), s_explorer(), 10);
         for l in &lines {
             assert_eq!(vis_width(l), 10);
         }
@@ -136,7 +144,7 @@ mod tests {
     fn cjk_name_does_not_break_width() {
         let mut p = sample();
         p.name = "代號七七七".to_string();
-        let lines = render(&p, 50);
+        let lines = render(&p, s_explorer(), 50);
         assert_eq!(vis_width(&lines[0]), 50);
     }
 
@@ -147,7 +155,7 @@ mod tests {
         // Lv 5 pet — next target is Focus Strike at Lv 10.
         let mut p = sample();
         p.level = 5;
-        let lines = render(&p, 80);
+        let lines = render(&p, s_explorer(), 80);
         assert!(lines[1].contains("Focus Strike"), "got: {}", lines[1]);
         assert!(lines[1].contains("Lv 10"));
     }
@@ -157,7 +165,7 @@ mod tests {
         // Lv 12 — already have Focus Strike, next is Tome Sense (Lv 15).
         let mut p = sample();
         p.level = 12;
-        let lines = render(&p, 80);
+        let lines = render(&p, s_explorer(), 80);
         assert!(lines[1].contains("Tome Sense"), "got: {}", lines[1]);
     }
 
@@ -166,7 +174,28 @@ mod tests {
         // Lv 50+ — no further unlocks; suffix must vanish, not show "None".
         let mut p = sample();
         p.level = 60;
-        let lines = render(&p, 80);
+        let lines = render(&p, s_explorer(), 80);
         assert!(!lines[1].contains("next:"), "got: {}", lines[1]);
+    }
+
+    // ─── Phase 3b: Strategy display ─────────────────────────────────
+
+    #[test]
+    fn stats_line_includes_strategy_tag() {
+        let lines = render(&sample(), Strategy::Aggressive, 80);
+        assert!(
+            lines[2].contains("strat:aggressive"),
+            "stats line missing strategy: {}",
+            lines[2]
+        );
+    }
+
+    #[test]
+    fn strategy_updates_stats_line_when_switched() {
+        let aggro_lines = render(&sample(), Strategy::Aggressive, 80);
+        let scholar_lines = render(&sample(), Strategy::Scholar, 80);
+        assert!(aggro_lines[2].contains("aggressive"));
+        assert!(scholar_lines[2].contains("scholar"));
+        assert_ne!(aggro_lines[2], scholar_lines[2]);
     }
 }
