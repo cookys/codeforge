@@ -1,9 +1,11 @@
-//! PetStatus panel — Phase 2c P4.
+//! PetStatus panel — Phase 2c P4 / Phase 3d P3.
 //!
-//! Renders a 3-line block summarizing the pet: name/level, HP/XP bars,
-//! five-stat row. Pure function of `PetState` + width; no terminal IO.
+//! Renders a 3-line block summarizing the pet: name/level, HP/XP bars with
+//! the next-unlock anchor (§3.4), and the five-stat row. Pure function of
+//! `PetState` + width; no terminal IO.
 
 use super::pad_to_width;
+use crate::pet::ability::next_unlock;
 use crate::pet::state::PetState;
 
 /// Render the 3-row PetStatus panel as bare strings, each padded to
@@ -12,11 +14,12 @@ use crate::pet::state::PetState;
 pub fn render(pet: &PetState, width: usize) -> Vec<String> {
     let header = format!("{}  Lv.{}", pet.name, pet.level);
     let bars = format!(
-        "HP {}  XP {} {}/{}",
+        "HP {}  XP {} {}/{}{}",
         bar(pet.hp, 100, 6),
         bar(pet.xp, pet.xp_to_next.max(1), 6),
         pet.xp,
         pet.xp_to_next,
+        next_unlock_suffix(pet.level),
     );
     let stats = format!(
         "ATK:{:3}  DEF:{:3}  SUP:{:3}  VER:{:3}",
@@ -28,6 +31,16 @@ pub fn render(pet: &PetState, width: usize) -> Vec<String> {
         pad_to_width(&bars, width),
         pad_to_width(&stats, width),
     ]
+}
+
+/// "  → next: Focus Strike (Lv 10)" or "" past the final tier. Leading
+/// space lets `pad_to_width` clip cleanly when the panel is narrow —
+/// losing the suffix is better than losing XP numbers.
+fn next_unlock_suffix(level: u32) -> String {
+    match next_unlock(level) {
+        Some(u) => format!("  → next: {} (Lv {})", u.name, u.required_level),
+        None => String::new(),
+    }
 }
 
 /// 6-cell progress bar in plain ASCII chars: `█` filled, `░` empty.
@@ -125,5 +138,35 @@ mod tests {
         p.name = "代號七七七".to_string();
         let lines = render(&p, 50);
         assert_eq!(vis_width(&lines[0]), 50);
+    }
+
+    // ─── Phase 3d: next-unlock anchor ───────────────────────────────
+
+    #[test]
+    fn next_unlock_suffix_shows_upcoming_ability() {
+        // Lv 5 pet — next target is Focus Strike at Lv 10.
+        let mut p = sample();
+        p.level = 5;
+        let lines = render(&p, 80);
+        assert!(lines[1].contains("Focus Strike"), "got: {}", lines[1]);
+        assert!(lines[1].contains("Lv 10"));
+    }
+
+    #[test]
+    fn next_unlock_suffix_updates_past_threshold() {
+        // Lv 12 — already have Focus Strike, next is Tome Sense (Lv 15).
+        let mut p = sample();
+        p.level = 12;
+        let lines = render(&p, 80);
+        assert!(lines[1].contains("Tome Sense"), "got: {}", lines[1]);
+    }
+
+    #[test]
+    fn next_unlock_suffix_omitted_past_legendary() {
+        // Lv 50+ — no further unlocks; suffix must vanish, not show "None".
+        let mut p = sample();
+        p.level = 60;
+        let lines = render(&p, 80);
+        assert!(!lines[1].contains("next:"), "got: {}", lines[1]);
     }
 }
