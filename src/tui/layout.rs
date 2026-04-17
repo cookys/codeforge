@@ -54,8 +54,10 @@ pub struct Layout {
 /// Rows reserved for the top PetStatus panel.
 pub const PET_ROWS: u16 = 3;
 /// Minimum terminal cols before the split columns collapse to 0-width.
+#[allow(dead_code)]
 pub const MIN_COLS: u16 = 20;
 /// Minimum rows before bottom panels collapse to 0-height (PET_ROWS + 2).
+#[allow(dead_code)]
 pub const MIN_ROWS: u16 = PET_ROWS + 2;
 
 /// Fraction of horizontal space given to the LocalMap column. Combat log
