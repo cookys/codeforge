@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod adopt;
+mod daemon;
 mod dream;
 mod emit;
 mod ingest;
@@ -72,6 +73,21 @@ pub enum Commands {
         #[arg(long, conflicts_with_all = ["event", "fields"])]
         json: Option<String>,
     },
+    /// 管理背景 daemon（tick loop）
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum DaemonAction {
+    /// 前景啟動 daemon（systemd 建議用此；手動使用請搭配 nohup/tmux）
+    Start,
+    /// 發 SIGTERM 終止目前執行中的 daemon
+    Stop,
+    /// 顯示 daemon 狀態（pid / last_tick / pending events）
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -104,5 +120,10 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Pet => pet::run(&ctx),
         Commands::Statusline => statusline::run(&ctx),
         Commands::Emit { event, fields, json } => emit::run(&ctx, event, fields, json),
+        Commands::Daemon { action } => daemon::run(&ctx, match action {
+            DaemonAction::Start => daemon::DaemonCmd::Start,
+            DaemonAction::Stop => daemon::DaemonCmd::Stop,
+            DaemonAction::Status => daemon::DaemonCmd::Status,
+        }),
     }
 }
