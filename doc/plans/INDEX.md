@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-*(none)*
+| Plan | Created | Project |
+|------|---------|---------|
+| [phase2b-combat](2026-04-17-phase2b-combat.md) | 2026-04-17 | [phase2b-combat](../projects/2026-04-17-phase2b-combat/) |
 
 ---
 
