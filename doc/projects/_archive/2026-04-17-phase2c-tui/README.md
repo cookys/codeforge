@@ -1,10 +1,24 @@
 # CodeForge Phase 2c — TUI + Local Map
 
+> 狀態：✅ **完成並合併**（2026-04-17，merge commit on main）
 > 建立：2026-04-17
-> Branch：`feature/phase2c-tui`
+> Branch：`feature/phase2c-tui`（已合併並刪除）
 > 前置：Phase 2b ✅（MOB + combat + loot）
 > Spec 參考：`doc/specs/codeforge-mud-engine.md` §1（Local Map）+ §5（TUI 渲染架構）
 > 模式：CEO level 3（autonomous）
+
+## Completion Summary
+
+All 6 phases (P1-P6) + QG + 2 review rounds done in a single session.
+
+- **Tests**: 233 passing（baseline 164 → +69）。Debug + release 皆綠，stable across 3 consecutive runs。
+- **Perf**: `render_budget_under_16ms_average` 通過；debug mode < 16ms avg。
+- **Clippy**: Phase 2c 所有檔零 warning。
+- **Review**: round 1 抓到 2 個 IMPORTANT（Notify lost-wakeup race + keyboard task 無法合作退出，會吃 shell keystroke）；round 2 verified RESOLVED（mpsc::channel(1) + Arc<AtomicBool> running flag）。APPROVED FOR MERGE。
+
+### Post-review fix highlights
+- 切換 shutdown 通道從 `Arc<Notify>` 到 `tokio::sync::mpsc::channel::<()>(1)`，buffered capacity 1 解 lost-wakeup race。
+- 加 `Arc<AtomicBool> running` flag — main loop `store(false, Release)`，keyboard task 每次 poll 前 `load(Acquire)`，100ms 內乾淨退出，不會吃 user 的下一個 shell keystroke。
 
 ## Project Goal
 
@@ -53,29 +67,29 @@
 
 | KR | 驗證 | 狀態 |
 |----|------|------|
-| `codeforge tui` 指令存在且 clap 解析不報錯 | `cargo build + codeforge tui --help` | pending |
-| Schema v4 migration 跑過 `origin_path` 欄位存在且 nullable | migrations test | pending |
-| Scanner 寫入 `origin_path = 相對於 scan root 的 path` | scanner unit test | pending |
-| Local Map data provider：3 dir × 2 含 mobs → 回傳 3 `RoomSummary` | local_map unit test | pending |
-| PetStatus panel renderer golden | snapshot test with fixed PetState | pending |
-| CombatLog panel renderer golden | snapshot test with fixed rows | pending |
-| LocalMap panel renderer golden with `▶` 當前 dir 標示 | snapshot test | pending |
-| TerminalGuard Drop 恢復終端 | 模擬 drop 呼叫，驗證 leave alt-screen 執行一次 | pending |
-| Keyboard quit channel：q / Esc / Ctrl-C 都觸發 shutdown | channel test | pending |
-| Render budget `< 16ms` avg | perf test with 50 iterations | pending |
-| `cargo clippy` Phase 2c 零 warning | clippy Pass | pending |
+| `codeforge tui` 指令存在且 clap 解析不報錯 | `cargo build + codeforge tui --help` | ✅ |
+| Schema v4 migration 跑過 `origin_path` 欄位存在且 nullable | migrations test | ✅ |
+| Scanner 寫入 `origin_path = 相對於 scan root 的 path` | scanner unit test | ✅ |
+| Local Map data provider：3 dir × 2 含 mobs → 回傳 3 `RoomSummary` | local_map unit test | ✅ |
+| PetStatus panel renderer golden | snapshot test with fixed PetState | ✅ |
+| CombatLog panel renderer golden | snapshot test with fixed rows | ✅ |
+| LocalMap panel renderer golden with `▶` 當前 dir 標示 | snapshot test | ✅ |
+| TerminalGuard Drop 恢復終端 | 模擬 drop 呼叫，驗證 leave alt-screen 執行一次 | ✅ |
+| Keyboard quit channel：q / Esc / Ctrl-C 都觸發 shutdown | channel test | ✅ |
+| Render budget `< 16ms` avg | perf test with 50 iterations | ✅ |
+| `cargo clippy` Phase 2c 零 warning | clippy Pass | ✅ |
 
 ## Phases
 
 | # | Phase | Activities | Status |
 |---|-------|-----------|--------|
-| P1 | Schema v4 | `mobs.origin_path TEXT` nullable + migration test + scanner 寫入 | pending |
-| P2 | Local Map data provider | `src/tui/local_map.rs`：scan mobs → group by top-level dir → `Vec<RoomSummary>` | pending |
-| P3 | TUI renderer 骨架 | `src/tui/mod.rs` + `src/tui/layout.rs`：alt-screen / raw mode / region layout / RAII guard | pending |
-| P4 | Panel renderers | PetStatus / CombatLog / LocalMap 三個純 render function（data → `Vec<Line>`）| pending |
-| P5 | Event loop | tokio 1Hz timer + keyboard channel + shutdown notifier | pending |
-| P6 | CLI 整合 | `src/cli/tui.rs` + `main.rs` clap 註冊 + e2e smoke | pending |
-| QG | Quality gate | `cargo check + clippy + test` + perf KR | pending |
+| P1 | Schema v4 | `mobs.origin_path TEXT` nullable + migration test + scanner 寫入 | ✅ |
+| P2 | Local Map data provider | `src/tui/local_map.rs`：scan mobs → group by top-level dir → `Vec<RoomSummary>` | ✅ |
+| P3 | TUI renderer 骨架 | `src/tui/mod.rs` + `src/tui/layout.rs`：alt-screen / raw mode / region layout / RAII guard | ✅ |
+| P4 | Panel renderers | PetStatus / CombatLog / LocalMap 三個純 render function（data → `Vec<Line>`）| ✅ |
+| P5 | Event loop | tokio 1Hz timer + keyboard channel + shutdown notifier | ✅ |
+| P6 | CLI 整合 | `src/cli/tui.rs` + `main.rs` clap 註冊 + e2e smoke | ✅ |
+| QG | Quality gate | `cargo check + clippy + test` + perf KR | ✅ |
 
 ## Known risks / open questions
 
