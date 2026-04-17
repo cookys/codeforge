@@ -222,6 +222,14 @@ fn clip_visible(s: &str, max_cols: usize) -> String {
     if max_cols == 0 {
         return String::new();
     }
+    // Exact-fit fast path. Without this the loop below consumes all chars,
+    // exits naturally (not via `break`), and still pushes `…` — producing
+    // an output `max_cols + 1` wide. `pad_visible` guards the overflow
+    // path with a strict `>`, so this never trips in production today,
+    // but the function's standalone contract should hold for any caller.
+    if UnicodeWidthStr::width(s) <= max_cols {
+        return s.to_string();
+    }
     let mut cols = 0usize;
     let mut out = String::new();
     for ch in s.chars() {
@@ -387,6 +395,22 @@ mod tests {
         let out = clip_visible("abcdefghij", 5);
         assert!(out.ends_with('…'));
         assert!(UnicodeWidthStr::width(out.as_str()) <= 5);
+    }
+
+    #[test]
+    fn clip_visible_fits_exactly_returns_input_unchanged() {
+        // Regression (review r1 finding #1): clip_visible used to always
+        // append `…`, so a string that already fit the budget would come
+        // back as `max_cols + 1` wide. Exact-width fast path fixes it.
+        let out = clip_visible("abcde", 5);
+        assert_eq!(out, "abcde");
+        assert!(!out.ends_with('…'));
+    }
+
+    #[test]
+    fn clip_visible_under_width_returns_input_unchanged() {
+        let out = clip_visible("abc", 5);
+        assert_eq!(out, "abc");
     }
 
     #[test]
