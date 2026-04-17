@@ -150,7 +150,13 @@ CREATE TABLE IF NOT EXISTS game_world (
     zone_id       TEXT PRIMARY KEY,
     unlocked      INTEGER NOT NULL DEFAULT 0,   -- 0 = locked, 1 = unlocked
     kill_count    INTEGER NOT NULL DEFAULT 0,   -- 累積擊殺（Zone Mastery 依據）
-    last_visit_at TEXT
+    last_visit_at TEXT,
+    -- Phase 3a: concept_count from L1 analyzer. Soft activity metric;
+    -- feeds World Map display + unlock threshold. Refreshed by
+    -- `world::refresh_from_l1` (called by `codeforge world --refresh`
+    -- or `codeforge dream`). Inline for greenfield; ALTER-guarded in
+    -- db::mod.rs for existing DBs.
+    concept_count INTEGER NOT NULL DEFAULT 0
 );
 
 -- ─── Combat Log（MOB 擊殺紀錄，Phase 2b 會填）──────────────
@@ -345,3 +351,12 @@ INSERT OR IGNORE INTO commentary_budget (id, last_emit_at, consecutive_skip)
     VALUES (1, NULL, 0);
 
 INSERT OR IGNORE INTO schema_version (version) VALUES (7);
+
+-- ═══════════════════════════════════════════════════════════════
+-- Phase 3a — World Map + Zone unlock (version 8)
+-- game_world.concept_count added inline in the CREATE TABLE above
+-- for greenfield installs. Upgrade path for existing DBs is handled
+-- in src/db/mod.rs::migrations::run (same ALTER-guard pattern).
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (8);

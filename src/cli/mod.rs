@@ -14,6 +14,7 @@ mod search;
 mod statusline;
 mod strategy;
 mod tui;
+mod world;
 
 #[derive(Parser)]
 #[command(name = "codeforge", version, about = "Claude Code power-user toolkit")]
@@ -93,6 +94,12 @@ pub enum Commands {
         #[command(subcommand)]
         action: CommentaryAction,
     },
+    /// 顯示世界地圖（5 村 + Nation 預留格；--refresh 重新掃描 L1）
+    World {
+        /// 重新掃描 L1 memory 更新 concept 分佈
+        #[arg(long)]
+        refresh: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -170,5 +177,6 @@ pub fn run(cli: Cli) -> Result<()> {
             CommentaryAction::List { n } => commentary::CommentaryCmd::List { n },
             CommentaryAction::Test { kind } => commentary::CommentaryCmd::Test { kind },
         }),
+        Commands::World { refresh } => world::run(&ctx, refresh),
     }
 }

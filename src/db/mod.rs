@@ -75,6 +75,7 @@ pub mod migrations {
         upgrade_mobs_origin_path(conn)?;
         upgrade_pet_snapshot_mood(conn)?;
         upgrade_pet_snapshot_strategy(conn)?;
+        upgrade_game_world_concept_count(conn)?;
         Ok(())
     }
 
@@ -121,6 +122,20 @@ pub mod migrations {
         if !column_exists(conn, "pet_snapshot", "strategy")? {
             conn.execute(
                 "ALTER TABLE pet_snapshot ADD COLUMN strategy TEXT NOT NULL DEFAULT 'explorer'",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Phase 3a upgrade: existing DBs lack `game_world.concept_count`.
+    /// Greenfield installs have it via CREATE TABLE. Default 0 keeps
+    /// pre-v8 zones in "no L1 activity" state until the next
+    /// `world::refresh_from_l1` call writes real numbers.
+    fn upgrade_game_world_concept_count(conn: &Connection) -> Result<()> {
+        if !column_exists(conn, "game_world", "concept_count")? {
+            conn.execute(
+                "ALTER TABLE game_world ADD COLUMN concept_count INTEGER NOT NULL DEFAULT 0",
                 [],
             )?;
         }
@@ -812,6 +827,97 @@ mod tests {
         assert_eq!(v6, 6);
 
         // Second run stays idempotent.
+        migrations::run(&conn).unwrap();
+    }
+
+    // ─── Phase 3a migration tests ─────────────────────────────────
+
+    #[test]
+    fn phase3a_version_seeded() {
+        let conn = open_migrated_memory_db();
+        let v8: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=8",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v8, 8);
+    }
+
+    #[test]
+    fn phase3a_concept_count_on_fresh_install() {
+        let conn = open_migrated_memory_db();
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(game_world)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.contains(&"concept_count".to_string()));
+    }
+
+    #[test]
+    fn phase3a_concept_count_defaults_zero_on_insert() {
+        let conn = open_migrated_memory_db();
+        conn.execute(
+            "INSERT INTO game_world (zone_id) VALUES ('rust')",
+            [],
+        )
+        .unwrap();
+        let c: i64 = conn
+            .query_row(
+                "SELECT concept_count FROM game_world WHERE zone_id = 'rust'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(c, 0);
+    }
+
+    #[test]
+    fn phase3a_upgrade_from_v7_adds_concept_count() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER NOT NULL, applied_at TEXT);
+             CREATE UNIQUE INDEX idx_schema_version_version ON schema_version(version);
+             INSERT INTO schema_version (version, applied_at) VALUES (7, '2026-04-18');
+
+             -- Phase 2a-era game_world (no concept_count)
+             CREATE TABLE game_world (
+                 zone_id TEXT PRIMARY KEY,
+                 unlocked INTEGER NOT NULL DEFAULT 0,
+                 kill_count INTEGER NOT NULL DEFAULT 0,
+                 last_visit_at TEXT
+             );
+             INSERT INTO game_world (zone_id, unlocked, kill_count) VALUES ('rust', 1, 17);",
+        )
+        .unwrap();
+
+        migrations::run(&conn).unwrap();
+
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(game_world)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.contains(&"concept_count".to_string()));
+
+        // Existing row preserved, default applied.
+        let (kill, concept): (i64, i64) = conn
+            .query_row(
+                "SELECT kill_count, concept_count FROM game_world WHERE zone_id = 'rust'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kill, 17);
+        assert_eq!(concept, 0);
+
+        // Idempotent re-run.
         migrations::run(&conn).unwrap();
     }
 

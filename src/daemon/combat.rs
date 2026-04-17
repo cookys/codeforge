@@ -144,10 +144,23 @@ pub fn run_tick(
         (stats.atk, stats.ver, stats.def, strat.value)
     };
 
-    // Strategy priority: lower priority_order → attack first. Mob.id is the
-    // stable tiebreaker (same ordering as the SQL ORDER BY id fallback, so
-    // Explorer produces identical behaviour to the pre-strategy baseline).
-    mobs.sort_by_key(|m| (strategy.priority_order(m.kind), m.id));
+    // Zone-aware priority. Explorer is the only strategy that consults
+    // `ZoneStats` (see `strategy::priority_order_ctx`), so the load is
+    // gated — Aggressive / Defensive / Scholar pay zero DB cost per tick.
+    // The empty-slice fallback in `priority_order_ctx` returns 0 for
+    // Explorer-with-no-zones too, so a hypothetical strategy flip mid-tick
+    // degrades to id-order rather than panicking.
+    //
+    // Single-zone ticks ties within zone collapse to id-tiebreaker, which
+    // matches Phase 2b ordering — backwards compatible for the current
+    // home-zone-only scanner.
+    let zones: Vec<crate::world::ZoneStats> = if strategy == Strategy::Explorer {
+        crate::world::load_all(conn)?
+    } else {
+        Vec::new()
+    };
+
+    mobs.sort_by_key(|m| (strategy.priority_order_ctx(m.kind, &zone_id, &zones), m.id));
 
     let mut summary = CombatSummary::default();
     for mob in mobs {
