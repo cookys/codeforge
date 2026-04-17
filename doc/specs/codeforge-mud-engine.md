@@ -247,7 +247,391 @@ codeforge strategy scholar
 
 ---
 
-## 3. AI Commentary（垃圾話系統）
+## 3. 黏著度機制系統
+
+> 來源：Survey（寵物成長模式）+ Think Tank 六角色審查（2026-04-16）
+> 設計原則：所有機制必須在「玩家不主動打開遊戲」的前提下有意義。
+
+---
+
+### 3.1 歸來摘要（Welcome Back Report）
+
+每次玩家開啟新 session 或 `cd` 進入已知 repo，companion pane 先顯示 2-3 行摘要：
+
+```
+╔══ Ferris 回報 ════════════════════════════════╗
+║  你不在的 8 小時：                             ║
+║  → 擊殺 Zombie ×7（backend/）                 ║
+║  → Boss「auth_middleware.rs」HP 剩 34%         ║
+║  → 撿到 Pattern Fragment ×2                   ║
+║  → HP 消耗至 61%（建議休息一下）               ║
+╚═══════════════════════════════════════════════╝
+```
+
+- 即使玩家不在期間沒有任何 coding，也顯示：「Ferris 在 backend/ 巡邏，沒有發現新威脅。」
+- 解決 idle 遊戲最常見的流失原因：「打開看沒有東西」
+- 資料來源：daemon 的 combat_log + loot_log（已有）
+
+---
+
+### 3.2 Pet 情緒衰減（Mood Decay）
+
+Pet 的情緒狀態影響 commentary 語氣，製造「想回去陪它」的情感依附：
+
+```
+mood 狀態（pet_stats.mood: 0-100）：
+
+  最近 24h 有 coding activity  → mood +10（上限 100）
+  每 6h 無 activity            → mood -8
+  打倒 Boss                    → mood +20
+  HP < 30%                     → mood -15
+
+mood 對應語氣：
+  80-100  →  精神飽滿、活潑
+  50-79   →  正常
+  20-49   →  疲憊、少話、語氣低沉
+  0-19    →  沮喪、問「你還在嗎？」
+
+```
+
+- 實作成本低：`pet_stats` 加 `mood` 欄位，tick loop 計算
+- Commentary 生成時把 mood context 傳入 prompt
+
+---
+
+### 3.3 Zone Mastery 聲望條
+
+累積在特定語言 Zone 的 MOB 擊殺，解鎖稱號和 cosmetic（已有 combat_log，純 aggregation）：
+
+```
+Rust Zone 聲望：
+  0-49 kills    →  Traveler
+  50-199 kills  →  Forger
+  200-499 kills →  Iron Crafter  ✦（稱號顯示在 statusline）
+  500+ kills    →  Rust Veteran  ✦✦（特殊 pet frame）
+
+顯示位置：World Map 各 Zone 旁的聲望圖示
+資料結構：zone_reputation(zone_id, kill_count, rank)
+```
+
+---
+
+### 3.4 進展錨點（Next Unlock Target）
+
+XP 條旁邊標示下一個具名目標，讓每次 coding 都有方向感：
+
+```
+TUI 顯示：
+  XP ████░░ 420/1000   next: Focus Strike (Lv 10)
+
+Statusline 模式（簡化）：
+  [Ferris Lv.5 | ▓▓▓░ | → Lv10: Focus Strike]
+```
+
+- 不只是數字，而是有名字的倒數
+- 對「不主動玩遊戲」的開發者特別重要
+
+---
+
+### 3.5 Loot Crafting 合成系統
+
+讓日常打怪有「集齊材料」的目標感，取代交易系統：
+
+```
+合成配方（`codeforge craft`）：
+
+  3× Pattern Fragment   → 1× Refactor Blueprint
+                           （使用後：對應目錄的 MOB difficulty -20%，持續 7 天）
+
+  5× Dead Code Crystal  → 1× Ghost Repellent
+                           （使用後：Ghost MOB 不再在此 Zone 生成，持續 3 天）
+
+  2× Abstract Gem       → 1× Doppelganger Ward
+                           （使用後：Doppelganger 不分裂，持續 2 天）
+```
+
+- 所有材料已在現有 Loot 系統中（不需新增 MOB 類型）
+- 純本地 SQLite 操作，無需網路
+- `codeforge inventory` 顯示當前材料數量
+
+---
+
+### 3.6 `codeforge snapshot`：可分享 ASCII 輸出
+
+零摩擦的社交成長飛輪：
+
+```bash
+codeforge snapshot
+```
+
+```
+╔══════════════════════════════════════════════════════╗
+║  Ferris の 冒險報告  ·  2026-04-16                   ║
+╠══════════════════════════════════════════════════════╣
+║  [Rust Forge-Ruins] ── [Go Glacier]                  ║
+║       Veteran ✦✦         Traveler                    ║
+║  [PY Scriptorium]    [TS Garrison]                   ║
+║       Forger ✦           ？？？（未解鎖）             ║
+╠══════════════════════════════════════════════════════╣
+║  本月戰績                                            ║
+║  → Boss 擊殺：12    Elite 擊殺：87    Zombie：341    ║
+║  → Loot 合成：5 次   Legendary 進度：23/50 commits   ║
+║  → 最長連勝：Rust 8 個 Boss 連殺                     ║
+╠══════════════════════════════════════════════════════╣
+║  Ferris（Rust Nation · Gold）Lv.23                   ║
+║  「還有多少 Boss 在等著我？」                        ║
+╚══════════════════════════════════════════════════════╝
+```
+
+- 輸出到 stdout（可複製貼到 Slack/Discord）
+- 無需帳號、無需 OAuth，純文字
+- `codeforge snapshot --clipboard` 直接複製到剪貼板
+
+---
+
+### 3.7 主動 Item 使用（防旁觀者症候群）
+
+保留 1-2 個「玩家主動介入才能觸發」的時刻，避免純旁觀者感：
+
+```bash
+codeforge use refactor-scroll    # 對目前 Zone 的 Boss 施放，下個 tick 雙倍傷害
+codeforge use ghost-repellent    # 立即清除目前 Zone 所有 Ghost MOB
+```
+
+- 不強制使用：idle 玩家完全不需要，但偶爾使用有「我決定了這件事」的能動感
+- Item 從 Loot 或 Crafting 取得，稀缺但不稀缺到讓人焦慮
+
+---
+
+### 3.8 首次里程碑特殊事件（First-Time Moments）
+
+以下事件只觸發一次，commentary 切換為感性模式而非平常的垃圾話：
+
+```
+觸發條件                    特殊 commentary 例：
+─────────────────────────────────────────────────────────
+首次進入新語言 Zone         「這是我第一次踏進 Go Glacier……空氣比 Rust 冷。」
+首次擊殺 Boss               「剛才我感覺到了什麼……原來這就是『完成』的感覺。」
+首次升到 Lv 10              「我……比上週的自己強了一點。謝謝你。」
+首次解鎖 Legendary Ability  「Iron Skin。我把這個名字記下來了。」
+首次蒐集到第 2 隻寵物       「你去了別的地方……帶回了新的夥伴。」
+```
+
+- 觸發記錄存 `first_events(event_id)` table，確保只發一次
+- 這是 Day 7 留存的關鍵設計：「第一次」記憶製造最強的情感鉤
+
+---
+
+### 3.9 Commentary 頻率修正
+
+> ⚠️ 覆蓋 Section 4（AI Commentary）的頻率設計
+
+Think Tank 審查後，Commentary 設計調整：
+
+```
+修正前：每 30 分鐘至多一次（高頻觸發）
+修正後：
+  Global budget：每小時至多 1 條（所有觸發條件共用上限）
+  預設：opt-in（需要 CODEFORGE_COMMENTARY=1 啟用）
+  Pet 情緒記憶：已說過的 phrase 至少 30 天不重複
+  Contextual 優先：
+    「你上週還在修這個 TODO，現在它進化成 Boss 了」
+    優先於 generic template
+```
+
+---
+
+### 3.10 Nation Statusline Theme 系統
+
+每個 Nation 可以定義自己的 statusline 視覺主題，玩家蒐集到對應的寵物後解鎖。主題反映 Nation 的技術文化個性。
+
+#### 解鎖條件（三階）
+
+```
+Tier 1 — 擁有該 Nation 任意寵物（credential 存在即可）
+  → 解鎖 Nation 色彩盤 + 基礎符號組
+
+Tier 2 — 同 Nation 寵物達到 Lv 20+
+  → 解鎖 Nation 專屬版面配置 + 特殊分隔符
+
+Tier 3 — 同 Nation 寵物 Legendary 解鎖（Lv 50）
+  → 解鎖動態效果（HP 條顏色週期、Boss 戰閃爍警告等）
+```
+
+#### 切換指令
+
+```bash
+codeforge theme rust        # 切換到 Rust Nation 主題
+codeforge theme ml          # 切換到 ML Nation 主題
+codeforge theme default     # 回到預設 CodeForge 主題
+codeforge theme list        # 列出已解鎖主題 + 各 Tier 狀態
+```
+
+#### Nation 主題設計範例
+
+**Rust Nation 🦀（Tier 1）**
+```
+[🦀 Ferris ▓▓▓░ 82hp] forge://backend/main.rs ⚔ Boss×1 [Lv.12]
+```
+色調：鐵鏽琥珀（amber），`[▸ ]` 方括號，`▓░` 鋼鐵感 HP 條，路徑用 `forge://` 前綴
+
+**Rust Nation 🦀（Tier 3 Legendary）**
+```
+[🦀 Ferris ▓▓▓░ 82hp] forge://backend/main.rs ⚔ BOSS FIGHT ← 閃爍警告
+```
+
+---
+
+**ML Nation 🧠（Tier 1）**
+```
+⟨🧠 Neurix ████░ 82hp⟩ loss:0.024 ∇ backend/ · Elite×3
+```
+色調：深紫漸層，`⟨∇ ⟩` 梯度符號，HP 條顯示為「收斂進度」，Zone 顯示 loss metric 風格
+
+**ML Nation 🧠（Tier 2）**
+```
+⟨🧠 Neurix ████░ 82hp | atk:47 def:31⟩  ∇ backend/ [epoch 3/∞]
+```
+
+---
+
+**Python Nation 🐍（Tier 1）**
+```
+(🐍 Pytho ══════░ 82hp) ~/projects/backend ◈ Zombie×5
+```
+色調：暖綠，`(◈ )` 括號，`═══` 平滑 HP 條，路徑用 `~/` 風格
+
+---
+
+**Go Nation 🐹（Tier 1）**
+```
+→ 🐹 Gopher  ─────░  82hp  backend/  goroutine×3 mobs
+```
+色調：青色，極簡箭頭風格，no-decoration，反映 Go 的「less is more」哲學
+
+---
+
+**TypeScript Nation 🔷（Tier 1）**
+```
+<🔷 Typus :: hp=82/100 :: zone=backend/ :: mobs=[Elite×2]>
+```
+色調：藍紫，`<:: >` 嚴格型別風格，所有值都有 key=value 標注
+
+---
+
+**Security Nation 🔐（Tier 1）**
+```
+[⛧ Cipher ████ 82hp] /etc/shadows ⚠ vulns:2 · Elite×1
+```
+色調：深紅黑，警告符號，路徑用絕對路徑風格，MOB 顯示為「漏洞數」
+
+---
+
+**開源基金會 🐙（Tier 1）**
+```
+{🐙 Octo ░░░░ 82hp} contrib/backend ★ PRs:3 · issues:7
+```
+色調：多色（依 Zone 語言變色），`{★ }` 貢獻者徽章風格，MOB 顯示為 PR/issue 數
+
+---
+
+#### Theme 定義格式（Nation Plugin 的一部分）
+
+Nation 在 plugin 定義中宣告主題規格，由 Codeforge 本地渲染：
+
+```rust
+pub struct NationTheme {
+    pub tier: u8,                    // 1, 2, or 3
+    pub colors: ThemeColors,
+    pub symbols: ThemeSymbols,
+    pub layout: StatuslineLayout,    // 決定欄位順序和格式
+    pub animations: Option<Vec<ThemeAnimation>>,  // Tier 3 only
+}
+
+pub struct ThemeColors {
+    pub primary: AnsiColor,
+    pub accent: AnsiColor,
+    pub hp_high: AnsiColor,          // HP > 70%
+    pub hp_mid: AnsiColor,           // HP 30-70%
+    pub hp_low: AnsiColor,           // HP < 30%
+    pub alert: AnsiColor,            // Boss 戰、警告
+}
+
+pub struct ThemeSymbols {
+    pub bracket_open: &'static str,  // "[", "(", "⟨", "{"
+    pub bracket_close: &'static str,
+    pub hp_fill: &'static str,       // "▓", "═", "█", "─"
+    pub hp_empty: &'static str,      // "░", " ", "·"
+    pub separator: &'static str,     // "|", "::", "·", "→"
+    pub mob_prefix: &'static str,    // "⚔", "∇", "◈", "⚠"
+}
+```
+
+#### 解鎖狀態計算（純本地）
+
+```
+codeforge theme list 輸出：
+
+  ✦✦✦ Rust Nation    [Tier 3 — Legendary]  ← 當前使用
+  ✦✦░ ML Nation      [Tier 2 — Lv 23/50]
+  ✦░░ Python Nation  [Tier 1 — 已蒐集]
+  ░░░ Go Nation      [未解鎖 — 尚未加入 Go Nation]
+  ░░░ TypeScript     [未解鎖]
+```
+
+解鎖判斷邏輯：
+```rust
+fn theme_tier(pet: &PetCredential) -> u8 {
+    if pet.legendary_unlocked { return 3; }
+    if pet.level >= 20 { return 2; }
+    if pet.credential.is_valid() { return 1; }
+    0
+}
+```
+
+#### 架構說明
+
+- Theme 定義隨 Nation manifest 下載（`codeforge nations join <url>` 時）
+- 渲染完全在本地，不需要 Nation 在線
+- 切換 theme 即時生效，下個 tick 開始渲染
+- 預設 theme 是標準 CodeForge 主題（amber，不需任何 Nation pet）
+
+---
+
+### 3.11 Week Streak（Phase 3+，Nation 驗證版）
+
+**不在 Phase 2 實作**，原因：本地 commit timestamp 可被篡改。
+
+Phase 3+ 設計方向：
+- 條件：「連續 4 週的週掃描都有活動」
+- 驗證：Nation re-scan 簽發「週活躍憑證」
+- 獎勵：Week Streak badge（Nation 簽名，防偽）
+
+---
+
+### 黏著度機制優先序
+
+| 機制 | Phase | 實作成本 | 黏著效果 |
+|------|-------|---------|---------|
+| 3.1 歸來摘要 | 2b | 極低 | 解決「打開沒東西」 |
+| 3.4 進展錨點 | 2b | 極低 | 目標感 |
+| 3.2 Pet 情緒衰減 | 2c | 低 | 情感依附 |
+| 3.8 首次里程碑 | 2c | 低 | Day 7 留存 |
+| 3.3 Zone Mastery | 3a | 低 | 長期目標 |
+| 3.5 Loot Crafting | 3a | 中 | 日常目標感 |
+| 3.7 主動 Item 使用 | 3a | 低 | 能動感 |
+| 3.6 Snapshot 分享 | 3b | 中 | 社交飛輪 |
+| 3.10 Week Streak | 3+ | 中（需 Nation） | 習慣化 |
+
+**明確 Defer（不在 Backlog，結論已定）：**
+- 排行榜（P2P 無法防偽）
+- 公會 / Raid Boss（需要同步上線）
+- 交易系統（P2P double-spend 問題）
+- 每日 Quest 特定 MOB 類型（太容易被 exploit）
+
+---
+
+## 4. AI Commentary（垃圾話系統）
 
 ### 觸發條件
 
@@ -289,7 +673,7 @@ Statusline 模式：footer 行偶爾替換為 pet 說的話（5% 機率）
 
 ---
 
-## 4. TUI 渲染架構
+## 5. TUI 渲染架構
 
 ### 版面配置（tmux split）
 
@@ -357,7 +741,7 @@ execute!(stdout, cursor::MoveTo(region.x, row), terminal::Clear(ClearType::Until
 
 ---
 
-## 5. Daemon 架構
+## 6. Daemon 架構
 
 ### 執行模式
 
@@ -407,13 +791,14 @@ Protocol: newline-delimited JSON
 |-------|------|------|
 | **Phase 1** ✅ | Statusline + Pet + Memory CLI | done |
 | **Phase 2a** | Daemon 框架 + IPC socket + tick loop | P1 |
-| **Phase 2b** | MOB 生成 + 自動戰鬥 + Loot | P2a |
-| **Phase 2c** | TUI 渲染 + Local Map | P2a |
-| **Phase 3a** | World Map + Zone unlock | P2b+P2c |
-| **Phase 3b** | Strategy Mode | P2b |
-| **Phase 3c** | AI Commentary（Haiku） | P2a |
+| **Phase 2b** | MOB 生成 + 自動戰鬥 + Loot + 歸來摘要 + 進展錨點 | P2a |
+| **Phase 2c** | TUI 渲染 + Local Map + Pet 情緒衰減 + 首次里程碑事件 | P2a |
+| **Phase 3a** | World Map + Zone unlock + Zone Mastery + Loot Crafting + 主動 Item | P2b+P2c |
+| **Phase 3b** | Strategy Mode + AI Commentary（Haiku，opt-in） + Snapshot 分享 | P2b |
+| **Phase 3c** | Week Streak（Nation 驗證版） | Nation P2P |
 | **Phase 4** | Zoa 3D pet animation（tmux split） | P2c |
-| **Phase 5** | 多人 / 公會 / leaderboard（可選） | P3 |
+| **Phase 5** | Pet Breeding + 公開 Profile | P3 |
+| **Defer ∞** | 公會 / Raid / 排行榜 / 交易系統 | 架構上不適合 P2P | 
 
 ---
 

@@ -16,7 +16,7 @@ CodeForge 是玩家的護照。Nation 是各自獨立的國家。
 
 ---
 
-## 三個角色
+## 四個角色
 
 ### Nation（國家）
 - 任何公司/組織自架的 CodePower open source instance
@@ -25,10 +25,39 @@ CodeForge 是玩家的護照。Nation 是各自獨立的國家。
 - repo 掃描完全在 Nation 內部基礎設施執行，原始 code 永不外流
 - 對外只輸出：玩家憑證（簽名的 badge/level/pet）
 
+### Organizer（活動主辦人）
+- 任何持有 ed25519 keypair 的個人或組織
+- 不需要自架 CodePower，不需要 Nation 協調
+- 發動跨 Nation 活動：定義條件、驗證玩家憑證、簽發活動獎勵
+- 信任錨點是 Organizer 的聲望（可列入 nations.toml 附錄）
+- 未來可選擇升級為 Smart Contract（活動規則上鏈，無需信任 Organizer）
+
+**活動發動流程**：
+```
+1. Organizer 生成活動定義（JSON + 私鑰簽名）：
+   {
+     "event_id": "cross-nation-hackathon-2026-q2",
+     "organizer_pubkey": "ed25519:...",
+     "conditions": [
+       { "type": "min_nations", "count": 2 },
+       { "type": "language_commits", "lang": "rust", "min": 30, "window_days": 90 }
+     ],
+     "reward": { "pet": "CrossForge Dragon", "rarity": "legendary" },
+     "deadline": "2026-06-30T00:00:00Z",
+     "signature": "..."
+   }
+
+2. 發布到任何地方（GitHub Gist、nations.toml 附錄、Discord）
+
+3. 玩家提交 Nation 憑證 → Organizer 用 Nation 公鑰驗證（純 crypto）
+
+4. 條件達成 → Organizer 私鑰簽發活動獎勵憑證
+```
+
 ### Codeforge（玩家護照）
 - 玩家本地 CLI
 - 可同時登錄多個 Nation
-- 聚合來自不同 Nation 的憑證
+- 聚合來自不同 Nation 的憑證，以及 Organizer 簽發的活動憑證
 - 本地 game state（pet、memory、stats）
 
 ### Player（玩家）
@@ -87,6 +116,7 @@ interface NationPlugin {
   quests: Quest[]           // Nation 自定義任務
   pets: PetDefinition[]     // Nation 限定寵物規格
   badges: BadgeDefinition[] // Nation 限定徽章
+  themes: NationTheme[]     // Nation 限定 statusline 主題（依 Tier 解鎖）
 }
 ```
 
@@ -237,13 +267,76 @@ Phase 4+：
 
 ---
 
+## P2P 完整性模型（本地 vs Nation 驗證）
+
+### 兩層狀態架構
+
+P2P 架構下，玩家本地 SQLite 完全在玩家掌控中。設計必須明確區分哪些狀態需要 Nation 背書，哪些允許本地計算。
+
+```
+Layer 1 — Nation 簽名（防篡改，cryptographic 保證）
+  ├── 初始 pet 憑證（species, rarity, issued_at, quest 條件）
+  ├── Quest 完成憑證（Nation 驗證後簽發）
+  └── Legendary Ability 解鎖憑證（Nation re-scan 後簽發）
+
+Layer 2 — 本地 SQLite（玩家可修改，影響僅限本地體驗）
+  ├── 顯示用等級（cosmetic，依 coding 活動計算）
+  ├── active pet 選擇
+  ├── Passive Nation Buff 狀態
+  └── 未確認的 Legendary 進度計數器
+```
+
+**規則**：
+- 對外展示（其他玩家驗證、Nation 互動）→ 只接受 Layer 1 Nation 簽名資料
+- 本地遊戲體驗 → Layer 2 允許自由修改，後果由玩家自行承擔
+
+### 為什麼不追蹤「主寵 active 時間」
+
+直覺上的 Legendary 條件「主寵 active 期間累積 X commits」在 P2P 下有根本問題：**「哪隻寵物 active」是本地狀態，Nation 無法驗證**。玩家可一鍵將所有寵物設為 active，讓全部 Legendary 同時計算。
+
+**解法：Legendary 條件只使用 Nation 可獨立重算的指標**
+
+```
+不用（本地狀態，可偽造）：
+  Rustlang Guardian → active 期間 Rust commits ≥ 50
+
+改用（Nation 可從 git history 重算）：
+  Rustlang Guardian → 最近 90 天內，Rust commits ≥ 50
+  Pythonic Scout    → 最近 60 天內，連續 14 天有 commit
+  The Archivist     → 最近 90 天內，PR review ≥ 20 次
+```
+
+Nation 做 re-scan 時，從 git history 獨立計算這些條件，與本地狀態完全解耦。
+
+### Legendary 解鎖流程
+
+```
+1. 玩家正常 coding（不需管哪隻寵物 active）
+2. 玩家對 Nation 發出「Legendary 申請」
+3. Nation 掃描 git history，確認條件達成
+4. Nation 發出更新的簽名憑證（含 legendary: true）
+5. 本地存這個 credential blob
+```
+
+### 本地修改的影響邊界
+
+| 玩家操作 | 影響 | 是否問題 |
+|---------|------|---------|
+| 修改本地等級 | 只影響本地顯示 | 否（只傷自己） |
+| 修改 Legendary 旗標 | 本地看得到，Nation re-scan 會糾正 | 否 |
+| 偽造 Nation 憑證 | 無法通過 Nation 公鑰驗證 | 自動防護 |
+| 修改 active pet | 只影響本地體驗 | 否 |
+
+---
+
 ## 已知風險與緩解
 
 | 風險 | 嚴重度 | 緩解 |
 |------|--------|------|
 | Sybil attack（假 Nation 自簽 Legendary） | 🔴 高 | nations.toml PR review 作為信任錨點 |
-| Repo farming（假 repo 刷 quest） | 🔴 高 | 時間加權 commit velocity，非快照閾值 |
+| Repo farming（假 repo 刷 quest） | 🔴 高 | 時間加權 commit velocity，非快照閾值（見 nation-commit-validity.md） |
 | Key loss（玩家失去所有 pet） | 🔴 高 | 加密備份為必要功能，非 optional |
+| 本地 SQLite 篡改 | 🟢 低 | 設計上允許；Layer 1 Nation 簽名不受影響 |
 | Nation 消失（憑證無法驗證） | 🟡 中 | Registry 保留已下線 Nation 的公鑰歷史 |
 | Quest gaming（#[allow(...)] 規避 clippy） | 🟡 中 | 複合 quest 條件，社群可 flag 劣質 quest |
 | Silent scanner death（玩家不知道掃描失敗） | 🟡 中 | Nation 需要最低監控：health endpoint + job status |
@@ -254,6 +347,7 @@ Phase 4+：
 ## 未解問題（留待後續）
 
 1. **Credential revocation**：Nation 撤銷已發出的 pet 時，有沒有機制？還是「發出即永久」？
-2. **Cross-Nation 活動**：Nations 之間完全獨立是否是最終形態，或未來有協議讓它們互認？
-3. **公開 profile**：玩家的 Nation 收藏要怎麼對外展示？（portfolio 用途）
-4. **Nation 更新評分規格**：舊憑證用舊規格計算，新加入玩家用新規格，公平性怎麼處理？
+2. **Organizer 信任等級**：Organizer 的活動獎勵憑證和 Nation 憑證的聲望是否相同？還是需要區分層級（Nation-issued > Organizer-issued）？
+3. **Smart Contract 升級路徑**：Organizer 活動要升級到合約時，現有 credential 格式是否需要調整？（目前設計應已兼容，待確認）
+4. **公開 profile**：玩家的 Nation 收藏要怎麼對外展示？（portfolio 用途）
+5. **Nation 更新評分規格**：舊憑證用舊規格計算，新加入玩家用新規格，公平性怎麼處理？
