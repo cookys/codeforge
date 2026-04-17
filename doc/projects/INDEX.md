@@ -4,7 +4,9 @@
 
 ## Active
 
-*(none)*
+| Project | Description | Started |
+|---------|------------|---------|
+| [phase2b-combat](2026-04-17-phase2b-combat/README.md) | MOB 生成 + Auto-Combat + Loot（spec §2）— scanner + combat + loot inventory + CLI/statusline 整合 | 2026-04-17 |
 
 ## Archived
 
