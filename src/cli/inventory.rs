@@ -127,6 +127,20 @@ fn render_recipes(out: &mut StandardStream, recipes: &[Recipe]) -> Result<()> {
             ings.join(" + "),
             effect,
         )?;
+        // Phase 3e: surface items whose runtime consumer isn't wired
+        // yet so players don't think the item is broken. Ward can be
+        // crafted + used (effect row inserts correctly) but until the
+        // doppelganger split mechanic lands (see
+        // `doc/proposals/2026-04-18-doppelganger-split.md`) there's
+        // nothing to suppress.
+        if r.product.name == "Doppelganger Ward" {
+            out.set_color(ColorSpec::new().set_fg(Some(Color::Ansi256(244))))?;
+            writeln!(
+                out,
+                "        （注意：split 機制尚未實作；此 item 可使用但 effect 無 runtime 消費者）"
+            )?;
+            out.reset()?;
+        }
     }
     writeln!(out)?;
     Ok(())
