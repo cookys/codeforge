@@ -49,11 +49,24 @@ pub fn rate_limited_scan(
     zone_id: &str,
     tick_count: u64,
 ) -> Result<usize> {
+    rate_limited_scan_with_dir(tx, zone_id, tick_count, resolve_scan_dir().as_deref())
+}
+
+/// Same as `rate_limited_scan` but with the scan root injected — keeps
+/// tests free of the `CODEFORGE_SCAN_DIR` env-var dance, which under
+/// `cargo test`'s parallel runner would let parallel scanner tests see
+/// each other's tempdirs.
+pub fn rate_limited_scan_with_dir(
+    tx: &Connection,
+    zone_id: &str,
+    tick_count: u64,
+    dir_override: Option<&Path>,
+) -> Result<usize> {
     if !should_scan_this_tick(tick_count) {
         return Ok(0);
     }
-    let dir = match resolve_scan_dir() {
-        Some(d) => d,
+    let dir = match dir_override {
+        Some(d) => d.to_path_buf(),
         None => return Ok(0),
     };
     let mut specs = match scan_dir(&dir, zone_id) {
@@ -682,17 +695,17 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
     fn rate_limited_scan_drops_ghosts_when_repellent_active() {
         // Seeds an active Ghost Repellent effect for zone rust, scans a
         // directory with exactly one ghost-producing file, and confirms
-        // the persist step skipped it.
+        // the persist step skipped it. Uses `rate_limited_scan_with_dir`
+        // to inject the tempdir directly so no env-var mutation leaks
+        // under parallel `cargo test` runs.
         let conn = fresh_conn();
         let tmp = tempdir().unwrap();
         write(
             &tmp.path().join("src/ghost.rs"),
             "use std::collections::HashMap;\n\nfn main() {}\n",
         );
-        // Point the env var at our tmp dir so resolve_scan_dir finds it.
-        std::env::set_var("CODEFORGE_SCAN_DIR", tmp.path());
 
-        // Apply Ghost Repellent scoped to rust with an expires_at far
+        // Apply Ghost Repellent scoped to rust with expires_at far
         // enough into the future that `unix_now()` reads it as active.
         // i64::MAX avoids any "wall clock drifted past my test constant"
         // flake class.
@@ -704,8 +717,7 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
         )
         .unwrap();
 
-        // tick_count=1 triggers scan. No existing mobs after scan = ghost dropped.
-        rate_limited_scan(&conn, "rust", 1).unwrap();
+        rate_limited_scan_with_dir(&conn, "rust", 1, Some(tmp.path())).unwrap();
         let n: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM mobs WHERE kind = 'ghost' AND defeated_at IS NULL",
@@ -713,8 +725,6 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
                 |r| r.get(0),
             )
             .unwrap();
-
-        std::env::remove_var("CODEFORGE_SCAN_DIR");
         assert_eq!(n, 0, "Ghost Repellent must suppress new ghost spawns");
     }
 
@@ -727,7 +737,6 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
             &tmp.path().join("src/ghost.rs"),
             "use std::collections::HashMap;\n\nfn main() {}\n",
         );
-        std::env::set_var("CODEFORGE_SCAN_DIR", tmp.path());
 
         // expires_at=1 → very long ago by the time unix_now() fires.
         conn.execute(
@@ -738,7 +747,7 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
         )
         .unwrap();
 
-        rate_limited_scan(&conn, "rust", 1).unwrap();
+        rate_limited_scan_with_dir(&conn, "rust", 1, Some(tmp.path())).unwrap();
         let n: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM mobs WHERE kind = 'ghost' AND defeated_at IS NULL",
@@ -746,8 +755,6 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
                 |r| r.get(0),
             )
             .unwrap();
-
-        std::env::remove_var("CODEFORGE_SCAN_DIR");
         assert!(n >= 1, "expired repellent must no longer suppress spawns");
     }
 }

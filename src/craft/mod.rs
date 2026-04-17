@@ -100,6 +100,31 @@ pub fn use_item(
         .ok_or_else(|| anyhow::anyhow!("item「{}」沒有主動效果", item_name))?;
 
     let tx = conn.transaction()?;
+
+    // Guard against stacking: if the same (effect_kind, zone_id) is
+    // already live, refuse the use so the player doesn't double-charge
+    // an inventory unit against a zone that's already protected. The
+    // spec declares a flat duration — no stacking mechanic — so this
+    // matches intent. Use `SELECT 1` over COUNT(*) so the plan can
+    // short-circuit on the first matching row.
+    let already_live: Option<i64> = tx
+        .query_row(
+            "SELECT 1 FROM active_effects
+             WHERE effect_kind = ?1
+               AND ((zone_id IS NULL AND ?2 IS NULL) OR zone_id = ?2)
+               AND expires_at > ?3
+             LIMIT 1",
+            rusqlite::params![effect.kind.as_str(), zone_id, now],
+            |r| r.get(0),
+        )
+        .ok();
+    if already_live.is_some() {
+        bail!(
+            "「{}」的效果仍在此區域生效中，到期後再使用",
+            item_name
+        );
+    }
+
     let have: i64 = tx
         .query_row(
             "SELECT quantity FROM loot_inventory WHERE kind = ?1 AND name = ?2",
@@ -284,5 +309,94 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM active_effects", [], |r| r.get(0))
             .unwrap();
         assert_eq!(effects, 0);
+    }
+
+    #[test]
+    fn use_item_rolls_back_inventory_when_effect_insert_fails() {
+        // Real rollback test: simulate a mid-transaction failure by
+        // dropping `active_effects` before calling `use_item`. The
+        // inventory DELETE/UPDATE must revert when the subsequent
+        // INSERT into active_effects fails.
+        let mut conn = fresh();
+        insert_material(&conn, "repellent", "Ghost Repellent", 1);
+        conn.execute("DROP TABLE active_effects", []).unwrap();
+
+        let err = use_item(&mut conn, "Ghost Repellent", Some("rust"), 1_000).unwrap_err();
+        // The inner rusqlite error mentions the missing table — enough
+        // to prove we reached (and failed on) the INSERT path.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("no such table") || msg.contains("active_effects"),
+            "unexpected error: {msg}"
+        );
+
+        // Crucial assertion: inventory untouched after rollback.
+        let have: i64 = conn
+            .query_row(
+                "SELECT quantity FROM loot_inventory WHERE name = 'Ghost Repellent'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(have, 1, "inventory must survive INSERT-failed rollback");
+    }
+
+    #[test]
+    fn use_item_rejects_second_use_while_effect_still_live() {
+        // Regression for review r1 finding #1: two successive uses
+        // against the same zone must debit only one inventory unit.
+        let mut conn = fresh();
+        insert_material(&conn, "repellent", "Ghost Repellent", 2);
+        use_item(&mut conn, "Ghost Repellent", Some("rust"), 10_000).unwrap();
+
+        // Second use while the first is live must bail.
+        let err = use_item(&mut conn, "Ghost Repellent", Some("rust"), 10_001).unwrap_err();
+        assert!(err.to_string().contains("生效中"));
+
+        // Inventory has 1 remaining (only the first use consumed).
+        let have: i64 = conn
+            .query_row(
+                "SELECT quantity FROM loot_inventory WHERE name = 'Ghost Repellent'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(have, 1);
+
+        // Exactly one active_effects row — no duplicate insertion.
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM active_effects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn use_item_permits_reuse_after_expiry() {
+        // After the first effect expires, a second use should succeed.
+        let mut conn = fresh();
+        insert_material(&conn, "repellent", "Ghost Repellent", 2);
+        use_item(&mut conn, "Ghost Repellent", Some("rust"), 0).unwrap();
+        // Jump past the 3-day window (3*86400 = 259200)
+        let later = 0 + 3 * 86_400 + 1;
+        use_item(&mut conn, "Ghost Repellent", Some("rust"), later).unwrap();
+
+        // Two active_effects rows total — the expired one + the fresh one.
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM active_effects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 2);
+    }
+
+    #[test]
+    fn use_item_permits_same_item_in_different_zones() {
+        let mut conn = fresh();
+        insert_material(&conn, "repellent", "Ghost Repellent", 2);
+        use_item(&mut conn, "Ghost Repellent", Some("rust"), 10_000).unwrap();
+        // Different zone — must succeed.
+        use_item(&mut conn, "Ghost Repellent", Some("python"), 10_001).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM active_effects", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 2);
     }
 }
