@@ -255,6 +255,33 @@ impl GameWorld {
     pub fn world_mut(&mut self) -> &mut World { &mut self.world }
     pub fn pet(&self) -> Entity { self.pet }
 
+    /// Phase 3b: sync `PetStrategy` component from `pet_snapshot.strategy`.
+    ///
+    /// `codeforge strategy <name>` writes directly to the DB — if the daemon
+    /// kept its in-memory `PetStrategy` across ticks and `serialize_to_db`
+    /// later wrote the stale value back, the user's change would be silently
+    /// lost (T0: CLI writes 'aggressive'; T1: daemon serialises 'explorer'
+    /// from its unchanged ECS). Call this at tick start (inside the tick tx)
+    /// so `run_tick` sees the fresh value and `serialize_to_db` emits it.
+    ///
+    /// Unknown stored values fall back to `DEFAULT_STRATEGY` — same policy
+    /// as `load_or_init`. If the snapshot row doesn't exist yet (first-ever
+    /// tick), this is a no-op and the load-time default remains.
+    pub fn refresh_strategy_from_db(&mut self, conn: &Connection) -> Result<()> {
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT strategy FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(s) = stored else { return Ok(()) };
+        let fresh = Strategy::from_str(&s).unwrap_or(DEFAULT_STRATEGY);
+        let mut ps = self.world.get::<&mut PetStrategy>(self.pet)?;
+        ps.value = fresh;
+        Ok(())
+    }
+
     /// Serialize current pet state to `pet_snapshot` (single-row upsert).
     ///
     /// `current_tick` is used to expire stale `LastMessage` components: a

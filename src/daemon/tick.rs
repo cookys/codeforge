@@ -37,6 +37,12 @@ pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
     let (zone_id, tick_count_next) = read_tick_context(&tx, world)?;
     mob_scanner::rate_limited_scan(&tx, &zone_id, tick_count_next)?;
 
+    // 3b. Phase 3b: sync strategy from DB before combat. The CLI writes
+    //     `pet_snapshot.strategy` directly; without this read the daemon
+    //     would serialise its stale in-memory value back on step 7,
+    //     silently undoing the user's `codeforge strategy <name>` call.
+    world.refresh_strategy_from_db(&tx)?;
+
     // 4. Phase 2b: combat — attack alive mobs, counter-damage.
     // RNG salt uses `tick_count_next` (monotonic) instead of wall-clock seconds
     // so successive in-test ticks within the same second don't share a seed.
@@ -427,6 +433,46 @@ mod tests {
             )
             .unwrap();
         assert!(defeated.is_none(), "cross-zone mobs must not be attacked in P2b");
+    }
+
+    // ─── Phase 3b review fix: CLI → daemon strategy race ──────────
+
+    #[test]
+    fn tick_preserves_cli_written_strategy_after_serialize() {
+        // Regression for review round 1, IMPORTANT 5:
+        // CLI writes strategy='aggressive' directly to pet_snapshot while
+        // the daemon holds a stale in-memory 'explorer'. Without the tick's
+        // refresh_strategy_from_db step, step 7 (serialize_to_db) would
+        // overwrite the DB with the daemon's stale value.
+        let (conn, mut world) = fresh();
+        // Seed the snapshot so pet_snapshot has a row to update.
+        run_one(&conn, &mut world).unwrap();
+
+        // Simulate `codeforge strategy aggressive` racing with the daemon.
+        conn.execute(
+            "UPDATE pet_snapshot SET strategy = 'aggressive' WHERE id = 1",
+            [],
+        )
+        .unwrap();
+
+        // Daemon ticks with NO change to its in-memory PetStrategy.
+        run_one(&conn, &mut world).unwrap();
+
+        // Strategy must still be 'aggressive' — not overwritten by the
+        // stale ECS value.
+        let strategy: String = conn
+            .query_row(
+                "SELECT strategy FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(strategy, "aggressive");
+
+        // And the ECS must now reflect the fresh value so combat uses it.
+        use super::super::ecs::PetStrategy;
+        let ps = world.world().get::<&PetStrategy>(world.pet()).unwrap();
+        assert_eq!(ps.value.as_str(), "aggressive");
     }
 
     #[test]

@@ -1,10 +1,15 @@
-//! Auto-combat — Phase 2b P3.
+//! Auto-combat — Phase 2b P3 + Phase 3b.
 //!
-//! Per tick: load alive mobs in pet's zone, run one attack per mob, apply
-//! counter-damage, mark defeats. Loot rolls + XP award live in `loot.rs`.
+//! Per tick: load alive mobs in pet's zone, sort by the active Strategy's
+//! priority, run one attack per mob with Strategy-scaled damage, apply
+//! counter-damage with Strategy-scaled absorption, mark defeats. Loot rolls
+//! + XP award live in `loot.rs`.
 //!
-//! RNG is deterministic: `Xorshift64*` seeded per-mob from `(tick_at, mob.id)`.
-//! No external crate — tests can re-derive outcomes.
+//! RNG is deterministic: `Xorshift64*` seeded per-mob from `(tick_count, mob.id)`.
+//! The `tick_count` source is critical — using `tick_at` seconds produces
+//! seed collisions across catchup ticks that fire within the same second
+//! (see project memory `rng-salt-monotonic`). No external RNG crate — tests
+//! can re-derive outcomes from the seed formula.
 
 use anyhow::Result;
 use rusqlite::Connection;
@@ -198,9 +203,18 @@ pub(crate) fn compute_damage(pet_atk: u32, strategy: Strategy, roll_mult: f64) -
     (raw.ceil() as u32).max(1)
 }
 
-/// Counter-attack absorbed by `pet_def / 2`, scaled by `strategy.def_mult()`.
-/// Returns zero when armor fully absorbs the hit. `saturating_sub` guards
-/// against underflow if a future strategy pushed def_mult above 2.0.
+/// Counter-damage = `mob_atk - floor(pet_def * def_mult / 2)`, saturating at 0.
+///
+/// The `/ 2` divisor preserves the Phase 2b baseline (`counter = mob_atk -
+/// pet_def / 2`), halving defender armor so that combat tick-throughput
+/// stays non-trivial for early-game low-DEF pets. Phase 3b adds the
+/// `strategy.def_mult()` factor so Defensive (1.4x) effectively raises
+/// absorbed DEF by 40 % and Aggressive (0.8x) lowers it by 20 %.
+///
+/// The `floor` on the multiplier product keeps integer-math behavior
+/// identical to Phase 2b when `def_mult == 1.0`. `saturating_sub` guards
+/// against underflow if a future strategy pushed `def_mult` above 2.0 —
+/// not used today, but cheap insurance.
 pub(crate) fn compute_counter(mob_atk: u32, pet_def: u32, strategy: Strategy) -> u32 {
     let absorbed = ((pet_def as f64 * strategy.def_mult()) / 2.0).floor() as u32;
     mob_atk.saturating_sub(absorbed)

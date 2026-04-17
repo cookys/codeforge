@@ -799,6 +799,18 @@ mod tests {
         assert_eq!(mood, 45);
         assert_eq!(strategy, "explorer");
 
+        // schema_version must advance to 6 — the insertion happens in
+        // schema.sql's INSERT OR IGNORE path inside execute_batch, but
+        // assert it here so future refactors don't regress silently.
+        let v6: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=6",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v6, 6);
+
         // Second run stays idempotent.
         migrations::run(&conn).unwrap();
     }
