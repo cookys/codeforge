@@ -4,14 +4,13 @@
 
 ## Active
 
-| Project | Description | Started |
-|---------|------------|---------|
-| [phase3d-stickiness](2026-04-17-phase3d-stickiness/README.md) | 黏著度機制 — Welcome Back / Mood Decay / Next Unlock / First-Time Moments（spec §3.1/3.2/3.4/3.8） | 2026-04-17 |
+_（none — ready for next phase）_
 
 ## Archived
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [phase3d-stickiness](_archive/2026-04-17-phase3d-stickiness/README.md) | 黏著度機制 — Welcome Back / Mood Decay / Next Unlock / First-Time Moments（spec §3.1/3.2/3.4/3.8），P1-P5 + QG + 1 輪 clean review | 2026-04-17 ✅ |
 | [phase2c-tui](_archive/2026-04-17-phase2c-tui/README.md) | TUI + Local Map — alt-screen 面板、pet status / combat log / local map 三區塊、1 Hz refresh、鍵盤 quit（P1-P6 + QG + 兩輪 review，spec §1 + §5）| 2026-04-17 ✅ |
 | [phase2b-combat](_archive/2026-04-17-phase2b-combat/README.md) | MOB 生成 + Auto-Combat + Loot（spec §2）— scanner + combat + loot inventory + CLI/statusline 整合（P1-P6 + QG + 兩輪 review） | 2026-04-17 ✅ |
 | [phase2a-daemon](_archive/2026-04-17-phase2a-daemon/README.md) | Daemon framework — tokio tick loop + hecs ECS + SQLite event_inbox + systemd unit + hook integration + live read path（P1-P8 + QG + 兩輪 review） | 2026-04-17 ✅ |

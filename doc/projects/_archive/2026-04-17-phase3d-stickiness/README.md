@@ -1,9 +1,9 @@
 # Phase 3d — 黏著度機制（Stickiness）
 
-**Status**: In Progress · 2026-04-17 kicked off
-**Plan**: [doc/plans/2026-04-17-phase3d-stickiness.md](../../plans/2026-04-17-phase3d-stickiness.md)
-**Branch**: `feature/phase3d-stickiness`
-**Baseline**: `0c19e49` on main
+**Status**: ✅ Completed · 2026-04-17
+**Plan**: [doc/plans/2026-04-17-phase3d-stickiness.md](../../../plans/2026-04-17-phase3d-stickiness.md)
+**Branch**: `feature/phase3d-stickiness` (merged + deleted)
+**Baseline**: `0c19e49` → **Merge**: `311dd45`
 
 ## Project Goal
 
@@ -24,19 +24,29 @@
 
 ## Progress
 
-| Phase | 內容 | Status |
-|-------|------|--------|
-| P1 | Schema v5 + Mood ECS + ability table | pending |
-| P2 | Mood Decay system | pending |
-| P3 | Next Unlock Anchor | pending |
-| P4 | First-Time Events | pending |
-| P5 | Welcome Back Report | pending |
-| QG | cargo check/clippy/test | pending |
-| Review R1 | superpowers:requesting-code-review | pending |
-| Fix R1 | CRITICAL + IMPORTANT | pending |
-| Review R2 | verify fixes | pending |
-| Merge | → main | pending |
-| Archive | post-merge + INDEX update | pending |
+| Phase | 內容 | Commit | Status |
+|-------|------|--------|--------|
+| P1 | Schema v5 + Mood ECS + ability table | a9e4c2b | ✅ |
+| P2 | Mood Decay system + live_state | 9ebfe78 | ✅ |
+| P3 | Next Unlock Anchor | 7ec56a2 | ✅ |
+| P4 | First-Time Events | 28a96de | ✅ |
+| P5 | Welcome Back Report | 8abb2ad | ✅ |
+| QG | cargo check/clippy/test | — | ✅ 302 tests PASS |
+| Review R1 | code-reviewer agent | — | ✅ 0 CRITICAL/IMPORTANT |
+| Fix R1 | — | — | N/A (no findings) |
+| Review R2 | — | — | N/A (no fixes) |
+| Merge | → main | 311dd45 | ✅ |
+| Archive | post-merge + INDEX | — | ✅ |
+
+## Final KR Check
+
+| KR | Target | Actual |
+|----|--------|--------|
+| KR1 | Welcome Back shown ≥10 min absence, hidden <10 min | ✅ statusline + TUI override (13 session tests + 2 render tests) |
+| KR2 | Mood 0-100 with 4 signal unit tests | ✅ 11 rule + 5 orchestrator tests, integrated in daemon tick |
+| KR3 | Next unlock anchor in statusline + TUI | ✅ 3 TUI tests + 6 ability lookup tests cover Lv 1/3/7/12/25/35/50 |
+| KR4 | first_events idempotent; 5 events | ✅ 3 active + 2 scaffolded; 13 tests |
+| KR5 | 0 test regression, +15 tests, 0 new clippy | ✅ 233 → 302 (+69), clippy baseline unchanged at 32 |
 
 ## Design Notes
 
