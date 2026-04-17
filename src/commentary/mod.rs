@@ -22,7 +22,9 @@
 
 use sha1::{Digest, Sha1};
 
+pub mod budget;
 pub mod repo;
+pub mod trigger;
 
 /// Trigger kinds the commentary system reacts to. `as_str` is the canonical
 /// on-disk representation — do not change without a migration.
