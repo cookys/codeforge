@@ -14,6 +14,7 @@ pub mod catchup;
 pub mod ecs;
 pub mod events;
 pub mod inbox;
+pub mod lifecycle;
 pub mod systems;
 pub mod tick;
 
