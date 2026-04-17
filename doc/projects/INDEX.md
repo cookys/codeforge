@@ -4,7 +4,9 @@
 
 ## Active
 
-_（none — ready for next phase）_
+| Project | Description | Started |
+|---------|------------|---------|
+| [phase3b-strategy](2026-04-18-phase3b-strategy/README.md) | Strategy Mode — 4 種打法（Aggressive / Defensive / Explorer / Scholar）× ATK/DEF 乘子 + MOB 優先序（spec §2） | 2026-04-18 |
 
 ## Archived
 
