@@ -14,6 +14,8 @@ use hecs::{Entity, World};
 use rusqlite::{Connection, OptionalExtension};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::daemon::strategy::{Strategy, DEFAULT_STRATEGY};
+
 // ─── Components ─────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -82,6 +84,14 @@ pub struct MoodBookkeeping {
     pub was_low_hp: bool,
 }
 
+/// Phase 3b: the active play strategy. Persistent pet state — survives
+/// daemon restarts via `pet_snapshot.strategy`. Unlike Mood there's no
+/// decay; it changes only when the user runs `codeforge strategy <name>`.
+#[derive(Debug, Clone, Copy)]
+pub struct PetStrategy {
+    pub value: Strategy,
+}
+
 // ─── GameWorld wrapper ──────────────────────────────────────────────
 
 /// Daemon-owned world. Single pet entity for Phase 2a.
@@ -105,7 +115,7 @@ impl GameWorld {
         let from_snapshot = conn
             .query_row(
                 "SELECT village, level, hp, hp_max, xp, xp_to_next,
-                        atk, def, sup, ver, mood, mood_tick_stamp
+                        atk, def, sup, ver, mood, mood_tick_stamp, strategy
                  FROM pet_snapshot WHERE id = 1",
                 [],
                 |r| {
@@ -122,50 +132,109 @@ impl GameWorld {
                         r.get::<_, i64>(9)? as u32,
                         r.get::<_, i64>(10)? as u32,
                         r.get::<_, i64>(11)? as u64,
+                        r.get::<_, String>(12)?,
                     ))
                 },
             )
             .optional()?;
 
-        let (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver, mood_value, mood_ts) =
-            if let Some((village, level, hp, hp_max, xp, xp_to_next, atk, def, sup, ver, mood, mood_ts)) =
-                from_snapshot
-            {
-                (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver, mood, mood_ts)
-            } else {
-                // Phase 1 fallback — no hp_max column, derive from hp.
-                let from_pet = conn
-                    .query_row(
-                        "SELECT village, level, xp, xp_to_next, atk, hp, def, sup, ver
-                         FROM pet WHERE id = 1",
-                        [],
-                        |r| {
-                            Ok((
-                                r.get::<_, String>(0)?,
-                                r.get::<_, i64>(1)? as u32,
-                                r.get::<_, i64>(2)? as u32,
-                                r.get::<_, i64>(3)? as u32,
-                                r.get::<_, i64>(4)? as u32,
-                                r.get::<_, i64>(5)? as u32,
-                                r.get::<_, i64>(6)? as u32,
-                                r.get::<_, i64>(7)? as u32,
-                                r.get::<_, i64>(8)? as u32,
-                            ))
-                        },
-                    )
-                    .optional()?;
+        let (
+            village,
+            level,
+            xp,
+            xp_to_next,
+            atk,
+            hp,
+            hp_max,
+            def,
+            sup,
+            ver,
+            mood_value,
+            mood_ts,
+            strategy_str,
+        ) = if let Some((
+            village,
+            level,
+            hp,
+            hp_max,
+            xp,
+            xp_to_next,
+            atk,
+            def,
+            sup,
+            ver,
+            mood,
+            mood_ts,
+            strategy_str,
+        )) = from_snapshot
+        {
+            (
+                village,
+                level,
+                xp,
+                xp_to_next,
+                atk,
+                hp,
+                hp_max,
+                def,
+                sup,
+                ver,
+                mood,
+                mood_ts,
+                strategy_str,
+            )
+        } else {
+            // Phase 1 fallback — no hp_max column, derive from hp.
+            let from_pet = conn
+                .query_row(
+                    "SELECT village, level, xp, xp_to_next, atk, hp, def, sup, ver
+                     FROM pet WHERE id = 1",
+                    [],
+                    |r| {
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, i64>(1)? as u32,
+                            r.get::<_, i64>(2)? as u32,
+                            r.get::<_, i64>(3)? as u32,
+                            r.get::<_, i64>(4)? as u32,
+                            r.get::<_, i64>(5)? as u32,
+                            r.get::<_, i64>(6)? as u32,
+                            r.get::<_, i64>(7)? as u32,
+                            r.get::<_, i64>(8)? as u32,
+                        ))
+                    },
+                )
+                .optional()?;
 
-                let (village, level, xp, xp_to_next, atk, hp, def, sup, ver) =
-                    from_pet.unwrap_or_else(|| {
-                        ("rust".to_string(), 1, 0, 100, 10, 10, 10, 10, 10)
-                    });
-                let hp_max = hp.max(10);
-                // Phase 1 row has no mood — start at default.
-                (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver, MOOD_DEFAULT, 0)
-            };
+            let (village, level, xp, xp_to_next, atk, hp, def, sup, ver) =
+                from_pet.unwrap_or_else(|| {
+                    ("rust".to_string(), 1, 0, 100, 10, 10, 10, 10, 10)
+                });
+            let hp_max = hp.max(10);
+            // Phase 1 row has no mood / strategy — seed defaults.
+            (
+                village,
+                level,
+                xp,
+                xp_to_next,
+                atk,
+                hp,
+                hp_max,
+                def,
+                sup,
+                ver,
+                MOOD_DEFAULT,
+                0,
+                DEFAULT_STRATEGY.as_str().to_string(),
+            )
+        };
 
         // Clamp mood on load in case a prior version wrote out of range.
         let mood_value = mood_value.clamp(MOOD_MIN, MOOD_MAX);
+        // Parse strategy; fall back to default if a corrupt value ever slipped
+        // in (shouldn't happen — CLI validates before write — but a failed
+        // parse should not crash the daemon on load).
+        let strategy_value = Strategy::from_str(&strategy_str).unwrap_or(DEFAULT_STRATEGY);
 
         let pet = world.spawn((
             PetIdentity { village },
@@ -176,6 +245,7 @@ impl GameWorld {
             // Bookkeeping starts at zeros on every daemon boot — see note
             // on MoodBookkeeping about why we don't persist these.
             MoodBookkeeping::default(),
+            PetStrategy { value: strategy_value },
         ));
 
         Ok(Self { world, pet })
@@ -209,14 +279,19 @@ impl GameWorld {
         let mood = self.world.get::<&Mood>(self.pet)?;
         let mood_value = mood.value.clamp(MOOD_MIN, MOOD_MAX);
         let mood_ts = mood.tick_stamp;
+        // Strategy — always present in ECS (load_or_init seeds default if
+        // DB was missing/unknown). Serialize canonical lowercase form.
+        let strategy = self.world.get::<&PetStrategy>(self.pet)?;
+        let strategy_str = strategy.value.as_str();
 
         let now_iso = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
         conn.execute(
             "INSERT INTO pet_snapshot
                  (id, village, level, hp, hp_max, xp, xp_to_next,
-                  atk, def, sup, ver, last_message, mood, mood_tick_stamp, updated_at)
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                  atk, def, sup, ver, last_message, mood, mood_tick_stamp,
+                  strategy, updated_at)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(id) DO UPDATE SET
                  village = excluded.village,
                  level = excluded.level,
@@ -231,6 +306,7 @@ impl GameWorld {
                  last_message = excluded.last_message,
                  mood = excluded.mood,
                  mood_tick_stamp = excluded.mood_tick_stamp,
+                 strategy = excluded.strategy,
                  updated_at = excluded.updated_at",
             rusqlite::params![
                 identity.village,
@@ -246,6 +322,7 @@ impl GameWorld {
                 last_msg,
                 mood_value as i64,
                 mood_ts as i64,
+                strategy_str,
                 now_iso,
             ],
         )?;
@@ -509,5 +586,91 @@ mod tests {
         let gw = GameWorld::load_or_init(&conn).unwrap();
         let mood = gw.world.get::<&Mood>(gw.pet).unwrap();
         assert!(mood.value <= MOOD_MAX);
+    }
+
+    // ─── Phase 3b: PetStrategy ──────────────────────────────────────
+
+    #[test]
+    fn fresh_install_seeds_default_strategy() {
+        let conn = fresh_conn();
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        let strat = gw.world.get::<&PetStrategy>(gw.pet).unwrap();
+        assert_eq!(strat.value, DEFAULT_STRATEGY);
+    }
+
+    #[test]
+    fn phase1_fallback_seeds_default_strategy() {
+        // Phase 1 `pet` table has no strategy column — load must seed the
+        // default rather than error.
+        let conn = fresh_conn();
+        conn.execute(
+            "INSERT INTO pet (id, village, name, level, xp, xp_to_next, atk, hp, def, sup, ver)
+             VALUES (1, 'go', 'Gopher', 3, 100, 200, 15, 40, 15, 12, 14)",
+            [],
+        )
+        .unwrap();
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        let strat = gw.world.get::<&PetStrategy>(gw.pet).unwrap();
+        assert_eq!(strat.value, DEFAULT_STRATEGY);
+    }
+
+    #[test]
+    fn serialize_writes_strategy_column() {
+        let conn = fresh_conn();
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        {
+            let mut s = gw.world.get::<&mut PetStrategy>(gw.pet).unwrap();
+            s.value = Strategy::Aggressive;
+        }
+        gw.serialize_to_db(&conn, 1).unwrap();
+
+        let strategy: String = conn
+            .query_row(
+                "SELECT strategy FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(strategy, "aggressive");
+    }
+
+    #[test]
+    fn snapshot_strategy_round_trips_through_load() {
+        // Write a snapshot with Scholar, reload, expect Scholar back.
+        let conn = fresh_conn();
+        conn.execute(
+            "INSERT INTO pet_snapshot
+               (id, village, level, hp, hp_max, xp, xp_to_next,
+                atk, def, sup, ver, last_message, mood, mood_tick_stamp,
+                strategy, updated_at)
+             VALUES (1, 'rust', 4, 20, 20, 0, 200, 12, 11, 10, 10,
+                     NULL, 70, 3, 'scholar', datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        let strat = gw.world.get::<&PetStrategy>(gw.pet).unwrap();
+        assert_eq!(strat.value, Strategy::Scholar);
+    }
+
+    #[test]
+    fn load_falls_back_to_default_on_unknown_strategy_string() {
+        // Corrupt / unknown value must not crash the daemon on load.
+        let conn = fresh_conn();
+        conn.execute(
+            "INSERT INTO pet_snapshot
+               (id, village, level, hp, hp_max, xp, xp_to_next,
+                atk, def, sup, ver, last_message, mood, mood_tick_stamp,
+                strategy, updated_at)
+             VALUES (1, 'rust', 1, 10, 10, 0, 100, 10, 10, 10, 10,
+                     NULL, 60, 0, 'nonsense-value', datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        let strat = gw.world.get::<&PetStrategy>(gw.pet).unwrap();
+        assert_eq!(strat.value, DEFAULT_STRATEGY);
     }
 }
