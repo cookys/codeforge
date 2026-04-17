@@ -200,7 +200,8 @@ CREATE TABLE IF NOT EXISTS mobs (
     def         INTEGER NOT NULL,
     difficulty  INTEGER NOT NULL DEFAULT 1,
     spawned_at  INTEGER NOT NULL,                -- unix ts
-    defeated_at INTEGER                          -- NULL = alive
+    defeated_at INTEGER,                         -- NULL = alive
+    origin_path TEXT                             -- Phase 2c: repo-relative path (nullable for P2b legacy rows)
 );
 
 -- Partial index speeds up the per-tick "alive mobs in zone" scan
@@ -227,3 +228,14 @@ CREATE TABLE IF NOT EXISTS loot_inventory (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_loot_dedupe
     ON loot_inventory(kind, name);
+
+-- ═══════════════════════════════════════════════════════════════
+-- Phase 2c — TUI + Local Map (version 4)
+-- mobs.origin_path (nullable TEXT) added inline in the CREATE TABLE
+-- above for greenfield installs. Upgrade path for existing Phase 2b
+-- DBs is handled in src/db/mod.rs::migrations::run via PRAGMA
+-- table_info(mobs) + conditional ALTER — SQLite has no
+-- IF NOT EXISTS for ADD COLUMN.
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (4);
