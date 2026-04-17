@@ -327,6 +327,9 @@ function extractUserCorrections(messages) {
     const text = extractText(msg._content);
     if (!text || text.length < 10) continue;
     if (text.includes('<system-reminder>')) continue;
+    // Skill invocations inject the skill markdown as a user message; skip those.
+    // The Skill tool prepends "Base directory for this skill: <path>" as the first line.
+    if (text.startsWith('Base directory for this skill:')) continue;
 
     const matched = USER_CORRECTION_PATTERNS.some(p => p.test(text));
     if (!matched) continue;
