@@ -3,15 +3,14 @@
 //! No args → print current strategy + multiplier summary.
 //! With name → validate, upsert into `pet_snapshot.strategy`, confirm.
 //!
-//! Writing directly to `pet_snapshot` is safe because the column's write-
-//! set is disjoint from what the daemon tick writes on the same row: the
-//! daemon's UPSERT always includes `strategy` (reading ECS `PetStrategy`,
-//! which itself was loaded from the same column). A race where CLI writes
-//! and daemon overwrites with a stale value does exist in theory — the
-//! window is one tick (≤60s), and the next CLI `strategy` call shows the
-//! actual persisted value, so recovery is obvious. A durable solution
-//! (route through `event_inbox` like XP) is deferred; the spec explicitly
-//! says strategy is user-toggled, not daemon-derived.
+//! Writing directly to `pet_snapshot` is safe because the race with the
+//! daemon's tick-end `serialize_to_db` is mitigated: the daemon calls
+//! `GameWorld::refresh_strategy_from_db` at tick step 3b (inside the tick
+//! transaction, before combat + serialize), so any CLI-written value is
+//! picked up into the ECS `PetStrategy` component and written back
+//! unchanged. The spec keeps strategy user-toggled (not daemon-derived),
+//! and this mitigation preserves that ownership without routing through
+//! `event_inbox`.
 
 use anyhow::{bail, Result};
 use rusqlite::OptionalExtension;
