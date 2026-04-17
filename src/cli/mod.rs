@@ -11,6 +11,7 @@ mod learn;
 mod pet;
 mod search;
 mod statusline;
+mod tui;
 
 #[derive(Parser)]
 #[command(name = "codeforge", version, about = "Claude Code power-user toolkit")]
@@ -78,6 +79,8 @@ pub enum Commands {
         #[command(subcommand)]
         action: DaemonAction,
     },
+    /// 啟動 alt-screen TUI 面板（pet / local map / combat log）
+    Tui,
 }
 
 #[derive(Subcommand)]
@@ -128,5 +131,6 @@ pub fn run(cli: Cli) -> Result<()> {
             DaemonAction::Status => daemon::DaemonCmd::Status,
             DaemonAction::Install => daemon::DaemonCmd::Install,
         }),
+        Commands::Tui => tui::run(&ctx),
     }
 }
