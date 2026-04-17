@@ -79,8 +79,17 @@ pub fn build_frame(
         ),
         None => {
             let log_rows = load_combat_log(conn, layout.combat_log.height as usize)?;
-            combat_log::render(
+            // Phase 3c P5: pull commentary feed into the same panel.
+            // -1 so either stream on its own could fill the panel up to
+            // its header+body limit — merge truncates to max_rows-1 anyway.
+            let commentary_rows = crate::commentary::display::recent_commentary(
+                conn,
+                layout.combat_log.height as usize,
+            )
+            .unwrap_or_default();
+            combat_log::render_mixed(
                 &log_rows,
+                &commentary_rows,
                 layout.combat_log.width as usize,
                 layout.combat_log.height as usize,
             )
