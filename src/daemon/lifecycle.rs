@@ -39,7 +39,7 @@ pub fn acquire_pidfile(path: &Path) -> Result<()> {
         .create_new(true)
         .open(path)
     {
-        Ok(_) => return write_pid(path),
+        Ok(_) => write_pid(path),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             // Pidfile exists — check liveness
             if is_stale_pidfile(path)? {
@@ -51,9 +51,9 @@ pub fn acquire_pidfile(path: &Path) -> Result<()> {
                     .open(path)?;
                 return write_pid(path);
             }
+            let pid = read_pidfile(path)?;
             Err(anyhow!(
-                "另一個 daemon 已在執行（pid {}）。使用 `codeforge daemon stop` 停止。",
-                read_pidfile(path)?
+                "另一個 daemon 已在執行（pid {pid}）。使用 `codeforge daemon stop` 停止。"
             ))
         }
         Err(e) => Err(e.into()),

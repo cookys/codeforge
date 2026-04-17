@@ -11,12 +11,8 @@
 
 use anyhow::Result;
 use rusqlite::Connection;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::Notify;
-use tokio::time::interval;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-pub const DRAIN_INTERVAL_MS: u64 = 500;
 pub const RETENTION_SECS: u64 = 7 * 24 * 60 * 60; // 7 days
 
 /// One drained event, as parsed from the inbox.
@@ -24,6 +20,9 @@ pub const RETENTION_SECS: u64 = 7 * 24 * 60 * 60; // 7 days
 pub struct InboxEvent {
     pub id: i64,
     pub payload: String,
+    /// Unix seconds — retained on the struct so downstream (retention,
+    /// event-age commentary) can use it without another DB round-trip.
+    #[allow(dead_code)]
     pub created_at: i64,
 }
 
@@ -75,33 +74,6 @@ pub fn cleanup_expired(conn: &Connection, retention_secs: u64) -> Result<usize> 
         rusqlite::params![cutoff],
     )?;
     Ok(n)
-}
-
-/// Run the drain loop until shutdown. Opens its own connection so it can run
-/// concurrently with the tick loop (SQLite WAL + busy_timeout handles write
-/// serialization at the SQLite layer).
-pub async fn run_drain_loop(
-    conn: &Connection,
-    poll_interval: Duration,
-    shutdown: Arc<Notify>,
-) -> Result<()> {
-    // Opportunistic cleanup on entry
-    let _ = cleanup_expired(conn, RETENTION_SECS);
-
-    let mut ticker = interval(poll_interval);
-    loop {
-        tokio::select! {
-            _ = ticker.tick() => {
-                let events = drain_once(conn)?;
-                for _ev in events {
-                    // P4 scope: drain only. P3+ will dispatch to game engine.
-                    // Keeping the channel plumbed end-to-end even with a no-op
-                    // handler is deliberate — proves the data path.
-                }
-            }
-            _ = shutdown.notified() => return Ok(()),
-        }
-    }
 }
 
 fn now_unix_secs() -> u64 {
@@ -245,30 +217,4 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn drain_loop_honors_shutdown() {
-        let conn = fresh_conn();
-        insert_event(&conn, "{\"event\":\"pending\"}", 100);
-
-        let shutdown = Arc::new(Notify::new());
-        let trigger = shutdown.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(30)).await;
-            trigger.notify_one();
-        });
-
-        run_drain_loop(&conn, Duration::from_millis(5), shutdown)
-            .await
-            .unwrap();
-
-        // Event should have been drained within the ~30ms window
-        let seen: Option<i64> = conn
-            .query_row(
-                "SELECT seen_at FROM event_inbox WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert!(seen.is_some(), "drain loop should have processed the event");
-    }
 }

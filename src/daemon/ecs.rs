@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn serialize_is_upsert() {
         let conn = fresh_conn();
-        let mut gw = GameWorld::load_or_init(&conn).unwrap();
+        let gw = GameWorld::load_or_init(&conn).unwrap();
         gw.serialize_to_db(&conn).unwrap();
 
         // Mutate and re-serialize — should update single row, not insert

@@ -85,7 +85,8 @@ pub fn check_levelup(gw: &mut GameWorld) {
 }
 
 /// Write a speech bubble text. Phase 3b will replace with Haiku commentary.
-/// P2a stub: just records the event name.
+/// P2a: available but not yet wired into tick pipeline.
+#[allow(dead_code)]
 pub fn set_message(gw: &mut GameWorld, text: impl Into<String>) {
     let pet = gw.pet();
     let text = text.into();
