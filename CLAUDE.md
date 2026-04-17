@@ -119,9 +119,12 @@ src/
 
 | File | Content |
 |------|---------|
-| `doc/specs/codeforge-mud-engine.md` | Phase 2 MUD engine design — daemon, combat, TUI |
+| `doc/specs/codeforge-mud-engine.md` | Phase 2+ MUD engine — daemon, combat, TUI, §3 黏著度機制, §3.10 Nation Theme |
+| `doc/specs/nation-p2p-design.md` | Phase 5 Nation P2P — credential schema, Organizer role, P2P integrity |
 | `.claude/rpg-engine-spec.md` | Phase 1 architectural decisions (daemon model, write ownership) |
 | `.claude/i18n-spec.md` | i18n two-layer design (compile-time UI + runtime content) |
+
+> **Cross-project sync rule**: All CodeForge design decisions — including those discussed in CodePower sessions — land in `doc/specs/*.md`. Spec is the single source of truth; conversation logs are not carried across sessions.
 
 ## Phase Roadmap
 
@@ -133,8 +136,14 @@ src/
 | 2c | TUI rendering + Local Map | planned |
 | 3a | World Map + Zone unlock | planned |
 | 3b | Strategy Mode | planned |
-| 3c | AI Commentary (Haiku) | planned |
+| 3c | AI Commentary (Haiku, 1/hour max, opt-in) | planned |
+| 3d | Stickiness: welcome-back, mood decay, zone mastery, milestones | planned |
+| 3e | Loot crafting + active item use | planned |
+| 3f | `codeforge snapshot` (shareable ASCII monthly report) | planned |
 | 4 | Zoa 3D pet animation | planned |
+| 5a | Nation Plugin + credential verify (ed25519) | planned |
+| 5b | Organizer cross-Nation events | planned |
+| 5c | Nation Statusline Theme (tiered unlock) | planned |
 
 ## CodePower ↔ CodeForge Interaction
 
