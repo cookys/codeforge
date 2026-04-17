@@ -176,3 +176,54 @@ CREATE TABLE IF NOT EXISTS last_tick_at (
     tick_at    INTEGER NOT NULL,                -- unix ts 最後成功 tick
     tick_count INTEGER NOT NULL DEFAULT 0       -- 累積 tick 次數
 );
+
+-- ═══════════════════════════════════════════════════════════════
+-- Phase 2b — Combat schema (version 3)
+-- MOB 生成、戰鬥記錄（用 Phase 2a 既有 combat_log）、loot inventory
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (3);
+
+-- ─── MOBs（daemon scanner 生成，daemon combat 擊殺）────────
+-- 來源：原始碼 heuristic（TODO count / function length / dead import）
+-- 六類 kind 對應 spec §2：boss / elite / zombie / ghost / doppelganger / void
+-- defeated_at NULL = alive；UPDATE seen_at 模式類似 event_inbox
+
+CREATE TABLE IF NOT EXISTS mobs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_id     TEXT NOT NULL,                   -- pet village id (rust/python/...)
+    kind        TEXT NOT NULL,                   -- boss | elite | zombie | ghost | doppelganger | void
+    name        TEXT NOT NULL,                   -- e.g. "src/auth.rs" or "TODO cluster @ handlers/"
+    hp          INTEGER NOT NULL,
+    hp_max      INTEGER NOT NULL,
+    atk         INTEGER NOT NULL,
+    def         INTEGER NOT NULL,
+    difficulty  INTEGER NOT NULL DEFAULT 1,
+    spawned_at  INTEGER NOT NULL,                -- unix ts
+    defeated_at INTEGER                          -- NULL = alive
+);
+
+-- Partial index speeds up the per-tick "alive mobs in zone" scan
+CREATE INDEX IF NOT EXISTS idx_mobs_alive
+    ON mobs(zone_id) WHERE defeated_at IS NULL;
+
+-- Avoid duplicate MOBs for the same (zone, kind, name) — scanner reruns
+-- should upsert HP, not spawn new rows
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mobs_unique_alive
+    ON mobs(zone_id, kind, name) WHERE defeated_at IS NULL;
+
+-- ─── Loot Inventory（擊殺後落地的非 XP loot）────────────
+-- XP 直接落到 pet_snapshot.xp；非 XP loot（Item / Tome / Crystal / ...）
+-- 進這張表，kind+name UNIQUE 聚合 quantity
+
+CREATE TABLE IF NOT EXISTS loot_inventory (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind              TEXT NOT NULL,             -- item | tome | scroll | crystal | fragment | gem | skill_point
+    name              TEXT NOT NULL,             -- "Rare Item" / "TODO Cleaner" / "Pattern Fragment" / ...
+    quantity          INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    first_acquired_at INTEGER NOT NULL,          -- unix ts
+    last_acquired_at  INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_loot_dedupe
+    ON loot_inventory(kind, name);
