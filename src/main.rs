@@ -1,6 +1,7 @@
 mod brain;
 mod cli;
 mod commentary;
+mod craft;
 mod daemon;
 mod db;
 mod dream;

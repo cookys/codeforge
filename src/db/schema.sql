@@ -360,3 +360,32 @@ INSERT OR IGNORE INTO schema_version (version) VALUES (7);
 -- ═══════════════════════════════════════════════════════════════
 
 INSERT OR IGNORE INTO schema_version (version) VALUES (8);
+
+-- ═══════════════════════════════════════════════════════════════
+-- Phase 3e — Loot Crafting + Active Item (version 9)
+-- active_effects is a new table — CREATE TABLE IF NOT EXISTS is
+-- sufficient for both greenfield and upgrade paths.
+-- ═══════════════════════════════════════════════════════════════
+
+-- ─── Active Effects（crafted / consumable item durations, spec §3.5/§3.7）
+-- One row per distinct effect. `zone_id = NULL` means global; a concrete
+-- zone scopes the effect (e.g. Ghost Repellent in rust zone only).
+-- `applied_at` + `expires_at` are unix seconds so filters can use
+-- strftime('%s','now') without timezone chicanery.
+--
+-- Read pattern: `active_effects WHERE expires_at > strftime('%s','now')`.
+-- There is no cleanup job — rows are small, daemon can prune opportunistically.
+
+CREATE TABLE IF NOT EXISTS active_effects (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    effect_kind  TEXT NOT NULL,             -- e.g. "suppress_ghost_spawn", "reduce_difficulty"
+    zone_id      TEXT,                      -- NULL = global
+    applied_at   INTEGER NOT NULL,          -- unix seconds
+    expires_at   INTEGER NOT NULL,          -- unix seconds
+    source_item  TEXT NOT NULL              -- "Ghost Repellent" / "Refactor Blueprint" / ...
+);
+
+CREATE INDEX IF NOT EXISTS idx_active_effects_live
+    ON active_effects(effect_kind, zone_id, expires_at);
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (9);
