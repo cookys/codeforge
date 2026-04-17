@@ -1,1 +1,4 @@
 /target
+# Session-local state written by Claude Code hooks
+.claude/session-start-sha
+.claude/scripts/session-digest.log
