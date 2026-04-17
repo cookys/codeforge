@@ -50,7 +50,7 @@ pub fn run(ctx: &db::Context, refresh: bool) -> Result<()> {
     let mut out = StandardStream::stdout(ColorChoice::Auto);
     render_header(&mut out, &home_village)?;
     render_grid(&mut out, &stats, &home_village)?;
-    render_footer(&mut out, &stats)?;
+    render_footer(&mut out, &stats, &home_village)?;
     Ok(())
 }
 
@@ -148,8 +148,23 @@ fn paint_cell_line(
     Ok(())
 }
 
-fn render_footer(out: &mut StandardStream, stats: &[ZoneStats]) -> Result<()> {
-    let unlocked = stats.iter().filter(|s| s.unlocked).count();
+/// Count of visibly-open villages. Mirrors the home-village override
+/// from `Cell::from_stats` so the footer count can't contradict the
+/// grid (a fresh install shows the home village as `★ 本命 · 開放`
+/// before `--refresh` flips the DB flag; this counts it as unlocked).
+fn unlocked_count(stats: &[ZoneStats], home_village: &str) -> usize {
+    stats
+        .iter()
+        .filter(|s| s.unlocked || s.village_id == home_village)
+        .count()
+}
+
+fn render_footer(
+    out: &mut StandardStream,
+    stats: &[ZoneStats],
+    home_village: &str,
+) -> Result<()> {
+    let unlocked = unlocked_count(stats, home_village);
     let total = stats.len();
     out.set_color(ColorSpec::new().set_fg(Some(Color::Ansi256(244))))?;
     writeln!(
@@ -358,6 +373,61 @@ mod tests {
         assert!(matches!(cell.tone, CellTone::Locked));
         assert!(cell.name.contains("???"));
         assert!(cell.language.contains("Nation"));
+    }
+
+    #[test]
+    fn unlocked_count_respects_home_override_on_fresh_db() {
+        // Regression: render_footer previously used raw `s.unlocked`, so a
+        // fresh DB (home flag still 0) rendered `★ 本命 · 開放` in the grid
+        // next to a contradictory `已解鎖 0/5 村落` footer.
+        let stats = vec![
+            ZoneStats {
+                village_id: "python".to_string(),
+                unlocked: false,
+                kill_count: 0,
+                concept_count: 0,
+                rank: ZoneRank::Traveler,
+            },
+            ZoneStats {
+                village_id: "rust".to_string(),
+                unlocked: false, // daemon/refresh hasn't flipped this yet
+                kill_count: 0,
+                concept_count: 0,
+                rank: ZoneRank::Traveler,
+            },
+        ];
+        assert_eq!(unlocked_count(&stats, "rust"), 1);
+        assert_eq!(unlocked_count(&stats, "python"), 1);
+        assert_eq!(unlocked_count(&stats, "nonexistent"), 0);
+    }
+
+    #[test]
+    fn unlocked_count_sums_both_flagged_and_home() {
+        let stats = vec![
+            ZoneStats {
+                village_id: "python".to_string(),
+                unlocked: true,
+                kill_count: 0,
+                concept_count: 0,
+                rank: ZoneRank::Traveler,
+            },
+            ZoneStats {
+                village_id: "rust".to_string(),
+                unlocked: false,
+                kill_count: 0,
+                concept_count: 0,
+                rank: ZoneRank::Traveler,
+            },
+            ZoneStats {
+                village_id: "go".to_string(),
+                unlocked: true,
+                kill_count: 0,
+                concept_count: 0,
+                rank: ZoneRank::Traveler,
+            },
+        ];
+        // python + go flagged + rust home override = 3
+        assert_eq!(unlocked_count(&stats, "rust"), 3);
     }
 
     #[test]
