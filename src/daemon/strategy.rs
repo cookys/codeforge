@@ -13,6 +13,7 @@
 //! to v6 produces zero behavior change for existing players.
 
 use crate::daemon::mob::MobKind;
+use crate::world::ZoneStats;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Strategy {
@@ -87,9 +88,14 @@ impl Strategy {
     /// Lower = attack this mob first. Ties broken by mob.id in the caller,
     /// giving deterministic ordering across ticks for a given alive set.
     ///
+    /// Zone-agnostic fallback. Used directly by tests and when no zone
+    /// context is available; production combat goes through
+    /// `priority_order_ctx`, which layers cross-zone preferences for
+    /// Explorer on top of this per-kind base.
+    ///
     /// "rest" bucket (everyone not explicitly preferred) gets the same key,
-    /// so Explorer — which has no preference — produces `|_| 0` and falls
-    /// through to the id-tiebreaker.
+    /// so Explorer — which has no preference here — produces `|_| 0` and
+    /// falls through to the id-tiebreaker.
     pub fn priority_order(self, kind: MobKind) -> u8 {
         match self {
             Self::Aggressive => match kind {
@@ -104,11 +110,9 @@ impl Strategy {
                 MobKind::Elite => 2,
                 _ => 3,
             },
-            // Spec §2 describes Explorer as "優先未探索 Zone 的 MOB"
-            // (cross-zone priority). Phase 3b is single-zone (pet's home
-            // village), so the cross-zone dimension has no meaning yet —
-            // Explorer degenerates to within-zone id order. Phase 3a adds
-            // Zone unlock + multi-zone raids and will revisit this branch.
+            // Explorer's cross-zone preference lives in `priority_order_ctx`.
+            // Without a zone context every mob is equivalent so we degenerate
+            // to within-zone id order (preserves Phase 2b behaviour).
             Self::Explorer => 0,
             // Scholar chases tome-dropping mobs (Boss + Elite per spec §2
             // Loot table). Zombies/Ghosts drop cleaner-class items that
@@ -118,6 +122,34 @@ impl Strategy {
                 MobKind::Elite => 1,
                 _ => 2,
             },
+        }
+    }
+
+    /// Zone-aware priority. Widens the return to `u32` so Explorer can
+    /// fold `zone.kill_count` (0..=500+) directly into the sort key without
+    /// losing resolution.
+    ///
+    /// * **Explorer** — prefer zones the pet has visited *less*. Sort key
+    ///   is `kill_count` itself, so a fresh zone (0 kills) sorts before
+    ///   an IronCrafter zone (200+ kills). Within a single zone every mob
+    ///   ties and falls through to the id-tiebreaker, giving unchanged
+    ///   behaviour on single-zone ticks (which is the only mode shipping
+    ///   in Phase 3a). Multi-zone raids added later inherit this branch
+    ///   with no extra work at the call site.
+    /// * **All other strategies** — return the base `priority_order(kind)`
+    ///   cast to `u32`. Their preferences are per-kind, not per-zone.
+    /// * **Missing zone in `zones`** — fall through to the base ordering;
+    ///   a ZoneStats row should always exist (daemon seeds `game_world`
+    ///   at startup) but this keeps the path safe against an unseeded
+    ///   fresh DB during tests.
+    pub fn priority_order_ctx(self, kind: MobKind, zone_id: &str, zones: &[ZoneStats]) -> u32 {
+        match self {
+            Self::Explorer => zones
+                .iter()
+                .find(|z| z.village_id == zone_id)
+                .map(|z| z.kill_count)
+                .unwrap_or(0),
+            _ => self.priority_order(kind) as u32,
         }
     }
 }
@@ -221,5 +253,91 @@ mod tests {
         assert_eq!(DEFAULT_STRATEGY, Strategy::Explorer);
         assert_eq!(DEFAULT_STRATEGY.atk_mult(), 1.0);
         assert_eq!(DEFAULT_STRATEGY.def_mult(), 1.0);
+    }
+
+    // ─── priority_order_ctx (Phase 3a P4) ─────────────────────────────
+
+    use crate::world::{ZoneRank, ZoneStats};
+
+    fn zone(id: &str, kills: u32) -> ZoneStats {
+        ZoneStats {
+            village_id: id.to_string(),
+            unlocked: true,
+            kill_count: kills,
+            concept_count: 0,
+            rank: ZoneRank::Traveler,
+        }
+    }
+
+    #[test]
+    fn explorer_ctx_prefers_less_visited_zone() {
+        let zones = vec![zone("rust", 300), zone("python", 5), zone("go", 50)];
+        let s = Strategy::Explorer;
+        // kill_count is the sort key directly — lower wins.
+        assert!(
+            s.priority_order_ctx(MobKind::Zombie, "python", &zones)
+                < s.priority_order_ctx(MobKind::Zombie, "go", &zones)
+        );
+        assert!(
+            s.priority_order_ctx(MobKind::Zombie, "go", &zones)
+                < s.priority_order_ctx(MobKind::Zombie, "rust", &zones)
+        );
+    }
+
+    #[test]
+    fn explorer_ctx_ignores_mob_kind() {
+        // Explorer's priority is cross-zone, not per-kind. Two mobs in the
+        // same zone must tie regardless of kind so the id-tiebreaker wins.
+        let zones = vec![zone("rust", 100)];
+        let s = Strategy::Explorer;
+        assert_eq!(
+            s.priority_order_ctx(MobKind::Boss, "rust", &zones),
+            s.priority_order_ctx(MobKind::Zombie, "rust", &zones),
+        );
+    }
+
+    #[test]
+    fn non_explorer_ctx_ignores_zones() {
+        // Aggressive / Defensive / Scholar keep their per-kind preferences
+        // regardless of zone, so the ctx score must match the zone-agnostic
+        // base ordering exactly.
+        let zones = vec![zone("rust", 999), zone("python", 0)];
+        for s in [Strategy::Aggressive, Strategy::Defensive, Strategy::Scholar] {
+            for kind in [MobKind::Boss, MobKind::Elite, MobKind::Zombie, MobKind::Ghost] {
+                assert_eq!(
+                    s.priority_order_ctx(kind, "rust", &zones),
+                    s.priority_order(kind) as u32,
+                );
+                assert_eq!(
+                    s.priority_order_ctx(kind, "python", &zones),
+                    s.priority_order(kind) as u32,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn explorer_ctx_falls_back_when_zone_missing() {
+        // Safety path: unseeded game_world shouldn't panic — we just score
+        // the missing zone as 0 so the id-tiebreaker runs.
+        let zones: Vec<ZoneStats> = Vec::new();
+        let s = Strategy::Explorer;
+        assert_eq!(s.priority_order_ctx(MobKind::Zombie, "rust", &zones), 0);
+    }
+
+    #[test]
+    fn single_zone_ctx_preserves_phase2b_behaviour() {
+        // Every mob in the same zone gets the same Explorer ctx score, so
+        // the (ctx, mob.id) sort key collapses to (constant, id) — exactly
+        // the Phase 2b id-order behaviour.
+        let zones = vec![zone("rust", 42)];
+        let s = Strategy::Explorer;
+        let kinds = [MobKind::Boss, MobKind::Elite, MobKind::Zombie, MobKind::Ghost];
+        let scores: Vec<u32> = kinds
+            .iter()
+            .map(|k| s.priority_order_ctx(*k, "rust", &zones))
+            .collect();
+        let first = scores[0];
+        assert!(scores.iter().all(|&v| v == first));
     }
 }
