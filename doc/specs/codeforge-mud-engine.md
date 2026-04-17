@@ -771,17 +771,70 @@ codeforge daemon
 
 ### IPC（與 Claude Code hooks 溝通）
 
+> **Decision (2026-04-17)**：Phase 2a 採 **SQLite event_inbox + 500ms poll** 方案（代號 Option D）。
+> 完整研究在 `doc/projects/2026-04-17-phase2a-daemon/ipc-research.md`。
+> 研究結論：盤點 Phase 2a 所有事件皆無 <500ms 即時性需求；socket 方案的 daemon-down durability 成本等於重建一套 disk buffer。
+
 ```
-Claude Code hook → write to unix socket → daemon receives → update game state
+Claude Code hook → codeforge emit <event> → INSERT INTO event_inbox
+                                                     │
+                           daemon poll (500ms) ───────┘
+                                  │
+                                  ▼
+                           drain unseen rows
+                                  │
+                                  ▼
+                           update game state (ECS + pet_snapshot)
+                                  │
+                                  ▼
+                           UPDATE event_inbox SET seen_at = ? WHERE id IN (...)
+```
 
-Socket path: ~/.codeforge/daemon.sock
-Protocol: newline-delimited JSON
+**Schema**:
 
+```sql
+CREATE TABLE event_inbox (
+    id         INTEGER PRIMARY KEY,
+    payload    TEXT NOT NULL,              -- JSON blob
+    created_at INTEGER NOT NULL,           -- unix ts
+    seen_at    INTEGER                     -- NULL = 未處理；非 NULL = drain 時間
+);
+CREATE INDEX idx_event_inbox_unseen ON event_inbox(id) WHERE seen_at IS NULL;
+```
+
+**Payload examples**:
+
+```json
 {"event": "session_start", "cwd": "/path", "model": "sonnet-4.6"}
 {"event": "session_end",   "duration_ms": 3600000}
 {"event": "file_saved",    "path": "src/main.rs"}
 {"event": "git_commit",    "message": "fix: stuff", "files_changed": 7}
 ```
+
+**Two-writer rule（縮窄版）**：
+- Daemon 獨占寫入：`pet_snapshot`、`combat_log`、`game_world` 等 derived/game state tables
+- Hook 可 INSERT：`event_inbox`（append-only；寫入欄位 `id/payload/created_at`）
+- Daemon 可 UPDATE：`event_inbox.seen_at`（與 hook 寫入欄位不重疊）
+- CLI read-only：所有 game state tables
+
+SQLite WAL + `busy_timeout=5000` 足以處理 hook/daemon 併發 INSERT/UPDATE（寫入集不重疊）。
+
+**Retention**: `seen_at IS NOT NULL AND created_at < now - 7 days` 的 row 在 daemon tick 時清理。
+
+**Daemon-down durability**: daemon 沒跑時，hook INSERT 照常成功；event 累積在 inbox table，daemon 重啟後自動 drain。零事件遺失。
+
+**不採 Unix socket 的理由（Phase 2a）**：
+
+| 考量 | socket | D（event_inbox） |
+|------|--------|------------------|
+| Daemon-down 時事件遺失 | 是（需自建 disk buffer fallback） | 否（SQLite 本身就是 buffer） |
+| 失敗域 | 新增 socket lifecycle / EPIPE / stale socket / NFS 路徑 / 跨 user 權限 | 沿用 SQLite（已調校） |
+| 生產除錯 | `strace`, socket inspection | `sqlite3 .codeforge/codeforge.db "SELECT …"` |
+| 測試 | 需 mock socket 或真實 socket | `:memory:` SQLite 確定性測試 |
+| 延遲（實測） | 0.45ms | ≤500ms |
+| Latency-sensitive 事件？ | — | Phase 2a 無 |
+
+**未來升級路徑**：若 Phase 3b+ 出現真正 <50ms 敏感事件（e.g. TUI 互動鍵盤），可**加開**第二通道（socket for realtime、SQLite 仍為 durability layer），不需拆掉 D。
 
 ---
 
@@ -790,7 +843,7 @@ Protocol: newline-delimited JSON
 | Phase | 內容 | 前置 |
 |-------|------|------|
 | **Phase 1** ✅ | Statusline + Pet + Memory CLI | done |
-| **Phase 2a** | Daemon 框架 + IPC socket + tick loop | P1 |
+| **Phase 2a** | Daemon 框架 + tick loop + SQLite event_inbox（Option D） | P1 |
 | **Phase 2b** | MOB 生成 + 自動戰鬥 + Loot + 歸來摘要 + 進展錨點 | P2a |
 | **Phase 2c** | TUI 渲染 + Local Map + Pet 情緒衰減 + 首次里程碑事件 | P2a |
 | **Phase 3a** | World Map + Zone unlock + Zone Mastery + Loot Crafting + 主動 Item | P2b+P2c |
