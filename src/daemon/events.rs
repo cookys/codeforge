@@ -2,12 +2,17 @@
 //!
 //! Phase 2a P3: basic XP awards per event type. Future phases refine
 //! (combat from file_saved, commentary from commit patterns, etc.).
+//!
+//! Phase 2a P8: the same `xp_for_payload` used by dispatch is also the
+//! overlay function used by the CLI live-read path (`pet::live_state`).
+//! Keeping one source of truth avoids read/write XP drift.
 
 use super::ecs::GameWorld;
 use super::inbox::InboxEvent;
 use super::systems;
 
-/// XP awarded per event type. Keep conservative — Phase 2b+ will rebalance.
+/// XP awarded per *named* event type. Keep conservative — Phase 2b+ will
+/// rebalance. For `xp_award` events the XP is taken from the payload.
 pub fn xp_for_event(event_name: &str) -> u32 {
     match event_name {
         "git_commit" => 20,
@@ -18,6 +23,35 @@ pub fn xp_for_event(event_name: &str) -> u32 {
     }
 }
 
+/// Compute XP a single event payload would award.
+///
+/// Two branches:
+/// 1. `xp_award` events carry an explicit `xp` integer field — used by
+///    the legacy CLI migration path (`pet::xp::award` for learn/search/ingest).
+///    Falls back to 0 if `xp` is missing or not a non-negative integer.
+/// 2. All other events map through `xp_for_event`.
+///
+/// Returns 0 on any parse failure (malformed JSON, missing keys, wrong types,
+/// unknown event name). Case-sensitive by design — hooks must use exact names.
+pub fn xp_for_payload(payload: &str) -> u32 {
+    let v: serde_json::Value = match serde_json::from_str(payload) {
+        Ok(v) => v,
+        Err(_) => return 0,
+    };
+    let name = match v.get("event").and_then(|n| n.as_str()) {
+        Some(n) => n,
+        None => return 0,
+    };
+    if name == "xp_award" {
+        return v
+            .get("xp")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0)
+            .min(u32::MAX as u64) as u32;
+    }
+    xp_for_event(name)
+}
+
 /// Dispatch one event. Returns the XP awarded (for logging/testing).
 ///
 /// **Unknown-event behavior**: events whose name doesn't match the
@@ -26,23 +60,22 @@ pub fn xp_for_event(event_name: &str) -> u32 {
 /// rather than vanishing into the void. Match is case-sensitive by
 /// design: hook scripts should use the exact names in `xp_for_event`.
 pub fn dispatch(gw: &mut GameWorld, event: &InboxEvent) -> u32 {
-    let name = parse_event_name(&event.payload).unwrap_or_default();
-    let xp = xp_for_event(&name);
+    let xp = xp_for_payload(&event.payload);
     if xp > 0 {
         systems::apply_xp(gw, xp);
-    } else if !name.is_empty() {
-        // Known event name that didn't match, or unknown event — log once per event.
-        eprintln!(
-            "codeforge daemon: unknown event name `{}` (id={}) — mapped to 0 XP",
-            name, event.id
-        );
-    } else {
-        eprintln!(
-            "codeforge daemon: event id={} has missing or non-string `event` key — ignored",
-            event.id
-        );
+        return xp;
     }
-    xp
+    match parse_event_name(&event.payload) {
+        Some(name) if !name.is_empty() => eprintln!(
+            "codeforge daemon: unknown event `{}` (id={}) — mapped to 0 XP",
+            name, event.id
+        ),
+        _ => eprintln!(
+            "codeforge daemon: event id={} has missing / non-string `event` key — ignored",
+            event.id
+        ),
+    }
+    0
 }
 
 fn parse_event_name(payload: &str) -> Option<String> {
@@ -123,5 +156,46 @@ mod tests {
             0,
             "uppercase EVENT key should not match"
         );
+    }
+
+    #[test]
+    fn xp_award_event_uses_payload_xp() {
+        let mut gw = fresh_world();
+        let awarded = dispatch(
+            &mut gw,
+            &ev(1, r#"{"event":"xp_award","xp":7,"source":"learn"}"#),
+        );
+        assert_eq!(awarded, 7);
+    }
+
+    #[test]
+    fn xp_award_without_xp_field_is_zero() {
+        let mut gw = fresh_world();
+        let awarded = dispatch(&mut gw, &ev(1, r#"{"event":"xp_award","source":"x"}"#));
+        assert_eq!(awarded, 0);
+    }
+
+    #[test]
+    fn xp_for_payload_named_event() {
+        assert_eq!(xp_for_payload(r#"{"event":"git_commit"}"#), 20);
+        assert_eq!(xp_for_payload(r#"{"event":"session_end"}"#), 10);
+        assert_eq!(xp_for_payload(r#"{"event":"file_saved"}"#), 1);
+    }
+
+    #[test]
+    fn xp_for_payload_xp_award() {
+        assert_eq!(
+            xp_for_payload(r#"{"event":"xp_award","xp":12}"#),
+            12
+        );
+        assert_eq!(xp_for_payload(r#"{"event":"xp_award","xp":0}"#), 0);
+    }
+
+    #[test]
+    fn xp_for_payload_handles_garbage() {
+        assert_eq!(xp_for_payload(""), 0);
+        assert_eq!(xp_for_payload("not-json"), 0);
+        assert_eq!(xp_for_payload("[]"), 0);
+        assert_eq!(xp_for_payload(r#"{"event":42}"#), 0);
     }
 }

@@ -57,40 +57,79 @@ pub struct GameWorld {
 
 impl GameWorld {
     /// Build a GameWorld from database state.
-    /// - If Phase 1 `pet` table has row(id=1), hydrate from it.
-    /// - Else seed a default pet (Rust village, level 1, all stats 10).
+    ///
+    /// Load precedence (fixes re-hydration bug — daemon restart must not
+    /// lose tick work):
+    ///   1. `pet_snapshot` (daemon-authored, includes `hp_max`)
+    ///   2. Phase 1 `pet` table (fresh install post-adopt, pre-first-tick)
+    ///   3. Default seed (Rust village, level 1, all stats 10)
     pub fn load_or_init(conn: &Connection) -> Result<Self> {
         let mut world = World::new();
 
-        let loaded = conn
+        // Snapshot = daemon's authoritative view. If present, always win.
+        let from_snapshot = conn
             .query_row(
-                "SELECT village, level, xp, xp_to_next, atk, hp, def, sup, ver
-                 FROM pet WHERE id = 1",
+                "SELECT village, level, hp, hp_max, xp, xp_to_next,
+                        atk, def, sup, ver
+                 FROM pet_snapshot WHERE id = 1",
                 [],
                 |r| {
                     Ok((
-                        r.get::<_, String>(0)?, // village
-                        r.get::<_, i64>(1)? as u32, // level
-                        r.get::<_, i64>(2)? as u32, // xp
-                        r.get::<_, i64>(3)? as u32, // xp_to_next
-                        r.get::<_, i64>(4)? as u32, // atk
-                        r.get::<_, i64>(5)? as u32, // hp
-                        r.get::<_, i64>(6)? as u32, // def
-                        r.get::<_, i64>(7)? as u32, // sup
-                        r.get::<_, i64>(8)? as u32, // ver
+                        r.get::<_, String>(0)?,
+                        r.get::<_, i64>(1)? as u32,
+                        r.get::<_, i64>(2)? as u32,
+                        r.get::<_, i64>(3)? as u32,
+                        r.get::<_, i64>(4)? as u32,
+                        r.get::<_, i64>(5)? as u32,
+                        r.get::<_, i64>(6)? as u32,
+                        r.get::<_, i64>(7)? as u32,
+                        r.get::<_, i64>(8)? as u32,
+                        r.get::<_, i64>(9)? as u32,
                     ))
                 },
             )
             .optional()?;
 
-        let (village, level, xp, xp_to_next, atk, hp, def, sup, ver) = loaded.unwrap_or_else(|| {
-            ("rust".to_string(), 1, 0, 100, 10, 10, 10, 10, 10)
-        });
+        let (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver) =
+            if let Some((village, level, hp, hp_max, xp, xp_to_next, atk, def, sup, ver)) =
+                from_snapshot
+            {
+                (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver)
+            } else {
+                // Phase 1 fallback — no hp_max column, derive from hp.
+                let from_pet = conn
+                    .query_row(
+                        "SELECT village, level, xp, xp_to_next, atk, hp, def, sup, ver
+                         FROM pet WHERE id = 1",
+                        [],
+                        |r| {
+                            Ok((
+                                r.get::<_, String>(0)?,
+                                r.get::<_, i64>(1)? as u32,
+                                r.get::<_, i64>(2)? as u32,
+                                r.get::<_, i64>(3)? as u32,
+                                r.get::<_, i64>(4)? as u32,
+                                r.get::<_, i64>(5)? as u32,
+                                r.get::<_, i64>(6)? as u32,
+                                r.get::<_, i64>(7)? as u32,
+                                r.get::<_, i64>(8)? as u32,
+                            ))
+                        },
+                    )
+                    .optional()?;
+
+                let (village, level, xp, xp_to_next, atk, hp, def, sup, ver) =
+                    from_pet.unwrap_or_else(|| {
+                        ("rust".to_string(), 1, 0, 100, 10, 10, 10, 10, 10)
+                    });
+                let hp_max = hp.max(10);
+                (village, level, xp, xp_to_next, atk, hp, hp_max, def, sup, ver)
+            };
 
         let pet = world.spawn((
             PetIdentity { village },
             PetLevel { level, xp, xp_to_next },
-            PetVitals { hp, hp_max: hp.max(10) },
+            PetVitals { hp, hp_max },
             PetStats { atk, def, sup, ver },
         ));
 
@@ -249,6 +288,39 @@ mod tests {
             .unwrap();
         assert_eq!(level, 5);
         assert_eq!(xp, 123);
+    }
+
+    #[test]
+    fn snapshot_takes_precedence_over_pet_table() {
+        // Re-hydration bug regression test: daemon restart must read its
+        // own authoritative snapshot, not the stale Phase 1 pet row.
+        let conn = fresh_conn();
+        conn.execute(
+            "INSERT INTO pet (id, village, name, level, xp, xp_to_next, atk, hp, def, sup, ver)
+             VALUES (1, 'rust', 'Ferris', 1, 0, 100, 10, 10, 10, 10, 10)",
+            [],
+        )
+        .unwrap();
+        // Daemon has ticked many times — snapshot is far ahead of pet.
+        conn.execute(
+            "INSERT INTO pet_snapshot
+               (id, village, level, hp, hp_max, xp, xp_to_next,
+                atk, def, sup, ver, last_message, updated_at)
+             VALUES (1, 'python', 8, 95, 110, 340, 800,
+                     28, 22, 19, 17, NULL, datetime('now'))",
+            [],
+        )
+        .unwrap();
+
+        let gw = GameWorld::load_or_init(&conn).unwrap();
+        let identity = gw.world.get::<&PetIdentity>(gw.pet).unwrap();
+        assert_eq!(identity.village, "python", "snapshot must win over pet");
+        let level = gw.world.get::<&PetLevel>(gw.pet).unwrap();
+        assert_eq!(level.level, 8);
+        assert_eq!(level.xp, 340);
+        let vitals = gw.world.get::<&PetVitals>(gw.pet).unwrap();
+        assert_eq!(vitals.hp, 95);
+        assert_eq!(vitals.hp_max, 110, "hp_max comes from snapshot, not derived");
     }
 
     #[test]
