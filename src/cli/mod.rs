@@ -88,6 +88,8 @@ pub enum DaemonAction {
     Stop,
     /// 顯示 daemon 狀態（pid / last_tick / pending events）
     Status,
+    /// 安裝 systemd user unit 到 ~/.config/systemd/user/
+    Install,
 }
 
 #[derive(Subcommand)]
@@ -124,6 +126,7 @@ pub fn run(cli: Cli) -> Result<()> {
             DaemonAction::Start => daemon::DaemonCmd::Start,
             DaemonAction::Stop => daemon::DaemonCmd::Stop,
             DaemonAction::Status => daemon::DaemonCmd::Status,
+            DaemonAction::Install => daemon::DaemonCmd::Install,
         }),
     }
 }

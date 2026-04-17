@@ -14,6 +14,7 @@ pub fn run(ctx: &Context, subcmd: DaemonCmd) -> Result<()> {
         DaemonCmd::Start => start(ctx),
         DaemonCmd::Stop => stop(ctx),
         DaemonCmd::Status => status(ctx),
+        DaemonCmd::Install => install(),
     }
 }
 
@@ -21,6 +22,7 @@ pub enum DaemonCmd {
     Start,
     Stop,
     Status,
+    Install,
 }
 
 fn start(ctx: &Context) -> Result<()> {
@@ -145,4 +147,88 @@ fn current_unix_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Write the systemd user unit file to ~/.config/systemd/user/,
+/// run daemon-reload, and print activation instructions.
+fn install() -> Result<()> {
+    let exe = std::env::current_exe().context("無法取得當前執行檔路徑")?;
+    let unit_dir = dirs::config_dir()
+        .ok_or_else(|| anyhow::anyhow!("無法定位 config dir（$XDG_CONFIG_HOME 或 ~/.config）"))?
+        .join("systemd")
+        .join("user");
+    let unit_path = unit_dir.join("codeforge-daemon.service");
+
+    std::fs::create_dir_all(&unit_dir)
+        .with_context(|| format!("建立 {} 失敗", unit_dir.display()))?;
+
+    let content = render_systemd_unit(&exe.display().to_string());
+    std::fs::write(&unit_path, &content)
+        .with_context(|| format!("寫入 {} 失敗", unit_path.display()))?;
+
+    eprintln!("✓ 寫入 systemd user unit：{}", unit_path.display());
+
+    // Reload systemd daemon
+    match std::process::Command::new("systemctl")
+        .args(["--user", "daemon-reload"])
+        .status()
+    {
+        Ok(st) if st.success() => eprintln!("✓ systemctl --user daemon-reload"),
+        Ok(st) => eprintln!("⚠ systemctl daemon-reload 非零退出（{}）", st),
+        Err(e) => eprintln!("⚠ 無法執行 systemctl（非 systemd 系統？）：{e}"),
+    }
+
+    eprintln!();
+    eprintln!("下一步：");
+    eprintln!("  systemctl --user enable --now codeforge-daemon");
+    eprintln!("  systemctl --user status codeforge-daemon");
+    eprintln!("  journalctl --user -u codeforge-daemon -f    # 看 log");
+    Ok(())
+}
+
+pub fn render_systemd_unit(exe_path: &str) -> String {
+    format!(
+        "\
+[Unit]
+Description=CodeForge daemon — tick loop + game state
+Documentation=https://github.com/cookys/codeforge
+After=default.target
+
+[Service]
+Type=simple
+ExecStart={exe_path} daemon start
+Restart=on-failure
+RestartSec=5s
+# Graceful shutdown: SIGTERM → flush current tick → exit
+KillSignal=SIGTERM
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=default.target
+"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn systemd_unit_has_required_sections() {
+        let unit = render_systemd_unit("/usr/local/bin/codeforge");
+        assert!(unit.contains("[Unit]"));
+        assert!(unit.contains("[Service]"));
+        assert!(unit.contains("[Install]"));
+        assert!(unit.contains("ExecStart=/usr/local/bin/codeforge daemon start"));
+        assert!(unit.contains("Restart=on-failure"));
+        assert!(unit.contains("WantedBy=default.target"));
+    }
+
+    #[test]
+    fn systemd_unit_includes_sigterm_handling() {
+        // Spec contract: SIGTERM → flush → exit; timeout to protect against hang
+        let unit = render_systemd_unit("/bin/x");
+        assert!(unit.contains("KillSignal=SIGTERM"));
+        assert!(unit.contains("TimeoutStopSec"));
+    }
 }
