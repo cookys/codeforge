@@ -11,6 +11,7 @@
 //! - ECS World held in memory across ticks; serialized to pet_snapshot each tick
 
 pub mod catchup;
+pub mod combat;
 pub mod ecs;
 pub mod events;
 pub mod inbox;
