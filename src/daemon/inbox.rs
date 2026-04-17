@@ -27,7 +27,14 @@ pub struct InboxEvent {
 }
 
 /// Drain all unseen rows. Returns the processed events (caller dispatches).
-/// After this call, processed rows have seen_at set to now.
+/// After this call, processed rows have `seen_at` set to now.
+///
+/// **Concurrency note (fixed post-review I1)**: the UPDATE uses a
+/// range predicate `id <= max_id AND seen_at IS NULL` rather than a
+/// dynamic `IN (...)` list. This avoids the SQLite parameter limit
+/// (32766) for long-idle catch-ups AND correctly handles the race
+/// where a hook's `emit` INSERT lands between our SELECT and UPDATE —
+/// new rows have id > max_id so they stay unseen, queued for next drain.
 pub fn drain_once(conn: &Connection) -> Result<Vec<InboxEvent>> {
     let mut stmt = conn.prepare(
         "SELECT id, payload, created_at FROM event_inbox
@@ -49,17 +56,12 @@ pub fn drain_once(conn: &Connection) -> Result<Vec<InboxEvent>> {
     }
 
     let now = now_unix_secs() as i64;
-    let placeholders: Vec<String> = (0..rows.len()).map(|i| format!("?{}", i + 2)).collect();
-    let sql = format!(
-        "UPDATE event_inbox SET seen_at = ?1 WHERE id IN ({})",
-        placeholders.join(",")
-    );
-    let mut params: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(now)];
-    for ev in &rows {
-        params.push(Box::new(ev.id));
-    }
-    let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
-    conn.execute(&sql, params_refs.as_slice())?;
+    let max_id = rows.last().map(|r| r.id).unwrap_or(0);
+    conn.execute(
+        "UPDATE event_inbox SET seen_at = ?1
+         WHERE seen_at IS NULL AND id <= ?2",
+        rusqlite::params![now, max_id],
+    )?;
 
     Ok(rows)
 }

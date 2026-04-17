@@ -19,11 +19,28 @@ pub fn xp_for_event(event_name: &str) -> u32 {
 }
 
 /// Dispatch one event. Returns the XP awarded (for logging/testing).
+///
+/// **Unknown-event behavior**: events whose name doesn't match the
+/// known set produce 0 XP — silently. We log a warning to stderr
+/// (systemd journal) so misconfigured hooks get caught in `journalctl`
+/// rather than vanishing into the void. Match is case-sensitive by
+/// design: hook scripts should use the exact names in `xp_for_event`.
 pub fn dispatch(gw: &mut GameWorld, event: &InboxEvent) -> u32 {
     let name = parse_event_name(&event.payload).unwrap_or_default();
     let xp = xp_for_event(&name);
     if xp > 0 {
         systems::apply_xp(gw, xp);
+    } else if !name.is_empty() {
+        // Known event name that didn't match, or unknown event — log once per event.
+        eprintln!(
+            "codeforge daemon: unknown event name `{}` (id={}) — mapped to 0 XP",
+            name, event.id
+        );
+    } else {
+        eprintln!(
+            "codeforge daemon: event id={} has missing or non-string `event` key — ignored",
+            event.id
+        );
     }
     xp
 }
@@ -79,5 +96,32 @@ mod tests {
         let mut gw = fresh_world();
         let awarded = dispatch(&mut gw, &ev(1, r#"{"foo":"bar"}"#));
         assert_eq!(awarded, 0);
+    }
+
+    #[test]
+    fn wrong_case_event_name_produces_zero_xp() {
+        // Locks the "case-sensitive by design" contract. If this behavior
+        // ever changes (e.g., to_lowercase), update the test and doc.
+        let mut gw = fresh_world();
+        assert_eq!(
+            dispatch(&mut gw, &ev(1, r#"{"event":"Git_Commit"}"#)),
+            0,
+            "wrong-case event name should not award XP"
+        );
+        assert_eq!(
+            dispatch(&mut gw, &ev(2, r#"{"event":"GIT_COMMIT"}"#)),
+            0
+        );
+    }
+
+    #[test]
+    fn wrong_event_key_case_produces_zero_xp() {
+        // parse_event_name hardcodes lowercase "event"
+        let mut gw = fresh_world();
+        assert_eq!(
+            dispatch(&mut gw, &ev(1, r#"{"EVENT":"git_commit"}"#)),
+            0,
+            "uppercase EVENT key should not match"
+        );
     }
 }
