@@ -133,6 +133,10 @@ CREATE TABLE IF NOT EXISTS pet_snapshot (
     mood            INTEGER NOT NULL DEFAULT 60
                       CHECK (mood BETWEEN 0 AND 100),
     mood_tick_stamp INTEGER NOT NULL DEFAULT 0,
+    -- Phase 3b: Strategy（aggressive / defensive / explorer / scholar）
+    -- 預設 explorer：Phase 2b 既有戰鬥行為的 1.0x/1.0x 中性設定，
+    -- 讓既有 DB 升級後的戰鬥結果不變。
+    strategy        TEXT NOT NULL DEFAULT 'explorer',
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -265,3 +269,13 @@ CREATE TABLE IF NOT EXISTS first_events (
 );
 
 INSERT OR IGNORE INTO schema_version (version) VALUES (5);
+
+-- ═══════════════════════════════════════════════════════════════
+-- Phase 3b — Strategy Mode (version 6)
+-- pet_snapshot.strategy added inline in the CREATE TABLE above for
+-- greenfield installs. Upgrade path for existing DBs is handled in
+-- src/db/mod.rs::migrations::run (SQLite has no ALTER TABLE ADD
+-- COLUMN IF NOT EXISTS — same pattern as mood/origin_path).
+-- ═══════════════════════════════════════════════════════════════
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (6);

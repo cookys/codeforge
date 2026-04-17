@@ -16,6 +16,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::daemon::events::xp_for_payload;
+use crate::daemon::strategy::{Strategy, DEFAULT_STRATEGY};
 use crate::pet::state::PetState;
 use crate::pet::village::VILLAGES;
 
@@ -40,6 +41,10 @@ pub struct LiveState {
     /// degrade gracefully. P3 (statusline + TUI render) is first consumer.
     #[allow(dead_code)]
     pub mood: Option<u32>,
+    /// Phase 3b: the active play strategy. `None` only on Phase 1 fallback
+    /// (no pet_snapshot row yet) — consumers should treat None as
+    /// `DEFAULT_STRATEGY` when rendering.
+    pub strategy: Option<Strategy>,
 }
 
 impl LiveState {
@@ -68,7 +73,7 @@ impl LiveState {
     /// infinite loop on `add_xp`; guarded at that layer now, but making the
     /// absence explicit is cleaner for the two current call sites.)
     pub fn load(conn: &Connection) -> Result<Option<Self>> {
-        let Some((mut state, last_message, mood)) = load_base(conn)? else {
+        let Some((mut state, last_message, mood, strategy)) = load_base(conn)? else {
             return Ok(None);
         };
         let (pending_events, pending_xp) = sum_unseen_xp(conn)?;
@@ -81,30 +86,32 @@ impl LiveState {
             pending_xp,
             last_message,
             mood,
+            strategy,
         }))
     }
 }
 
 /// What `load_base` / `load_from_snapshot` return before overlay: the core
-/// pet state plus two snapshot-only extras (`last_message`, `mood`). Named
-/// out to keep the type signature readable per clippy::type_complexity.
-type SnapshotBundle = (PetState, Option<String>, Option<u32>);
+/// pet state plus three snapshot-only extras (`last_message`, `mood`,
+/// `strategy`). Named out to keep the type signature readable per
+/// clippy::type_complexity.
+type SnapshotBundle = (PetState, Option<String>, Option<u32>, Option<Strategy>);
 
 /// Prefer daemon snapshot, fall back to Phase 1 pet table.
-/// Returns (state, last_message, mood) — last_message and mood only come
-/// from the snapshot; Phase 1 fallback has neither.
+/// Returns (state, last_message, mood, strategy) — last_message / mood /
+/// strategy only come from the snapshot; Phase 1 fallback has neither.
 fn load_base(conn: &Connection) -> Result<Option<SnapshotBundle>> {
     if let Some(tuple) = load_from_snapshot(conn)? {
         return Ok(Some(tuple));
     }
-    Ok(load_from_pet(conn)?.map(|p| (p, None, None)))
+    Ok(load_from_pet(conn)?.map(|p| (p, None, None, None)))
 }
 
 fn load_from_snapshot(conn: &Connection) -> Result<Option<SnapshotBundle>> {
     let row = conn
         .query_row(
             "SELECT village, level, hp, xp, xp_to_next, atk, def, sup, ver,
-                    last_message, mood
+                    last_message, mood, strategy
              FROM pet_snapshot WHERE id = 1",
             [],
             |r| {
@@ -120,12 +127,26 @@ fn load_from_snapshot(conn: &Connection) -> Result<Option<SnapshotBundle>> {
                     r.get::<_, u32>(8)?,
                     r.get::<_, Option<String>>(9)?,
                     r.get::<_, u32>(10)?,
+                    r.get::<_, String>(11)?,
                 ))
             },
         )
         .optional()?;
     Ok(row.map(
-        |(village, level, hp, xp, xp_to_next, atk, def, sup, ver, last_message, mood)| {
+        |(
+            village,
+            level,
+            hp,
+            xp,
+            xp_to_next,
+            atk,
+            def,
+            sup,
+            ver,
+            last_message,
+            mood,
+            strategy_str,
+        )| {
             let name = VILLAGES
                 .iter()
                 .find(|v| v.id == village)
@@ -143,7 +164,12 @@ fn load_from_snapshot(conn: &Connection) -> Result<Option<SnapshotBundle>> {
                 sup,
                 ver,
             };
-            (state, last_message, Some(mood))
+            // Unknown values fall back to the default rather than being
+            // elevated to None — we still *have* a strategy, it's just the
+            // safe one the daemon would also pick on load.
+            let strategy =
+                Strategy::from_str(&strategy_str).or(Some(DEFAULT_STRATEGY));
+            (state, last_message, Some(mood), strategy)
         },
     ))
 }

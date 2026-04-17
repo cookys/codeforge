@@ -74,6 +74,7 @@ pub mod migrations {
         conn.execute_batch(include_str!("schema.sql"))?;
         upgrade_mobs_origin_path(conn)?;
         upgrade_pet_snapshot_mood(conn)?;
+        upgrade_pet_snapshot_strategy(conn)?;
         Ok(())
     }
 
@@ -107,6 +108,19 @@ pub mod migrations {
         if !column_exists(conn, "pet_snapshot", "mood_tick_stamp")? {
             conn.execute(
                 "ALTER TABLE pet_snapshot ADD COLUMN mood_tick_stamp INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Phase 3b upgrade: existing DBs lack `pet_snapshot.strategy`. Greenfield
+    /// installs already have it via CREATE TABLE. Default 'explorer' keeps
+    /// prior combat behaviour (1.0x/1.0x, no MOB priority bias).
+    fn upgrade_pet_snapshot_strategy(conn: &Connection) -> Result<()> {
+        if !column_exists(conn, "pet_snapshot", "strategy")? {
+            conn.execute(
+                "ALTER TABLE pet_snapshot ADD COLUMN strategy TEXT NOT NULL DEFAULT 'explorer'",
                 [],
             )?;
         }
@@ -673,6 +687,131 @@ mod tests {
         assert_eq!(ts, 0);
 
         // Second run stays idempotent
+        migrations::run(&conn).unwrap();
+    }
+
+    // ─── Phase 3b migration tests ─────────────────────────────────
+
+    #[test]
+    fn phase3b_version_seeded() {
+        let conn = open_migrated_memory_db();
+        let v6: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=6",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v6, 6);
+    }
+
+    #[test]
+    fn phase3b_strategy_column_on_fresh_install() {
+        let conn = open_migrated_memory_db();
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(pet_snapshot)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.contains(&"strategy".to_string()));
+    }
+
+    #[test]
+    fn phase3b_strategy_default_explorer_on_insert() {
+        let conn = open_migrated_memory_db();
+        conn.execute(
+            "INSERT INTO pet_snapshot
+                 (id, village, level, hp, hp_max, xp, xp_to_next,
+                  atk, def, sup, ver)
+             VALUES (1, 'rust', 1, 10, 10, 0, 100, 10, 10, 10, 10)",
+            [],
+        )
+        .unwrap();
+        let strategy: String = conn
+            .query_row(
+                "SELECT strategy FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(strategy, "explorer");
+    }
+
+    #[test]
+    fn phase3b_upgrade_path_adds_strategy_column_to_existing_snapshot() {
+        // Simulate an existing Phase 3d DB: pet_snapshot with mood columns
+        // but no strategy. Migration must add the column defaulting to
+        // 'explorer' for preserved rows.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER NOT NULL, applied_at TEXT);
+             CREATE UNIQUE INDEX idx_schema_version_version ON schema_version(version);
+             INSERT INTO schema_version (version, applied_at) VALUES (5, '2026-04-17');
+
+             -- Phase 3d-era pet_snapshot (with mood, no strategy)
+             CREATE TABLE pet_snapshot (
+                 id INTEGER PRIMARY KEY CHECK (id = 1),
+                 village TEXT NOT NULL,
+                 level INTEGER NOT NULL,
+                 hp INTEGER NOT NULL,
+                 hp_max INTEGER NOT NULL,
+                 xp INTEGER NOT NULL,
+                 xp_to_next INTEGER NOT NULL,
+                 atk INTEGER NOT NULL,
+                 def INTEGER NOT NULL,
+                 sup INTEGER NOT NULL,
+                 ver INTEGER NOT NULL,
+                 last_message TEXT,
+                 mood INTEGER NOT NULL DEFAULT 60,
+                 mood_tick_stamp INTEGER NOT NULL DEFAULT 0,
+                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );
+             INSERT INTO pet_snapshot
+                 (id, village, level, hp, hp_max, xp, xp_to_next,
+                  atk, def, sup, ver, mood)
+             VALUES (1, 'python', 5, 50, 50, 200, 500,
+                     18, 14, 12, 16, 45);",
+        )
+        .unwrap();
+
+        migrations::run(&conn).unwrap();
+
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(pet_snapshot)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(cols.contains(&"strategy".to_string()));
+
+        // Preserved row gets default 'explorer', prior mood intact.
+        let (village, mood, strategy): (String, i64, String) = conn
+            .query_row(
+                "SELECT village, mood, strategy FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(village, "python");
+        assert_eq!(mood, 45);
+        assert_eq!(strategy, "explorer");
+
+        // schema_version must advance to 6 — the insertion happens in
+        // schema.sql's INSERT OR IGNORE path inside execute_batch, but
+        // assert it here so future refactors don't regress silently.
+        let v6: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=6",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v6, 6);
+
+        // Second run stays idempotent.
         migrations::run(&conn).unwrap();
     }
 

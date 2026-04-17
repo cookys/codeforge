@@ -2,6 +2,7 @@
 /// info 欄 pad 到 panel_w，後接 2 空格，再寫 art（已 pad 到 ART_W）
 /// UX Pro palette: 三層亮度 (Tier1=222-231 身份, Tier2=71-179 狀態, Tier3=236-246 背景)
 use anyhow::Result;
+use crate::daemon::strategy::{Strategy, DEFAULT_STRATEGY};
 use crate::db;
 use crate::pet::ability::next_unlock;
 use crate::pet::live_state::LiveState;
@@ -73,7 +74,11 @@ pub fn run(ctx: &db::Context) -> Result<()> {
                 .iter()
                 .find(|v| v.id == live.state.village)
                 .unwrap_or(&VILLAGES[2]);
-            render_full(&mut out, &data, &live.state, village, width)?;
+            // Phase 3b: current strategy from snapshot (falls back to
+            // DEFAULT_STRATEGY when the snapshot predates v6 — wait-for-tick
+            // window is one daemon cycle).
+            let strategy = live.strategy.unwrap_or(DEFAULT_STRATEGY);
+            render_full(&mut out, &data, &live.state, village, strategy, width)?;
         }
         None => render_no_pet(&mut out, &data, width)?,
     }
@@ -471,6 +476,7 @@ fn render_full<W: Write>(
     data: &StatusInput,
     pet: &PetState,
     village: &crate::pet::village::Village,
+    strategy: Strategy,
     width: usize,
 ) -> Result<()> {
     const ART_W: usize = 10;
@@ -732,11 +738,16 @@ fn render_full<W: Write>(
 
         // ── Row 4: stats ─────────────────────────────────────────────────────
 
-        let r4_content = format!("{} {}  {} {}  {} {}  {} {}",
+        // Phase 3b: append a compact `strat:<tag>` segment after the stat
+        // block so the user can see at a glance which multiplier set is
+        // active. Short tag (3 chars) keeps the row tight on 100-col panels.
+        let r4_content = format!(
+            "{} {}  {} {}  {} {}  {} {}  {} {}",
             tc(&*t!("stat.atk"), STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
             tc(&*t!("stat.def"), STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
             tc(&*t!("stat.sup"), STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
             tc(&*t!("stat.ver"), STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
+            tc("strat:", STAT_LBL), tc(strategy.short_tag(), STAT_VAL),
         );
         let row4_info = box_mid(&r4_content, "│ ", "│");
 
