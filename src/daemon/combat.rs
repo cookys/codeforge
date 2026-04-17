@@ -113,10 +113,15 @@ pub fn hit_chance(pet_atk: u32, pet_ver: u32, mob_def: u32, difficulty: u32) -> 
 /// seconds — multiple ticks in the same second would share a seed and
 /// produce correlated outcomes, masking bugs in tests and causing
 /// surprising streaks in production).
+///
+/// `now` is wall-clock unix seconds and is written to `mobs.defeated_at`
+/// so future analytics (survival time, kill-rate-per-hour) can treat the
+/// column as a real timestamp.
 pub fn run_tick(
     conn: &Connection,
     world: &mut GameWorld,
     rng_salt: u64,
+    now: i64,
 ) -> Result<CombatSummary> {
     let zone_id = {
         let id = world.world().get::<&PetIdentity>(world.pet())?;
@@ -146,11 +151,7 @@ pub fn run_tick(
             let damage = ((pet_atk as f64 * mult).ceil() as u32).max(1);
             let new_hp = mob.hp.saturating_sub(damage);
             if new_hp == 0 {
-                // `defeated_at` gets its real unix-seconds timestamp in the
-                // caller's combat_log write — keep `mobs.defeated_at` as
-                // a non-null monotonic marker (rng_salt = tick_count is
-                // monotonic, non-zero)
-                mark_defeated(conn, mob.id, rng_salt as i64)?;
+                mark_defeated(conn, mob.id, now)?;
                 defeated = true;
             } else {
                 update_mob_hp(conn, mob.id, new_hp)?;
@@ -345,7 +346,7 @@ mod tests {
     #[test]
     fn empty_zone_produces_empty_summary() {
         let (conn, mut world) = fresh();
-        let s = run_tick(&conn, &mut world, 100).unwrap();
+        let s = run_tick(&conn, &mut world, 100, 9_000).unwrap();
         assert_eq!(s.attacks, 0);
         assert_eq!(s.defeats.len(), 0);
     }
@@ -360,7 +361,7 @@ mod tests {
         // Run several ticks — one of them will land a hit with 95% hit rate
         let mut defeated = false;
         for t in 100..120 {
-            let s = run_tick(&conn, &mut world, t).unwrap();
+            let s = run_tick(&conn, &mut world, t, 9_000).unwrap();
             if !s.defeats.is_empty() {
                 defeated = true;
                 break;
@@ -380,7 +381,7 @@ mod tests {
         )
         .unwrap();
 
-        let s = run_tick(&conn, &mut world, 200).unwrap();
+        let s = run_tick(&conn, &mut world, 200, 9_000).unwrap();
         assert_eq!(s.attacks, 0);
     }
 
@@ -391,7 +392,7 @@ mod tests {
         spawn_mob(&conn, "rust", MobKind::Boss, "big", 1000, 100, 10);
 
         let hp_before = world.world().get::<&PetVitals>(world.pet()).unwrap().hp;
-        let s = run_tick(&conn, &mut world, 500).unwrap();
+        let s = run_tick(&conn, &mut world, 500, 9_000).unwrap();
         let hp_after = world.world().get::<&PetVitals>(world.pet()).unwrap().hp;
 
         assert!(s.pet_damage_taken > 0);
@@ -406,7 +407,7 @@ mod tests {
             spawn_mob(&conn, "rust", MobKind::Boss, &format!("b{i}"), 1000, 200, 10);
         }
         for t in 100..200 {
-            run_tick(&conn, &mut world, t).unwrap();
+            run_tick(&conn, &mut world, t, 9_000).unwrap();
         }
         let hp = world.world().get::<&PetVitals>(world.pet()).unwrap().hp;
         // Must be a valid u32, not underflowed to huge number
@@ -419,7 +420,7 @@ mod tests {
         for i in 0..100 {
             spawn_mob(&conn, "rust", MobKind::Zombie, &format!("z{i}"), 1, 1, 1);
         }
-        let s = run_tick(&conn, &mut world, 100).unwrap();
+        let s = run_tick(&conn, &mut world, 100, 9_000).unwrap();
         assert!(s.attacks <= MAX_ATTACKS_PER_TICK);
     }
 
@@ -430,7 +431,7 @@ mod tests {
         for i in 0..3 {
             spawn_mob(&conn, "python", MobKind::Zombie, &format!("py-z{i}"), 1, 1, 1);
         }
-        let s = run_tick(&conn, &mut world, 100).unwrap();
+        let s = run_tick(&conn, &mut world, 100, 9_000).unwrap();
         assert_eq!(s.attacks, 0, "pet should not attack other zones' mobs");
     }
 
@@ -440,7 +441,7 @@ mod tests {
         let id = spawn_mob(&conn, "rust", MobKind::Ghost, "weak", 1, 1, 1);
 
         for t in 100..130 {
-            let s = run_tick(&conn, &mut world, t).unwrap();
+            let s = run_tick(&conn, &mut world, t, 9_000).unwrap();
             if !s.defeats.is_empty() {
                 let hp: i64 = conn
                     .query_row("SELECT hp FROM mobs WHERE id = ?1", rusqlite::params![id], |r| {

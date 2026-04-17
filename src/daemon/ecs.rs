@@ -42,10 +42,19 @@ pub struct PetStats {
     pub ver: u32,
 }
 
+/// Pet speech bubble. Stamped with the tick that authored it so
+/// `serialize_to_db` can NULL it in `pet_snapshot` once it's past the TTL —
+/// otherwise a single early kill would pin the statusline message forever.
 #[derive(Debug, Clone)]
 pub struct LastMessage {
     pub text: String,
+    pub tick_stamp: u64,
 }
+
+/// How many ticks a `LastMessage` survives in `pet_snapshot` before being
+/// cleared (5 ticks ≈ 5 min at the default 60s interval — enough for the
+/// user to see the kill narration a few times, not so long it goes stale).
+pub const LAST_MESSAGE_TTL_TICKS: u64 = 5;
 
 // ─── GameWorld wrapper ──────────────────────────────────────────────
 
@@ -141,16 +150,23 @@ impl GameWorld {
     pub fn pet(&self) -> Entity { self.pet }
 
     /// Serialize current pet state to `pet_snapshot` (single-row upsert).
-    pub fn serialize_to_db(&self, conn: &Connection) -> Result<()> {
+    ///
+    /// `current_tick` is used to expire stale `LastMessage` components: a
+    /// message older than `LAST_MESSAGE_TTL_TICKS` writes NULL to
+    /// `pet_snapshot.last_message` even if the component is still in the
+    /// ECS world. This prevents a single early kill from pinning the
+    /// statusline speech bubble for the lifetime of the daemon.
+    pub fn serialize_to_db(&self, conn: &Connection, current_tick: u64) -> Result<()> {
         let identity = self.world.get::<&PetIdentity>(self.pet)?;
         let level = self.world.get::<&PetLevel>(self.pet)?;
         let vitals = self.world.get::<&PetVitals>(self.pet)?;
         let stats = self.world.get::<&PetStats>(self.pet)?;
-        let last_msg = self
-            .world
-            .get::<&LastMessage>(self.pet)
-            .ok()
-            .map(|m| m.text.clone());
+        let last_msg = match self.world.get::<&LastMessage>(self.pet).ok() {
+            Some(m) if current_tick.saturating_sub(m.tick_stamp) < LAST_MESSAGE_TTL_TICKS => {
+                Some(m.text.clone())
+            }
+            _ => None,
+        };
 
         let now_iso = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
 
@@ -247,7 +263,7 @@ mod tests {
     fn serialize_writes_pet_snapshot() {
         let conn = fresh_conn();
         let gw = GameWorld::load_or_init(&conn).unwrap();
-        gw.serialize_to_db(&conn).unwrap();
+        gw.serialize_to_db(&conn, 1).unwrap();
 
         let (village, level, hp_max): (String, i64, i64) = conn
             .query_row(
@@ -265,7 +281,7 @@ mod tests {
     fn serialize_is_upsert() {
         let conn = fresh_conn();
         let gw = GameWorld::load_or_init(&conn).unwrap();
-        gw.serialize_to_db(&conn).unwrap();
+        gw.serialize_to_db(&conn, 1).unwrap();
 
         // Mutate and re-serialize — should update single row, not insert
         {
@@ -273,7 +289,7 @@ mod tests {
             level.level = 5;
             level.xp = 123;
         }
-        gw.serialize_to_db(&conn).unwrap();
+        gw.serialize_to_db(&conn, 1).unwrap();
 
         let rows: i64 = conn
             .query_row("SELECT COUNT(*) FROM pet_snapshot", [], |r| r.get(0))
@@ -328,9 +344,9 @@ mod tests {
         let conn = fresh_conn();
         let mut gw = GameWorld::load_or_init(&conn).unwrap();
         gw.world
-            .insert_one(gw.pet, LastMessage { text: "又是 TODO？".to_string() })
+            .insert_one(gw.pet, LastMessage { text: "又是 TODO？".to_string(), tick_stamp: 1 })
             .unwrap();
-        gw.serialize_to_db(&conn).unwrap();
+        gw.serialize_to_db(&conn, 1).unwrap();
 
         let msg: Option<String> = conn
             .query_row(
@@ -340,5 +356,35 @@ mod tests {
             )
             .unwrap();
         assert_eq!(msg, Some("又是 TODO？".to_string()));
+    }
+
+    #[test]
+    fn last_message_expires_after_ttl() {
+        // Regression: a defeat on an early tick used to pin the statusline
+        // speech bubble forever because serialize_to_db always wrote the
+        // current LastMessage. Now the TTL nulls it after N ticks.
+        let conn = fresh_conn();
+        let mut gw = GameWorld::load_or_init(&conn).unwrap();
+        gw.world
+            .insert_one(
+                gw.pet,
+                LastMessage { text: "old kill".to_string(), tick_stamp: 10 },
+            )
+            .unwrap();
+
+        // Within TTL: message writes through.
+        gw.serialize_to_db(&conn, 10 + LAST_MESSAGE_TTL_TICKS - 1).unwrap();
+        let msg: Option<String> = conn
+            .query_row("SELECT last_message FROM pet_snapshot WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(msg, Some("old kill".to_string()));
+
+        // Past TTL: message is nulled out even though the ECS component
+        // is still present (cheap read — no mutation needed every tick).
+        gw.serialize_to_db(&conn, 10 + LAST_MESSAGE_TTL_TICKS).unwrap();
+        let msg: Option<String> = conn
+            .query_row("SELECT last_message FROM pet_snapshot WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(msg, None);
     }
 }

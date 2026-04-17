@@ -40,8 +40,10 @@ pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
     // 4. Phase 2b: combat — attack alive mobs, counter-damage.
     // RNG salt uses `tick_count_next` (monotonic) instead of wall-clock seconds
     // so successive in-test ticks within the same second don't share a seed.
+    // `now` flows through to mobs.defeated_at as real unix seconds so it stays
+    // comparable with mobs.spawned_at for survival-time analytics.
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
-    let summary = combat::run_tick(&tx, world, tick_count_next)?;
+    let summary = combat::run_tick(&tx, world, tick_count_next, now)?;
 
     // 5. Phase 2b: loot for defeats — XP + inventory + combat_log
     if !summary.defeats.is_empty() {
@@ -49,14 +51,15 @@ pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
         if xp > 0 {
             systems::apply_xp(world, xp);
         }
-        set_last_message_from_defeats(world, &summary.defeats, xp);
+        set_last_message_from_defeats(world, &summary.defeats, xp, tick_count_next);
     }
 
     // 6. Level-up check AFTER combat XP is applied
     systems::check_levelup(world);
 
-    // 7. Serialize to pet_snapshot (single-row upsert, in tx)
-    world.serialize_to_db(&tx)?;
+    // 7. Serialize to pet_snapshot (single-row upsert, in tx).
+    // Pass current tick so serialize_to_db can apply the LastMessage TTL.
+    world.serialize_to_db(&tx, tick_count_next)?;
 
     // 8. Advance the anchor
     tx.execute(
@@ -72,19 +75,26 @@ pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
 
 /// Returns (pet's zone_id, next tick_count). Next = current + 1 so the
 /// scanner fires on tick 1 of a fresh install (read 0, scan on 1).
+///
+/// Only `QueryReturnedNoRows` (fresh install, `last_tick_at` not seeded yet)
+/// collapses to `1`. Other errors — BUSY, IO, corruption — propagate so a
+/// transient SQLite failure never silently collapses successive ticks to
+/// the same rng_salt (which would produce identical combat outcomes).
 fn read_tick_context(conn: &Connection, world: &GameWorld) -> Result<(String, u64)> {
     let zone_id = world
         .world()
         .get::<&PetIdentity>(world.pet())?
         .village
         .clone();
-    let next_tick: u64 = conn
-        .query_row(
-            "SELECT tick_count + 1 FROM last_tick_at WHERE id = 1",
-            [],
-            |r| r.get::<_, i64>(0),
-        )
-        .unwrap_or(1) as u64;
+    let next_tick: u64 = match conn.query_row(
+        "SELECT tick_count + 1 FROM last_tick_at WHERE id = 1",
+        [],
+        |r| r.get::<_, i64>(0),
+    ) {
+        Ok(v) => v as u64,
+        Err(rusqlite::Error::QueryReturnedNoRows) => 1,
+        Err(e) => return Err(e.into()),
+    };
     Ok((zone_id, next_tick))
 }
 
@@ -94,6 +104,7 @@ fn set_last_message_from_defeats(
     gw: &mut GameWorld,
     defeats: &[combat::DefeatedMob],
     xp: u32,
+    tick_stamp: u64,
 ) {
     let Some(hero) = defeats.iter().max_by_key(|d| d.hp_max) else {
         return;
@@ -111,7 +122,7 @@ fn set_last_message_from_defeats(
         )
     };
     let pet = gw.pet();
-    let _ = gw.world_mut().insert_one(pet, LastMessage { text });
+    let _ = gw.world_mut().insert_one(pet, LastMessage { text, tick_stamp });
 }
 
 fn truncate_name(s: &str, n: usize) -> String {
