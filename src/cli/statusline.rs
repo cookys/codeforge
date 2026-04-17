@@ -12,7 +12,7 @@ use std::io::{self, Write};
 use rust_i18n::t;
 
 pub fn run(ctx: &db::Context) -> Result<()> {
-    let data = read_status_input();
+    let mut data = read_status_input();
     let conn = ctx.open_db()?;
     let has_pet = LiveState::exists(&conn).unwrap_or(false);
 
@@ -28,6 +28,12 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let loaded = if has_pet { LiveState::load(&conn).ok().flatten() } else { None };
     match loaded {
         Some(live) => {
+            // P6: prefer stdin "message" (explicit caller intent); fall back
+            // to daemon-authored last_message so combat narration surfaces
+            // without requiring every caller to inject JSON.
+            if data.message.is_none() {
+                data.message = live.last_message.clone();
+            }
             let village = VILLAGES
                 .iter()
                 .find(|v| v.id == live.state.village)

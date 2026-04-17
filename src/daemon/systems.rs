@@ -87,11 +87,11 @@ pub fn check_levelup(gw: &mut GameWorld) {
 /// Write a speech bubble text. Phase 3b will replace with Haiku commentary.
 /// P2a: available but not yet wired into tick pipeline.
 #[allow(dead_code)]
-pub fn set_message(gw: &mut GameWorld, text: impl Into<String>) {
+pub fn set_message(gw: &mut GameWorld, text: impl Into<String>, tick_stamp: u64) {
     let pet = gw.pet();
     let text = text.into();
     // Insert-or-replace via hecs — insert_one on existing replaces.
-    let _ = gw.world_mut().insert_one(pet, LastMessage { text });
+    let _ = gw.world_mut().insert_one(pet, LastMessage { text, tick_stamp });
 }
 
 #[cfg(test)]
@@ -185,17 +185,19 @@ mod tests {
     #[test]
     fn set_message_records_text() {
         let mut gw = fresh_world();
-        set_message(&mut gw, "hi");
+        set_message(&mut gw, "hi", 42);
         let m = gw.world().get::<&LastMessage>(gw.pet()).unwrap();
         assert_eq!(m.text, "hi");
+        assert_eq!(m.tick_stamp, 42);
     }
 
     #[test]
     fn set_message_replaces_previous() {
         let mut gw = fresh_world();
-        set_message(&mut gw, "first");
-        set_message(&mut gw, "second");
+        set_message(&mut gw, "first", 10);
+        set_message(&mut gw, "second", 11);
         let m = gw.world().get::<&LastMessage>(gw.pet()).unwrap();
         assert_eq!(m.text, "second");
+        assert_eq!(m.tick_stamp, 11);
     }
 }

@@ -11,10 +11,14 @@
 //! - ECS World held in memory across ticks; serialized to pet_snapshot each tick
 
 pub mod catchup;
+pub mod combat;
 pub mod ecs;
 pub mod events;
 pub mod inbox;
 pub mod lifecycle;
+pub mod loot;
+pub mod mob;
+pub mod mob_scanner;
 pub mod systems;
 pub mod tick;
 
@@ -71,7 +75,9 @@ async fn startup_catchup(conn: &mut Connection, world: &mut ecs::GameWorld) -> R
         None => {
             seed_last_tick_at(conn, now)?;
             // Fresh install: still do one serialization so pet_snapshot exists
-            world.serialize_to_db(conn)?;
+            // Fresh install: no LastMessage exists yet, so the TTL check is
+            // moot — pass tick=0 as a placeholder.
+            world.serialize_to_db(conn, 0)?;
             return Ok(());
         }
     };

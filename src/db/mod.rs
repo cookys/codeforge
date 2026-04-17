@@ -112,6 +112,97 @@ mod tests {
     }
 
     #[test]
+    fn phase2b_tables_created() {
+        let conn = open_migrated_memory_db();
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
+             AND name IN ('mobs','loot_inventory')",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn phase2b_version_seeded() {
+        let conn = open_migrated_memory_db();
+        let v3: i64 = conn.query_row(
+            "SELECT version FROM schema_version WHERE version=3",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(v3, 3);
+    }
+
+    #[test]
+    fn mobs_alive_partial_index_exists() {
+        let conn = open_migrated_memory_db();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type='index' AND name='idx_mobs_alive'",
+            [],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn loot_dedupe_unique_index_enforces_aggregation() {
+        let conn = open_migrated_memory_db();
+        conn.execute(
+            "INSERT INTO loot_inventory (kind, name, quantity, first_acquired_at, last_acquired_at)
+             VALUES ('item', 'Rare Item', 1, 1000, 1000)",
+            [],
+        ).unwrap();
+        // Same (kind, name) must collide; caller is expected to UPSERT
+        let err = conn.execute(
+            "INSERT INTO loot_inventory (kind, name, quantity, first_acquired_at, last_acquired_at)
+             VALUES ('item', 'Rare Item', 1, 2000, 2000)",
+            [],
+        ).unwrap_err();
+        assert!(err.to_string().to_lowercase().contains("unique"), "expected UNIQUE constraint, got: {err}");
+    }
+
+    #[test]
+    fn mobs_unique_alive_index_blocks_duplicate_spawns() {
+        let conn = open_migrated_memory_db();
+        conn.execute(
+            "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
+             VALUES ('rust', 'boss', 'src/auth.rs', 100, 100, 20, 15, 1000)",
+            [],
+        ).unwrap();
+        // Same (zone, kind, name) while still alive → reject (scanner must UPSERT)
+        let err = conn.execute(
+            "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
+             VALUES ('rust', 'boss', 'src/auth.rs', 100, 100, 20, 15, 2000)",
+            [],
+        ).unwrap_err();
+        assert!(err.to_string().to_lowercase().contains("unique"));
+
+        // But once defeated, a new instance may re-spawn (the partial index excludes it)
+        conn.execute(
+            "UPDATE mobs SET defeated_at = 3000 WHERE id = 1",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
+             VALUES ('rust', 'boss', 'src/auth.rs', 100, 100, 20, 15, 4000)",
+            [],
+        ).unwrap();
+    }
+
+    #[test]
+    fn loot_quantity_must_be_positive() {
+        let conn = open_migrated_memory_db();
+        let err = conn.execute(
+            "INSERT INTO loot_inventory (kind, name, quantity, first_acquired_at, last_acquired_at)
+             VALUES ('item', 'Broken', 0, 1000, 1000)",
+            [],
+        ).unwrap_err();
+        assert!(err.to_string().to_lowercase().contains("check"));
+    }
+
+    #[test]
     fn event_inbox_unseen_index_exists() {
         let conn = open_migrated_memory_db();
         let n: i64 = conn.query_row(
