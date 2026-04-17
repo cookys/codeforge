@@ -3,11 +3,13 @@ use clap::{Parser, Subcommand};
 
 mod adopt;
 mod commentary;
+mod craft;
 mod daemon;
 mod dream;
 mod emit;
 mod ingest;
 mod init;
+mod inventory;
 mod learn;
 mod pet;
 mod search;
@@ -15,6 +17,7 @@ mod snapshot;
 mod statusline;
 mod strategy;
 mod tui;
+mod use_item;
 mod world;
 
 #[derive(Parser)]
@@ -107,6 +110,18 @@ pub enum Commands {
         #[arg(long)]
         days: Option<i64>,
     },
+    /// 顯示 Inventory + 生效中 effects + 可用配方
+    Inventory,
+    /// 合成 item（`codeforge craft` 無參數會列出配方）
+    Craft {
+        /// 配方 / 產品名（大小寫不敏感；包含空白請用引號）
+        name: Option<String>,
+    },
+    /// 使用 item 觸發主動效果（spec §3.5/§3.7）
+    Use {
+        /// Item 名稱（大小寫不敏感）
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -186,5 +201,8 @@ pub fn run(cli: Cli) -> Result<()> {
         }),
         Commands::World { refresh } => world::run(&ctx, refresh),
         Commands::Snapshot { days } => snapshot::run(&ctx, days),
+        Commands::Inventory => inventory::run(&ctx),
+        Commands::Craft { name } => craft::run(&ctx, name),
+        Commands::Use { name } => use_item::run(&ctx, name),
     }
 }
