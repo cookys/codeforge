@@ -39,6 +39,8 @@
 | Multi-instance guard（兩個 daemon 進程不互踩） | pidfile + SQLite advisory lock；第二個 daemon 啟動 fail with 明確訊息 | TBD |
 | Crash recovery：panic 後 `last_tick_at` 仍正確 | systemctl restart → tick 從 last_tick_at 接續（含 catch-up） | TBD |
 | Event retention：`seen_at IS NOT NULL AND created_at < now-7d` 自動清理 | 灌 7 天以上舊資料 → tick 後被清 | TBD |
+| Live read path：statusline 顯示的 XP 反映未 drain 的 event_inbox 事件（不需等 daemon tick） | `emit git_commit` → 不啟 daemon → `statusline` 直接看到 +20 XP | TBD |
+| Daemon 重啟不遺失 tick 成果：`pet_snapshot` 優先於 Phase 1 `pet` 表 | daemon tick 到 Lv.5 → 停 daemon → 重啟 → ECS world 仍為 Lv.5（不被 pet 表覆蓋回 Lv.1） | TBD |
 
 ## Phases
 
@@ -51,6 +53,7 @@
 | P5 | Daemon lifecycle CLI | `codeforge daemon start/stop/status/restart`；pidfile；advisory lock；signal handling（SIGTERM flush） | pending |
 | P6 | Systemd unit | `~/.config/systemd/user/codeforge-daemon.service`；`WantedBy=default.target`；install instructions | pending |
 | P7 | Claude Code hook integration | 改 `.claude/scripts/*.js` 改用 `codeforge emit`（session_start / session_end / file_saved / git_commit） | pending |
+| P8 | Live read path + daemon re-hydration fix | `statusline` + `codeforge pet` 透過 `pet::live_state::LiveState` 讀 `pet_snapshot` + overlay 未消化的 `event_inbox` XP；`pet::xp::award` 改走 emit 路徑；`GameWorld::load_or_init` 改優先讀 `pet_snapshot` 避免 daemon 重啟遺失 tick 結果 | pending |
 | QG | Quality gate | Code review + perf baseline（tick <10ms）+ spec sync check | pending |
 
 ## Open Questions（納入 P 對應階段處理）

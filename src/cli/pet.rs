@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crate::db;
-use crate::pet::state::PetState;
+use crate::pet::live_state::LiveState;
 use crate::pet::village::VILLAGES;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use std::io::Write;
@@ -9,12 +9,13 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     ctx.ensure_initialized()?;
     let conn = ctx.open_db()?;
 
-    if !PetState::exists(&conn)? {
+    if !LiveState::exists(&conn)? {
         println!("還沒有本命寵物！執行 `codeforge adopt` 選擇你的村落");
         return Ok(());
     }
 
-    let pet = PetState::load(&conn)?;
+    let live = LiveState::load(&conn)?;
+    let pet = &live.state;
     let village = VILLAGES.iter().find(|v| v.id == pet.village).unwrap_or(&VILLAGES[2]);
 
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
