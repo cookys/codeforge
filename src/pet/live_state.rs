@@ -35,6 +35,11 @@ pub struct LiveState {
     /// Daemon-authored pet speech (e.g. "擊殺 ghost ..."). Statusline uses
     /// this as the speech bubble when the stdin JSON has no "message" field.
     pub last_message: Option<String>,
+    /// Phase 3d: pet mood (0..=100). `None` when reading from the Phase 1
+    /// fallback `pet` table, which has no mood column — renderers must
+    /// degrade gracefully. P3 (statusline + TUI render) is first consumer.
+    #[allow(dead_code)]
+    pub mood: Option<u32>,
 }
 
 impl LiveState {
@@ -63,7 +68,7 @@ impl LiveState {
     /// infinite loop on `add_xp`; guarded at that layer now, but making the
     /// absence explicit is cleaner for the two current call sites.)
     pub fn load(conn: &Connection) -> Result<Option<Self>> {
-        let Some((mut state, last_message)) = load_base(conn)? else {
+        let Some((mut state, last_message, mood)) = load_base(conn)? else {
             return Ok(None);
         };
         let (pending_events, pending_xp) = sum_unseen_xp(conn)?;
@@ -75,23 +80,31 @@ impl LiveState {
             pending_events,
             pending_xp,
             last_message,
+            mood,
         }))
     }
 }
 
+/// What `load_base` / `load_from_snapshot` return before overlay: the core
+/// pet state plus two snapshot-only extras (`last_message`, `mood`). Named
+/// out to keep the type signature readable per clippy::type_complexity.
+type SnapshotBundle = (PetState, Option<String>, Option<u32>);
+
 /// Prefer daemon snapshot, fall back to Phase 1 pet table.
-/// Returns (state, last_message) — last_message only comes from the snapshot.
-fn load_base(conn: &Connection) -> Result<Option<(PetState, Option<String>)>> {
-    if let Some(pair) = load_from_snapshot(conn)? {
-        return Ok(Some(pair));
+/// Returns (state, last_message, mood) — last_message and mood only come
+/// from the snapshot; Phase 1 fallback has neither.
+fn load_base(conn: &Connection) -> Result<Option<SnapshotBundle>> {
+    if let Some(tuple) = load_from_snapshot(conn)? {
+        return Ok(Some(tuple));
     }
-    Ok(load_from_pet(conn)?.map(|p| (p, None)))
+    Ok(load_from_pet(conn)?.map(|p| (p, None, None)))
 }
 
-fn load_from_snapshot(conn: &Connection) -> Result<Option<(PetState, Option<String>)>> {
+fn load_from_snapshot(conn: &Connection) -> Result<Option<SnapshotBundle>> {
     let row = conn
         .query_row(
-            "SELECT village, level, hp, xp, xp_to_next, atk, def, sup, ver, last_message
+            "SELECT village, level, hp, xp, xp_to_next, atk, def, sup, ver,
+                    last_message, mood
              FROM pet_snapshot WHERE id = 1",
             [],
             |r| {
@@ -106,30 +119,33 @@ fn load_from_snapshot(conn: &Connection) -> Result<Option<(PetState, Option<Stri
                     r.get::<_, u32>(7)?,
                     r.get::<_, u32>(8)?,
                     r.get::<_, Option<String>>(9)?,
+                    r.get::<_, u32>(10)?,
                 ))
             },
         )
         .optional()?;
-    Ok(row.map(|(village, level, hp, xp, xp_to_next, atk, def, sup, ver, last_message)| {
-        let name = VILLAGES
-            .iter()
-            .find(|v| v.id == village)
-            .map(|v| v.pet_name.to_string())
-            .unwrap_or_default();
-        let state = PetState {
-            village,
-            name,
-            level,
-            xp,
-            xp_to_next,
-            atk,
-            hp,
-            def,
-            sup,
-            ver,
-        };
-        (state, last_message)
-    }))
+    Ok(row.map(
+        |(village, level, hp, xp, xp_to_next, atk, def, sup, ver, last_message, mood)| {
+            let name = VILLAGES
+                .iter()
+                .find(|v| v.id == village)
+                .map(|v| v.pet_name.to_string())
+                .unwrap_or_default();
+            let state = PetState {
+                village,
+                name,
+                level,
+                xp,
+                xp_to_next,
+                atk,
+                hp,
+                def,
+                sup,
+                ver,
+            };
+            (state, last_message, Some(mood))
+        },
+    ))
 }
 
 fn load_from_pet(conn: &Connection) -> Result<Option<PetState>> {
@@ -390,6 +406,27 @@ mod tests {
         seed_pet_phase1(&conn, 42);
         let live = LiveState::load(&conn).unwrap().unwrap();
         assert!(live.last_message.is_none());
+    }
+
+    #[test]
+    fn mood_surfaces_from_snapshot() {
+        // seed_snapshot uses the CREATE TABLE default (60). Update to
+        // confirm the value flows through load().
+        let conn = fresh();
+        seed_snapshot(&conn, 0, 1);
+        conn.execute("UPDATE pet_snapshot SET mood = 83 WHERE id = 1", [])
+            .unwrap();
+        let live = LiveState::load(&conn).unwrap().unwrap();
+        assert_eq!(live.mood, Some(83));
+    }
+
+    #[test]
+    fn mood_none_for_phase1_fallback() {
+        // Phase 1 pet table has no mood column — renderers must degrade.
+        let conn = fresh();
+        seed_pet_phase1(&conn, 42);
+        let live = LiveState::load(&conn).unwrap().unwrap();
+        assert!(live.mood.is_none());
     }
 
     #[test]

@@ -15,7 +15,7 @@
 //! tick. No XP loss, no double-counting, no orphan loot.
 
 use super::ecs::{GameWorld, LastMessage, PetIdentity};
-use super::{combat, events, inbox, loot, mob_scanner, systems};
+use super::{combat, events, inbox, loot, mob_scanner, mood, systems};
 use anyhow::Result;
 use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -56,6 +56,11 @@ pub fn run_one(conn: &Connection, world: &mut GameWorld) -> Result<()> {
 
     // 6. Level-up check AFTER combat XP is applied
     systems::check_levelup(world);
+
+    // 6b. Phase 3d: mood decay. Runs after combat so boss kills and
+    // post-counter HP are final, and before serialize so the new mood
+    // value lands in this tick's snapshot row.
+    mood::update_mood(world, &summary.defeats, &tx, now, tick_count_next)?;
 
     // 7. Serialize to pet_snapshot (single-row upsert, in tx).
     // Pass current tick so serialize_to_db can apply the LastMessage TTL.

@@ -70,6 +70,18 @@ pub const MOOD_DEFAULT: u32 = 60;
 pub const MOOD_MIN: u32 = 0;
 pub const MOOD_MAX: u32 = 100;
 
+/// Bookkeeping for rate-limited mood signals. Deliberately **not
+/// serialized** to `pet_snapshot` — the rate-limit artifact on daemon
+/// restart (one extra activity bump or idle penalty on first tick) is
+/// acceptable versus the schema churn of persisting three more fields
+/// that only matter during a single daemon lifetime.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct MoodBookkeeping {
+    pub activity_last_bump_at_unix: i64,
+    pub idle_last_penalty_at_unix: i64,
+    pub was_low_hp: bool,
+}
+
 // ─── GameWorld wrapper ──────────────────────────────────────────────
 
 /// Daemon-owned world. Single pet entity for Phase 2a.
@@ -161,6 +173,9 @@ impl GameWorld {
             PetVitals { hp, hp_max },
             PetStats { atk, def, sup, ver },
             Mood { value: mood_value, tick_stamp: mood_ts },
+            // Bookkeeping starts at zeros on every daemon boot — see note
+            // on MoodBookkeeping about why we don't persist these.
+            MoodBookkeeping::default(),
         ));
 
         Ok(Self { world, pet })
