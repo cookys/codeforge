@@ -6,7 +6,7 @@
 
 | Project | Description | Branch | Started |
 |---------|------------|--------|---------|
-| *(no active projects)* | — | — | — |
+| [tui-foundation](2026-04-18-tui-foundation/README.md) | Adaptive TUI layout + `codeforge attach` tmux wrapper + Zoa ASCII placeholder；3 breakpoints (Narrow/Standard/Wide) | `feature/tui-foundation` | 2026-04-18 |
 
 ## Archived
 

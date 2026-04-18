@@ -4,7 +4,7 @@
 
 | Plan | Created | Status |
 |------|---------|--------|
-| *(no active plans)* | — | — |
+| [tui-foundation](2026-04-18-tui-foundation.md) | 2026-04-18 | 🚧 in progress |
 
 ---
 
