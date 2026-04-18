@@ -36,6 +36,7 @@ pub const FRAME_INTERVAL: Duration = Duration::from_millis(250);
 /// mapping based on daemon state (XP streak, recent combat, idle time,
 /// etc.). For now all variants render the Idle frame set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Happy/Tired/Hunting wired in Phase 4
 pub enum Emotion {
     Idle,
     /// TODO(phase4): streak of wins / fresh loot.
@@ -134,7 +135,9 @@ impl ZoaPanel {
 
     /// Switch emotion. Resets the frame index so the new animation
     /// starts on frame 0 instead of resuming the prior offset into a
-    /// different frame set (which could land mid-blink).
+    /// different frame set (which could land mid-blink). Phase 4 will
+    /// call this from the main loop based on mood mapping.
+    #[allow(dead_code)] // Phase 4 consumer
     pub fn set_emotion(&mut self, emotion: Emotion) {
         if self.emotion != emotion {
             self.emotion = emotion;
@@ -196,6 +199,7 @@ impl ZoaPanel {
     }
 
     /// Current emotion — exposed for tests + future mood-driven code.
+    #[allow(dead_code)] // read by Phase 4 main-loop mood diffing
     pub fn emotion(&self) -> Emotion {
         self.emotion
     }

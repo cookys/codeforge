@@ -70,11 +70,14 @@ impl LayoutMode {
     /// the mode — even a 200×3 terminal stays Wide (vertical clamping
     /// happens inside `compute`).
     pub fn from_size(cols: u16, _rows: u16) -> LayoutMode {
-        match cols {
-            0..=59 => LayoutMode::Compact,
-            60..=79 => LayoutMode::Narrow,
-            80..=119 => LayoutMode::Standard,
-            _ => LayoutMode::Wide,
+        if cols < MIN_USABLE_COLS {
+            LayoutMode::Compact
+        } else if cols < 80 {
+            LayoutMode::Narrow
+        } else if cols < 120 {
+            LayoutMode::Standard
+        } else {
+            LayoutMode::Wide
         }
     }
 
