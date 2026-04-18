@@ -23,6 +23,8 @@ use tokio::time::{interval, MissedTickBehavior};
 
 use crate::db::Context;
 use crate::pet::session::{get_last_seen, update_last_seen, WelcomeBackSummary};
+use crate::tui::layout::LayoutMode;
+use crate::tui::panels::zoa::ZoaPanel;
 
 /// Refresh interval — 1 Hz matches the pace of daemon-driven state
 /// changes (daemon ticks every 60s, event_inbox overlay is cheap to
@@ -34,12 +36,31 @@ pub const REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 /// On any exit path — clean, error, or panic — the `TerminalGuard`
 /// restores terminal state via its Drop impl, so the scrollback is
 /// left pristine for the user.
+///
+/// Refuses to enter alt-screen mode when the terminal falls into the
+/// `LayoutMode::Compact` breakpoint (<60 cols). Prints a one-line hint
+/// to the user's scrollback instead and returns `Ok(())` — this is a
+/// clean exit, not an error.
 pub async fn run(ctx: &Context) -> Result<()> {
     ctx.ensure_initialized()?;
+
+    // Size check BEFORE acquiring the terminal guard — on Compact we
+    // want stderr/stdout to stay in the user's scrollback, not flash
+    // an alt-screen they can't read.
+    let (cols, rows) = crossterm::terminal::size().unwrap_or((100, 40));
+    if LayoutMode::from_size(cols, rows).should_abort() {
+        eprintln!(
+            "codeforge tui 需要至少 60 cols 的終端寬度（目前 {cols}×{rows}）。\n\
+             請放大視窗後重試，或改用 `codeforge statusline` 取得精簡狀態。"
+        );
+        return Ok(());
+    }
+
     let _guard = guard::TerminalGuard::new()?;
 
     let scan_root = scan_root_for_tui();
     let cwd = std::env::current_dir().ok();
+    let mut zoa = ZoaPanel::new();
 
     // Phase 3d §3.1: compute welcome-back BEFORE alt-screen takeover so
     // the SQL work doesn't flash an empty frame. `update_last_seen` closes
@@ -71,6 +92,7 @@ pub async fn run(ctx: &Context) -> Result<()> {
         scan_root.as_deref(),
         cwd.as_deref(),
         welcome_once.as_deref(),
+        &mut zoa,
     )?;
     // Welcome-back lives for exactly one paint. Dropping it here means
     // subsequent ticker-driven paints show the normal combat log.
@@ -90,6 +112,7 @@ pub async fn run(ctx: &Context) -> Result<()> {
                     scan_root.as_deref(),
                     cwd.as_deref(),
                     welcome_once.as_deref(),
+                    &mut zoa,
                 ) {
                     // One bad frame shouldn't kill the TUI — log to stderr
                     // (goes to alt-screen too, will be cleared next frame).
@@ -128,11 +151,17 @@ fn paint_once(
     scan_root: Option<&std::path::Path>,
     cwd: Option<&std::path::Path>,
     welcome_override: Option<&[String]>,
+    zoa: &mut ZoaPanel,
 ) -> Result<()> {
     let conn = ctx.open_db()?;
     let (cols, rows) = crossterm::terminal::size().unwrap_or((100, 40));
     let root = scan_root.unwrap_or_else(|| std::path::Path::new("."));
-    let frame = render::build_frame(&conn, root, cwd, cols, rows, welcome_override)?;
+    // Advance Zoa frame once per paint. At the current 1 Hz TUI cadence
+    // the 250 ms FRAME_INTERVAL will always fire, so effectively the
+    // animation runs at 1 fps — Phase 4 will add a faster repaint tier
+    // for the Zoa region specifically.
+    zoa.tick();
+    let frame = render::build_frame(&conn, root, cwd, cols, rows, welcome_override, Some(zoa))?;
     let mut stdout = io::stdout();
     render::paint(&frame, &mut stdout)?;
     Ok(())
