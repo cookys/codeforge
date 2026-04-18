@@ -10,6 +10,7 @@
 pub mod combat_log;
 pub mod local_map;
 pub mod pet;
+pub mod zoa;
 
 use unicode_width::UnicodeWidthStr;
 
