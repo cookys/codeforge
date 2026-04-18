@@ -155,6 +155,23 @@ fn paint_once(
 ) -> Result<()> {
     let conn = ctx.open_db()?;
     let (cols, rows) = crossterm::terminal::size().unwrap_or((100, 40));
+    // Re-check the breakpoint on every paint. If the user shrank the
+    // terminal after entering alt-screen (e.g. collapsed a tmux pane),
+    // `build_frame` would produce an empty frame and `paint` would
+    // silently blank the screen. Write a resize hint instead so the
+    // user knows the TUI is waiting for them to enlarge the window.
+    if LayoutMode::from_size(cols, rows).should_abort() {
+        let mut stdout = io::stdout();
+        use crossterm::{cursor, queue, style::Print, terminal};
+        use std::io::Write;
+        queue!(stdout, terminal::Clear(terminal::ClearType::All), cursor::MoveTo(0, 0))?;
+        let msg = format!(
+            "終端寬度 {cols} 太窄（需 ≥ 60）— 請放大視窗（codeforge statusline 可印精簡狀態）"
+        );
+        queue!(stdout, Print(msg))?;
+        stdout.flush()?;
+        return Ok(());
+    }
     let root = scan_root.unwrap_or_else(|| std::path::Path::new("."));
     // Advance Zoa frame once per paint. At the current 1 Hz TUI cadence
     // the 250 ms FRAME_INTERVAL will always fire, so effectively the
