@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod adopt;
+mod attach;
 mod commentary;
 mod craft;
 mod daemon;
@@ -88,6 +89,12 @@ pub enum Commands {
     },
     /// 啟動 alt-screen TUI 面板（pet / local map / combat log）
     Tui,
+    /// 在 tmux session 裡切出一個旁邊 pane 跑 TUI（需 `$TMUX`）
+    Attach {
+        /// Companion pane 寬度百分比（預設 30，範圍 20–70）
+        #[arg(long)]
+        size: Option<u16>,
+    },
     /// 切換或查看戰鬥策略（aggressive / defensive / explorer / scholar）
     Strategy {
         /// 省略時顯示當前策略
@@ -192,6 +199,7 @@ pub fn run(cli: Cli) -> Result<()> {
             DaemonAction::Install => daemon::DaemonCmd::Install,
         }),
         Commands::Tui => tui::run(&ctx),
+        Commands::Attach { size } => attach::run(size),
         Commands::Strategy { name } => strategy::run(&ctx, name.as_deref()),
         Commands::Commentary { action } => commentary::run(&ctx, match action {
             CommentaryAction::On => commentary::CommentaryCmd::On,
