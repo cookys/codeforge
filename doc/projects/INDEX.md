@@ -6,12 +6,13 @@
 
 | Project | Description | Branch | Started |
 |---------|------------|--------|---------|
-| [tui-foundation](2026-04-18-tui-foundation/README.md) | Adaptive TUI layout + `codeforge attach` tmux wrapper + Zoa ASCII placeholder；3 breakpoints (Narrow/Standard/Wide) | `feature/tui-foundation` | 2026-04-18 |
+| *(no active projects)* | — | — | — |
 
 ## Archived
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [tui-foundation](_archive/2026-04-18-tui-foundation/README.md) | Adaptive TUI — LayoutMode enum (Compact/Narrow/Standard/Wide) + breakpoint dispatch；`codeforge attach` tmux companion pane；Zoa ASCII animation pipeline (Idle 4 frames, Phase 4 infra)，P1-P4 + QG + r1 3 IMPORTANT fixes + r2 CLEAN，+30 tests (585 total) | 2026-04-18 ✅ |
 | [phase3e-crafting](_archive/2026-04-18-phase3e-crafting/README.md) | Loot Crafting + 主動 Item — 3 配方（Refactor Blueprint / Ghost Repellent / Doppelganger Ward）；`codeforge craft/inventory/use` CLI + daemon ghost-repellent 整合，P1-P3 + QG + r1 4 fixes + r2 clean | 2026-04-18 ✅ |
 | [phase3f-snapshot](_archive/2026-04-18-phase3f-snapshot/README.md) | `codeforge snapshot` — 可分享 ASCII 月報卡（spec §3.6），pet 名 + 2×2 Zone grid + 月擊殺 + 連勝 streak + tagline 引言；`--days N` 滾動窗口；純 stdout 無 OAuth，P1-P3 + QG + r1 1 fix + r2 clean | 2026-04-18 ✅ |
 | [phase3a-world-map](_archive/2026-04-18-phase3a-world-map/README.md) | World Map + Zone unlock — L1 語言分佈 analyzer、`codeforge world` ASCII map、Zone Mastery rank、Explorer strategy cross-zone revisit，P1-P4 + QG + r1 2 fixes + r2 clean | 2026-04-18 ✅ |
