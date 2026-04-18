@@ -25,12 +25,16 @@ Plan: `doc/plans/2026-04-18-tui-foundation.md`
 
 | Phase | Status | Tests | Commit |
 |-------|--------|-------|--------|
-| P1 Adaptive Layout | ⏳ pending | — | — |
-| P2 Zoa Foundation | ⏳ pending | — | — |
-| P3 `codeforge attach` | ⏳ pending | — | — |
-| P4 Integration + doc | ⏳ pending | — | — |
-| QG + Review r1 | ⏳ pending | — | — |
-| Fix findings + r2 | ⏳ pending | — | — |
-| Merge + archive | ⏳ pending | — | — |
+| P1 Adaptive Layout | ✅ | +20 | `26a5686` |
+| P2 Zoa Foundation | ✅ | +14 | `251dfcd` |
+| P3 `codeforge attach` | ✅ | +11 | `3c0c9a8` |
+| P4 Integration + doc | ✅ | +5 | `cd00c9c` |
+| QG cleanup | ✅ | 585 passed | `260d11e` |
+| Review r1 (3 IMPORTANT) | ✅ | — | `67e9473` |
+| Review r2 | ✅ CLEAN | — | — |
+| Merge to main | ✅ | 585 passed | `3a65709` |
 
-Last updated: 2026-04-18
+**Result**: 555 → 585 tests (+30, matches plan estimate). All success
+criteria satisfied. Clippy clean on all new code.
+
+Final archive: 2026-04-18
