@@ -739,6 +739,42 @@ execute!(stdout, cursor::MoveTo(region.x, row), terminal::Clear(ClearType::Until
   下半部不受 scroll 影響，永遠顯示在固定位置
 ```
 
+### Adaptive Breakpoints（2026-04-18 起）
+
+TUI 需要能寄生 Claude Code 的 tmux split pane；固定 100×40 layout 在
+1080p 筆電（開發者族群 53%）的 `-p 30` pane 會掉到 ~54 cols，進入
+ratatui 崩潰區。採用 4 段 breakpoint：
+
+| Mode | Cols | 畫面 |
+|------|------|------|
+| Compact | <60 | 拒絕進 alt-screen，stdout hint 到 scrollback |
+| Narrow | 60–79 | PetStatus + CombatLog（單欄，map 收起） |
+| Standard | 80–119 | PetStatus + LocalMap(40%) + CombatLog(60%) |
+| Wide | 120+ | PetStatus + Zoa(24 col) + LocalMap + CombatLog |
+
+程式碼：`src/tui/layout.rs::LayoutMode::from_size`。render 層透過
+`Rect::is_empty` 判斷是否跳過該 panel 的 DB scan + 渲染工作 ——
+Narrow 不做 local_map 目錄掃、Compact 連 combat_log 都不打。
+
+### `codeforge attach`（tmux companion pane）
+
+```bash
+codeforge tui                  # 獨立終端視窗
+codeforge attach               # 在 $TMUX session 裡切右側 30% pane
+codeforge attach --size 40     # 覆蓋 split 比例（範圍 20–70）
+```
+
+`codeforge attach` 只做一件事：偵測 `$TMUX` 後呼叫
+`tmux split-window -h -p <size> 'codeforge tui'`，把 companion pane
+開在 Claude Code 主 pane 右邊。非 tmux 環境給非 0 exit + 指示訊息。
+
+### Zoa slot（Phase 4 前置）
+
+Wide mode 在左側保留 24 cols × 8 rows 給 Zoa ASCII pet sprite。
+`src/tui/panels/zoa.rs` 已鋪 rendering pipeline（Emotion enum、frame
+cycling、width gate），目前只有 Idle 4 frames；Phase 4 會加
+Happy / Tired / Hunting + mood→emotion mapping。
+
 ---
 
 ## 6. Daemon 架構
