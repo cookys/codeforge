@@ -35,8 +35,13 @@ pub const FRAME_INTERVAL: Duration = Duration::from_millis(250);
 /// High-level pet mood buckets. Phase 4 will wire `Mood` → `Emotion`
 /// mapping based on daemon state (XP streak, recent combat, idle time,
 /// etc.). For now all variants render the Idle frame set.
+///
+/// Happy/Tired/Hunting are pattern-matched in `frames_for` but never
+/// CONSTRUCTED in production code (only in tests, which the `--bin`
+/// clippy target ignores), so the enum-level `allow(dead_code)` stays
+/// until Phase 4 wires the consumer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Happy/Tired/Hunting wired in Phase 4
+#[allow(dead_code)]
 pub enum Emotion {
     Idle,
     /// TODO(phase4): streak of wins / fresh loot.
@@ -154,11 +159,17 @@ impl ZoaPanel {
     }
 
     /// Test seam for [`tick`] — lets unit tests drive timing without
-    /// sleeping.
+    /// sleeping. Uses `checked_duration_since` so tests passing
+    /// non-monotonic `Instant` values (or startup edge cases) don't
+    /// panic on backward deltas; a backward clock reads as elapsed=0
+    /// which keeps the animation paused until time moves forward.
     pub fn tick_at(&mut self, now: Instant) -> bool {
         let should_advance = match self.last_tick {
             None => true,
-            Some(last) => now.duration_since(last) >= FRAME_INTERVAL,
+            Some(last) => now
+                .checked_duration_since(last)
+                .map(|d| d >= FRAME_INTERVAL)
+                .unwrap_or(false),
         };
         if should_advance {
             let frames = frames_for(self.emotion);

@@ -226,19 +226,23 @@ mod tests {
     #[test]
     fn build_tmux_args_has_split_horizontal() {
         let args = build_tmux_args(30);
+        // Full argv shape: ["split-window", "-h", "-p", "30", "codeforge tui"].
+        // Pin every index so a regression that inserts / drops an arg
+        // surfaces here rather than at tmux runtime.
+        assert_eq!(args.len(), 5, "argv must be exactly 5 elements: {args:?}");
         assert_eq!(args[0], "split-window");
         assert_eq!(args[1], "-h");
         assert_eq!(args[2], "-p");
         assert_eq!(args[3], "30");
+        assert_eq!(args[4], "codeforge tui");
     }
 
     #[test]
-    fn build_tmux_args_includes_codeforge_tui_command() {
-        let args = build_tmux_args(30);
-        assert!(
-            args.iter().any(|a| a == "codeforge tui"),
-            "argv missing 'codeforge tui': {args:?}"
-        );
+    fn build_tmux_args_command_lands_at_final_position() {
+        // The tmux man page requires the shell-command to be the final
+        // positional argument after all flags. Verify it at index len-1.
+        let args = build_tmux_args(45);
+        assert_eq!(args.last().map(String::as_str), Some("codeforge tui"));
     }
 
     #[test]
