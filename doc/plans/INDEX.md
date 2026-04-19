@@ -4,7 +4,7 @@
 
 | Plan | Created | Status |
 |------|---------|--------|
-| *(no active plans)* | — | — |
+| [tile-map-localmap](2026-04-20-tile-map-localmap.md) | 2026-04-20 | 📋 Draft — awaiting green-light |
 
 ---
 
