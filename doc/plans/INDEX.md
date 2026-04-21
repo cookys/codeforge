@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-_(none)_
+| Plan | Created | Status |
+|------|---------|--------|
+| [zone-color-paint-layer](2026-04-21-zone-color-paint-layer.md) | 2026-04-21 | 📝 Draft — awaiting user review of 3 design decisions before promote（tracks BACKLOG `B11`） |
 
 ---
 
