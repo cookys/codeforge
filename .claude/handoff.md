@@ -11,8 +11,73 @@
 2. Invoke `autopilot:dev-flow`（HARD RULE，code-touch 前必跑）
 3. 已在 branch `feature/tile-map-localmap`（從 main `f415a29` 分出）
 4. Project dir 已建：`doc/projects/2026-04-21-tile-map-localmap/README.md`
-5. 執行 P1 → P2 → P3 → P4 → QG → r1 → fix → r2 → merge → archive，**連續執行，phase 間不問 continue**
-6. Tasks 已建好（P1-P4 + QG + 2 輪 review + fixes + merge + archive）—— 跑到哪個就 `TaskUpdate` 到哪個
+5. **先 `TaskList` 確認任務是否還在**。上個 session 建了 #43-52；`/clear` 可能把它們清掉。空了就照下方「Tasks 重建清單」重 create。
+6. 執行 P1 → P2 → P3 → P4 → QG → r1 → fix → r2 → merge → archive，**連續執行，phase 間不問 continue**
+7. 跑到哪個 task 就 `TaskUpdate` 到哪個
+
+## Tasks 重建清單（如果 `TaskList` 發現空的就照這串跑）
+
+依序 `TaskCreate`（subject / description / activeForm），最後設 blockedBy chain。
+
+```
+1. P1 — Tile primitive（render_tile + zone_kind color + CJK-safe name）
+   desc: 新檔 src/tui/panels/local_map_tile.rs。render_tile(room, width,
+   height, is_current, color) → Vec<String> 渲染 10×3 tile（box-drawing
+   border + CJK-safe name + mob badge）。Zone kind → termcolor::Color
+   mapping：rust=Red / memory=Magenta / daemon=White / tui=Cyan / db=Yellow /
+   docs=DarkGrey / unknown=DarkGrey。CJK 名用既有 clip_to_width helper。
+   +15 tests。
+
+2. P2 — Grid flow（compute_grid + render_grid + overflow）
+   desc: 續 local_map_tile.rs。compute_grid(rooms, panel_w, panel_h) →
+   (GridLayout, Vec<(TileCoord, &RoomSummary)>, overflow: usize)，cols =
+   floor(panel_w/10)、rows = floor(panel_h/3)。render_grid() 組合 tiles，
+   overflow 右下角 "…+N more"。+10 tests。
+
+3. P3 — Mode toggle（LocalMapPanel + events + main_loop wire）
+   desc: src/tui/panels/local_map.rs 加 LocalMapPanel { display_mode:
+   DisplayMode }（List | Grid），rename 現有 render 為 render_list，新
+   dispatcher render() 依 mode route；Grid 但 width<30 時 fallback
+   render_list。src/tui/events.rs 加 ToggleMapMode（KeyCode::Char 'g' 或
+   'l'）。src/tui/mod.rs main_loop 持 &mut LocalMapPanel（同 ZoaPanel
+   pattern），接到 ToggleMapMode 就 flip display_mode。build_frame signature
+   加 &LocalMapPanel。+6 tests。
+
+4. P4 — `@` overlay + spec + README 更新
+   desc: render_tile 依 is_current 在 badge 行右側加 @ marker（搶 2
+   cols）。doc/specs/codeforge-mud-engine.md §5 加 "Local Map Tile-Grid
+   Mode" 小節，說明 g/l 快捷鍵 + zone kind color 表 + fallback 行為。
+   +5 integration tests。
+
+5. Quality Gate — cargo check + clippy + test
+   desc: cargo check + cargo clippy --bin（零新 warning）+ cargo test
+   （全綠）。Blocks review。blockedBy: [1, 2, 3, 4]
+
+6. Review r1 — invoke feature-dev:code-reviewer
+   desc: 派 feature-dev:code-reviewer agent review main..HEAD。Focus:
+   tile render CJK safety / grid math 邊界 / ANSI colour 在 non-TTY 下
+   行為 / mode toggle race / event wiring / duration_since-style panic
+   風險 / dead_code allow 正確性。只報 CRITICAL + IMPORTANT。blockedBy: [5]
+
+7. Fix r1 findings（CRITICAL + IMPORTANT）
+   desc: 修掉 r1 所有 CRITICAL + IMPORTANT。Commit fix(tile-map/review-r1):
+   ...。blockedBy: [6]
+
+8. Review r2 — verify fixes clean
+   desc: 派 feature-dev:code-reviewer 驗證 r1 fixes 乾淨。期待 CLEAN 或
+   只剩 NIT。Blocks merge。blockedBy: [7]
+
+9. Merge feature/tile-map-localmap → main
+   desc: git checkout main && git merge --no-ff feature/tile-map-localmap，
+   commit message 彙總 commits。Post-merge cargo test 驗證 585+ 綠。
+   blockedBy: [8]
+
+10. Archive + INDEX reconcile + BACKLOG pickup
+    desc: git mv doc/projects/2026-04-21-tile-map-localmap → _archive/、
+    更新 doc/projects/INDEX.md、plans/INDEX.md、git log
+    session-start..HEAD 檢查 BACKLOG trigger、git branch -d
+    feature/tile-map-localmap、commit archive。blockedBy: [9]
+```
 
 ## 關鍵設計決策（不要改，plan 裡已定）
 
