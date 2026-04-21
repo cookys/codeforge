@@ -555,14 +555,22 @@ mod tests {
         }
     }
 
+    /// Derive the exact local_map rect for a given terminal size so the
+    /// integration tests can assert "content lives in the map region"
+    /// rather than a loose `col < some_number` bound that also matches
+    /// the pet_status row at col 0 (review-r1 CRITICAL #1).
+    fn in_local_map(l: &PositionedLine, cols: u16, rows: u16) -> bool {
+        let layout = super::super::layout::compute(cols, rows);
+        let r = layout.local_map;
+        l.col >= r.x && l.col < r.x + r.width && l.row >= r.y && l.row < r.y + r.height
+    }
+
     #[test]
     fn build_frame_grid_mode_renders_tile_borders_in_local_map_region() {
         use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
         let conn = fresh();
         seed_mobs_with_paths(&conn, &["src/cli/a.rs", "doc/x.md", "target/z.rs"]);
         let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
-        // Standard layout: 100 cols → local_map region is 40 cols wide,
-        // enough for 4 tiles per row (each 10 cols).
         let frame = build_frame(
             &conn,
             Path::new("/repo"),
@@ -574,13 +582,17 @@ mod tests {
             Some(&panel),
         )
         .unwrap();
-        // A tile top-border `┌` must appear inside the local_map column
-        // range (col 40..80 in Standard mode — see layout.rs).
+        // Tile top-border must appear inside the local_map rect — not
+        // just "col < some_number" which would also accept pet_status
+        // rows at col 0 (review-r1 CRITICAL #1).
         let has_tile_border = frame
             .lines
             .iter()
-            .any(|l| l.col < 40 && l.text.contains('┌'));
-        assert!(has_tile_border, "grid mode must emit tile borders");
+            .any(|l| in_local_map(l, 100, 30) && l.text.contains('┌'));
+        assert!(
+            has_tile_border,
+            "grid mode must emit tile borders inside local_map rect"
+        );
         // And the "Local Map" header (list-mode only) must NOT appear.
         assert!(!frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
     }
@@ -640,7 +652,7 @@ mod tests {
         let has_at_marker = frame
             .lines
             .iter()
-            .any(|l| l.col < 40 && l.text.contains('@'));
+            .any(|l| in_local_map(l, 100, 30) && l.text.contains('@'));
         assert!(has_at_marker, "current dir must show @ overlay in grid tile");
     }
 
@@ -668,7 +680,7 @@ mod tests {
         let cjk_visible = frame
             .lines
             .iter()
-            .any(|l| l.col < 40 && l.text.contains("前端"));
+            .any(|l| in_local_map(l, 100, 30) && l.text.contains("前端"));
         assert!(cjk_visible, "CJK dir name must survive the grid render pipeline");
     }
 }

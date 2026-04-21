@@ -58,15 +58,25 @@ pub fn spawn_keyboard_task(
             Ok(true) => {
                 if let Ok(ev) = event::read() {
                     if let Some(mapped) = classify(&ev) {
-                        // try_send: when the buffer is full we drop —
-                        // prefer liveness over perfect fidelity (user
-                        // can always retry the keystroke). A Quit event
-                        // in a full buffer still means Quit was seen
-                        // earlier and will be processed.
-                        let quit = matches!(mapped, TuiEvent::Quit);
-                        let _ = tx.try_send(mapped);
-                        if quit {
-                            return;
+                        match mapped {
+                            // Quit must always reach the main loop —
+                            // `try_send` can drop if the buffer is full
+                            // (e.g. after a rapid burst of ToggleMapMode),
+                            // which would hang the TUI since the main
+                            // loop has no other quit path. Use
+                            // `blocking_send` to guarantee delivery.
+                            // Legal in a spawn_blocking task.
+                            TuiEvent::Quit => {
+                                let _ = tx.blocking_send(TuiEvent::Quit);
+                                return;
+                            }
+                            // For toggle events, drop-on-full is fine —
+                            // the user can retry the keystroke, and
+                            // holding up the keyboard thread on a full
+                            // buffer would cost responsiveness.
+                            _ => {
+                                let _ = tx.try_send(mapped);
+                            }
                         }
                     }
                 }
@@ -266,5 +276,44 @@ mod tests {
         assert!(running.load(Ordering::Acquire));
         running.store(false, Ordering::Release);
         assert!(!running.load(Ordering::Acquire));
+    }
+
+    /// Regression for tile-map review-r1 CRITICAL #2: a Quit event sent
+    /// when the channel is full must still reach the main loop — otherwise
+    /// a rapid burst of ToggleMapMode events followed by `q` would hang
+    /// the TUI forever. `blocking_send` guarantees delivery.
+    #[tokio::test]
+    async fn quit_delivered_even_when_channel_is_full() {
+        let (tx, mut rx) = event_channel();
+        // Fill the channel with ToggleMapMode events.
+        for _ in 0..EVENT_CHANNEL_CAPACITY {
+            tx.try_send(TuiEvent::ToggleMapMode).unwrap();
+        }
+        // Next try_send would fail — simulate the keyboard task's
+        // blocking_send path from a task-style context.
+        assert!(tx.try_send(TuiEvent::Quit).is_err());
+        // Spawn a consumer that drains so blocking_send can complete.
+        let sender = tx.clone();
+        let consumer = tokio::spawn(async move {
+            // Drain one slot, giving the blocked sender room.
+            rx.recv().await.unwrap();
+            // Now the sender's Quit should land.
+            // Drain the remaining 7 toggles + the Quit at the tail.
+            let mut quit_seen = false;
+            while let Some(ev) = rx.recv().await {
+                if ev == TuiEvent::Quit {
+                    quit_seen = true;
+                    break;
+                }
+            }
+            quit_seen
+        });
+        // blocking_send from a non-blocking context via spawn_blocking
+        // mirrors what spawn_keyboard_task does internally.
+        let send_task = tokio::task::spawn_blocking(move || {
+            sender.blocking_send(TuiEvent::Quit)
+        });
+        assert!(send_task.await.unwrap().is_ok(), "blocking_send must deliver Quit");
+        assert!(consumer.await.unwrap(), "consumer must observe Quit");
     }
 }
