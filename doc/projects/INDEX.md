@@ -4,14 +4,13 @@
 
 ## Active
 
-| Project | Description | Branch | Started |
-|---------|------------|--------|---------|
-| [tile-map-localmap](2026-04-21-tile-map-localmap/README.md) | Local Map 從 list 升級為 tile-grid（Revival World 風）—— color-coded tile border + CJK 名 + badge + `@` overlay + `g`/`l` toggle | `feature/tile-map-localmap` | 2026-04-21 |
+_(none)_
 
 ## Archived
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [tile-map-localmap](_archive/2026-04-21-tile-map-localmap/README.md) | Local Map tile-grid 模式（Revival World 風）—— 10×3 box-drawn tile + CJK 名 + mob badge + `@` current-dir overlay + `g`/`l` runtime toggle + `<30 cols` 自動 fallback list + `…+N more` overflow；zone_color mapping（paint 整合 → B11）、`TuiEvent` enum 取代 `mpsc<()>`、Quit 走 `blocking_send` 保送達。P1-P4 + QG + r1 2 CRITICAL + 1 IMPORTANT fixes + r2 CLEAN，+58 tests（643 total） | 2026-04-21 ✅ |
 | [tui-foundation](_archive/2026-04-18-tui-foundation/README.md) | Adaptive TUI — LayoutMode enum (Compact/Narrow/Standard/Wide) + breakpoint dispatch；`codeforge attach` tmux companion pane；Zoa ASCII animation pipeline (Idle 4 frames, Phase 4 infra)，P1-P4 + QG + r1 3 IMPORTANT fixes + r2 CLEAN，+30 tests (585 total) | 2026-04-18 ✅ |
 | [phase3e-crafting](_archive/2026-04-18-phase3e-crafting/README.md) | Loot Crafting + 主動 Item — 3 配方（Refactor Blueprint / Ghost Repellent / Doppelganger Ward）；`codeforge craft/inventory/use` CLI + daemon ghost-repellent 整合，P1-P3 + QG + r1 4 fixes + r2 clean | 2026-04-18 ✅ |
 | [phase3f-snapshot](_archive/2026-04-18-phase3f-snapshot/README.md) | `codeforge snapshot` — 可分享 ASCII 月報卡（spec §3.6），pet 名 + 2×2 Zone grid + 月擊殺 + 連勝 streak + tagline 引言；`--days N` 滾動窗口；純 stdout 無 OAuth，P1-P3 + QG + r1 1 fix + r2 clean | 2026-04-18 ✅ |

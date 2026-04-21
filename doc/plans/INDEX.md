@@ -2,9 +2,7 @@
 
 ## Active Plans
 
-| Plan | Created | Status |
-|------|---------|--------|
-| [tile-map-localmap](2026-04-20-tile-map-localmap.md) | 2026-04-20 | 🚧 in progress（project: `2026-04-21-tile-map-localmap`） |
+_(none)_
 
 ---
 
@@ -12,6 +10,7 @@
 
 | Plan | Created | Moved to Project |
 |------|---------|-----------------|
+| [tile-map-localmap](2026-04-20-tile-map-localmap.md) | 2026-04-20 | [2026-04-21-tile-map-localmap](../projects/_archive/2026-04-21-tile-map-localmap/) |
 | [tui-foundation](2026-04-18-tui-foundation.md) | 2026-04-18 | [2026-04-18-tui-foundation](../projects/_archive/2026-04-18-tui-foundation/) |
 | [phase3e-crafting](2026-04-18-phase3e-crafting.md) | 2026-04-18 | [2026-04-18-phase3e-crafting](../projects/_archive/2026-04-18-phase3e-crafting/) |
 | [phase3f-snapshot](2026-04-18-phase3f-snapshot.md) | 2026-04-18 | [2026-04-18-phase3f-snapshot](../projects/_archive/2026-04-18-phase3f-snapshot/) |
