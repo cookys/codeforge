@@ -127,11 +127,11 @@ pub struct GridLayout {
 /// Degenerate panels (< TILE_WIDTH cols or < TILE_HEIGHT rows) yield
 /// `capacity = 0`; all rooms overflow and the caller should fall back
 /// to list render.
-pub fn compute_grid<'a>(
-    rooms: &'a [RoomSummary],
+pub fn compute_grid(
+    rooms: &[RoomSummary],
     panel_w: usize,
     panel_h: usize,
-) -> (GridLayout, Vec<(TileCoord, &'a RoomSummary)>, usize) {
+) -> (GridLayout, Vec<(TileCoord, &RoomSummary)>, usize) {
     let cols = panel_w / TILE_WIDTH;
     let rows = panel_h / TILE_HEIGHT;
     let capacity = cols * rows;
@@ -274,6 +274,13 @@ fn take_cols(s: &str, max_cols: usize) -> String {
 ///
 /// Dark-grey uses `Ansi256(8)` (ANSI "bright black") since `termcolor`
 /// has no `DarkGrey` variant; every ANSI-capable terminal renders it.
+///
+/// NOTE (2026-04-21): mapping is unit-tested; paint-layer integration
+/// (per-tile border styling) is deferred to a follow-up polish — it
+/// requires `paint` to handle `Vec<StyledSpan>` instead of whole-row
+/// `Print(&text)`, which is a separate refactor. Marked `allow(dead_code)`
+/// until that wiring lands.
+#[allow(dead_code)]
 pub fn zone_color(directory: &str) -> Color {
     match directory {
         "src" | "rust" => Color::Red,
