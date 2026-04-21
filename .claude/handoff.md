@@ -1,90 +1,120 @@
-# Session Handoff — 2026-04-18
+# Session Handoff — 2026-04-21
 
-> CEO level 3 session 結束於 Phase 3b merge + archive。前一份 handoff 記錄了 Phase 3d；這份接著的是 Phase 3b Strategy Mode。
+> 上個 session 做完 tui-foundation L project 並 archive 後，user 指定把
+> tile-map plan promote 為 project，然後 `/clear` 交棒。**不要重新設計**
+> tile-map 的架構 —— plan 早已定稿（2026-04-20），本 session 照 plan 執行
+> P1-P4 即可。
 
-## 今日進度（autonomous CEO level 3）
+## 本 session 要做的事 —— TL;DR
 
-| 工作 | 內容 | Commit |
-|------|------|--------|
-| Digest cleanup | 4 則 unprocessed digests 審查 + mark processed（無新 knowledge 要寫） | （無 commit） |
-| Phase 3b P1 | Strategy enum（Aggressive/Defensive/Explorer/Scholar）+ schema v6 + ECS PetStrategy component + migration upgrade path | `3fc5e3f` |
-| Phase 3b P2 | Combat tick 套用 ATK 乘子 + DEF 乘子 + MOB priority sort；compute_damage / compute_counter helpers 可獨立測試 | `472541d` |
-| Phase 3b P3 | `codeforge strategy [name]` CLI、statusline row 4 `strat:<tag>`、TUI pet panel stats 行 `strat:<full>` | `8a85894` |
-| Review r1 fixes | 2 IMPORTANT + 1 關鍵 race：CLI → daemon `refresh_strategy_from_db` 在 tick step 3b | `9a2c8af` |
-| Review r2 fix | Stale comment 清理（race 已解，不再 deferred） | `86d941d` |
-| Merge + archive | `feature/phase3b-strategy` → main；project 歸檔；INDEX 更新 | `ab1354d`, 後續 archive commit |
+1. Read `doc/plans/2026-04-20-tile-map-localmap.md` 全文 —— 設計細節都在
+2. Invoke `autopilot:dev-flow`（HARD RULE，code-touch 前必跑）
+3. 已在 branch `feature/tile-map-localmap`（從 main `f415a29` 分出）
+4. Project dir 已建：`doc/projects/2026-04-21-tile-map-localmap/README.md`
+5. 執行 P1 → P2 → P3 → P4 → QG → r1 → fix → r2 → merge → archive，**連續執行，phase 間不問 continue**
+6. Tasks 已建好（P1-P4 + QG + 2 輪 review + fixes + merge + archive）—— 跑到哪個就 `TaskUpdate` 到哪個
 
-**Stats**：302 → 340 tests（+38），zero clippy regression（baseline 32 → 32），review round 2 clean。
+## 關鍵設計決策（不要改，plan 裡已定）
 
-## Git 狀態
+| 項目 | 決定 | 原因 |
+|------|------|------|
+| Tile 尺寸 | 10 cols × 3 rows | border + CJK name + badge 三行夠用 |
+| Zone kind 來源 | dir-name heuristic | 避免 per-paint DB round-trip |
+| Color mapping | rust=Red / memory=Magenta / daemon=White / tui=Cyan / db=Yellow / docs=DarkGrey | 語意化 |
+| Mode state | in-memory only 第一輪 | 避免 settings schema 擴充 scope creep |
+| Keypress | `g` OR `l` cycle toggle | 兩鍵都 toggle（便於盲打） |
+| Fallback 門檻 | panel <30 cols | 低於此 grid 一格都塞不下 |
+| Overflow | 右下角 `…+N more` | 不要 clip 無提示 |
+| `@` overlay 位置 | tile 第 3 行 badge 右側 | 不覆蓋名稱 |
 
-- 分支：`main`（archive 尚未 commit，下一步處理）
-- 最新 5 筆：
-  ```
-  ab1354d chore(merge): feature/phase3b-strategy → main
-  86d941d fix(phase3b/review-r2): stale comment cleanup
-  9a2c8af fix(phase3b/review): round 1 findings
-  8a85894 feat(phase3b/P3): CLI + statusline + TUI
-  472541d feat(phase3b/P2): combat multiplier + priority
-  ```
-- 無 remote，push 是 no-op。
-- Feature branch 已刪除。
+## Phase 拆分（plan 已寫死）
+
+| Phase | 檔案 | 估 test |
+|-------|------|---------|
+| **P1** Tile primitive | `src/tui/panels/local_map_tile.rs`（新檔）—— `render_tile(room, width, height, is_current, color)` + zone_kind → Color + CJK-safe name clip | +15 |
+| **P2** Grid flow | 同上 —— `compute_grid()` + `render_grid()` 組合 tile | +10 |
+| **P3** Mode toggle | `src/tui/panels/local_map.rs` 加 `LocalMapPanel` + `DisplayMode`；`src/tui/events.rs` 加 `ToggleMapMode`；`src/tui/mod.rs` main_loop 接 event | +6 |
+| **P4** `@` overlay + fallback + spec | 同 P3 檔案 + `doc/specs/codeforge-mud-engine.md §5` | +5 |
+
+## Git 狀態（本 session 起點）
+
+- 分支：`feature/tile-map-localmap`（已建立，從 main `f415a29`）
+- 最新 commit：`f415a29 docs(plans): draft tile-grid local_map plan`
+- `git status` 乾淨
+- 無 remote，push 是 no-op
 
 ## Phase Roadmap 現況
 
-- ✅ Phase 1（Memory CLI + Common Pet）
-- ✅ Phase 2a（Daemon framework）
-- ✅ Phase 2b（MOB + Auto-Combat + Loot）
-- ✅ Phase 2c（TUI + Local Map）
-- ✅ Phase 3d（黏著度：Welcome Back / Mood / Next Unlock / First-Time）
-- ✅ **Phase 3b（Strategy Mode：4 打法 × ATK/DEF 乘子 + MOB 優先序）** ← new
-- 下一步候選：
-  - **3a World Map + Zone unlock**（需 L1 語言分佈；建議先跑幾次 `codeforge dream` 累積資料），L
-  - **3c AI Commentary**（Haiku API，1/hour opt-in；需要 rate-limit 設計），L
-  - **3e Loot Crafting + active item**（讓 loot_inventory 可互動），L
-  - **3f codeforge snapshot**（ASCII 月報；依賴 3d mastery，現在可以做），M
+- ✅ Phase 1 / 2a-c / 3a-f 全數完成並封存
+- ✅ tui-foundation UX polish（L，2026-04-18）
+- 🚧 **tile-map-localmap UX polish（L，本 session 執行）**
+- 下一步候選（tile-map 完成後）：
+  - Phase 4 Zoa full impl（補 Happy/Tired/Hunting frames + mood mapping）
+  - Phase 5a Nation Plugin
+  - B10 Doppelganger split（等 user 回 3 問）
 
-## 啟動下一 session 要做的事
+## 絕對要遵守的規則（持久，跨 session）
 
-1. **`autopilot:dev-flow` session-start gate** — 開始任何 code 動作前必跑（CLAUDE.md HARD RULE）。
-2. 選擇下一 Phase。推薦順序 **3c → 3a → 3f**：
-   - 3c 加「人味」—— strategy 已在，Haiku 可以依 strategy 生成不同語氣；需 API + rate-limit
-   - 3a 是 World Map UI + Zone unlock；需 L1 語言分佈 → 建議先 `codeforge dream` 幾次
-   - 3f ASCII 月報；3d 黏著度資料 + 3b 策略歷史都在，現在做能產出最豐富報告
-3. 或者選 3e 讓 loot_inventory 從靜態集合變成可互動（`codeforge craft` / `codeforge use`）。
-4. 照 L-workflow 走：plan → project dir → feature branch → P1..N → QG → 2 輪 review → merge → archive。
+- **一律用正體中文台灣用語回應 user**（code / commit / tool output 英文 OK；
+  長 session 容易被工具 drift 掉，每次切回 user 對話前 self-check）
+- **Invoke `autopilot:dev-flow` before any code work** —— HARD RULE，
+  PreToolUse hook 會擋
+- **CJK 截斷**：`.chars().take(N).collect::<String>()`，絕對不用 `&s[..N]`
+  （本 project tile name 截斷會踩這個坑，用 `clip_to_width` / `pad_to_width`
+  既有 helper）
+- **正體中文 panic/error message** 給 user，anyhow::Result 沿用
+- **L workflow continuous execution** —— phase 之間不問「要繼續嗎」，
+  只在 Board Decision / build fail / context near limit 才停
 
-## 關鍵 Session Rules（持久有效，跨 session，不變）
+## 本 project 特有的 pitfall
 
-- **CEO level 3**：全自主執行到底，DOA 內不停、不問 continue。只在 Board Decision / circuit breaker / 天然斷點才停。（feedback: `no-collapse-prompt`）
-- **CJK truncation**：`.chars().take(N).collect::<String>()`，**絕不**用 `&s[..N]`（panic）。（feedback: `cjk-truncation`）
-- **dev-flow boundary**：code-touch 邊界必 re-invoke（PreToolUse hook 會提醒）。（feedback: `dev-flow-boundary`）
-- **Cross-project sync**：CodeForge 設計一律落 `doc/specs/*.md`。（feedback: `cross-project-sync`）
-- **Design decision method**：tradeoff 派多 agent 平行研究，不用「先做最小、未來升級」迴避決策。（feedback: `design-decision-method`）
-- **ECS component TTL**：serialize 進 `pet_snapshot` 的 component 要考慮釘死風險；持久 state（Mood / Strategy）不需 TTL，per-tick ephemeral（LastMessage）要 TTL。（feedback: `ecs-component-ttl`）
-- **RNG salt monotonic**：daemon RNG 用 `tick_count`，不用 `tick_at` 秒數。（feedback: `rng-salt-monotonic`）
-- **Shutdown 通道**：tokio task 用 `mpsc::channel(1)`，不用 `Notify::notify_waiters`；`spawn_blocking` 用 `Arc<AtomicBool>` 合作退出。（feedback: `notify-vs-mpsc-shutdown`）
-- **CLI ↔ Daemon 共寫 pet_snapshot**：使用者可寫欄位（如 `strategy`）daemon tick 必須先 refresh_from_db 再走 combat/serialize，否則 daemon 會用 stale ECS 覆寫（Phase 3b review r1 抓到的）。
+1. **ANSI colour 在 non-TTY sink 下炸圖** —— render 回傳純 `Vec<String>`，
+   colour 在 `paint` 層疊加（既有 `termcolor::StandardStream` pattern）。
+   Test assert plain text 不含 ANSI 脆弱；看 `src/tui/render.rs` 既有做法。
+2. **Tile 10 cols 裝 CJK dir name** —— 扣 border 2 cols，內容區 8 cols
+   = 4 CJK 字。「後端」OK、「代號七七七」要截成「代號七七…」。
+3. **`RoomSummary::is_current` 已存在** —— P4 `@` overlay 直接用，不要重造
+   current-dir 偵測邏輯。
+4. **Grid render 在 Wide mode 容得下 Zoa** —— layout 已分好 region，
+   Wide mode map 只有 ~46 cols，tile 10-col 可排 4 個一列；不要動 layout.rs。
+5. **Display mode toggle 要 mut borrow** —— 沿用 tui-foundation 的 ZoaPanel
+   pattern：`&mut LocalMapPanel` 傳進 `paint_once`，在 `tokio::select!` arm
+   裡 safe。
+6. **Fallback to list 不是複製 render_list 代碼** —— 直接 call 現有
+   `render_list()` function（rename 現有 `render` 為 `render_list`，
+   新增 dispatcher `render()` 來 route）。
 
-## Phase 3b 留給後續的小尾巴
+## Review 要點（r1 會抓的）
 
-**不阻塞**但可以 follow-up：
+從 tui-foundation 的 r1 教訓：
+- 確認 `duration_since` / `Instant` 算術都用 `checked_*`
+- Keypress events test 要 assert argv 長度 + 每個 index，不只部分
+- `paint_once` 裡的 mode check 要在 every paint 重算（terminal resize 可能改）
+- dead_code allows 要在 `--bin` target 下驗證（test reachability 不算）
 
-- **Tome Sense ability (Lv 15)** Scholar loot rate +20% —— 等 Phase 2.5 ability 系統上線再補
-- **Explorer cross-zone priority** —— spec 原意「優先未探索 Zone」，Phase 3b 只有 home zone degenerate 成 id order；Phase 3a multi-zone 後再 revisit
-- **AliveMob.zone_id** 仍 `#[allow(dead_code)]` —— Phase 3a multi-zone raids 會 consume
+## 入口指令（next session 的你貼著走）
 
-## Spec 入口
+```
+# 1) Session start gate
+→ invoke autopilot:dev-flow
+   ARGUMENTS: L-size project tile-map-localmap 繼續 — 在 feature/tile-map-localmap branch 上，P1-P4 依 plan 執行
 
-- `doc/specs/codeforge-mud-engine.md`（878 行）— daemon / 戰鬥 / TUI / §2 Strategy（已實作）/ §3 黏著度 / §3.10 Nation Theme
-- `doc/specs/nation-p2p-design.md`（353 行）— Nation / Organizer / P2P integrity
-- `.claude/rpg-engine-spec.md` — daemon write ownership model
-- `.claude/i18n-spec.md` — i18n 兩層設計
+# 2) 讀 plan + project README
+→ Read doc/plans/2026-04-20-tile-map-localmap.md
+→ Read doc/projects/2026-04-21-tile-map-localmap/README.md
 
-## Memory 索引
-
-`~/.claude/projects/-home-codepower-projects-codeforge/memory/MEMORY.md` — 今日無新增 feedback，但 `project_phase2_roadmap.md` 更新：3b 標記 ✅ 2026-04-18、3d 補上 ✅ 2026-04-17。
+# 3) 開工 P1
+→ Read src/tui/panels/local_map.rs（現有 render 當作 fallback baseline）
+→ Read src/tui/panels/mod.rs（pad_to_width / clip_to_width / vis_width helpers）
+→ Write src/tui/panels/local_map_tile.rs（P1 tile primitive）
+→ cargo test --bin codeforge tui::panels::local_map_tile
+→ git commit P1
+→ TaskUpdate P1 completed，P2 in_progress
+...
+```
 
 ## 一句話狀態
 
-Phase 3b 全數 ship — pet 現在可由玩家選擇 4 種打法影響戰鬥結果，combat tick 套乘子 + MOB 優先序，statusline + TUI 即時顯示。Review round 1 抓到 CLI → daemon 的 serialize race，已在 tick step 3b 加 `refresh_strategy_from_db` 根治。下一步選 3c/3a/3e/3f 任一都行。
+Plan 定稿（`doc/plans/2026-04-20-tile-map-localmap.md`），project dir 與
+branch 都備好，tasks 佇列就緒 —— 下個 session invoke dev-flow 後直接開
+P1 寫 `local_map_tile.rs`，不需重設計，連續執行到 merge + archive。
