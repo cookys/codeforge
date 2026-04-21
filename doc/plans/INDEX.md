@@ -4,7 +4,7 @@
 
 | Plan | Created | Status |
 |------|---------|--------|
-| [tile-map-localmap](2026-04-20-tile-map-localmap.md) | 2026-04-20 | 📋 Draft — awaiting green-light |
+| [tile-map-localmap](2026-04-20-tile-map-localmap.md) | 2026-04-20 | 🚧 in progress（project: `2026-04-21-tile-map-localmap`） |
 
 ---
 
