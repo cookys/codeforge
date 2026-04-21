@@ -13,6 +13,7 @@ use std::path::Path;
 
 use super::layout::{compute, Layout, LayoutMode};
 use super::local_map::compute as compute_local_map;
+use super::panels::local_map::LocalMapPanel;
 use super::panels::{combat_log, local_map as map_panel, pet as pet_panel, zoa::ZoaPanel};
 use crate::pet::live_state::LiveState;
 
@@ -42,6 +43,13 @@ pub struct PositionedLine {
 /// `zoa`: when `Some` AND the layout is Wide, the Zoa sprite renders into
 /// its reserved left column. Tests that don't exercise Wide mode can pass
 /// `None` to skip the panel entirely.
+///
+/// `local_map`: when `Some`, routes through the display-mode dispatcher
+/// (List / Grid) honouring the panel's current `display_mode`. `None`
+/// preserves the Phase 2c behaviour (default List mode, no toggle
+/// support) so legacy tests keep passing without alteration.
+#[allow(clippy::too_many_arguments)] // composes four independent panels + two
+// overrides; splitting into a builder would hide the test call-site intent
 pub fn build_frame(
     conn: &Connection,
     scan_root: &Path,
@@ -50,6 +58,7 @@ pub fn build_frame(
     rows: u16,
     welcome_override: Option<&[String]>,
     zoa: Option<&ZoaPanel>,
+    local_map: Option<&LocalMapPanel>,
 ) -> Result<Frame> {
     let layout = compute(cols, rows);
 
@@ -75,7 +84,10 @@ pub fn build_frame(
         Vec::new()
     } else {
         let rooms = compute_local_map(conn, scan_root, cwd)?;
+        let default_panel = LocalMapPanel::new();
+        let panel = local_map.unwrap_or(&default_panel);
         map_panel::render(
+            panel,
             &rooms,
             layout.local_map.width as usize,
             layout.local_map.height as usize,
@@ -253,7 +265,7 @@ mod tests {
     #[test]
     fn build_frame_on_empty_db_shows_placeholder() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
         // Top row should be the no-pet placeholder
         let top = frame
             .lines
@@ -275,7 +287,7 @@ mod tests {
             [],
         )
         .unwrap();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
         let has_ferris = frame.lines.iter().any(|l| l.text.contains("Ferris"));
         assert!(has_ferris, "pet name must appear in frame");
     }
@@ -283,14 +295,14 @@ mod tests {
     #[test]
     fn build_frame_includes_local_map_header() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
         assert!(frame.lines.iter().any(|l| l.text.contains("Local Map")));
     }
 
     #[test]
     fn build_frame_includes_combat_log_header() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
         assert!(frame.lines.iter().any(|l| l.text.contains("Combat Log")));
     }
 
@@ -306,7 +318,7 @@ mod tests {
             )
             .unwrap();
         }
-        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
         // Most-recent-first: "mob-2" should be in frame somewhere
         assert!(frame.lines.iter().any(|l| l.text.contains("mob-2")));
     }
@@ -314,7 +326,7 @@ mod tests {
     #[test]
     fn build_frame_respects_layout_positions() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None, None).unwrap();
         // Pet status lines should be at rows 0..3
         let pet_rows: Vec<u16> = frame
             .lines
@@ -333,7 +345,7 @@ mod tests {
     #[test]
     fn paint_does_not_panic_on_in_memory_sink() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 60, 15, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 60, 15, None, None, None).unwrap();
         let mut sink: Vec<u8> = Vec::new();
         paint(&frame, &mut sink).unwrap();
         assert!(!sink.is_empty(), "paint must write something");
@@ -375,13 +387,13 @@ mod tests {
         }
 
         // Prime
-        let _ = build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None).unwrap();
+        let _ = build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None, None).unwrap();
         let mut sink: Vec<u8> = Vec::new();
 
         const N: u32 = 50;
         let start = std::time::Instant::now();
         for _ in 0..N {
-            let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None).unwrap();
+            let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None, None).unwrap();
             sink.clear();
             paint(&frame, &mut sink).unwrap();
         }
@@ -396,7 +408,7 @@ mod tests {
     fn build_frame_tiny_terminal_does_not_panic() {
         let conn = fresh();
         // 10x3 — only pet row, no bottom panels
-        let frame = build_frame(&conn, Path::new("/repo"), None, 10, 3, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 10, 3, None, None, None).unwrap();
         // Frame should contain pet rows; bottom panels may be 0-height so
         // their lines are all empty strings (we skip empty at paint time).
         assert!(frame.lines.iter().any(|l| l.row < 3));
@@ -418,7 +430,7 @@ mod tests {
             "  → 擊殺 ghost ×5".to_string(),
         ];
         let frame =
-            build_frame(&conn, Path::new("/repo"), None, 100, 30, Some(&welcome), None).unwrap();
+            build_frame(&conn, Path::new("/repo"), None, 100, 30, Some(&welcome), None, None).unwrap();
 
         // The welcome-back title must appear (it replaces the normal
         // "⚔ Combat Log" header).
@@ -440,7 +452,7 @@ mod tests {
         // 72 cols is inside the Narrow breakpoint — local_map should
         // collapse to zero rows (no "📍 Local Map" header).
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 72, 20, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 72, 20, None, None, None).unwrap();
         assert!(
             !frame.lines.iter().any(|l| l.text.contains("Local Map")),
             "Narrow mode must not render the Local Map panel"
@@ -454,7 +466,7 @@ mod tests {
         // 50 cols → Compact. Layout returns empty rects for bottom panels
         // even when called (caller is responsible for not entering alt-screen).
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 50, 20, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 50, 20, None, None, None).unwrap();
         // No Combat Log / Local Map at all.
         assert!(!frame.lines.iter().any(|l| l.text.contains("Combat Log")));
         assert!(!frame.lines.iter().any(|l| l.text.contains("Local Map")));
@@ -468,7 +480,7 @@ mod tests {
         // 140 cols → Wide. Passing Some(ZoaPanel) should render it at x=0.
         let conn = fresh();
         let zoa = super::ZoaPanel::new();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 140, 30, None, Some(&zoa)).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 140, 30, None, Some(&zoa), None).unwrap();
         // Zoa occupies col 0 at rows >= 3 (below the pet header). Look for
         // the top frame row which contains "_______".
         let zoa_top_row = frame.lines.iter().find(|l| l.col == 0 && l.row >= 3 && l.text.contains("_______"));
@@ -484,7 +496,7 @@ mod tests {
         // (there's no reserved column for it).
         let conn = fresh();
         let zoa = super::ZoaPanel::new();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, Some(&zoa)).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, Some(&zoa), None).unwrap();
         assert!(
             !frame.lines.iter().any(|l| l.text.contains("_______")),
             "Standard mode must not render Zoa frames"
@@ -496,7 +508,7 @@ mod tests {
         // Wide at 140 cols: zoa x=0, map x=24, log x=24+map_w.
         let conn = fresh();
         let zoa = super::ZoaPanel::new();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 140, 30, None, Some(&zoa)).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 140, 30, None, Some(&zoa), None).unwrap();
         // Local Map header must appear at col 24 (ZOA_WIDTH).
         let map_header = frame
             .lines
@@ -518,7 +530,7 @@ mod tests {
             [],
         )
         .unwrap();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None).unwrap();
+        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None, None).unwrap();
         assert!(
             frame.lines.iter().any(|l| l.text.contains("unique-marker")),
             "normal frame must surface real combat_log rows"
@@ -527,5 +539,148 @@ mod tests {
             !frame.lines.iter().any(|l| l.text.contains("歸來摘要")),
             "no welcome-back title without override"
         );
+    }
+
+    // ─── P4 integration: tile-grid Local Map ───────────────────────────
+
+    fn seed_mobs_with_paths(conn: &Connection, paths: &[&str]) {
+        for (i, p) in paths.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO mobs
+                    (zone_id, kind, name, hp, hp_max, atk, def, spawned_at, origin_path)
+                 VALUES ('rust', 'zombie', ?1, 10, 10, 1, 1, 100, ?2)",
+                rusqlite::params![format!("m-{i}"), p],
+            )
+            .unwrap();
+        }
+    }
+
+    /// Derive the exact local_map rect for a given terminal size so the
+    /// integration tests can assert "content lives in the map region"
+    /// rather than a loose `col < some_number` bound that also matches
+    /// the pet_status row at col 0 (review-r1 CRITICAL #1).
+    fn in_local_map(l: &PositionedLine, cols: u16, rows: u16) -> bool {
+        let layout = super::super::layout::compute(cols, rows);
+        let r = layout.local_map;
+        l.col >= r.x && l.col < r.x + r.width && l.row >= r.y && l.row < r.y + r.height
+    }
+
+    #[test]
+    fn build_frame_grid_mode_renders_tile_borders_in_local_map_region() {
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/cli/a.rs", "doc/x.md", "target/z.rs"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        // Tile top-border must appear inside the local_map rect — not
+        // just "col < some_number" which would also accept pet_status
+        // rows at col 0 (review-r1 CRITICAL #1).
+        let has_tile_border = frame
+            .lines
+            .iter()
+            .any(|l| in_local_map(l, 100, 30) && l.text.contains('┌'));
+        assert!(
+            has_tile_border,
+            "grid mode must emit tile borders inside local_map rect"
+        );
+        // And the "Local Map" header (list-mode only) must NOT appear.
+        assert!(!frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
+    }
+
+    #[test]
+    fn build_frame_list_mode_preserves_legacy_header() {
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/a.rs"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::List };
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        // List mode keeps the "📍 Local Map" header row.
+        assert!(frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
+        // And marker row for the sole mob directory.
+        assert!(frame.lines.iter().any(|l| l.text.contains("src")));
+    }
+
+    #[test]
+    fn build_frame_default_none_panel_matches_list_mode() {
+        // Phase 2c behaviour pin: callers that pass None get list mode.
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/a.rs"]);
+        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None, None)
+            .unwrap();
+        assert!(frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
+    }
+
+    #[test]
+    fn build_frame_grid_mode_shows_at_overlay_for_current_directory() {
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/cli/a.rs"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        // cwd is under src/ → RoomSummary::is_current is true for "src"
+        // → render_tile adds `@` in the badge row.
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            Some(Path::new("/repo/src/cli")),
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        let has_at_marker = frame
+            .lines
+            .iter()
+            .any(|l| in_local_map(l, 100, 30) && l.text.contains('@'));
+        assert!(has_at_marker, "current dir must show @ overlay in grid tile");
+    }
+
+    #[test]
+    fn build_frame_grid_mode_cjk_directory_survives_pipeline() {
+        // The existing local_map::compute maps top-level "前端" literally
+        // into RoomSummary.directory; render_tile must clip CJK-safe
+        // and not panic on the double-wide codepoints.
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["前端/foo.ts"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        // Name must appear somewhere in the local_map column range.
+        let cjk_visible = frame
+            .lines
+            .iter()
+            .any(|l| in_local_map(l, 100, 30) && l.text.contains("前端"));
+        assert!(cjk_visible, "CJK dir name must survive the grid render pipeline");
     }
 }

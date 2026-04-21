@@ -775,6 +775,60 @@ Wide mode 在左側保留 24 cols × 8 rows 給 Zoa ASCII pet sprite。
 cycling、width gate），目前只有 Idle 4 frames；Phase 4 會加
 Happy / Tired / Hunting + mood→emotion mapping。
 
+### Local Map Tile-Grid Mode（2026-04-21 起）
+
+Local Map 支援兩種顯示模式，TUI 執行期可切換：
+
+| Mode | 視覺 | 觸發 |
+|------|------|------|
+| List（預設） | `▶ src [🧟2]` 線性清單 | 初始 |
+| Grid | 10×3 box-drawn tile，每個 top-level dir 一格 | 按 `g` 或 `l` 切換 |
+
+**Tile 結構**：
+
+```
+┌────────┐
+│ daemon │    ← dir 名（CJK-safe，最多 4 CJK 字或 8 ASCII）
+│🧟3   @ │    ← mob badge +（當前目錄加）@ 標記
+```
+
+**Grid 排版**：`cols = floor(panel_w / 10)`、`rows = floor(panel_h / 3)`。
+超過 `capacity = cols × rows` 的 room 不渲染，右下角顯示 `…+N more`。
+
+**Fallback**：panel width < 30 cols 時（連一格 tile 都塞不下），Grid
+模式自動退回 List 渲染。
+
+**Zone 色碼**（border colour — `src/tui/panels/local_map_tile.rs::zone_color`）：
+
+| Dir | Color | 含義 |
+|------|-------|------|
+| `src` / `rust` | Red | Forge / 火 |
+| `doc` / `docs` / `memory` / `.claude` | Magenta | Meta / 內省 |
+| `daemon` | White | 系統層 |
+| `tui` / `ui` | Cyan | 前端 |
+| `db` / `data` | Yellow | 資料 |
+| `(unknown)` / 其他 | Ansi256(8)（dark grey） | 預設 |
+
+> 色碼 mapping 已單元測試；per-tile border 的 ANSI paint 整合（需要
+> `Vec<StyledSpan>` 取代整行 `Print(&text)`）留到下一輪 polish。
+
+**按鍵**：
+
+| Key | 動作 |
+|-----|------|
+| `g` / `l` | 在 List / Grid 之間循環切換（兩鍵皆 toggle，便於盲打） |
+| `Ctrl-G` / `Ctrl-L` | **保留給終端**（terminal bell / clear screen），不攔截 |
+
+**State**：`LocalMapPanel { display_mode: DisplayMode }` 存在 in-memory，
+不跨 session 持久化（第一輪 scope 取捨；settings table 擴充留待後續）。
+
+**程式碼**：
+- `src/tui/panels/local_map_tile.rs` — tile primitive + grid flow + zone_color
+- `src/tui/panels/local_map.rs` — `LocalMapPanel` + dispatcher `render()`
+- `src/tui/events.rs::TuiEvent::ToggleMapMode` + `classify()`
+- `src/tui/mod.rs` — main_loop 接到 ToggleMapMode 就 flip + 立即 repaint
+- `src/tui/render.rs::build_frame` — `Option<&LocalMapPanel>` 參數
+
 ---
 
 ## 6. Daemon 架構

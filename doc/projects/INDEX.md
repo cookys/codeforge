@@ -6,7 +6,7 @@
 
 | Project | Description | Branch | Started |
 |---------|------------|--------|---------|
-| *(no active projects)* | — | — | — |
+| [tile-map-localmap](2026-04-21-tile-map-localmap/README.md) | Local Map 從 list 升級為 tile-grid（Revival World 風）—— color-coded tile border + CJK 名 + badge + `@` overlay + `g`/`l` toggle | `feature/tile-map-localmap` | 2026-04-21 |
 
 ## Archived
 

@@ -18,12 +18,13 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio::time::{interval, MissedTickBehavior};
 
 use crate::db::Context;
 use crate::pet::session::{get_last_seen, update_last_seen, WelcomeBackSummary};
+use crate::tui::events::TuiEvent;
 use crate::tui::layout::LayoutMode;
+use crate::tui::panels::local_map::LocalMapPanel;
 use crate::tui::panels::zoa::ZoaPanel;
 
 /// Refresh interval — 1 Hz matches the pace of daemon-driven state
@@ -61,6 +62,7 @@ pub async fn run(ctx: &Context) -> Result<()> {
     let scan_root = scan_root_for_tui();
     let cwd = std::env::current_dir().ok();
     let mut zoa = ZoaPanel::new();
+    let mut local_map = LocalMapPanel::new();
 
     // Phase 3d §3.1: compute welcome-back BEFORE alt-screen takeover so
     // the SQL work doesn't flash an empty frame. `update_last_seen` closes
@@ -75,10 +77,11 @@ pub async fn run(ctx: &Context) -> Result<()> {
         Some(welcome_lines)
     };
 
-    // Buffered mpsc channel: capacity 1 means a quit-key pressed before
-    // the main loop first polls rx.recv() is still delivered (unlike
-    // Notify::notify_waiters which drops when no waiter is registered).
-    let (tx, mut rx) = mpsc::channel::<()>(1);
+    // Buffered mpsc channel carries `TuiEvent` now (was `()` pre-tile-map).
+    // An event fired before the main loop first polls rx.recv() is still
+    // delivered, unlike `Notify::notify_waiters` which drops when no
+    // waiter is registered.
+    let (tx, mut rx) = events::event_channel();
     // Shared flag: keyboard task checks between polls so it returns
     // within ~100ms after the main loop signals exit, instead of
     // continuing to consume keystrokes from the user's shell post-TUI.
@@ -93,6 +96,7 @@ pub async fn run(ctx: &Context) -> Result<()> {
         cwd.as_deref(),
         welcome_once.as_deref(),
         &mut zoa,
+        &local_map,
     )?;
     // Welcome-back lives for exactly one paint. Dropping it here means
     // subsequent ticker-driven paints show the normal combat log.
@@ -113,14 +117,32 @@ pub async fn run(ctx: &Context) -> Result<()> {
                     cwd.as_deref(),
                     welcome_once.as_deref(),
                     &mut zoa,
+                    &local_map,
                 ) {
                     // One bad frame shouldn't kill the TUI — log to stderr
                     // (goes to alt-screen too, will be cleared next frame).
                     eprintln!("render error: {e}");
                 }
             }
-            _ = rx.recv() => {
-                break;
+            ev = rx.recv() => {
+                match ev {
+                    Some(TuiEvent::Quit) | None => break,
+                    Some(TuiEvent::ToggleMapMode) => {
+                        local_map.toggle();
+                        // Repaint immediately so the user sees the mode
+                        // flip without waiting up to REFRESH_INTERVAL.
+                        if let Err(e) = paint_once(
+                            ctx,
+                            scan_root.as_deref(),
+                            cwd.as_deref(),
+                            welcome_once.as_deref(),
+                            &mut zoa,
+                            &local_map,
+                        ) {
+                            eprintln!("render error: {e}");
+                        }
+                    }
+                }
             }
         }
     }
@@ -152,6 +174,7 @@ fn paint_once(
     cwd: Option<&std::path::Path>,
     welcome_override: Option<&[String]>,
     zoa: &mut ZoaPanel,
+    local_map: &LocalMapPanel,
 ) -> Result<()> {
     let conn = ctx.open_db()?;
     let (cols, rows) = crossterm::terminal::size().unwrap_or((100, 40));
@@ -178,7 +201,16 @@ fn paint_once(
     // animation runs at 1 fps — Phase 4 will add a faster repaint tier
     // for the Zoa region specifically.
     zoa.tick();
-    let frame = render::build_frame(&conn, root, cwd, cols, rows, welcome_override, Some(zoa))?;
+    let frame = render::build_frame(
+        &conn,
+        root,
+        cwd,
+        cols,
+        rows,
+        welcome_override,
+        Some(zoa),
+        Some(local_map),
+    )?;
     let mut stdout = io::stdout();
     render::paint(&frame, &mut stdout)?;
     Ok(())
