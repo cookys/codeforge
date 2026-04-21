@@ -1,17 +1,21 @@
-//! Keyboard event handling — Phase 2c P5.
+//! Keyboard event handling — Phase 2c P5 + tile-map UX polish.
 //!
 //! The event task blocks on `crossterm::event::read` in a blocking
 //! thread (via `tokio::task::spawn_blocking`), interpreting each key
-//! and signaling shutdown via an mpsc channel (buffered capacity 1 —
-//! avoids the `Notify` lost-wakeup race where a quit fired before the
-//! main loop registers a waiter is dropped silently).
+//! and signaling via an mpsc channel (buffered capacity — avoids the
+//! `Notify` lost-wakeup race where an event fired before the main loop
+//! registers a waiter is dropped silently).
 //!
 //! The main loop can request shutdown of the keyboard task itself by
 //! flipping `running` to false — the blocking thread checks it between
 //! each 100ms poll, so it returns promptly and doesn't consume the
 //! user's post-exit keystrokes from their shell.
 //!
-//! Keys recognized: `q`, `Esc`, Ctrl-C. Anything else is ignored.
+//! Keys recognized:
+//! * `q` / `Esc` / Ctrl-C → [`TuiEvent::Quit`]
+//! * `g` / `l` → [`TuiEvent::ToggleMapMode`]  (tile-map UX polish)
+//!
+//! Anything else is ignored.
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,11 +23,31 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-/// Spawn a blocking task that reads key events. On quit-key, sends on
-/// `shutdown` once. On `running == false` (set by the main loop when it
+/// Events surfaced from the keyboard task to the main loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TuiEvent {
+    /// User asked to exit — `q`, `Esc`, or Ctrl-C.
+    Quit,
+    /// User pressed `g` or `l` to cycle the Local Map display mode.
+    ToggleMapMode,
+}
+
+/// Channel capacity. Large enough to buffer a burst of keypresses
+/// (e.g. `g` then `q` in rapid succession) without `try_send` dropping;
+/// small enough that back-pressure still shows up if the main loop
+/// stalls for many seconds.
+const EVENT_CHANNEL_CAPACITY: usize = 8;
+
+/// Convenience constructor for the (tx, rx) pair.
+pub fn event_channel() -> (mpsc::Sender<TuiEvent>, mpsc::Receiver<TuiEvent>) {
+    mpsc::channel(EVENT_CHANNEL_CAPACITY)
+}
+
+/// Spawn a blocking task that reads key events and forwards them as
+/// `TuiEvent`. On `running == false` (set by the main loop when it
 /// exits for any reason), returns without draining further keystrokes.
 pub fn spawn_keyboard_task(
-    shutdown: mpsc::Sender<()>,
+    tx: mpsc::Sender<TuiEvent>,
     running: Arc<AtomicBool>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::task::spawn_blocking(move || loop {
@@ -33,11 +57,27 @@ pub fn spawn_keyboard_task(
         match event::poll(Duration::from_millis(100)) {
             Ok(true) => {
                 if let Ok(ev) = event::read() {
-                    if should_quit(&ev) {
-                        // try_send: channel has capacity 1; if the main
-                        // loop already received a prior signal, drop.
-                        let _ = shutdown.try_send(());
-                        return;
+                    if let Some(mapped) = classify(&ev) {
+                        match mapped {
+                            // Quit must always reach the main loop —
+                            // `try_send` can drop if the buffer is full
+                            // (e.g. after a rapid burst of ToggleMapMode),
+                            // which would hang the TUI since the main
+                            // loop has no other quit path. Use
+                            // `blocking_send` to guarantee delivery.
+                            // Legal in a spawn_blocking task.
+                            TuiEvent::Quit => {
+                                let _ = tx.blocking_send(TuiEvent::Quit);
+                                return;
+                            }
+                            // For toggle events, drop-on-full is fine —
+                            // the user can retry the keystroke, and
+                            // holding up the keyboard thread on a full
+                            // buffer would cost responsiveness.
+                            _ => {
+                                let _ = tx.try_send(mapped);
+                            }
+                        }
                     }
                 }
             }
@@ -47,23 +87,42 @@ pub fn spawn_keyboard_task(
     })
 }
 
-/// True when the event means "quit": q, Esc, or Ctrl-C.
-pub fn should_quit(ev: &Event) -> bool {
+/// Classify a raw crossterm event into a [`TuiEvent`], or `None` to
+/// ignore. Public for testability.
+pub fn classify(ev: &Event) -> Option<TuiEvent> {
     match ev {
         Event::Key(KeyEvent {
             code: KeyCode::Char('q'),
             ..
-        }) => true,
-        Event::Key(KeyEvent {
+        })
+        | Event::Key(KeyEvent {
             code: KeyCode::Esc, ..
-        }) => true,
+        }) => Some(TuiEvent::Quit),
         Event::Key(KeyEvent {
             code: KeyCode::Char('c'),
             modifiers,
             ..
-        }) => modifiers.contains(KeyModifiers::CONTROL),
-        _ => false,
+        }) if modifiers.contains(KeyModifiers::CONTROL) => Some(TuiEvent::Quit),
+        Event::Key(KeyEvent {
+            code: KeyCode::Char('g'),
+            modifiers,
+            ..
+        })
+        | Event::Key(KeyEvent {
+            code: KeyCode::Char('l'),
+            modifiers,
+            ..
+        }) if !modifiers.contains(KeyModifiers::CONTROL) => Some(TuiEvent::ToggleMapMode),
+        _ => None,
     }
+}
+
+/// Equivalent to `matches!(classify(ev), Some(TuiEvent::Quit))`. Kept
+/// in the public surface for tests that assert on the quit half of the
+/// classifier without caring about the toggle-map path.
+#[cfg(test)]
+pub fn should_quit(ev: &Event) -> bool {
+    matches!(classify(ev), Some(TuiEvent::Quit))
 }
 
 #[cfg(test)]
@@ -80,64 +139,181 @@ mod tests {
         })
     }
 
+    // ------------------------------------------------------------------
+    // Quit classification (preserves Phase 2c review-r1 semantics)
+    // ------------------------------------------------------------------
+
     #[test]
     fn q_triggers_quit() {
-        assert!(should_quit(&key(KeyCode::Char('q'), KeyModifiers::NONE)));
+        assert_eq!(classify(&key(KeyCode::Char('q'), KeyModifiers::NONE)), Some(TuiEvent::Quit));
     }
 
     #[test]
     fn esc_triggers_quit() {
-        assert!(should_quit(&key(KeyCode::Esc, KeyModifiers::NONE)));
+        assert_eq!(classify(&key(KeyCode::Esc, KeyModifiers::NONE)), Some(TuiEvent::Quit));
     }
 
     #[test]
     fn ctrl_c_triggers_quit() {
-        assert!(should_quit(&key(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+        assert_eq!(
+            classify(&key(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            Some(TuiEvent::Quit)
+        );
     }
 
     #[test]
     fn plain_c_does_not_trigger_quit() {
-        assert!(!should_quit(&key(KeyCode::Char('c'), KeyModifiers::NONE)));
+        assert_eq!(classify(&key(KeyCode::Char('c'), KeyModifiers::NONE)), None);
     }
 
     #[test]
     fn other_keys_ignored() {
-        assert!(!should_quit(&key(KeyCode::Char('a'), KeyModifiers::NONE)));
-        assert!(!should_quit(&key(KeyCode::Enter, KeyModifiers::NONE)));
-        assert!(!should_quit(&key(KeyCode::Tab, KeyModifiers::NONE)));
+        assert_eq!(classify(&key(KeyCode::Char('a'), KeyModifiers::NONE)), None);
+        assert_eq!(classify(&key(KeyCode::Enter, KeyModifiers::NONE)), None);
+        assert_eq!(classify(&key(KeyCode::Tab, KeyModifiers::NONE)), None);
     }
 
     #[test]
     fn mouse_and_resize_events_ignored() {
-        let resize = Event::Resize(80, 24);
-        assert!(!should_quit(&resize));
+        assert_eq!(classify(&Event::Resize(80, 24)), None);
     }
 
-    /// Regression for review round 1 IMPORTANT #1:
-    /// mpsc::channel(1) buffers the send so a quit fired *before* the
-    /// receiver is polled is still delivered, unlike `Notify::notify_waiters`
-    /// which silently drops when no waiter is registered.
+    // ------------------------------------------------------------------
+    // Tile-map toggle keys
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn g_toggles_map_mode() {
+        assert_eq!(
+            classify(&key(KeyCode::Char('g'), KeyModifiers::NONE)),
+            Some(TuiEvent::ToggleMapMode)
+        );
+    }
+
+    #[test]
+    fn l_toggles_map_mode() {
+        assert_eq!(
+            classify(&key(KeyCode::Char('l'), KeyModifiers::NONE)),
+            Some(TuiEvent::ToggleMapMode)
+        );
+    }
+
+    #[test]
+    fn shift_g_also_toggles_map_mode() {
+        // Shift-G (capital G) still yields KeyCode::Char('g') with SHIFT
+        // mod on some terminals; others send Char('G'). crossterm sends
+        // the lowercase char with SHIFT, so this still classifies.
+        assert_eq!(
+            classify(&key(KeyCode::Char('g'), KeyModifiers::SHIFT)),
+            Some(TuiEvent::ToggleMapMode)
+        );
+    }
+
+    #[test]
+    fn ctrl_g_does_not_toggle_map_mode() {
+        // Ctrl-G would collide with terminal bell; reserve to non-Ctrl.
+        assert_eq!(
+            classify(&key(KeyCode::Char('g'), KeyModifiers::CONTROL)),
+            None
+        );
+    }
+
+    #[test]
+    fn ctrl_l_does_not_toggle_map_mode() {
+        // Ctrl-L is the conventional "clear screen" — don't steal it.
+        assert_eq!(
+            classify(&key(KeyCode::Char('l'), KeyModifiers::CONTROL)),
+            None
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // should_quit legacy shim
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn should_quit_matches_classify_quit() {
+        assert!(should_quit(&key(KeyCode::Char('q'), KeyModifiers::NONE)));
+        assert!(should_quit(&key(KeyCode::Esc, KeyModifiers::NONE)));
+        assert!(should_quit(&key(KeyCode::Char('c'), KeyModifiers::CONTROL)));
+        assert!(!should_quit(&key(KeyCode::Char('g'), KeyModifiers::NONE)));
+    }
+
+    // ------------------------------------------------------------------
+    // Channel semantics (regressions from review-r1)
+    // ------------------------------------------------------------------
+
+    /// Regression for review round 1 IMPORTANT #1 (Phase 2c):
+    /// mpsc buffers the send so an event fired *before* the receiver is
+    /// polled is still delivered, unlike `Notify::notify_waiters` which
+    /// silently drops when no waiter is registered.
     #[tokio::test]
-    async fn shutdown_channel_delivers_signal_sent_before_recv() {
-        let (tx, mut rx) = mpsc::channel::<()>(1);
-        // Send BEFORE anyone awaits rx.recv()
-        tx.try_send(()).unwrap();
-        // Recv after the send — must not block forever
+    async fn channel_delivers_event_sent_before_recv() {
+        let (tx, mut rx) = event_channel();
+        tx.try_send(TuiEvent::Quit).unwrap();
         let got = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await;
         assert!(got.is_ok(), "send-before-recv must still deliver");
-        assert!(got.unwrap().is_some());
+        assert_eq!(got.unwrap(), Some(TuiEvent::Quit));
     }
 
-    /// Regression for review round 1 IMPORTANT #2:
-    /// `running = false` must be observable by the keyboard task's
-    /// load so it can exit within the poll interval. This doesn't spawn
-    /// a real task (avoid TTY dependency) but proves the atomic flag's
-    /// ordering guarantees.
+    #[tokio::test]
+    async fn channel_buffers_multiple_toggle_events() {
+        let (tx, mut rx) = event_channel();
+        tx.try_send(TuiEvent::ToggleMapMode).unwrap();
+        tx.try_send(TuiEvent::ToggleMapMode).unwrap();
+        tx.try_send(TuiEvent::Quit).unwrap();
+        assert_eq!(rx.recv().await, Some(TuiEvent::ToggleMapMode));
+        assert_eq!(rx.recv().await, Some(TuiEvent::ToggleMapMode));
+        assert_eq!(rx.recv().await, Some(TuiEvent::Quit));
+    }
+
+    /// Regression for review round 1 IMPORTANT #2 (Phase 2c):
+    /// `running = false` must be observable by the keyboard task's load
+    /// so it can exit within the poll interval.
     #[test]
     fn running_flag_acquire_sees_release_store() {
         let running = Arc::new(AtomicBool::new(true));
         assert!(running.load(Ordering::Acquire));
         running.store(false, Ordering::Release);
         assert!(!running.load(Ordering::Acquire));
+    }
+
+    /// Regression for tile-map review-r1 CRITICAL #2: a Quit event sent
+    /// when the channel is full must still reach the main loop — otherwise
+    /// a rapid burst of ToggleMapMode events followed by `q` would hang
+    /// the TUI forever. `blocking_send` guarantees delivery.
+    #[tokio::test]
+    async fn quit_delivered_even_when_channel_is_full() {
+        let (tx, mut rx) = event_channel();
+        // Fill the channel with ToggleMapMode events.
+        for _ in 0..EVENT_CHANNEL_CAPACITY {
+            tx.try_send(TuiEvent::ToggleMapMode).unwrap();
+        }
+        // Next try_send would fail — simulate the keyboard task's
+        // blocking_send path from a task-style context.
+        assert!(tx.try_send(TuiEvent::Quit).is_err());
+        // Spawn a consumer that drains so blocking_send can complete.
+        let sender = tx.clone();
+        let consumer = tokio::spawn(async move {
+            // Drain one slot, giving the blocked sender room.
+            rx.recv().await.unwrap();
+            // Now the sender's Quit should land.
+            // Drain the remaining 7 toggles + the Quit at the tail.
+            let mut quit_seen = false;
+            while let Some(ev) = rx.recv().await {
+                if ev == TuiEvent::Quit {
+                    quit_seen = true;
+                    break;
+                }
+            }
+            quit_seen
+        });
+        // blocking_send from a non-blocking context via spawn_blocking
+        // mirrors what spawn_keyboard_task does internally.
+        let send_task = tokio::task::spawn_blocking(move || {
+            sender.blocking_send(TuiEvent::Quit)
+        });
+        assert!(send_task.await.unwrap().is_ok(), "blocking_send must deliver Quit");
+        assert!(consumer.await.unwrap(), "consumer must observe Quit");
     }
 }

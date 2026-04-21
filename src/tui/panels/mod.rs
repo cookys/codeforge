@@ -9,6 +9,7 @@
 
 pub mod combat_log;
 pub mod local_map;
+pub mod local_map_tile;
 pub mod pet;
 pub mod zoa;
 
