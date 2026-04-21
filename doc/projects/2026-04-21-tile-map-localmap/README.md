@@ -32,16 +32,32 @@ Plan: `doc/plans/2026-04-20-tile-map-localmap.md`（完整設計細節在 plan�
 
 | Phase | Status | Tests | Commit |
 |-------|--------|-------|--------|
-| P1 Tile primitive | ⏳ pending | — | — |
-| P2 Grid flow | ⏳ pending | — | — |
-| P3 Mode toggle + events | ⏳ pending | — | — |
-| P4 `@` overlay + doc | ⏳ pending | — | — |
+| P1 Tile primitive | ✅ done | +21 | `3ff82a7` |
+| P2 Grid flow | ✅ done | +18 | `fe6db2f` |
+| P3 Mode toggle + events | ✅ done | +13 | `0729140` |
+| P4 `@` overlay + doc | 🚧 in-progress | +5 | — |
 | QG (check + clippy + test) | ⏳ pending | — | — |
 | Review r1 | ⏳ pending | — | — |
 | Fix r1 findings | ⏳ pending | — | — |
 | Review r2 | ⏳ pending | — | — |
 | Merge + archive | ⏳ pending | — | — |
 
-**估**: ~36 tests，2 新 files（`local_map_tile.rs`）+ 3 modified
+**實際**: 585 → 637+ tests（+52 已到 P3，P4 整合測試再加 +5），
+2 新 files（`local_map_tile.rs`）+ 4 modified
+（`panels/local_map.rs`、`panels/mod.rs`、`events.rs`、`mod.rs`、`render.rs`）
+
+## 設計取捨紀錄
+
+- **`@` overlay 位置**：P1 render_tile 就已處理 `is_current` → badge 行右側
+  `@` 標記（badge + gap + @，CJK-safe）。P4 沒有額外工作，改為整合測試 +
+  spec + README
+- **Success Criterion #3（zone colour ANSI snapshot）部分達成**：
+  `zone_color()` mapping 完整 + unit tested；per-tile border 的 ANSI paint
+  整合需把 `PositionedLine`（整行 `Print(&text)`）換成 `Vec<StyledSpan>`
+  的 refactor，超出本輪 scope。zone_color 暫掛 `#[allow(dead_code)]`，
+  下一輪 polish 再把 paint 層接上
+- **`build_frame` 加 `Option<&LocalMapPanel>` 8 參數**：clippy
+  `too_many_arguments` 觸發 — 就地 `#[allow]` 並附說明，比重構 builder
+  pattern 更對齊呼叫端的既有 `Some(zoa)` symmetry
 
 Last updated: 2026-04-21

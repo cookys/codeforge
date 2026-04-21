@@ -540,4 +540,135 @@ mod tests {
             "no welcome-back title without override"
         );
     }
+
+    // ─── P4 integration: tile-grid Local Map ───────────────────────────
+
+    fn seed_mobs_with_paths(conn: &Connection, paths: &[&str]) {
+        for (i, p) in paths.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO mobs
+                    (zone_id, kind, name, hp, hp_max, atk, def, spawned_at, origin_path)
+                 VALUES ('rust', 'zombie', ?1, 10, 10, 1, 1, 100, ?2)",
+                rusqlite::params![format!("m-{i}"), p],
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn build_frame_grid_mode_renders_tile_borders_in_local_map_region() {
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/cli/a.rs", "doc/x.md", "target/z.rs"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        // Standard layout: 100 cols → local_map region is 40 cols wide,
+        // enough for 4 tiles per row (each 10 cols).
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        // A tile top-border `┌` must appear inside the local_map column
+        // range (col 40..80 in Standard mode — see layout.rs).
+        let has_tile_border = frame
+            .lines
+            .iter()
+            .any(|l| l.col < 40 && l.text.contains('┌'));
+        assert!(has_tile_border, "grid mode must emit tile borders");
+        // And the "Local Map" header (list-mode only) must NOT appear.
+        assert!(!frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
+    }
+
+    #[test]
+    fn build_frame_list_mode_preserves_legacy_header() {
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/a.rs"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::List };
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        // List mode keeps the "📍 Local Map" header row.
+        assert!(frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
+        // And marker row for the sole mob directory.
+        assert!(frame.lines.iter().any(|l| l.text.contains("src")));
+    }
+
+    #[test]
+    fn build_frame_default_none_panel_matches_list_mode() {
+        // Phase 2c behaviour pin: callers that pass None get list mode.
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/a.rs"]);
+        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None, None)
+            .unwrap();
+        assert!(frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
+    }
+
+    #[test]
+    fn build_frame_grid_mode_shows_at_overlay_for_current_directory() {
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/cli/a.rs"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        // cwd is under src/ → RoomSummary::is_current is true for "src"
+        // → render_tile adds `@` in the badge row.
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            Some(Path::new("/repo/src/cli")),
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        let has_at_marker = frame
+            .lines
+            .iter()
+            .any(|l| l.col < 40 && l.text.contains('@'));
+        assert!(has_at_marker, "current dir must show @ overlay in grid tile");
+    }
+
+    #[test]
+    fn build_frame_grid_mode_cjk_directory_survives_pipeline() {
+        // The existing local_map::compute maps top-level "前端" literally
+        // into RoomSummary.directory; render_tile must clip CJK-safe
+        // and not panic on the double-wide codepoints.
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["前端/foo.ts"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        // Name must appear somewhere in the local_map column range.
+        let cjk_visible = frame
+            .lines
+            .iter()
+            .any(|l| l.col < 40 && l.text.contains("前端"));
+        assert!(cjk_visible, "CJK dir name must survive the grid render pipeline");
+    }
 }
