@@ -276,10 +276,10 @@ fn take_cols(s: &str, max_cols: usize) -> String {
 /// has no `DarkGrey` variant; every ANSI-capable terminal renders it.
 ///
 /// NOTE (2026-04-21): mapping is unit-tested; paint-layer integration
-/// (per-tile border styling) is deferred to a follow-up polish — it
-/// requires `paint` to handle `Vec<StyledSpan>` instead of whole-row
-/// `Print(&text)`, which is a separate refactor. Marked `allow(dead_code)`
-/// until that wiring lands.
+/// (per-tile border styling) is tracked as `B11 — Tile-Map Zone Color:
+/// Paint-Layer Integration` in `doc/BACKLOG.md`. Requires `paint` to
+/// handle `Vec<StyledSpan>` instead of whole-row `Print(&text)`, which
+/// is a separate refactor. `#[allow(dead_code)]` holds until B11 lands.
 #[allow(dead_code)]
 pub fn zone_color(directory: &str) -> Color {
     match directory {
