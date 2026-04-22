@@ -52,6 +52,31 @@ Tracks: `doc/BACKLOG.md#B11`
 
 ## 設計取捨紀錄
 
-（施工中填寫）
+### Pre-P1 — 既有 test surface 盤點（from 2026-04-21 digest）
+
+`render.rs` 已存在 3 個 `build_frame_grid_mode_*` tests、`panels/local_map.rs` 有 1 個 `dispatcher_grid_mode_renders_tile_borders`，都會被 P2 的 `PositionedLine.text` → `spans` migration 打到：
+
+| 檔 | 行 | Test |
+|----|----|------|
+| `src/tui/render.rs` | 569 | `build_frame_grid_mode_renders_tile_borders_in_local_map_region` |
+| `src/tui/render.rs` | 634 | `build_frame_grid_mode_shows_at_overlay_for_current_directory` |
+| `src/tui/render.rs` | 660 | `build_frame_grid_mode_cjk_directory_survives_pipeline` |
+| `src/tui/panels/local_map.rs` | 241 | `dispatcher_grid_mode_renders_tile_borders` |
+
+這些現在 assert **box-drawing 字元**（`┌─┐│└┘`）出現在 `PositionedLine.text` 裡。P2 遷移後改用 `plain_text()` 就能繼續過；assertion 語意（char-level）**不會**跟 P4 的 `grid_tile_border_emits_ansi_fg_escape`（escape-level）重複。
+
+### P3 — termcolor → crossterm Color variant naming 陷阱
+
+`zone_color` 目前用 `termcolor::Color::Ansi256(8)` 給 unknown/target/.git。crossterm 對應不是 `Ansi256` 而是 `AnsiValue`：
+
+```rust
+// termcolor
+Color::Ansi256(8)
+
+// crossterm::style::Color
+Color::AnsiValue(8)
+```
+
+其他常用色在兩個 crate 都叫 `Red` / `Magenta` / `White` / `Cyan` / `Yellow`，直接 rename import 即可。變體名這個 gotcha P3 換 crate 時需手動調，不是純機械替換。
 
 Last updated: 2026-04-22
