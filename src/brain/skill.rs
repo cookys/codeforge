@@ -1,3 +1,6 @@
+// SkillRecord read path — Phase 3+ skill-tree UI will consume `list`.
+#![allow(dead_code)]
+
 // Re-export dream::track 的 SkillRecord，統一存取點
 pub use crate::dream::track::SkillRecord;
 

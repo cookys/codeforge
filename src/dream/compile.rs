@@ -96,7 +96,7 @@ pub async fn run(ctx: &db::Context, conn: &Connection) -> Result<CompileResult> 
     })
 }
 
-async fn compile_signal(ctx: &db::Context, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
+async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
     // 嘗試使用 Claude API（若有設定 ANTHROPIC_API_KEY）
     if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
         if !api_key.is_empty() {

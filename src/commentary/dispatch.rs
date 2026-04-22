@@ -54,6 +54,7 @@ pub struct PendingDispatch {
 ///   paths, we'd rather skip this cycle than double-emit next tick);
 /// * `budget_incr_skip()` when a trigger fired but the budget blocked it
 ///   (telemetry for future tuning).
+#[allow(clippy::too_many_arguments)] // Domain fn — each arg is a distinct dispatch input.
 pub fn decide_and_reserve(
     tx: &Connection,
     world: &GameWorld,
@@ -256,14 +257,14 @@ mod tests {
         // Env var must be unset for this test; settings flag stays at default 0.
         std::env::remove_var(super::super::budget::OPT_IN_ENV);
         let conn = fresh_conn();
-        let mut world = GameWorld::load_or_init(&conn).unwrap();
+        let world = GameWorld::load_or_init(&conn).unwrap();
         let boss = DefeatedMob {
             id: 1,
             kind: MobKind::Boss,
             name: "boss".into(),
             hp_max: 100,
         };
-        let res = decide_and_reserve(&conn, &mut world, &[boss], 1, 2, 0, 1, 1000).unwrap();
+        let res = decide_and_reserve(&conn, &world, &[boss], 1, 2, 0, 1, 1000).unwrap();
         assert!(res.is_none());
     }
 
@@ -310,7 +311,7 @@ mod tests {
             hp_max: 100,
         };
         // First call reserves at t=0
-        let first = decide_and_reserve(&conn, &world, &[boss.clone()], 1, 1, 0, 1, 0).unwrap();
+        let first = decide_and_reserve(&conn, &world, std::slice::from_ref(&boss), 1, 1, 0, 1, 0).unwrap();
         assert!(first.is_some());
         // Second call 30 min later — within 1h window — should be None
         let second = decide_and_reserve(&conn, &world, &[boss], 1, 1, 0, 2, 1800).unwrap();

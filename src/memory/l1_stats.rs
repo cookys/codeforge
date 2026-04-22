@@ -57,7 +57,7 @@ pub fn language_distribution(store_dir: &Path) -> Result<HashMap<String, u32>> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.extension().is_some_and(|e| e == "md") {
+            if path.extension().is_none_or(|e| e != "md") {
                 continue;
             }
             let content = match std::fs::read_to_string(&path) {

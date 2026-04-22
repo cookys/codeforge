@@ -2,7 +2,6 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use std::path::Path;
 use crate::db;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,7 +137,7 @@ pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result
         for line in slice.lines() {
             let line = line.trim();
             if line.is_empty() { continue; }
-            if let Ok(mut s) = serde_json::from_str::<Signal>(line) {
+            if let Ok(s) = serde_json::from_str::<Signal>(line) {
                 if !s.compiled {
                     signals.push(s);
                 }

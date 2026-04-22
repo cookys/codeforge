@@ -377,7 +377,7 @@ mod tests {
         insert_material(&conn, "repellent", "Ghost Repellent", 2);
         use_item(&mut conn, "Ghost Repellent", Some("rust"), 0).unwrap();
         // Jump past the 3-day window (3*86400 = 259200)
-        let later = 0 + 3 * 86_400 + 1;
+        let later = (3 * 86_400) + 1;
         use_item(&mut conn, "Ghost Repellent", Some("rust"), later).unwrap();
 
         // Two active_effects rows total — the expired one + the fresh one.

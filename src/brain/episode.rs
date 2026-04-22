@@ -1,3 +1,7 @@
+// Episode persistence layer — Phase 3+ session-episode tracking. Scaffolded
+// ahead of use so the data model and on-disk layout stabilise early.
+#![allow(dead_code)]
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use crate::db;

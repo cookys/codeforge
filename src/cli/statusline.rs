@@ -492,7 +492,7 @@ fn render_full<W: Write>(
 
     let branch = git_branch().unwrap_or_else(|| "—".to_string());
     let cwd_raw = data.cwd.clone()
-        .or_else(|| current_dir_short())
+        .or_else(current_dir_short)
         .unwrap_or_else(|| "~".to_string());
     let cwd_home = to_home_rel(&cwd_raw);
 
@@ -578,11 +578,11 @@ fn render_full<W: Write>(
 
     let vkey = format!("village.{}.name", village.id);
     let vname = t!(&vkey);
-    let vname_vis = vis(&*vname);
+    let vname_vis = vis(&vname);
     let r2_fill = panel_w.saturating_sub(3 + vname_vis + 1 + 1); // ├─ + name + space + ┤
     let row2_info = format!("{}{}{}{}{}",
         tc("├─ ", DELIM),
-        tc_bold(&*vname, vrgb),
+        tc_bold(&vname, vrgb),
         tc(" ", DELIM),
         tcs("─".repeat(r2_fill), DELIM),
         tc("┤", DELIM),
@@ -689,14 +689,15 @@ fn render_full<W: Write>(
         let mem_status = t!("ui.status_active").to_string();
         let r5_fixed = 3 + vis(&mem_label) + 1 + vis(&mem_status) + 2 + ver_vis + 4;
         let r5_fill = panel_w.saturating_sub(r5_fixed);
-        let r5 = format!("{}{}{}{}{}{}{}",
+        let r5 = format!("{}{}{}{}{}{}{}{}",
             tc("╰─ ", DELIM),
             tc(&mem_label, STAT_LBL),
             tc_bold(&format!(" {}", mem_status), MEM_ACT),
             tc(" ", DELIM),
             tcs("─".repeat(r5_fill), DELIM),
             tc(" ", DELIM),
-            format!("{}{}", ver_str, tc(" ──╯", DELIM)),
+            ver_str,
+            tc(" ──╯", DELIM),
         );
         // Gap: `/ ` → / at panel_w, space at panel_w+1
         writeln!(out, "{}{} {}", pad_to_vis(&r5, panel_w), tc("/", vrgb), art_s(5))?;
@@ -735,8 +736,8 @@ fn render_full<W: Write>(
         let r3_content = format!("{} {}  {} {} {}  {} {} {}/{}{}",
             tc_bold(&pet.name, PET_NAME),
             tc(&format!("{}{}", t!("stat.lv"), pet.level), PET_LV),
-            tc(&*t!("stat.hp"), STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
-            tc(&*t!("stat.xp"), STAT_LBL), xp_bar,
+            tc(&t!("stat.hp"), STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
+            tc(&t!("stat.xp"), STAT_LBL), xp_bar,
             tc(&pet.xp.to_string(), vrgb),
             tc(&pet.xp_to_next.to_string(), STAT_VAL),
             unlock_suffix,
@@ -750,10 +751,10 @@ fn render_full<W: Write>(
         // active. Short tag (3 chars) keeps the row tight on 100-col panels.
         let r4_content = format!(
             "{} {}  {} {}  {} {}  {} {}  {} {}",
-            tc(&*t!("stat.atk"), STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
-            tc(&*t!("stat.def"), STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
-            tc(&*t!("stat.sup"), STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
-            tc(&*t!("stat.ver"), STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
+            tc(&t!("stat.atk"), STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
+            tc(&t!("stat.def"), STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
+            tc(&t!("stat.sup"), STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
+            tc(&t!("stat.ver"), STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
             tc("strat:", STAT_LBL), tc(strategy.short_tag(), STAT_VAL),
         );
         let row4_info = box_mid(&r4_content, "│ ", "│");
@@ -766,14 +767,15 @@ fn render_full<W: Write>(
         let mem_status = t!("ui.status_active").to_string();
         let r5_fixed = 3 + vis(&mem_label) + 1 + vis(&mem_status) + 2 + ver_vis + 4;
         let r5_fill = panel_w.saturating_sub(r5_fixed);
-        let row5_info = format!("{}{}{}{}{}{}{}",
+        let row5_info = format!("{}{}{}{}{}{}{}{}",
             tc("╰─ ", DELIM),
             tc(&mem_label, STAT_LBL),
             tc_bold(&format!(" {}", mem_status), MEM_ACT),
             tc(" ", DELIM),
             tcs("─".repeat(r5_fill), DELIM),
             tc(" ", DELIM),
-            format!("{}{}", ver_str, tc(" ──╯", DELIM)),
+            ver_str,
+            tc(" ──╯", DELIM),
         );
 
         let rows = vec![

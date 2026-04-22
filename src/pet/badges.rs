@@ -25,6 +25,7 @@ pub fn list(conn: &Connection) -> Result<Vec<Badge>> {
     Ok(badges)
 }
 
+#[allow(dead_code)] // Wired by Phase 3 daemon milestones; keep the signature stable.
 pub fn award(conn: &Connection, badge_id: &str, name: &str, description: Option<&str>) -> Result<bool> {
     // 如果已有此徽章，直接回傳 false
     let exists: bool = conn.query_row(
