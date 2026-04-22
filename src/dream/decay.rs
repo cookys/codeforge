@@ -28,7 +28,7 @@ pub fn run(ctx: &db::Context) -> Result<DecayResult> {
         let refs_bonus = (entry.frontmatter.refs as f64 + 1.0).ln();
 
         // strength ∈ [0.0, 1.0]，以天數衰減
-        let new_strength = (refs_bonus / days_old.sqrt()).min(1.0).max(0.0) as f32;
+        let new_strength = (refs_bonus / days_old.sqrt()).clamp(0.0, 1.0) as f32;
 
         if (new_strength - entry.frontmatter.strength).abs() > 0.01 {
             entry.frontmatter.strength = new_strength;

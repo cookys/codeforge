@@ -18,6 +18,7 @@ impl Default for CharacterStats {
 }
 
 impl CharacterStats {
+    #[allow(dead_code)] // Used by Phase 3e crafting preview; keep as public API.
     pub fn total(&self) -> u32 {
         self.atk + self.hp + self.def + self.sup + self.ver
     }

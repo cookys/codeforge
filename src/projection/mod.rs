@@ -1,3 +1,7 @@
+// Projection layer — Phase 3d stickiness / Phase 4 AGENTS.md sync will wire
+// this in. Kept compiled to prevent bit-rot.
+#![allow(dead_code)]
+
 use anyhow::Result;
 use crate::db;
 use crate::memory::l1;
@@ -44,7 +48,7 @@ pub fn project_to_claude_memory(ctx: &db::Context, top_n: usize) -> Result<usize
     Ok(entries.len())
 }
 
-fn project_id(ctx: &db::Context) -> String {
+fn project_id(_ctx: &db::Context) -> String {
     // 使用專案目錄路徑的 hash 作為 ID（與 Claude Code 一致）
     let cwd = std::env::current_dir().unwrap_or_default();
     let path_str = cwd.to_string_lossy();
@@ -52,7 +56,7 @@ fn project_id(ctx: &db::Context) -> String {
     path_str.replace('/', "-").trim_start_matches('-').to_string()
 }
 
-fn update_agents_md(ctx: &db::Context, top_entries: &[l1::L1Entry]) -> Result<()> {
+fn update_agents_md(_ctx: &db::Context, top_entries: &[l1::L1Entry]) -> Result<()> {
     let agents_path = std::env::current_dir()
         .unwrap_or_default()
         .join("AGENTS.md");

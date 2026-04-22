@@ -126,7 +126,7 @@ mod tests {
         // 250..800 so the test won't flake on edge-case distributions.
         let hits = (0..10_000).filter(|&n| should_show(n as i64)).count();
         assert!(
-            hits >= 250 && hits <= 800,
+            (250..=800).contains(&hits),
             "expected ~500 hits in 10k seeds; got {hits}"
         );
     }

@@ -25,6 +25,7 @@ pub struct CombatLogRow {
 /// Render the combat-log panel. Rows are expected to be sorted newest-first
 /// by the caller (`ORDER BY id DESC`). Produces `max_rows` lines max,
 /// padded if there's headroom.
+#[allow(dead_code)] // Superseded by `dispatcher::render_combat_log` but kept for direct panel tests.
 pub fn render(rows: &[CombatLogRow], width: usize, max_rows: usize) -> Vec<StyledLine> {
     let mut out: Vec<StyledLine> = Vec::with_capacity(max_rows + 1);
     out.push(StyledLine::plain(pad_to_width("⚔ Combat Log", width)));

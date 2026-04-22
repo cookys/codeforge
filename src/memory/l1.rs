@@ -72,11 +72,10 @@ impl L1Entry {
 
     fn parse(content: &str, path: PathBuf) -> Result<Self> {
         // 解析 YAML frontmatter（---\n...\n---）
-        let (frontmatter, body) = if content.starts_with("---\n") {
-            let end = content[4..].find("\n---\n").map(|i| i + 4);
-            if let Some(end) = end {
-                let yaml = &content[4..end];
-                let body = &content[end + 5..];
+        let (frontmatter, body) = if let Some(rest) = content.strip_prefix("---\n") {
+            if let Some(end) = rest.find("\n---\n") {
+                let yaml = &rest[..end];
+                let body = &rest[end + 5..];
                 let fm: L1Frontmatter = serde_yaml::from_str(yaml)
                     .with_context(|| format!("frontmatter 解析失敗：{}", path.display()))?;
                 (fm, body.to_string())

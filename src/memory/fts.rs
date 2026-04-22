@@ -6,6 +6,8 @@ pub struct SearchResult {
     pub file_path: String,
     pub title: String,
     pub snippet: Option<String>,
+    // Exposed on the struct for debug dumps / future ranking tweaks.
+    #[allow(dead_code)]
     pub rank: f64,
 }
 
@@ -64,6 +66,7 @@ impl<'a> FtsIndex<'a> {
     }
 
     /// 重建整個 FTS index（從 L1 store 目錄掃描）
+    #[allow(dead_code)] // Planned `codeforge memory rebuild` CLI — Phase 3d.
     pub fn rebuild(&self, store_dir: &std::path::Path) -> Result<usize> {
         // 清空舊 index
         self.conn.execute("DELETE FROM memory_fts", [])?;
