@@ -19,7 +19,7 @@ use super::layout::{compute, Layout, LayoutMode};
 use super::local_map::compute as compute_local_map;
 use super::panels::local_map::LocalMapPanel;
 use super::panels::{combat_log, local_map as map_panel, pet as pet_panel, zoa::ZoaPanel};
-use super::styled::StyledSpan;
+use super::styled::{StyledLine, StyledSpan};
 use crate::pet::live_state::LiveState;
 
 /// A fully-composed frame ready for paint. Each line carries an
@@ -105,7 +105,7 @@ pub fn build_frame(
 
     // Skip the DB scan + render work entirely when the mode hides the
     // map (Narrow/Compact) — saves both a disk walk and a SQL query.
-    let map_lines: Vec<String> = if layout.local_map.is_empty() {
+    let map_lines: Vec<StyledLine> = if layout.local_map.is_empty() {
         Vec::new()
     } else {
         let rooms = compute_local_map(conn, scan_root, cwd)?;
@@ -122,7 +122,7 @@ pub fn build_frame(
     // Compact mode has no bottom strip at all — skip both the log DB
     // query and the welcome override. Narrow keeps the log as its sole
     // bottom widget.
-    let log_lines: Vec<String> = if layout.combat_log.is_empty() {
+    let log_lines: Vec<StyledLine> = if layout.combat_log.is_empty() {
         Vec::new()
     } else {
         match welcome_override {
@@ -154,7 +154,7 @@ pub fn build_frame(
     // Zoa renders only in Wide mode (the only mode where layout.zoa is
     // non-empty). Callers may still pass `Some(panel)` in other modes —
     // we just skip rendering then.
-    let zoa_lines: Vec<String> = match (zoa, layout.mode) {
+    let zoa_lines: Vec<StyledLine> = match (zoa, layout.mode) {
         (Some(panel), LayoutMode::Wide) => panel.render(
             layout.zoa.width as usize,
             layout.zoa.height as usize,
@@ -170,16 +170,17 @@ pub fn build_frame(
 /// Pad a welcome-back greeting to the combat-log panel's dimensions. The
 /// greeting arrives from `pet::session::WelcomeBackSummary::render_lines`
 /// as plain strings; here we add a panel title, cap to `max_rows`, and
-/// pad short lines to `width`.
-fn render_welcome_lines(welcome: &[String], width: usize, max_rows: usize) -> Vec<String> {
+/// pad short lines to `width`. All spans default-fg (colour reserved for
+/// future welcome-back styling if we decide to).
+fn render_welcome_lines(welcome: &[String], width: usize, max_rows: usize) -> Vec<StyledLine> {
     use super::panels::pad_to_width;
-    let mut out = Vec::with_capacity(max_rows);
-    out.push(pad_to_width("💤 歸來摘要", width));
+    let mut out: Vec<StyledLine> = Vec::with_capacity(max_rows);
+    out.push(StyledLine::plain(pad_to_width("💤 歸來摘要", width)));
     for line in welcome.iter().take(max_rows.saturating_sub(1)) {
-        out.push(pad_to_width(line, width));
+        out.push(StyledLine::plain(pad_to_width(line, width)));
     }
     while out.len() < max_rows {
-        out.push(pad_to_width("", width));
+        out.push(StyledLine::plain(pad_to_width("", width)));
     }
     out
 }
@@ -215,10 +216,10 @@ pub fn paint(frame: &Frame, out: &mut impl Write) -> Result<()> {
 
 fn compose(
     layout: &Layout,
-    pet_lines: &[String],
-    zoa_lines: &[String],
-    map_lines: &[String],
-    log_lines: &[String],
+    pet_lines: &[StyledLine],
+    zoa_lines: &[StyledLine],
+    map_lines: &[StyledLine],
+    log_lines: &[StyledLine],
 ) -> Vec<PositionedLine> {
     let cap = pet_lines.len() + zoa_lines.len() + map_lines.len() + log_lines.len();
     let mut out = Vec::with_capacity(cap);
@@ -229,36 +230,29 @@ fn compose(
     out
 }
 
-/// Append one panel's lines at (x, y+i). Empty strings collapse to empty
-/// spans so the paint loop's `if line.spans.is_empty() { continue }` guard
-/// preserves the pre-B11 "empty line = invisible" behaviour.
-///
-/// Sub-step 2.1 shim: panels still emit `Vec<String>`. Sub-step 2.2 will
-/// migrate panels to `Vec<StyledLine>` and this function's `lines: &[String]`
-/// parameter will move to `&[StyledLine]`.
-fn push_section(out: &mut Vec<PositionedLine>, lines: &[String], x: u16, y: u16) {
-    for (i, text) in lines.iter().enumerate() {
-        let spans = if text.is_empty() {
-            Vec::new()
-        } else {
-            vec![StyledSpan::plain(text.clone())]
-        };
+/// Append one panel's lines at (x, y+i), carrying each StyledLine's spans
+/// directly into the PositionedLine. Empty span lists (from
+/// `StyledLine::plain("")`) stay empty so the paint loop's
+/// `if line.spans.is_empty() { continue }` guard preserves the pre-B11
+/// "empty line = invisible" behaviour.
+fn push_section(out: &mut Vec<PositionedLine>, lines: &[StyledLine], x: u16, y: u16) {
+    for (i, line) in lines.iter().enumerate() {
         out.push(PositionedLine {
             col: x,
             row: y + i as u16,
-            spans,
+            spans: line.spans.clone(),
         });
     }
 }
 
-fn placeholder_lines(msg: &str, width: usize, height: usize) -> Vec<String> {
+fn placeholder_lines(msg: &str, width: usize, height: usize) -> Vec<StyledLine> {
     use super::panels::pad_to_width;
-    let mut out = Vec::with_capacity(height);
+    let mut out: Vec<StyledLine> = Vec::with_capacity(height);
     if height > 0 {
-        out.push(pad_to_width(msg, width));
+        out.push(StyledLine::plain(pad_to_width(msg, width)));
     }
     while out.len() < height {
-        out.push(pad_to_width("", width));
+        out.push(StyledLine::plain(pad_to_width("", width)));
     }
     out
 }

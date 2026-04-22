@@ -9,6 +9,7 @@
 //! Pure — caller has already done the DB work.
 
 use super::super::local_map::RoomSummary;
+use super::super::styled::StyledLine;
 use super::local_map_tile::{render_grid, MIN_GRID_WIDTH};
 use super::{pad_to_width, vis_width};
 
@@ -56,7 +57,7 @@ pub fn render(
     rooms: &[RoomSummary],
     width: usize,
     max_rows: usize,
-) -> Vec<String> {
+) -> Vec<StyledLine> {
     match panel.display_mode {
         DisplayMode::List => render_list(rooms, width, max_rows),
         DisplayMode::Grid if width >= MIN_GRID_WIDTH => render_grid(rooms, width, max_rows),
@@ -67,14 +68,14 @@ pub fn render(
 /// Render the LocalMap panel as a linear list. Produces `max_rows` lines
 /// padded to `width` visible columns. Exposed so the dispatcher (and
 /// tests that pin the old behaviour) can call it directly.
-pub fn render_list(rooms: &[RoomSummary], width: usize, max_rows: usize) -> Vec<String> {
-    let mut out = Vec::with_capacity(max_rows + 1);
-    out.push(pad_to_width("📍 Local Map", width));
+pub fn render_list(rooms: &[RoomSummary], width: usize, max_rows: usize) -> Vec<StyledLine> {
+    let mut out: Vec<StyledLine> = Vec::with_capacity(max_rows + 1);
+    out.push(StyledLine::plain(pad_to_width("📍 Local Map", width)));
 
     if rooms.is_empty() {
-        out.push(pad_to_width("  (no mobs scanned)", width));
+        out.push(StyledLine::plain(pad_to_width("  (no mobs scanned)", width)));
         while out.len() < max_rows {
-            out.push(pad_to_width("", width));
+            out.push(StyledLine::plain(pad_to_width("", width)));
         }
         return out;
     }
@@ -95,10 +96,10 @@ pub fn render_list(rooms: &[RoomSummary], width: usize, max_rows: usize) -> Vec<
             pad_to_width(&room.directory, body_w)
         };
         let line = format!("{marker}{dir} {badge}");
-        out.push(pad_to_width(&line, width));
+        out.push(StyledLine::plain(pad_to_width(&line, width)));
     }
     while out.len() < max_rows {
-        out.push(pad_to_width("", width));
+        out.push(StyledLine::plain(pad_to_width("", width)));
     }
     out
 }
@@ -132,35 +133,35 @@ mod tests {
     #[test]
     fn header_is_first_line() {
         let lines = render_list(&[], 30, 5);
-        assert!(lines[0].contains("Local Map"));
+        assert!(lines[0].plain_text().contains("Local Map"));
     }
 
     #[test]
     fn empty_rooms_show_placeholder() {
         let lines = render_list(&[], 30, 5);
-        assert!(lines[1].contains("no mobs"));
+        assert!(lines[1].plain_text().contains("no mobs"));
     }
 
     #[test]
     fn current_row_marked_with_arrow() {
         let rooms = vec![room("src", 2, 0, true), room("doc", 0, 0, false)];
         let lines = render_list(&rooms, 40, 5);
-        assert!(lines[1].contains("▶"));
-        assert!(!lines[2].contains("▶"));
+        assert!(lines[1].plain_text().contains("▶"));
+        assert!(!lines[2].plain_text().contains("▶"));
     }
 
     #[test]
     fn alive_count_shown_in_badge() {
         let rooms = vec![room("src", 7, 0, false)];
         let lines = render_list(&rooms, 40, 3);
-        assert!(lines[1].contains("🧟7"));
+        assert!(lines[1].plain_text().contains("🧟7"));
     }
 
     #[test]
     fn all_defeated_shows_check() {
         let rooms = vec![room("target", 0, 5, false)];
         let lines = render_list(&rooms, 40, 3);
-        assert!(lines[1].contains("✓"));
+        assert!(lines[1].plain_text().contains("✓"));
     }
 
     #[test]
@@ -179,7 +180,7 @@ mod tests {
         ];
         let lines = render_list(&rooms, 35, 6);
         for l in &lines {
-            assert_eq!(vis_width(l), 35);
+            assert_eq!(l.visible_width(), 35);
         }
     }
 
@@ -195,15 +196,15 @@ mod tests {
     fn narrow_width_clips_directory_name() {
         let rooms = vec![room("very-long-directory-name", 1, 0, false)];
         let lines = render_list(&rooms, 20, 3);
-        assert_eq!(vis_width(&lines[1]), 20);
+        assert_eq!(lines[1].visible_width(), 20);
     }
 
     #[test]
     fn cjk_directory_name_renders_width_correctly() {
         let rooms = vec![room("原始碼目錄", 2, 0, true)];
         let lines = render_list(&rooms, 30, 3);
-        assert_eq!(vis_width(&lines[1]), 30);
-        assert!(lines[1].contains("▶"));
+        assert_eq!(lines[1].visible_width(), 30);
+        assert!(lines[1].plain_text().contains("▶"));
     }
 
     // ------------------------------------------------------------------
@@ -232,9 +233,9 @@ mod tests {
         let rooms = vec![room("src", 2, 0, true)];
         let lines = render(&panel, &rooms, 40, 5);
         // List-mode header comes through.
-        assert!(lines[0].contains("Local Map"));
+        assert!(lines[0].plain_text().contains("Local Map"));
         // ▶ marker is a list-mode-only signal.
-        assert!(lines[1].contains("▶"));
+        assert!(lines[1].plain_text().contains("▶"));
     }
 
     #[test]
@@ -243,9 +244,9 @@ mod tests {
         let rooms = vec![room("src", 2, 0, false)];
         let lines = render(&panel, &rooms, 40, 6);
         // Grid mode: first row should be a tile top border.
-        assert!(lines[0].starts_with('┌'));
+        assert!(lines[0].plain_text().starts_with('┌'));
         // And no "Local Map" header (grid has no header row).
-        assert!(!lines.iter().any(|l| l.contains("📍")));
+        assert!(!lines.iter().any(|l| l.plain_text().contains("📍")));
     }
 
     #[test]
@@ -254,7 +255,7 @@ mod tests {
         let rooms = vec![room("src", 2, 0, false)];
         // 28 cols < MIN_GRID_WIDTH (30) → fallback to list.
         let lines = render(&panel, &rooms, 28, 6);
-        assert!(lines[0].contains("Local Map"), "expected list header as fallback");
+        assert!(lines[0].plain_text().contains("Local Map"), "expected list header as fallback");
     }
 
     #[test]
@@ -264,7 +265,7 @@ mod tests {
             let panel = LocalMapPanel { display_mode: mode };
             let lines = render(&panel, &rooms, 40, 6);
             for l in &lines {
-                assert_eq!(vis_width(l), 40, "mode {mode:?} width mismatch");
+                assert_eq!(l.visible_width(), 40, "mode {mode:?} width mismatch");
             }
         }
     }

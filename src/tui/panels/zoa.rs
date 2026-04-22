@@ -21,6 +21,7 @@
 use std::time::{Duration, Instant};
 
 use super::pad_to_width;
+use super::super::styled::StyledLine;
 
 /// Fixed visible-column width of every Zoa frame. Matches
 /// `crate::tui::layout::ZOA_WIDTH` so the panel fits the allocated
@@ -191,20 +192,25 @@ impl ZoaPanel {
     /// Render the current frame as `height` rows of `width` columns.
     /// Short panels truncate the frame's tail; tall panels pad with
     /// blank rows. Returns an empty Vec if the panel is too narrow.
-    pub fn render(&self, width: usize, height: usize) -> Vec<String> {
+    ///
+    /// All spans are default-fg (Zoa's colour pipeline is Phase 4
+    /// territory); B11 just wraps the existing string rows in
+    /// StyledLine::plain so the render signature aligns with the new
+    /// paint pipeline.
+    pub fn render(&self, width: usize, height: usize) -> Vec<StyledLine> {
         if !self.should_render(width) || height == 0 {
             return Vec::new();
         }
         let frames = frames_for(self.emotion);
         let frame = &frames[self.frame_idx % frames.len()];
-        let mut out = Vec::with_capacity(height);
+        let mut out: Vec<StyledLine> = Vec::with_capacity(height);
         for (i, _) in (0..height).enumerate() {
             let row = if i < FRAME_HEIGHT {
                 frame[i]
             } else {
                 ""
             };
-            out.push(pad_to_width(row, width));
+            out.push(StyledLine::plain(pad_to_width(row, width)));
         }
         out
     }
@@ -252,7 +258,7 @@ mod tests {
     fn render_rows_are_exactly_width_cols() {
         let z = ZoaPanel::new();
         for row in z.render(30, 8) {
-            assert_eq!(vis_width(&row), 30);
+            assert_eq!(row.visible_width(), 30);
         }
     }
 
@@ -275,10 +281,10 @@ mod tests {
         // Height 3 — only the first 3 rows of the 8-row frame should surface.
         let rows = z.render(24, 3);
         assert_eq!(rows.len(), 3);
+        let top = rows[0].plain_text();
         assert!(
-            rows[0].contains("_______"),
-            "top row should be the skull cap: {}",
-            rows[0]
+            top.contains("_______"),
+            "top row should be the skull cap: {top}"
         );
     }
 
@@ -289,8 +295,12 @@ mod tests {
         assert_eq!(rows.len(), 12);
         // Rows past FRAME_HEIGHT must be all spaces.
         for row in &rows[FRAME_HEIGHT..] {
-            assert_eq!(vis_width(row), 24);
-            assert!(row.chars().all(|c| c == ' '), "padded row not blank: {row:?}");
+            assert_eq!(row.visible_width(), 24);
+            let text = row.plain_text();
+            assert!(
+                text.chars().all(|c| c == ' '),
+                "padded row not blank: {text:?}"
+            );
         }
     }
 
