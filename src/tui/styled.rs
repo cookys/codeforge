@@ -98,9 +98,8 @@ impl StyledLine {
 
     /// Right-pad with a default-fg space span until the total visible
     /// width equals `w`. Returns the line unchanged when already >= `w`
-    /// — callers needing truncation must clip their span texts before
-    /// building the line, because cross-span clipping would have to
-    /// preserve per-span `fg` and is not a concern for `pad_to_width`.
+    /// — use [`StyledLine::clip_to_width`] first when truncation is
+    /// actually wanted.
     pub fn pad_to_width(&self, w: usize) -> Self {
         let current = self.visible_width();
         if current >= w {
@@ -110,6 +109,49 @@ impl StyledLine {
         let mut spans = self.spans.clone();
         spans.push(StyledSpan::plain(" ".repeat(pad)));
         Self { spans }
+    }
+
+    /// Truncate to at most `w` visible columns, preserving per-span
+    /// `fg`. A partial span at the boundary has its text cut CJK-safe
+    /// (column-count based, never byte-indexed). Spans entirely past
+    /// the boundary are dropped. Returns a clone when already narrower
+    /// than `w`. No `…` ellipsis — callers append their own overlay
+    /// (tile-grid overflow indicator does this).
+    pub fn clip_to_width(&self, w: usize) -> Self {
+        let current = self.visible_width();
+        if current <= w {
+            return self.clone();
+        }
+        let mut remaining = w;
+        let mut out_spans: Vec<StyledSpan> = Vec::new();
+        for span in &self.spans {
+            if remaining == 0 {
+                break;
+            }
+            let span_w = UnicodeWidthStr::width(span.text.as_str());
+            if span_w <= remaining {
+                out_spans.push(span.clone());
+                remaining -= span_w;
+            } else {
+                // Partial span — CJK-safe char-by-char accumulation.
+                let mut acc = 0usize;
+                let mut buf = [0u8; 4];
+                let mut truncated = String::new();
+                for ch in span.text.chars() {
+                    let cw = UnicodeWidthStr::width(ch.encode_utf8(&mut buf));
+                    if acc + cw > remaining {
+                        break;
+                    }
+                    acc += cw;
+                    truncated.push(ch);
+                }
+                if !truncated.is_empty() {
+                    out_spans.push(StyledSpan { text: truncated, fg: span.fg });
+                }
+                break;
+            }
+        }
+        Self { spans: out_spans }
     }
 }
 
@@ -213,5 +255,62 @@ mod tests {
         assert_eq!(l.visible_width(), 0);
         assert_eq!(l.plain_text(), "");
         assert!(l.spans.is_empty());
+    }
+
+    #[test]
+    fn clip_to_width_noop_when_already_narrow() {
+        let l = StyledLine::plain("hi");
+        let clipped = l.clip_to_width(5);
+        assert_eq!(clipped.plain_text(), "hi");
+    }
+
+    #[test]
+    fn clip_to_width_drops_spans_past_boundary() {
+        let l = StyledLine::from_spans(vec![
+            StyledSpan::colored("red", Color::Red),       // 3 cols
+            StyledSpan::plain("middle"),                   // 6 cols
+            StyledSpan::colored("tail", Color::Blue),      // 4 cols — dropped entirely when w < 9
+        ]);
+        let clipped = l.clip_to_width(9);
+        assert_eq!(clipped.visible_width(), 9);
+        assert_eq!(clipped.plain_text(), "redmiddle");
+        assert_eq!(clipped.spans.len(), 2);
+        // First two spans retained with original fg.
+        assert_eq!(clipped.spans[0].fg, Some(Color::Red));
+        assert_eq!(clipped.spans[1].fg, None);
+    }
+
+    #[test]
+    fn clip_to_width_truncates_partial_span_preserving_fg() {
+        let l = StyledLine::from_spans(vec![
+            StyledSpan::colored("red", Color::Red),        // 3 cols
+            StyledSpan::plain("xxxxx"),                    // 5 cols
+        ]);
+        let clipped = l.clip_to_width(5);
+        assert_eq!(clipped.visible_width(), 5);
+        assert_eq!(clipped.plain_text(), "redxx");
+        assert_eq!(clipped.spans.len(), 2);
+        assert_eq!(clipped.spans[1].fg, None);
+        assert_eq!(clipped.spans[1].text, "xx", "partial-span text truncated to 2 cols");
+    }
+
+    #[test]
+    fn clip_to_width_cjk_safe_at_partial_boundary() {
+        // "前端" = 4 cols. Clipping to 3 cols must drop the 2nd char
+        // whole (never mid-codepoint), leaving "前" (2 cols). No panic.
+        let l = StyledLine::from_spans(vec![
+            StyledSpan::plain("前端後端"), // 8 cols total
+        ]);
+        let clipped = l.clip_to_width(3);
+        assert_eq!(clipped.visible_width(), 2, "can't split a 2-col char across 3-col budget");
+        assert_eq!(clipped.plain_text(), "前");
+    }
+
+    #[test]
+    fn clip_to_width_zero_yields_empty() {
+        let l = StyledLine::plain("hello");
+        let clipped = l.clip_to_width(0);
+        assert!(clipped.spans.is_empty());
+        assert_eq!(clipped.visible_width(), 0);
     }
 }
