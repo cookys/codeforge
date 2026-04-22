@@ -486,10 +486,30 @@ function writeQueue(queue) {
 
 /**
  * Add an item to the queue with deduplication.
- * Dedup key: same type + file (or type + count for index-overflow).
- * If a pending duplicate exists, update its created timestamp.
- * Done/rejected items are not duplicated.
+ *
+ * Status model (written by any consumer — learn skill, check-improvements.js,
+ * manual queue surgery):
+ *   - pending   : not yet handled
+ *   - done      : user acknowledged and work shipped
+ *   - rejected  : user decided not to do it (wontfix)
+ *   - resolved  : handled / out-of-scope / superseded (used by autopilot:learn
+ *                 when the same false positive repeats; semantically equivalent
+ *                 to rejected for dedup purposes)
+ *
+ * Dedup keys:
+ *   - For `index-overflow`: same type + any terminal status
+ *   - For everything else:  same type + same `file` + any terminal status
+ *
+ * If a pending duplicate exists, update its created timestamp and mutable
+ * fields (lines/count/days_ago/title). Terminal-status items (done /
+ * rejected / resolved) block re-adding the same logical issue — this
+ * prevents session-digest from re-firing false positives that the user or
+ * learn skill already resolved. Prior to 2026-04-22 `resolved` was missing
+ * from the blocklist, so items like the i-polish skill-oversize false
+ * positive re-fired every session.
  */
+const TERMINAL_STATUSES = ['done', 'rejected', 'resolved'];
+
 function addToQueue(queue, item, now) {
   const isDuplicate = (existing) => {
     if (existing.type !== item.type) return false;
@@ -511,16 +531,16 @@ function addToQueue(queue, item, now) {
     return;
   }
 
-  // Check if done/rejected version exists — don't re-add
-  const doneExists = queue.items.some(existing => {
+  // Check if a terminal-status version exists — don't re-add.
+  const terminalExists = queue.items.some(existing => {
     if (existing.type !== item.type) return false;
-    if (['done', 'rejected'].includes(existing.status)) {
+    if (TERMINAL_STATUSES.includes(existing.status)) {
       if (item.type === 'index-overflow') return true;
       return existing.file === item.file;
     }
     return false;
   });
-  if (doneExists) return;
+  if (terminalExists) return;
 
   const idx = queue.items.filter(i => i.created === now).length;
   queue.items.push({
