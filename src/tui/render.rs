@@ -237,11 +237,22 @@ fn compose(
 /// `StyledLine::plain("")`) stay empty so the paint loop's
 /// `if line.spans.is_empty() { continue }` guard preserves the pre-B11
 /// "empty line = invisible" behaviour.
+///
+/// Review-r1 A-2: `y + i as u16` would wrap silently if `i` ever
+/// exceeded `u16::MAX`. In practice panels are layout-bounded to at
+/// most a few dozen rows, but we still clamp via `u16::try_from`
+/// and skip any over-budget line rather than cascading a row-index
+/// wrap that overwrites the top of the frame.
 fn push_section(out: &mut Vec<PositionedLine>, lines: &[StyledLine], x: u16, y: u16) {
     for (i, line) in lines.iter().enumerate() {
+        let Ok(row_offset) = u16::try_from(i) else {
+            // Bailing early beats producing a mis-rowed frame;
+            // layout invariants make this unreachable in practice.
+            break;
+        };
         out.push(PositionedLine {
             col: x,
-            row: y + i as u16,
+            row: y.saturating_add(row_offset),
             spans: line.spans.clone(),
         });
     }

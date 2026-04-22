@@ -86,8 +86,21 @@ impl StyledLine {
 
     /// Right-pad with a default-fg space span until the total visible
     /// width equals `w`. Returns the line unchanged when already >= `w`
-    /// — use [`StyledLine::clip_to_width`] first when truncation is
-    /// actually wanted.
+    /// — this is intentionally asymmetric with `panels::pad_to_width`
+    /// (the String helper clips overflows). The asymmetry exists
+    /// because cross-span clipping must preserve per-span `fg`, which
+    /// `pad` can't do correctly; callers that need truncation must
+    /// run [`StyledLine::clip_to_width`] first. Passing an over-width
+    /// line through here is a caller bug — the output will overflow
+    /// into the next panel column.
+    ///
+    /// Note: padding `StyledLine::empty()` appends a default-fg space
+    /// span and therefore turns the line into a non-empty "render me
+    /// as blanks" line rather than the `spans.is_empty() == invisible`
+    /// sentinel — this is intentional (padded blank rows should paint
+    /// so the cursor moves and residual content is overwritten).
+    /// Callers that need a truly invisible line must use
+    /// [`StyledLine::empty`] directly.
     pub fn pad_to_width(&self, w: usize) -> Self {
         let current = self.visible_width();
         if current >= w {
