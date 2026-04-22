@@ -1,8 +1,9 @@
 # Plan — Tile-Map Zone Color: Paint-Layer Integration (B11)
 
 Date: 2026-04-21
-Status: **Draft — awaiting user green-light to promote to project**
-Branch (when promoted): `feature/zone-color-paint-layer`
+Status: **Promoted 2026-04-22 → `doc/projects/2026-04-22-zone-color-paint-layer/`**
+Design decisions (locked 2026-04-22): #1=A（直接改 field）、#2=no Display impl、#3=zone_color 回傳 `crossterm::style::Color`
+Branch: `feature/zone-color-paint-layer`
 Size: **L**（touches 每個 panel render + paint 層資料模型 refactor；≥ 5 files；行為不變 panel + 新上色 panel 並存）
 Tracks: `doc/BACKLOG.md#B11`
 
