@@ -39,8 +39,8 @@ Tracks: `doc/BACKLOG.md#B11`
 |-------|--------|-------|--------|
 | P1 `styled.rs` 型別 + helpers | ✅ done | +12 | `93742f2` |
 | P2 PositionedLine 遷移 + paint + 4 panel 包裝 + test migration | ✅ done | +0 (migration) | `fcdaf3c`,`ae4e959` |
-| P3 Tile border 著色 + zone_color 換 crate + 移除 allow(dead_code) | ⏳ pending | +5 | — |
-| P4 ANSI snapshot + README + BACKLOG B11 移除 | ⏳ pending | +3 | — |
+| P3 Tile border 著色 + zone_color 換 crate + 移除 allow(dead_code) | ✅ done | +8 (5 clip + 6 style − 3 take_cols) | `1761a97` |
+| P4 ANSI snapshot + README + BACKLOG B11 移除 | ✅ done | +3 | (pending commit) |
 | QG (check + clippy + test) | ⏳ pending | — | — |
 | Review r1 | ⏳ pending | — | — |
 | Fix r1 findings | ⏳ pending | — | — |
