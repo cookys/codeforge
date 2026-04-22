@@ -27,12 +27,6 @@ rust-i18n = "3"
 sys-locale = "0.3"
 
 # Terminal colors
-# termcolor: used by src/cli/{inventory,pet,world,adopt}.rs + src/pet/village.rs
-#   for StandardStream-based coloured CLI output. The TUI pipeline migrated
-#   to crossterm in B11 zone-color-paint-layer (2026-04-22), but the CLI
-#   commands above still emit via termcolor::StandardStream/WriteColor —
-#   not droppable until those migrate too. Audited 2026-04-22.
-termcolor = "1"
 owo-colors = { version = "4", features = ["supports-colors"] }
 unicode-width = "0.2"
 crossterm = "0.29"
