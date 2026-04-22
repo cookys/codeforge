@@ -4,7 +4,9 @@
 
 ## Active
 
-_(none)_
+| Project | Description | Started |
+|---------|------------|---------|
+| [zone-color-paint-layer](2026-04-22-zone-color-paint-layer/README.md) | B11 — render 層升級成 `Vec<StyledLine>`（per-span fg），local_map tile-grid border 依 zone_color 著色；既有 panel 包 `StyledLine::plain` 零視覺改動；`zone_color` 換 `crossterm::style::Color` + 移除 `#[allow(dead_code)]`；ANSI snapshot test 完成 tile-map-localmap 的 criterion #3 | 2026-04-22 🚧 |
 
 ## Archived
 
