@@ -41,14 +41,16 @@ Tracks: `doc/BACKLOG.md#B11`
 | P2 PositionedLine 遷移 + paint + 4 panel 包裝 + test migration | ✅ done | +0 (migration) | `fcdaf3c`,`ae4e959` |
 | P3 Tile border 著色 + zone_color 換 crate + 移除 allow(dead_code) | ✅ done | +8 (5 clip + 6 style − 3 take_cols) | `1761a97` |
 | P4 ANSI snapshot + README + BACKLOG B11 移除 | ✅ done | +3 | `90bde6c` |
-| QG (check + clippy + test) | ⏳ pending | — | — |
-| Review r1 | ⏳ pending | — | — |
-| Fix r1 findings | ⏳ pending | — | — |
-| Review r2 | ⏳ pending | — | — |
-| Merge + archive | ⏳ pending | — | — |
+| QG (check + clippy + test) | ✅ done (零新 clippy warning) | — | `e3ccc84` |
+| Review r1 | ✅ done (2 IMPORTANT + 1 NIT + 3 doc NITs) | — | — |
+| Fix r1 findings | ✅ done | — | `284defc` |
+| Review r2 | ✅ CLEAN | — | — |
+| Merge + archive | ✅ done | — | `be4feb5` |
 
-**預估**: 643 → 661+ tests（+18），1 新 file（`src/tui/styled.rs`）+ ~8 modified
-（`src/tui/render.rs`、`src/tui/panels/{pet,combat_log,zoa,local_map,local_map_tile}.rs`、相關 tests）
+**實際**: 643 → 666 tests（+23：+12 P1 styled helpers + 0 P2 migration + +8 P3
+net (+5 clip_to_width + +6 P3 styling − 3 take_cols removed) + +3 P4 ANSI snapshot）。
+1 新 file（`src/tui/styled.rs`, 334 行）+ ~8 modified。zero new clippy
+warnings vs main baseline.
 
 ## 設計取捨紀錄
 
@@ -78,5 +80,14 @@ Color::AnsiValue(8)
 ```
 
 其他常用色在兩個 crate 都叫 `Red` / `Magenta` / `White` / `Cyan` / `Yellow`，直接 rename import 即可。變體名這個 gotcha P3 換 crate 時需手動調，不是純機械替換。
+
+## Completion Summary (2026-04-22)
+
+- All 7 success criteria met (see Project Goal 章節 1-7)
+- Merge commit: `be4feb5` on `main`, 14 files / 961 insertions / 310 deletions
+- Test count: 666 passed / 0 failed (from 643 main baseline, +23 net)
+- Clippy: zero new warnings vs `main` (verified via `diff` on sorted unique-warning sets, see `e3ccc84` commit message)
+- Dependency footprint: `termcolor` still in `Cargo.toml` but `zone_color` no longer uses it — follow-up opportunity to drop the crate if no other call site needs it
+- Phase sequence: P1 → P2.1 → P2.2 → P3 → P4 → QG → r1 → fix → r2 → merge → archive; no rollback, no scope creep, 3 design decisions (#1/#2/#3) all held through implementation
 
 Last updated: 2026-04-22
