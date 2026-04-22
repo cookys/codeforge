@@ -5,6 +5,7 @@
 //! pre-loaded slices so tests can feed fixtures without hitting SQLite.
 
 use super::pad_to_width;
+use super::super::styled::StyledLine;
 use crate::commentary::display::CommentaryEntry;
 use chrono::{TimeZone, Utc};
 
@@ -24,13 +25,13 @@ pub struct CombatLogRow {
 /// Render the combat-log panel. Rows are expected to be sorted newest-first
 /// by the caller (`ORDER BY id DESC`). Produces `max_rows` lines max,
 /// padded if there's headroom.
-pub fn render(rows: &[CombatLogRow], width: usize, max_rows: usize) -> Vec<String> {
-    let mut out = Vec::with_capacity(max_rows + 1);
-    out.push(pad_to_width("⚔ Combat Log", width));
+pub fn render(rows: &[CombatLogRow], width: usize, max_rows: usize) -> Vec<StyledLine> {
+    let mut out: Vec<StyledLine> = Vec::with_capacity(max_rows + 1);
+    out.push(StyledLine::plain(pad_to_width("⚔ Combat Log", width)));
     if rows.is_empty() {
-        out.push(pad_to_width("  (no kills yet)", width));
+        out.push(StyledLine::plain(pad_to_width("  (no kills yet)", width)));
         while out.len() < max_rows {
-            out.push(pad_to_width("", width));
+            out.push(StyledLine::plain(pad_to_width("", width)));
         }
         return out;
     }
@@ -48,10 +49,10 @@ pub fn render(rows: &[CombatLogRow], width: usize, max_rows: usize) -> Vec<Strin
             name = row.mob_name,
             xp = row.xp_gained,
         );
-        out.push(pad_to_width(&line, width));
+        out.push(StyledLine::plain(pad_to_width(&line, width)));
     }
     while out.len() < max_rows {
-        out.push(pad_to_width("", width));
+        out.push(StyledLine::plain(pad_to_width("", width)));
     }
     out
 }
@@ -77,9 +78,9 @@ pub fn render_mixed(
     commentary: &[CommentaryEntry],
     width: usize,
     max_rows: usize,
-) -> Vec<String> {
-    let mut out = Vec::with_capacity(max_rows + 1);
-    out.push(pad_to_width("⚔ Combat Log", width));
+) -> Vec<StyledLine> {
+    let mut out: Vec<StyledLine> = Vec::with_capacity(max_rows + 1);
+    out.push(StyledLine::plain(pad_to_width("⚔ Combat Log", width)));
     if max_rows == 0 {
         return out;
     }
@@ -89,9 +90,9 @@ pub fn render_mixed(
     // avoids allocating a combined Vec for sorting.
     let merged = merge_newest_first(combat, commentary);
     if merged.is_empty() {
-        out.push(pad_to_width("  (no activity yet)", width));
+        out.push(StyledLine::plain(pad_to_width("  (no activity yet)", width)));
         while out.len() < max_rows {
-            out.push(pad_to_width("", width));
+            out.push(StyledLine::plain(pad_to_width("", width)));
         }
         return out;
     }
@@ -101,10 +102,10 @@ pub fn render_mixed(
             MergedEntry::Combat(row) => format_combat_line(row),
             MergedEntry::Commentary(entry) => format_commentary_line(entry),
         };
-        out.push(pad_to_width(&line, width));
+        out.push(StyledLine::plain(pad_to_width(&line, width)));
     }
     while out.len() < max_rows {
-        out.push(pad_to_width("", width));
+        out.push(StyledLine::plain(pad_to_width("", width)));
     }
     out
 }
@@ -186,7 +187,7 @@ fn parse_combat_ts(ts: &str) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::vis_width;
+    // vis_width no longer needed — StyledLine has its own visible_width().
 
     fn row(kind: &str, name: &str, xp: i64, loot: Option<&str>) -> CombatLogRow {
         CombatLogRow {
@@ -201,13 +202,13 @@ mod tests {
     #[test]
     fn header_is_first_line() {
         let lines = render(&[], 40, 5);
-        assert!(lines[0].contains("Combat Log"));
+        assert!(lines[0].plain_text().contains("Combat Log"));
     }
 
     #[test]
     fn empty_rows_show_placeholder() {
         let lines = render(&[], 40, 5);
-        assert!(lines[1].contains("no kills yet"));
+        assert!(lines[1].plain_text().contains("no kills yet"));
     }
 
     #[test]
@@ -219,10 +220,10 @@ mod tests {
     #[test]
     fn rows_render_time_kind_name_xp() {
         let lines = render(&[row("ghost", "unused@x.rs", 5, None)], 60, 3);
-        assert!(lines[1].starts_with("[14:23]"));
-        assert!(lines[1].contains("ghost"));
-        assert!(lines[1].contains("unused@x.rs"));
-        assert!(lines[1].contains("+5"));
+        assert!(lines[1].plain_text().starts_with("[14:23]"));
+        assert!(lines[1].plain_text().contains("ghost"));
+        assert!(lines[1].plain_text().contains("unused@x.rs"));
+        assert!(lines[1].plain_text().contains("+5"));
     }
 
     #[test]
@@ -232,7 +233,7 @@ mod tests {
             80,
             3,
         );
-        assert!(lines[1].contains("· Rare Item"));
+        assert!(lines[1].plain_text().contains("· Rare Item"));
     }
 
     #[test]
@@ -244,7 +245,7 @@ mod tests {
         ];
         let lines = render(&rows, 50, 5);
         for l in &lines {
-            assert_eq!(vis_width(l), 50);
+            assert_eq!(l.visible_width(), 50);
         }
     }
 
@@ -268,15 +269,15 @@ mod tests {
             occurred_at: "bad".to_string(),
         };
         let lines = render(&[r], 80, 3);
-        assert!(lines[1].contains("ghost"));
+        assert!(lines[1].plain_text().contains("ghost"));
     }
 
     #[test]
     fn long_mob_name_clipped_to_width() {
         let long_name = "a".repeat(500);
         let lines = render(&[row("boss", &long_name, 50, None)], 50, 3);
-        assert_eq!(vis_width(&lines[1]), 50);
-        assert!(lines[1].contains('…'));
+        assert_eq!(lines[1].visible_width(), 50);
+        assert!(lines[1].plain_text().contains('…'));
     }
 
     // ── Phase 3c P5: render_mixed tests ───────────────────────────
@@ -309,24 +310,24 @@ mod tests {
         ];
         let lines = render_mixed(&combat, &commentary, 80, 5);
         // header + 3 entries
-        assert!(lines[0].contains("Combat Log"));
-        assert!(lines[1].contains("💬") && lines[1].contains("newest phrase"));
-        assert!(lines[2].contains("⚔") && lines[2].contains("boss"));
-        assert!(lines[3].contains("💬") && lines[3].contains("oldest phrase"));
+        assert!(lines[0].plain_text().contains("Combat Log"));
+        assert!(lines[1].plain_text().contains("💬") && lines[1].plain_text().contains("newest phrase"));
+        assert!(lines[2].plain_text().contains("⚔") && lines[2].plain_text().contains("boss"));
+        assert!(lines[3].plain_text().contains("💬") && lines[3].plain_text().contains("oldest phrase"));
     }
 
     #[test]
     fn mixed_empty_shows_activity_placeholder() {
         let lines = render_mixed(&[], &[], 40, 5);
-        assert!(lines[1].contains("no activity yet"));
+        assert!(lines[1].plain_text().contains("no activity yet"));
     }
 
     #[test]
     fn mixed_commentary_only_renders_with_icon() {
         let commentary = vec![commentary_entry(ts("2026-04-18 10:00:00"), "hello")];
         let lines = render_mixed(&[], &commentary, 60, 3);
-        assert!(lines[1].starts_with("💬"));
-        assert!(lines[1].contains("hello"));
+        assert!(lines[1].plain_text().starts_with("💬"));
+        assert!(lines[1].plain_text().contains("hello"));
     }
 
     #[test]
@@ -334,7 +335,7 @@ mod tests {
         // render_mixed prefixes combat lines with `⚔ `, unlike legacy render
         let combat = vec![combat_row("2026-04-18 14:25:00", "ghost", "x")];
         let lines = render_mixed(&combat, &[], 60, 3);
-        assert!(lines[1].starts_with("⚔"));
+        assert!(lines[1].plain_text().starts_with("⚔"));
     }
 
     #[test]
@@ -353,7 +354,7 @@ mod tests {
         let combat = vec![combat_row("2026-04-18 14:25:00", "ghost", "y")];
         let lines = render_mixed(&combat, &commentary, 55, 5);
         for l in &lines {
-            assert_eq!(vis_width(l), 55);
+            assert_eq!(l.visible_width(), 55);
         }
     }
 

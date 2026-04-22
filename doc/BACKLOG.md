@@ -90,11 +90,3 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 **Trigger**: `doc/proposals/2026-04-18-doppelganger-split.md` 有 `## Decision` 區塊 —— user 回答三個參數（`split_trigger` / `max_children` / `child_stat_ratio`）後可直接進入 L-size 實作。
 **Status 2026-04-18**: Proposal 已寫，等 user decision。預設答案（A/A/A）列在 proposal 文末。
 
----
-
-## B11 — Tile-Map Zone Color: Paint-Layer Integration
-
-**Area**: `src/tui/render.rs` (`PositionedLine` / `paint`), `src/tui/panels/local_map_tile.rs::zone_color`
-**Premise**: Tile-map-localmap project（2026-04-21 merge）把 `zone_color()` 的 directory→Color mapping 實作 + unit tested 完備，但 paint 層沒接上 —— `zone_color` 目前 `#[allow(dead_code)]`。要在 grid tile 的 border 著色（且名稱/badge 保留 default fg），`PositionedLine.text: String` + `paint` 的整行 `Print(&text)` 要改成 `Vec<StyledSpan>` 之類 per-range 著色表示。完成後 spec §5 Local Map Tile-Grid Mode 才真正滿足 "5 zone kind 各有獨立 color — unit + ANSI snapshot test" 的 ANSI 部分。
-**Trigger**: (a) user 反映 grid mode 單色太單調想要色區分、(b) Phase 4 Zoa full impl 有類似 per-char styling 需求，兩個工程一起做 amortize 成本、(c) 下一個 TUI UX polish L project。
-**Status 2026-04-21**: `zone_color` mapping + unit tests 已 ship 在 feature/tile-map-localmap 分支；`#[allow(dead_code)]` 註記 + 本 backlog 項防止被遺忘。

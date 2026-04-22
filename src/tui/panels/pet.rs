@@ -6,14 +6,20 @@
 //! terminal IO.
 
 use super::pad_to_width;
+use super::super::styled::StyledLine;
 use crate::daemon::strategy::Strategy;
 use crate::pet::ability::next_unlock;
 use crate::pet::state::PetState;
 
-/// Render the 3-row PetStatus panel as bare strings, each padded to
+/// Render the 3-row PetStatus panel as styled lines, each padded to
 /// exactly `width` visible columns. The panel never exceeds 3 lines —
 /// callers that ask for taller regions pad with blanks themselves.
-pub fn render(pet: &PetState, strategy: Strategy, width: usize) -> Vec<String> {
+///
+/// All spans are default-fg — panel has no per-range colouring in the
+/// zone-color paint-layer project (B11); StyledLine::plain wraps the
+/// existing `pad_to_width` output so visual behaviour is identical
+/// pre-and-post migration.
+pub fn render(pet: &PetState, strategy: Strategy, width: usize) -> Vec<StyledLine> {
     let header = format!("{}  Lv.{}", pet.name, pet.level);
     let bars = format!(
         "HP {}  XP {} {}/{}{}",
@@ -31,9 +37,9 @@ pub fn render(pet: &PetState, strategy: Strategy, width: usize) -> Vec<String> {
     );
 
     vec![
-        pad_to_width(&header, width),
-        pad_to_width(&bars, width),
-        pad_to_width(&stats, width),
+        StyledLine::plain(pad_to_width(&header, width)),
+        StyledLine::plain(pad_to_width(&bars, width)),
+        StyledLine::plain(pad_to_width(&stats, width)),
     ]
 }
 
@@ -62,7 +68,7 @@ fn bar(current: u32, max: u32, cells: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::vis_width;
+    // vis_width no longer needed — StyledLine has its own visible_width().
 
     fn sample() -> PetState {
         PetState {
@@ -93,22 +99,22 @@ mod tests {
     fn every_line_matches_requested_width() {
         let lines = render(&sample(), s_explorer(), 60);
         for l in &lines {
-            assert_eq!(vis_width(l), 60, "line must be padded/clipped to 60");
+            assert_eq!(l.visible_width(), 60, "line must be padded/clipped to 60");
         }
     }
 
     #[test]
     fn header_contains_name_and_level() {
         let lines = render(&sample(), s_explorer(), 50);
-        assert!(lines[0].contains("Ferris"));
-        assert!(lines[0].contains("Lv.5"));
+        assert!(lines[0].plain_text().contains("Ferris"));
+        assert!(lines[0].plain_text().contains("Lv.5"));
     }
 
     #[test]
     fn bars_reflect_values() {
         let lines = render(&sample(), s_explorer(), 60);
         // HP=82/100 → ceil(0.82*6) = 5 filled
-        assert!(lines[1].contains("█████░"), "got: {}", lines[1]);
+        assert!(lines[1].plain_text().contains("█████░"), "got: {}", lines[1].plain_text());
     }
 
     #[test]
@@ -127,17 +133,17 @@ mod tests {
         p.hp = 500; // > max
         let lines = render(&p, s_explorer(), 60);
         // Bar should be fully filled (6 █, 0 ░)
-        assert!(lines[1].contains("██████"), "got: {}", lines[1]);
+        assert!(lines[1].plain_text().contains("██████"), "got: {}", lines[1].plain_text());
     }
 
     #[test]
     fn narrow_width_clips_with_ellipsis() {
         let lines = render(&sample(), s_explorer(), 10);
         for l in &lines {
-            assert_eq!(vis_width(l), 10);
+            assert_eq!(l.visible_width(), 10);
         }
         // At width 10 the stats line ("ATK: 18  DEF: 12 ..." is >10) must end with …
-        assert!(lines[2].contains('…'));
+        assert!(lines[2].plain_text().contains('…'));
     }
 
     #[test]
@@ -145,7 +151,7 @@ mod tests {
         let mut p = sample();
         p.name = "代號七七七".to_string();
         let lines = render(&p, s_explorer(), 50);
-        assert_eq!(vis_width(&lines[0]), 50);
+        assert_eq!(lines[0].visible_width(), 50);
     }
 
     // ─── Phase 3d: next-unlock anchor ───────────────────────────────
@@ -156,8 +162,8 @@ mod tests {
         let mut p = sample();
         p.level = 5;
         let lines = render(&p, s_explorer(), 80);
-        assert!(lines[1].contains("Focus Strike"), "got: {}", lines[1]);
-        assert!(lines[1].contains("Lv 10"));
+        assert!(lines[1].plain_text().contains("Focus Strike"), "got: {}", lines[1].plain_text());
+        assert!(lines[1].plain_text().contains("Lv 10"));
     }
 
     #[test]
@@ -166,7 +172,7 @@ mod tests {
         let mut p = sample();
         p.level = 12;
         let lines = render(&p, s_explorer(), 80);
-        assert!(lines[1].contains("Tome Sense"), "got: {}", lines[1]);
+        assert!(lines[1].plain_text().contains("Tome Sense"), "got: {}", lines[1].plain_text());
     }
 
     #[test]
@@ -175,7 +181,7 @@ mod tests {
         let mut p = sample();
         p.level = 60;
         let lines = render(&p, s_explorer(), 80);
-        assert!(!lines[1].contains("next:"), "got: {}", lines[1]);
+        assert!(!lines[1].plain_text().contains("next:"), "got: {}", lines[1].plain_text());
     }
 
     // ─── Phase 3b: Strategy display ─────────────────────────────────
@@ -184,9 +190,9 @@ mod tests {
     fn stats_line_includes_strategy_tag() {
         let lines = render(&sample(), Strategy::Aggressive, 80);
         assert!(
-            lines[2].contains("strat:aggressive"),
+            lines[2].plain_text().contains("strat:aggressive"),
             "stats line missing strategy: {}",
-            lines[2]
+            lines[2].plain_text()
         );
     }
 
@@ -194,8 +200,8 @@ mod tests {
     fn strategy_updates_stats_line_when_switched() {
         let aggro_lines = render(&sample(), Strategy::Aggressive, 80);
         let scholar_lines = render(&sample(), Strategy::Scholar, 80);
-        assert!(aggro_lines[2].contains("aggressive"));
-        assert!(scholar_lines[2].contains("scholar"));
+        assert!(aggro_lines[2].plain_text().contains("aggressive"));
+        assert!(scholar_lines[2].plain_text().contains("scholar"));
         assert_ne!(aggro_lines[2], scholar_lines[2]);
     }
 }
