@@ -6,7 +6,11 @@
 //! paint means tests can verify layout without touching a real terminal.
 
 use anyhow::Result;
-use crossterm::{cursor, queue, style::Print, terminal};
+use crossterm::{
+    cursor, queue,
+    style::{Print, ResetColor, SetForegroundColor},
+    terminal,
+};
 use rusqlite::Connection;
 use std::io::Write;
 use std::path::Path;
@@ -15,6 +19,7 @@ use super::layout::{compute, Layout, LayoutMode};
 use super::local_map::compute as compute_local_map;
 use super::panels::local_map::LocalMapPanel;
 use super::panels::{combat_log, local_map as map_panel, pet as pet_panel, zoa::ZoaPanel};
+use super::styled::{StyledLine, StyledSpan};
 use crate::pet::live_state::LiveState;
 
 /// A fully-composed frame ready for paint. Each line carries an
@@ -24,11 +29,33 @@ pub struct Frame {
     pub lines: Vec<PositionedLine>,
 }
 
+/// One absolute-positioned row of rendered output. Moved from a single
+/// `text: String` to `spans: Vec<StyledSpan>` in the B11 paint-layer
+/// project so tile borders can carry per-range foreground colour while
+/// the interior text stays default-fg. An empty `spans` vec is the
+/// "invisible line" sentinel — paint skips it entirely.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PositionedLine {
     pub col: u16,
     pub row: u16,
-    pub text: String,
+    pub spans: Vec<StyledSpan>,
+}
+
+/// Test-only impl — `plain_text()` is used by the render.rs test
+/// module (and integration tests via the pub API) but paint walks
+/// `spans` directly, so gating this behind cfg(test) keeps
+/// dead-code analysis clean in the production binary.
+#[cfg(test)]
+impl PositionedLine {
+    /// Concatenated text with style stripped.
+    pub fn plain_text(&self) -> String {
+        let cap = self.spans.iter().map(|s| s.text.len()).sum();
+        let mut out = String::with_capacity(cap);
+        for s in &self.spans {
+            out.push_str(&s.text);
+        }
+        out
+    }
 }
 
 /// Load all data from DB and compose the full frame for the given
@@ -80,7 +107,7 @@ pub fn build_frame(
 
     // Skip the DB scan + render work entirely when the mode hides the
     // map (Narrow/Compact) — saves both a disk walk and a SQL query.
-    let map_lines: Vec<String> = if layout.local_map.is_empty() {
+    let map_lines: Vec<StyledLine> = if layout.local_map.is_empty() {
         Vec::new()
     } else {
         let rooms = compute_local_map(conn, scan_root, cwd)?;
@@ -97,7 +124,7 @@ pub fn build_frame(
     // Compact mode has no bottom strip at all — skip both the log DB
     // query and the welcome override. Narrow keeps the log as its sole
     // bottom widget.
-    let log_lines: Vec<String> = if layout.combat_log.is_empty() {
+    let log_lines: Vec<StyledLine> = if layout.combat_log.is_empty() {
         Vec::new()
     } else {
         match welcome_override {
@@ -129,7 +156,7 @@ pub fn build_frame(
     // Zoa renders only in Wide mode (the only mode where layout.zoa is
     // non-empty). Callers may still pass `Some(panel)` in other modes —
     // we just skip rendering then.
-    let zoa_lines: Vec<String> = match (zoa, layout.mode) {
+    let zoa_lines: Vec<StyledLine> = match (zoa, layout.mode) {
         (Some(panel), LayoutMode::Wide) => panel.render(
             layout.zoa.width as usize,
             layout.zoa.height as usize,
@@ -145,33 +172,45 @@ pub fn build_frame(
 /// Pad a welcome-back greeting to the combat-log panel's dimensions. The
 /// greeting arrives from `pet::session::WelcomeBackSummary::render_lines`
 /// as plain strings; here we add a panel title, cap to `max_rows`, and
-/// pad short lines to `width`.
-fn render_welcome_lines(welcome: &[String], width: usize, max_rows: usize) -> Vec<String> {
+/// pad short lines to `width`. All spans default-fg (colour reserved for
+/// future welcome-back styling if we decide to).
+fn render_welcome_lines(welcome: &[String], width: usize, max_rows: usize) -> Vec<StyledLine> {
     use super::panels::pad_to_width;
-    let mut out = Vec::with_capacity(max_rows);
-    out.push(pad_to_width("💤 歸來摘要", width));
+    let mut out: Vec<StyledLine> = Vec::with_capacity(max_rows);
+    out.push(StyledLine::plain(pad_to_width("💤 歸來摘要", width)));
     for line in welcome.iter().take(max_rows.saturating_sub(1)) {
-        out.push(pad_to_width(line, width));
+        out.push(StyledLine::plain(pad_to_width(line, width)));
     }
     while out.len() < max_rows {
-        out.push(pad_to_width("", width));
+        out.push(StyledLine::plain(pad_to_width("", width)));
     }
     out
 }
 
 /// Paint a pre-built frame to stdout. Clears the alt screen once before
 /// writing so stale content from a smaller previous frame doesn't leak.
+///
+/// Each span with `fg = Some(color)` is bracketed by `SetForegroundColor`
+/// / `ResetColor` so colour state never leaks into the next span — this
+/// matters even with `Clear::All` per frame because a single row still
+/// emits multiple spans and the terminal is stateful within the queue.
 pub fn paint(frame: &Frame, out: &mut impl Write) -> Result<()> {
     queue!(out, terminal::Clear(terminal::ClearType::All))?;
     for line in &frame.lines {
-        if line.text.is_empty() {
+        if line.spans.is_empty() {
             continue;
         }
-        queue!(
-            out,
-            cursor::MoveTo(line.col, line.row),
-            Print(&line.text),
-        )?;
+        queue!(out, cursor::MoveTo(line.col, line.row))?;
+        for span in &line.spans {
+            match span.fg {
+                Some(color) => {
+                    queue!(out, SetForegroundColor(color), Print(&span.text), ResetColor)?;
+                }
+                None => {
+                    queue!(out, Print(&span.text))?;
+                }
+            }
+        }
     }
     out.flush()?;
     Ok(())
@@ -179,52 +218,54 @@ pub fn paint(frame: &Frame, out: &mut impl Write) -> Result<()> {
 
 fn compose(
     layout: &Layout,
-    pet_lines: &[String],
-    zoa_lines: &[String],
-    map_lines: &[String],
-    log_lines: &[String],
+    pet_lines: &[StyledLine],
+    zoa_lines: &[StyledLine],
+    map_lines: &[StyledLine],
+    log_lines: &[StyledLine],
 ) -> Vec<PositionedLine> {
     let cap = pet_lines.len() + zoa_lines.len() + map_lines.len() + log_lines.len();
     let mut out = Vec::with_capacity(cap);
-    for (i, text) in pet_lines.iter().enumerate() {
-        out.push(PositionedLine {
-            col: layout.pet_status.x,
-            row: layout.pet_status.y + i as u16,
-            text: text.clone(),
-        });
-    }
-    for (i, text) in zoa_lines.iter().enumerate() {
-        out.push(PositionedLine {
-            col: layout.zoa.x,
-            row: layout.zoa.y + i as u16,
-            text: text.clone(),
-        });
-    }
-    for (i, text) in map_lines.iter().enumerate() {
-        out.push(PositionedLine {
-            col: layout.local_map.x,
-            row: layout.local_map.y + i as u16,
-            text: text.clone(),
-        });
-    }
-    for (i, text) in log_lines.iter().enumerate() {
-        out.push(PositionedLine {
-            col: layout.combat_log.x,
-            row: layout.combat_log.y + i as u16,
-            text: text.clone(),
-        });
-    }
+    push_section(&mut out, pet_lines, layout.pet_status.x, layout.pet_status.y);
+    push_section(&mut out, zoa_lines, layout.zoa.x, layout.zoa.y);
+    push_section(&mut out, map_lines, layout.local_map.x, layout.local_map.y);
+    push_section(&mut out, log_lines, layout.combat_log.x, layout.combat_log.y);
     out
 }
 
-fn placeholder_lines(msg: &str, width: usize, height: usize) -> Vec<String> {
+/// Append one panel's lines at (x, y+i), carrying each StyledLine's spans
+/// directly into the PositionedLine. Empty span lists (from
+/// `StyledLine::plain("")`) stay empty so the paint loop's
+/// `if line.spans.is_empty() { continue }` guard preserves the pre-B11
+/// "empty line = invisible" behaviour.
+///
+/// Review-r1 A-2: `y + i as u16` would wrap silently if `i` ever
+/// exceeded `u16::MAX`. In practice panels are layout-bounded to at
+/// most a few dozen rows, but we still clamp via `u16::try_from`
+/// and skip any over-budget line rather than cascading a row-index
+/// wrap that overwrites the top of the frame.
+fn push_section(out: &mut Vec<PositionedLine>, lines: &[StyledLine], x: u16, y: u16) {
+    for (i, line) in lines.iter().enumerate() {
+        let Ok(row_offset) = u16::try_from(i) else {
+            // Bailing early beats producing a mis-rowed frame;
+            // layout invariants make this unreachable in practice.
+            break;
+        };
+        out.push(PositionedLine {
+            col: x,
+            row: y.saturating_add(row_offset),
+            spans: line.spans.clone(),
+        });
+    }
+}
+
+fn placeholder_lines(msg: &str, width: usize, height: usize) -> Vec<StyledLine> {
     use super::panels::pad_to_width;
-    let mut out = Vec::with_capacity(height);
+    let mut out: Vec<StyledLine> = Vec::with_capacity(height);
     if height > 0 {
-        out.push(pad_to_width(msg, width));
+        out.push(StyledLine::plain(pad_to_width(msg, width)));
     }
     while out.len() < height {
-        out.push(pad_to_width("", width));
+        out.push(StyledLine::plain(pad_to_width("", width)));
     }
     out
 }
@@ -272,7 +313,7 @@ mod tests {
             .iter()
             .find(|l| l.row == 0)
             .expect("top line exists");
-        assert!(top.text.contains("adopt"));
+        assert!(top.plain_text().contains("adopt"));
     }
 
     #[test]
@@ -288,7 +329,7 @@ mod tests {
         )
         .unwrap();
         let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
-        let has_ferris = frame.lines.iter().any(|l| l.text.contains("Ferris"));
+        let has_ferris = frame.lines.iter().any(|l| l.plain_text().contains("Ferris"));
         assert!(has_ferris, "pet name must appear in frame");
     }
 
@@ -296,14 +337,14 @@ mod tests {
     fn build_frame_includes_local_map_header() {
         let conn = fresh();
         let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
-        assert!(frame.lines.iter().any(|l| l.text.contains("Local Map")));
+        assert!(frame.lines.iter().any(|l| l.plain_text().contains("Local Map")));
     }
 
     #[test]
     fn build_frame_includes_combat_log_header() {
         let conn = fresh();
         let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
-        assert!(frame.lines.iter().any(|l| l.text.contains("Combat Log")));
+        assert!(frame.lines.iter().any(|l| l.plain_text().contains("Combat Log")));
     }
 
     #[test]
@@ -320,7 +361,7 @@ mod tests {
         }
         let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
         // Most-recent-first: "mob-2" should be in frame somewhere
-        assert!(frame.lines.iter().any(|l| l.text.contains("mob-2")));
+        assert!(frame.lines.iter().any(|l| l.plain_text().contains("mob-2")));
     }
 
     #[test]
@@ -435,12 +476,12 @@ mod tests {
         // The welcome-back title must appear (it replaces the normal
         // "⚔ Combat Log" header).
         assert!(
-            frame.lines.iter().any(|l| l.text.contains("歸來摘要")),
+            frame.lines.iter().any(|l| l.plain_text().contains("歸來摘要")),
             "welcome-back title must appear in frame"
         );
         // The real combat_log row should NOT appear in the override frame.
         assert!(
-            !frame.lines.iter().any(|l| l.text.contains("ghost — x")),
+            !frame.lines.iter().any(|l| l.plain_text().contains("ghost — x")),
             "override frame must not show real combat_log content"
         );
     }
@@ -454,11 +495,11 @@ mod tests {
         let conn = fresh();
         let frame = build_frame(&conn, Path::new("/repo"), None, 72, 20, None, None, None).unwrap();
         assert!(
-            !frame.lines.iter().any(|l| l.text.contains("Local Map")),
+            !frame.lines.iter().any(|l| l.plain_text().contains("Local Map")),
             "Narrow mode must not render the Local Map panel"
         );
         // CombatLog panel still there — it's the sole bottom widget.
-        assert!(frame.lines.iter().any(|l| l.text.contains("Combat Log")));
+        assert!(frame.lines.iter().any(|l| l.plain_text().contains("Combat Log")));
     }
 
     #[test]
@@ -468,11 +509,11 @@ mod tests {
         let conn = fresh();
         let frame = build_frame(&conn, Path::new("/repo"), None, 50, 20, None, None, None).unwrap();
         // No Combat Log / Local Map at all.
-        assert!(!frame.lines.iter().any(|l| l.text.contains("Combat Log")));
-        assert!(!frame.lines.iter().any(|l| l.text.contains("Local Map")));
+        assert!(!frame.lines.iter().any(|l| l.plain_text().contains("Combat Log")));
+        assert!(!frame.lines.iter().any(|l| l.plain_text().contains("Local Map")));
         // Pet placeholder must still appear so the caller can at least
         // display something before bailing.
-        assert!(frame.lines.iter().any(|l| l.text.contains("adopt")));
+        assert!(frame.lines.iter().any(|l| l.plain_text().contains("adopt")));
     }
 
     #[test]
@@ -483,7 +524,7 @@ mod tests {
         let frame = build_frame(&conn, Path::new("/repo"), None, 140, 30, None, Some(&zoa), None).unwrap();
         // Zoa occupies col 0 at rows >= 3 (below the pet header). Look for
         // the top frame row which contains "_______".
-        let zoa_top_row = frame.lines.iter().find(|l| l.col == 0 && l.row >= 3 && l.text.contains("_______"));
+        let zoa_top_row = frame.lines.iter().find(|l| l.col == 0 && l.row >= 3 && l.plain_text().contains("_______"));
         assert!(
             zoa_top_row.is_some(),
             "Wide mode must render Zoa's top skull-cap row at col 0"
@@ -498,7 +539,7 @@ mod tests {
         let zoa = super::ZoaPanel::new();
         let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, Some(&zoa), None).unwrap();
         assert!(
-            !frame.lines.iter().any(|l| l.text.contains("_______")),
+            !frame.lines.iter().any(|l| l.plain_text().contains("_______")),
             "Standard mode must not render Zoa frames"
         );
     }
@@ -513,7 +554,7 @@ mod tests {
         let map_header = frame
             .lines
             .iter()
-            .find(|l| l.text.contains("Local Map"))
+            .find(|l| l.plain_text().contains("Local Map"))
             .expect("map header must exist in Wide mode");
         assert_eq!(
             map_header.col, 24,
@@ -532,11 +573,11 @@ mod tests {
         .unwrap();
         let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None, None).unwrap();
         assert!(
-            frame.lines.iter().any(|l| l.text.contains("unique-marker")),
+            frame.lines.iter().any(|l| l.plain_text().contains("unique-marker")),
             "normal frame must surface real combat_log rows"
         );
         assert!(
-            !frame.lines.iter().any(|l| l.text.contains("歸來摘要")),
+            !frame.lines.iter().any(|l| l.plain_text().contains("歸來摘要")),
             "no welcome-back title without override"
         );
     }
@@ -588,13 +629,13 @@ mod tests {
         let has_tile_border = frame
             .lines
             .iter()
-            .any(|l| in_local_map(l, 100, 30) && l.text.contains('┌'));
+            .any(|l| in_local_map(l, 100, 30) && l.plain_text().contains('┌'));
         assert!(
             has_tile_border,
             "grid mode must emit tile borders inside local_map rect"
         );
         // And the "Local Map" header (list-mode only) must NOT appear.
-        assert!(!frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
+        assert!(!frame.lines.iter().any(|l| l.plain_text().contains("📍 Local Map")));
     }
 
     #[test]
@@ -615,9 +656,9 @@ mod tests {
         )
         .unwrap();
         // List mode keeps the "📍 Local Map" header row.
-        assert!(frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
+        assert!(frame.lines.iter().any(|l| l.plain_text().contains("📍 Local Map")));
         // And marker row for the sole mob directory.
-        assert!(frame.lines.iter().any(|l| l.text.contains("src")));
+        assert!(frame.lines.iter().any(|l| l.plain_text().contains("src")));
     }
 
     #[test]
@@ -627,7 +668,7 @@ mod tests {
         seed_mobs_with_paths(&conn, &["src/a.rs"]);
         let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None, None)
             .unwrap();
-        assert!(frame.lines.iter().any(|l| l.text.contains("📍 Local Map")));
+        assert!(frame.lines.iter().any(|l| l.plain_text().contains("📍 Local Map")));
     }
 
     #[test]
@@ -652,7 +693,7 @@ mod tests {
         let has_at_marker = frame
             .lines
             .iter()
-            .any(|l| in_local_map(l, 100, 30) && l.text.contains('@'));
+            .any(|l| in_local_map(l, 100, 30) && l.plain_text().contains('@'));
         assert!(has_at_marker, "current dir must show @ overlay in grid tile");
     }
 
@@ -680,7 +721,102 @@ mod tests {
         let cjk_visible = frame
             .lines
             .iter()
-            .any(|l| in_local_map(l, 100, 30) && l.text.contains("前端"));
+            .any(|l| in_local_map(l, 100, 30) && l.plain_text().contains("前端"));
         assert!(cjk_visible, "CJK dir name must survive the grid render pipeline");
+    }
+
+    // ─── B11 P4: ANSI snapshot tests on paint output ─────────────────
+
+    /// End-to-end proof that paint-layer integration with zone_color
+    /// actually emits foreground-colour escapes — this is the final
+    /// missing piece of tile-map-localmap's success criterion #3
+    /// ("5 zone kind 各有獨立 color ... ANSI snapshot"), which was
+    /// recorded as partially-achieved there and promoted to B11.
+    #[test]
+    fn grid_tile_border_emits_ansi_fg_escape() {
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        // zone_color("src") = Color::Red; crossterm emits either the
+        // legacy `\x1b[31m` or the 256-colour form `\x1b[38;5;N m`
+        // depending on terminal capability at runtime. Accept either —
+        // the point of the test is "at least one fg escape appeared".
+        seed_mobs_with_paths(&conn, &["src/cli/a.rs"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        let mut sink: Vec<u8> = Vec::new();
+        paint(&frame, &mut sink).unwrap();
+        let raw = String::from_utf8_lossy(&sink);
+        assert!(
+            raw.contains("\x1b[38;5;") || raw.contains("\x1b[31m"),
+            "grid tile must emit fg colour escape — sink had {} bytes",
+            sink.len()
+        );
+    }
+
+    #[test]
+    fn paint_emits_reset_after_every_colored_span() {
+        // Each coloured span is bracketed by Set/Reset so colour cannot
+        // leak into the following span. Count escapes: for a tile top
+        // border there is exactly one coloured span → one Set + one
+        // Reset (the `\x1b[0m` sequence crossterm uses).
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/a.rs"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        let mut sink: Vec<u8> = Vec::new();
+        paint(&frame, &mut sink).unwrap();
+        let raw = String::from_utf8_lossy(&sink);
+        let reset_count = raw.matches("\x1b[0m").count();
+        assert!(reset_count > 0, "at least one ResetColor must be emitted");
+    }
+
+    #[test]
+    fn paint_list_mode_emits_no_fg_escape() {
+        // Sanity counter-test: List mode currently has no per-span
+        // colour (scope boundary — plan explicitly excludes List row
+        // styling). Paint output must be plain text + no fg escapes.
+        use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
+        let conn = fresh();
+        seed_mobs_with_paths(&conn, &["src/a.rs"]);
+        let panel = LocalMapPanel { display_mode: DisplayMode::List };
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            None,
+            Some(&panel),
+        )
+        .unwrap();
+        let mut sink: Vec<u8> = Vec::new();
+        paint(&frame, &mut sink).unwrap();
+        let raw = String::from_utf8_lossy(&sink);
+        assert!(
+            !raw.contains("\x1b[38;5;") && !raw.contains("\x1b[31m"),
+            "list mode must not emit fg escapes"
+        );
     }
 }

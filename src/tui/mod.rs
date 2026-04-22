@@ -11,6 +11,7 @@ pub mod layout;
 pub mod local_map;
 pub mod panels;
 pub mod render;
+pub mod styled;
 
 use anyhow::Result;
 use std::io;

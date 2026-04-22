@@ -51,11 +51,14 @@ Plan: `doc/plans/2026-04-20-tile-map-localmap.md`（完整設計細節在 plan�
 - **`@` overlay 位置**：P1 render_tile 就已處理 `is_current` → badge 行右側
   `@` 標記（badge + gap + @，CJK-safe）。P4 沒有額外工作，改為整合測試 +
   spec + README
-- **Success Criterion #3（zone colour ANSI snapshot）部分達成**：
-  `zone_color()` mapping 完整 + unit tested；per-tile border 的 ANSI paint
-  整合需把 `PositionedLine`（整行 `Print(&text)`）換成 `Vec<StyledSpan>`
-  的 refactor，超出本輪 scope。zone_color 暫掛 `#[allow(dead_code)]`，
-  下一輪 polish 再把 paint 層接上
+- **Success Criterion #3（zone colour ANSI snapshot）**：本 project 完成
+  `zone_color()` mapping + unit tested；paint-layer 整合由 follow-up
+  B11 / [zone-color-paint-layer](../../2026-04-22-zone-color-paint-layer/)
+  承接完成（2026-04-22 merge），已做到：`PositionedLine` 改 `Vec<StyledSpan>`、
+  paint 走 per-range `SetForegroundColor` / `ResetColor`、tile border
+  帶 zone colour、名稱/badge 保持 default-fg、ANSI snapshot test
+  `grid_tile_border_emits_ansi_fg_escape` 驗證逃脫序列落在 paint 輸出裡。
+  criterion #3 至此完全達成
 - **`build_frame` 加 `Option<&LocalMapPanel>` 8 參數**：clippy
   `too_many_arguments` 觸發 — 就地 `#[allow]` 並附說明，比重構 builder
   pattern 更對齊呼叫端的既有 `Some(zoa)` symmetry
