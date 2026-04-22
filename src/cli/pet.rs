@@ -2,7 +2,7 @@ use anyhow::Result;
 use crate::db;
 use crate::pet::live_state::LiveState;
 use crate::pet::village::VILLAGES;
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use crossterm::style::{Color, Stylize};
 use std::io::Write;
 
 pub fn run(ctx: &db::Context) -> Result<()> {
@@ -19,28 +19,27 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let pet = &live.state;
     let village = VILLAGES.iter().find(|v| v.id == pet.village).unwrap_or(&VILLAGES[2]);
 
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+    let mut stdout = std::io::stdout();
 
     // 村落標題
-    stdout.set_color(ColorSpec::new().set_fg(Some(village.color)).set_bold(true))?;
-    writeln!(stdout, "\n  {} — {}", village.display_name, village.language)?;
-    stdout.reset()?;
+    writeln!(
+        stdout,
+        "\n  {}",
+        format!("{} — {}", village.display_name, village.language)
+            .with(village.color)
+            .bold()
+    )?;
 
     // 寵物 ASCII
-    stdout.set_color(ColorSpec::new().set_fg(Some(village.color)))?;
     for line in village.ascii_full.lines() {
-        writeln!(stdout, "  {}", line)?;
+        writeln!(stdout, "  {}", line.with(village.color))?;
     }
-    stdout.reset()?;
 
     writeln!(stdout)?;
 
     // 名稱與等級
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::White)).set_bold(true))?;
-    write!(stdout, "  {} ", pet.name)?;
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
-    writeln!(stdout, "Lv.{}", pet.level)?;
-    stdout.reset()?;
+    write!(stdout, "  {} ", pet.name.as_str().with(Color::White).bold())?;
+    writeln!(stdout, "{}", format!("Lv.{}", pet.level).with(Color::Yellow))?;
 
     // XP bar
     let xp_pct = (pet.xp as f32 / pet.xp_to_next as f32 * 20.0) as usize;
@@ -56,9 +55,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let badges = crate::pet::badges::list(&conn)?;
     if !badges.is_empty() {
         println!();
-        stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
-        write!(stdout, "  ★ 徽章 ({})：", badges.len())?;
-        stdout.reset()?;
+        write!(stdout, "  {}", format!("★ 徽章 ({})：", badges.len()).with(Color::Yellow))?;
         println!("{}", badges.iter().map(|b| b.name.as_str()).collect::<Vec<_>>().join("  "));
     }
 
@@ -71,7 +68,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
 }
 
 /// Last 3 combat_log rows — show daemon activity at a glance.
-fn render_recent_combat(stdout: &mut StandardStream, conn: &rusqlite::Connection) -> Result<()> {
+fn render_recent_combat(stdout: &mut impl Write, conn: &rusqlite::Connection) -> Result<()> {
     let mut stmt = conn.prepare(
         "SELECT mob_kind, mob_name, xp_gained, loot, occurred_at
          FROM combat_log ORDER BY id DESC LIMIT 3",
@@ -85,9 +82,7 @@ fn render_recent_combat(stdout: &mut StandardStream, conn: &rusqlite::Connection
         return Ok(());
     }
     println!();
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)).set_bold(true))?;
-    writeln!(stdout, "  ⚔ 最近擊殺：")?;
-    stdout.reset()?;
+    writeln!(stdout, "  {}", "⚔ 最近擊殺：".with(Color::Cyan).bold())?;
     for (kind, name, xp, loot, at) in rows {
         let short_name = truncate_display(&name, 42);
         let loot_s = loot.unwrap_or_default();
@@ -104,7 +99,7 @@ fn render_recent_combat(stdout: &mut StandardStream, conn: &rusqlite::Connection
 }
 
 /// Aggregated loot inventory — one line per (kind, name).
-fn render_inventory(stdout: &mut StandardStream, conn: &rusqlite::Connection) -> Result<()> {
+fn render_inventory(stdout: &mut impl Write, conn: &rusqlite::Connection) -> Result<()> {
     let mut stmt = conn.prepare(
         "SELECT kind, name, quantity FROM loot_inventory
          ORDER BY kind, name",
@@ -116,9 +111,7 @@ fn render_inventory(stdout: &mut StandardStream, conn: &rusqlite::Connection) ->
         return Ok(());
     }
     println!();
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)).set_bold(true))?;
-    writeln!(stdout, "  🎒 Inventory ({} 類)：", rows.len())?;
-    stdout.reset()?;
+    writeln!(stdout, "  {}", format!("🎒 Inventory ({} 類)：", rows.len()).with(Color::Green).bold())?;
     for (kind, name, qty) in rows {
         if qty == 1 {
             println!("    · {name} ({kind})");
