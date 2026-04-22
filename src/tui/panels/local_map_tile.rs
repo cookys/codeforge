@@ -15,6 +15,7 @@
 //! tile has 8 inner cols, fitting 4 CJK chars or 8 ASCII chars.
 
 use super::super::local_map::RoomSummary;
+use super::super::styled::StyledLine;
 use super::{clip_to_width, pad_to_width, vis_width};
 use termcolor::Color;
 use unicode_width::UnicodeWidthStr;
@@ -41,7 +42,7 @@ pub const MIN_GRID_WIDTH: usize = 30;
 /// ≥ 3. Degenerate dimensions return an empty `Vec` rather than panic —
 /// the caller is expected to pre-check via `MIN_GRID_WIDTH` or fall back
 /// to list render.
-pub fn render_tile(room: &RoomSummary, width: usize, height: usize) -> Vec<String> {
+pub fn render_tile(room: &RoomSummary, width: usize, height: usize) -> Vec<StyledLine> {
     if width < 4 || height < 3 {
         return Vec::new();
     }
@@ -52,14 +53,17 @@ pub fn render_tile(room: &RoomSummary, width: usize, height: usize) -> Vec<Strin
     let badge = badge_for(room);
     let badge_row = compose_badge_row(&badge, room.is_current, inner);
 
-    let mut lines = Vec::with_capacity(height);
-    lines.push(pad_to_width(&top, width));
-    lines.push(pad_to_width(&name, width));
-    lines.push(pad_to_width(&badge_row, width));
+    let mut lines: Vec<StyledLine> = Vec::with_capacity(height);
+    // B11 P2: all spans default-fg; P3 replaces the border spans with
+    // Some(zone_color(&room.directory)) so borders pick up zone colour
+    // while the interior (name / badge / @ marker) stays default fg.
+    lines.push(StyledLine::plain(pad_to_width(&top, width)));
+    lines.push(StyledLine::plain(pad_to_width(&name, width)));
+    lines.push(StyledLine::plain(pad_to_width(&badge_row, width)));
     // Extra rows beyond 3 pad blank — keeps grid alignment if caller
     // passes a taller tile than the default.
     while lines.len() < height {
-        lines.push(pad_to_width("", width));
+        lines.push(StyledLine::plain(pad_to_width("", width)));
     }
     lines
 }
@@ -169,16 +173,23 @@ pub fn compute_grid(
 /// For `capacity == 0` (panel too narrow) the frame is blank; callers
 /// should have routed to list render before reaching this path, but the
 /// function stays well-defined rather than panicking.
-pub fn render_grid(rooms: &[RoomSummary], panel_w: usize, panel_h: usize) -> Vec<String> {
+pub fn render_grid(rooms: &[RoomSummary], panel_w: usize, panel_h: usize) -> Vec<StyledLine> {
     let (layout, placed, overflow) = compute_grid(rooms, panel_w, panel_h);
 
-    let mut frame: Vec<String> = Vec::with_capacity(panel_h);
+    // We build a scratch `Vec<String>` first (one row per panel line),
+    // then materialise StyledLine::plain at the end. This keeps the
+    // horizontal concatenation and overflow-overlay arithmetic
+    // unchanged from P2 pre-B11 — P3 will reshape render_tile into a
+    // per-span styled form and then this function will compose at
+    // the span level instead of via string concatenation.
+    let mut rows: Vec<String> = Vec::with_capacity(panel_h);
 
     if layout.capacity == 0 {
-        while frame.len() < panel_h {
-            frame.push(pad_to_width("", panel_w));
+        while rows.len() < panel_h {
+            rows.push(pad_to_width("", panel_w));
         }
-        return finalize_with_overflow(frame, overflow, panel_w);
+        let rows = finalize_with_overflow(rows, overflow, panel_w);
+        return rows.into_iter().map(StyledLine::plain).collect();
     }
 
     // Group placed tiles by row for easy horizontal concatenation.
@@ -188,13 +199,19 @@ pub fn render_grid(rooms: &[RoomSummary], panel_w: usize, panel_h: usize) -> Vec
     }
 
     for row_tiles in rows_of_tiles {
-        // Pre-render each tile in this row.
+        // Pre-render each tile in this row, then flatten StyledLine back
+        // to plain strings for horizontal concatenation. Lossy only in
+        // that we drop fg info — P2 emits default-fg everywhere so this
+        // is a no-op; P3 will rewrite this loop against spans directly.
         let rendered: Vec<Vec<String>> = row_tiles
             .iter()
-            .map(|r| render_tile(r, TILE_WIDTH, TILE_HEIGHT))
+            .map(|r| {
+                render_tile(r, TILE_WIDTH, TILE_HEIGHT)
+                    .into_iter()
+                    .map(|sl| sl.plain_text())
+                    .collect()
+            })
             .collect();
-        // For each of TILE_HEIGHT line slots, concatenate the i-th line
-        // across all tiles; pad trailing area to panel_w.
         for i in 0..TILE_HEIGHT {
             let mut line = String::new();
             for tile in &rendered {
@@ -202,19 +219,21 @@ pub fn render_grid(rooms: &[RoomSummary], panel_w: usize, panel_h: usize) -> Vec
                     line.push_str(piece);
                 }
             }
-            frame.push(pad_to_width(&line, panel_w));
+            rows.push(pad_to_width(&line, panel_w));
         }
     }
-    // Pad any remaining rows when layout.rows * TILE_HEIGHT < panel_h.
-    while frame.len() < panel_h {
-        frame.push(pad_to_width("", panel_w));
+    while rows.len() < panel_h {
+        rows.push(pad_to_width("", panel_w));
     }
 
-    finalize_with_overflow(frame, overflow, panel_w)
+    let rows = finalize_with_overflow(rows, overflow, panel_w);
+    rows.into_iter().map(StyledLine::plain).collect()
 }
 
 /// Overlay the `…+N more` indicator onto the bottom-right of `frame`
-/// when `overflow > 0`. No-op otherwise.
+/// when `overflow > 0`. No-op otherwise. Operates on raw Strings —
+/// kept as-is from pre-B11 because the overlay math is width-based
+/// and doesn't need span awareness.
 fn finalize_with_overflow(mut frame: Vec<String>, overflow: usize, panel_w: usize) -> Vec<String> {
     if overflow == 0 || frame.is_empty() {
         return frame;
@@ -223,7 +242,6 @@ fn finalize_with_overflow(mut frame: Vec<String>, overflow: usize, panel_w: usiz
     let msg_w = vis_width(&msg);
     let last = frame.len() - 1;
     if msg_w >= panel_w {
-        // Message doesn't fit — clamp to panel width (with … truncation).
         frame[last] = pad_to_width(&clip_to_width(&msg, panel_w), panel_w);
     } else {
         let head_w = panel_w - msg_w;
@@ -319,7 +337,7 @@ mod tests {
     fn every_line_hits_requested_width() {
         let lines = render_tile(&room("daemon", 2, 0, true), TILE_WIDTH, TILE_HEIGHT);
         for (i, l) in lines.iter().enumerate() {
-            assert_eq!(vis_width(l), TILE_WIDTH, "row {i} width mismatch: {l:?}");
+            assert_eq!(l.visible_width(), TILE_WIDTH, "row {i} width mismatch: {l:?}");
         }
     }
 
@@ -338,10 +356,10 @@ mod tests {
         let lines = render_tile(&room("src", 0, 0, false), 10, 5);
         assert_eq!(lines.len(), 5);
         // Last two rows are blank padded (no border chars).
-        assert_eq!(vis_width(&lines[3]), 10);
-        assert_eq!(vis_width(&lines[4]), 10);
-        assert!(!lines[3].contains('│'));
-        assert!(!lines[4].contains('│'));
+        assert_eq!(lines[3].visible_width(), 10);
+        assert_eq!(lines[4].visible_width(), 10);
+        assert!(!lines[3].plain_text().contains('│'));
+        assert!(!lines[4].plain_text().contains('│'));
     }
 
     // ------------------------------------------------------------------
@@ -351,34 +369,34 @@ mod tests {
     #[test]
     fn top_border_uses_box_drawing() {
         let lines = render_tile(&room("src", 0, 0, false), 10, 3);
-        assert!(lines[0].starts_with('┌'));
-        assert!(lines[0].trim_end().ends_with('┐'));
-        assert!(lines[0].contains('─'));
+        assert!(lines[0].plain_text().starts_with('┌'));
+        assert!(lines[0].plain_text().trim_end().ends_with('┐'));
+        assert!(lines[0].plain_text().contains('─'));
     }
 
     #[test]
     fn name_row_contains_directory() {
         let lines = render_tile(&room("daemon", 0, 0, false), 10, 3);
-        assert!(lines[1].contains("daemon"));
-        assert!(lines[1].starts_with('│'));
+        assert!(lines[1].plain_text().contains("daemon"));
+        assert!(lines[1].plain_text().starts_with('│'));
     }
 
     #[test]
     fn badge_row_shows_alive_zombies() {
         let lines = render_tile(&room("src", 7, 0, false), 10, 3);
-        assert!(lines[2].contains("🧟7"));
+        assert!(lines[2].plain_text().contains("🧟7"));
     }
 
     #[test]
     fn badge_row_shows_check_when_all_defeated() {
         let lines = render_tile(&room("target", 0, 3, false), 10, 3);
-        assert!(lines[2].contains('✓'));
+        assert!(lines[2].plain_text().contains('✓'));
     }
 
     #[test]
     fn badge_row_shows_dash_when_empty() {
         let lines = render_tile(&room("noise", 0, 0, false), 10, 3);
-        assert!(lines[2].contains('—'));
+        assert!(lines[2].plain_text().contains('—'));
     }
 
     // ------------------------------------------------------------------
@@ -388,13 +406,13 @@ mod tests {
     #[test]
     fn current_room_shows_at_marker() {
         let lines = render_tile(&room("src", 2, 0, true), 10, 3);
-        assert!(lines[2].contains('@'));
+        assert!(lines[2].plain_text().contains('@'));
     }
 
     #[test]
     fn non_current_room_omits_at_marker() {
         let lines = render_tile(&room("src", 2, 0, false), 10, 3);
-        assert!(!lines[2].contains('@'));
+        assert!(!lines[2].plain_text().contains('@'));
     }
 
     // ------------------------------------------------------------------
@@ -405,25 +423,25 @@ mod tests {
     fn cjk_name_fits_within_inner_width() {
         // 「後端」= 2 CJK chars = 4 visible cols; inner = 8 → fits with padding.
         let lines = render_tile(&room("後端", 0, 0, false), 10, 3);
-        assert_eq!(vis_width(&lines[1]), 10);
-        assert!(lines[1].contains("後端"));
+        assert_eq!(lines[1].visible_width(), 10);
+        assert!(lines[1].plain_text().contains("後端"));
     }
 
     #[test]
     fn long_cjk_name_clipped_with_ellipsis() {
         // 「代號七七七」= 5 CJK = 10 cols, inner=8 → must clip + ….
         let lines = render_tile(&room("代號七七七", 0, 0, false), 10, 3);
-        assert_eq!(vis_width(&lines[1]), 10);
-        assert!(lines[1].contains('…'));
+        assert_eq!(lines[1].visible_width(), 10);
+        assert!(lines[1].plain_text().contains('…'));
     }
 
     #[test]
     fn cjk_name_with_current_marker_maintains_width() {
         let lines = render_tile(&room("前端目錄", 3, 0, true), 10, 3);
         for l in &lines {
-            assert_eq!(vis_width(l), 10);
+            assert_eq!(l.visible_width(), 10);
         }
-        assert!(lines[2].contains('@'));
+        assert!(lines[2].plain_text().contains('@'));
     }
 
     // ------------------------------------------------------------------
@@ -540,7 +558,7 @@ mod tests {
         let rooms: Vec<_> = (0..8).map(|i| room(&format!("d{i}"), 1, 0, false)).collect();
         let frame = render_grid(&rooms, 40, 12);
         for (i, l) in frame.iter().enumerate() {
-            assert_eq!(vis_width(l), 40, "row {i} width mismatch: {l:?}");
+            assert_eq!(l.visible_width(), 40, "row {i} width mismatch: {l:?}");
         }
     }
 
@@ -549,9 +567,9 @@ mod tests {
         let rooms = vec![room("src", 3, 0, false)];
         let frame = render_grid(&rooms, 40, 12);
         // Top border of tile 0 should begin at column 0 of row 0.
-        assert!(frame[0].starts_with('┌'));
-        assert!(frame[1].contains("src"));
-        assert!(frame[2].contains("🧟3"));
+        assert!(frame[0].plain_text().starts_with('┌'));
+        assert!(frame[1].plain_text().contains("src"));
+        assert!(frame[2].plain_text().contains("🧟3"));
     }
 
     #[test]
@@ -562,10 +580,10 @@ mod tests {
         ];
         let frame = render_grid(&rooms, 40, 12);
         for (i, l) in frame.iter().enumerate() {
-            assert_eq!(vis_width(l), 40, "row {i} width mismatch");
+            assert_eq!(l.visible_width(), 40, "row {i} width mismatch");
         }
-        assert!(frame[1].contains("前端"));
-        assert!(frame[1].contains("後端"));
+        assert!(frame[1].plain_text().contains("前端"));
+        assert!(frame[1].plain_text().contains("後端"));
     }
 
     #[test]
@@ -574,7 +592,7 @@ mod tests {
         // 40×6 → cols=4, rows=2, capacity=8 → 22 overflow.
         let frame = render_grid(&rooms, 40, 6);
         let last = frame.last().unwrap();
-        assert!(last.contains("…+22 more"), "expected overflow indicator, got {last:?}");
+        assert!(last.plain_text().contains("…+22 more"), "expected overflow indicator, got {last:?}");
     }
 
     #[test]
@@ -582,7 +600,7 @@ mod tests {
         let rooms: Vec<_> = (0..4).map(|i| room(&format!("d{i}"), 0, 0, false)).collect();
         let frame = render_grid(&rooms, 40, 6);
         let last = frame.last().unwrap();
-        assert!(!last.contains("more"));
+        assert!(!last.plain_text().contains("more"));
     }
 
     #[test]
@@ -590,8 +608,8 @@ mod tests {
         let frame = render_grid(&[], 40, 12);
         assert_eq!(frame.len(), 12);
         for l in &frame {
-            assert_eq!(vis_width(l), 40);
-            assert!(!l.contains('┌'));
+            assert_eq!(l.visible_width(), 40);
+            assert!(!l.plain_text().contains('┌'));
         }
     }
 
@@ -600,8 +618,8 @@ mod tests {
         let rooms: Vec<_> = (0..50).map(|i| room(&format!("d{i}"), 1, 0, false)).collect();
         let frame = render_grid(&rooms, 40, 9);
         let last = frame.last().unwrap();
-        assert_eq!(vis_width(last), 40);
-        assert!(last.contains("more"));
+        assert_eq!(last.visible_width(), 40);
+        assert!(last.plain_text().contains("more"));
     }
 
     #[test]
@@ -611,10 +629,10 @@ mod tests {
         let frame = render_grid(&rooms, 8, 6);
         assert_eq!(frame.len(), 6);
         for l in &frame {
-            assert_eq!(vis_width(l), 8);
+            assert_eq!(l.visible_width(), 8);
         }
         // Overflow indicator truncated by clip_to_width (8 cols can fit "…+2 mor" + …)
-        assert!(frame.last().unwrap().contains("…"));
+        assert!(frame.last().unwrap().plain_text().contains("…"));
     }
 
     // ------------------------------------------------------------------
