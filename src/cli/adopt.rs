@@ -3,7 +3,7 @@ use crate::db;
 use crate::pet::village::{VILLAGES, Village};
 use crate::pet::state::PetState;
 use crate::power::{PowerProvider, StubPowerProvider};
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use crossterm::style::{Color, Stylize};
 use std::io::Write;
 
 pub fn run(ctx: &db::Context) -> Result<()> {
@@ -68,69 +68,72 @@ pub fn run(ctx: &db::Context) -> Result<()> {
 }
 
 fn render_village_menu() -> Result<()> {
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+    let mut stdout = std::io::stdout();
 
     // 標題
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))?;
-    writeln!(stdout, "\n  ╔══════════════════════════════════════════════╗")?;
-    writeln!(stdout, "  ║        歡迎來到 CodeForge — 選擇你的村落     ║")?;
-    writeln!(stdout, "  ╚══════════════════════════════════════════════╝\n")?;
-    stdout.reset()?;
+    writeln!(stdout, "\n  {}", "╔══════════════════════════════════════════════╗".with(Color::Yellow).bold())?;
+    writeln!(stdout, "  {}", "║        歡迎來到 CodeForge — 選擇你的村落     ║".with(Color::Yellow).bold())?;
+    writeln!(stdout, "  {}\n", "╚══════════════════════════════════════════════╝".with(Color::Yellow).bold())?;
 
     for (i, v) in VILLAGES.iter().enumerate() {
         // 村號與名稱
-        stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
-        write!(stdout, "  [{}] ", i + 1)?;
-        stdout.set_color(ColorSpec::new().set_fg(Some(v.color)).set_bold(true))?;
-        write!(stdout, "{}", v.display_name)?;
-        stdout.reset()?;
+        write!(stdout, "  {}", format!("[{}] ", i + 1).with(Color::Yellow))?;
+        write!(stdout, "{}", v.display_name.with(v.color).bold())?;
         writeln!(stdout, " — {} ({})", v.language, v.pet_name)?;
 
         // 寵物 ASCII（縮小版）
-        stdout.set_color(ColorSpec::new().set_fg(Some(v.color)))?;
         for line in v.ascii_small.lines() {
-            writeln!(stdout, "      {}", line)?;
+            writeln!(stdout, "      {}", line.with(v.color))?;
         }
-        stdout.reset()?;
 
         // 簡短描述
-        stdout.set_color(ColorSpec::new().set_fg(Some(Color::Ansi256(244))))?;
-        writeln!(stdout, "      {}\n", v.tagline)?;
-        stdout.reset()?;
+        writeln!(stdout, "      {}\n", v.tagline.with(Color::AnsiValue(244)))?;
     }
 
     // Random Pick 選項
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)))?;
-    writeln!(stdout, "  [R] 隨機選擇（+10% 全屬性，Lucky Hatchling 徽章，不可反悔）\n")?;
-    stdout.reset()?;
+    writeln!(
+        stdout,
+        "  {}\n",
+        "[R] 隨機選擇（+10% 全屬性，Lucky Hatchling 徽章，不可反悔）".with(Color::Cyan)
+    )?;
 
     Ok(())
 }
 
 fn render_pet_intro(village: &Village, pet: &PetState, is_random: bool) -> Result<()> {
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+    let mut stdout = std::io::stdout();
 
     writeln!(stdout)?;
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)).set_bold(true))?;
     if is_random {
-        writeln!(stdout, "  ✦ Lucky Hatchling！命運為你選擇了 {} ✦", village.display_name)?;
+        writeln!(
+            stdout,
+            "  {}",
+            format!("✦ Lucky Hatchling！命運為你選擇了 {} ✦", village.display_name)
+                .with(Color::Yellow)
+                .bold()
+        )?;
     } else {
-        writeln!(stdout, "  你踏入了 {}", village.display_name)?;
+        writeln!(
+            stdout,
+            "  {}",
+            format!("你踏入了 {}", village.display_name).with(Color::Yellow).bold()
+        )?;
     }
-    stdout.reset()?;
     writeln!(stdout)?;
 
     // 大一點的 ASCII art
-    stdout.set_color(ColorSpec::new().set_fg(Some(village.color)))?;
     for line in village.ascii_full.lines() {
-        writeln!(stdout, "  {}", line)?;
+        writeln!(stdout, "  {}", line.with(village.color))?;
     }
-    stdout.reset()?;
 
     writeln!(stdout)?;
-    stdout.set_color(ColorSpec::new().set_fg(Some(Color::White)).set_bold(true))?;
-    writeln!(stdout, "  {} Lv.1  村落：{}", pet.name, village.display_name)?;
-    stdout.reset()?;
+    writeln!(
+        stdout,
+        "  {}",
+        format!("{} Lv.1  村落：{}", pet.name, village.display_name)
+            .with(Color::White)
+            .bold()
+    )?;
 
     println!("  ATK:{:3}  HP:{:3}  DEF:{:3}  SUP:{:3}  VER:{:3}",
         pet.atk, pet.hp, pet.def, pet.sup, pet.ver);

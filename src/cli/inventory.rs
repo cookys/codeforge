@@ -5,9 +5,9 @@
 //! effects.
 
 use anyhow::Result;
+use crossterm::style::{Color, Stylize};
 use rusqlite::Connection;
 use std::io::Write;
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 use crate::craft::{active_effects_for_zone, recipes, ActiveEffect, Recipe};
 use crate::db;
@@ -26,7 +26,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let effects = active_effects_for_zone(&conn, &zone, now)?;
     let items = load_inventory(&conn)?;
 
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+    let mut stdout = std::io::stdout();
     render_items(&mut stdout, &items)?;
     render_effects(&mut stdout, &zone, &effects, now)?;
     render_recipes(&mut stdout, recipes())?;
@@ -51,13 +51,11 @@ fn load_inventory(conn: &Connection) -> Result<Vec<(String, String, i64)>> {
 }
 
 fn render_items(
-    out: &mut StandardStream,
+    out: &mut impl Write,
     items: &[(String, String, i64)],
 ) -> Result<()> {
     writeln!(out)?;
-    out.set_color(ColorSpec::new().set_bold(true))?;
-    writeln!(out, "  🎒 Inventory ({} 類)", items.len())?;
-    out.reset()?;
+    writeln!(out, "  {}", format!("🎒 Inventory ({} 類)", items.len()).bold())?;
     if items.is_empty() {
         writeln!(out, "    （空的 — 去打 MOB 收集材料！）")?;
         return Ok(());
@@ -73,15 +71,13 @@ fn render_items(
 }
 
 fn render_effects(
-    out: &mut StandardStream,
+    out: &mut impl Write,
     zone: &str,
     effects: &[ActiveEffect],
     now: i64,
 ) -> Result<()> {
     writeln!(out)?;
-    out.set_color(ColorSpec::new().set_bold(true))?;
-    writeln!(out, "  ⚡ 生效中 effects @ {zone}")?;
-    out.reset()?;
+    writeln!(out, "  {}", format!("⚡ 生效中 effects @ {zone}").bold())?;
     if effects.is_empty() {
         writeln!(out, "    （無）")?;
         return Ok(());
@@ -104,11 +100,9 @@ fn render_effects(
     Ok(())
 }
 
-fn render_recipes(out: &mut StandardStream, recipes: &[Recipe]) -> Result<()> {
+fn render_recipes(out: &mut impl Write, recipes: &[Recipe]) -> Result<()> {
     writeln!(out)?;
-    out.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)).set_bold(true))?;
-    writeln!(out, "  🛠  可用配方（`codeforge craft <name>`）")?;
-    out.reset()?;
+    writeln!(out, "  {}", "🛠  可用配方（`codeforge craft <name>`）".with(Color::Cyan).bold())?;
     for r in recipes {
         let ings: Vec<String> = r
             .ingredients
@@ -134,12 +128,12 @@ fn render_recipes(out: &mut StandardStream, recipes: &[Recipe]) -> Result<()> {
         // `doc/proposals/2026-04-18-doppelganger-split.md`) there's
         // nothing to suppress.
         if r.product.name == "Doppelganger Ward" {
-            out.set_color(ColorSpec::new().set_fg(Some(Color::Ansi256(244))))?;
             writeln!(
                 out,
-                "        （注意：split 機制尚未實作；此 item 可使用但 effect 無 runtime 消費者）"
+                "        {}",
+                "（注意：split 機制尚未實作；此 item 可使用但 effect 無 runtime 消費者）"
+                    .with(Color::AnsiValue(244))
             )?;
-            out.reset()?;
         }
     }
     writeln!(out)?;

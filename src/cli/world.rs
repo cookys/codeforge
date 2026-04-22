@@ -11,8 +11,8 @@
 //! a clean box boundary regardless of terminal font.
 
 use anyhow::Result;
+use crossterm::style::{Color, Stylize};
 use std::io::Write;
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use unicode_width::UnicodeWidthStr;
 
 use crate::db;
@@ -47,32 +47,32 @@ pub fn run(ctx: &db::Context, refresh: bool) -> Result<()> {
     }
 
     let stats = world::load_all(&conn)?;
-    let mut out = StandardStream::stdout(ColorChoice::Auto);
+    let mut out = std::io::stdout();
     render_header(&mut out, &home_village)?;
     render_grid(&mut out, &stats, &home_village)?;
     render_footer(&mut out, &stats, &home_village)?;
     Ok(())
 }
 
-fn render_header(out: &mut StandardStream, home_village: &str) -> Result<()> {
+fn render_header(out: &mut impl Write, home_village: &str) -> Result<()> {
     writeln!(out)?;
-    out.set_color(ColorSpec::new().set_bold(true))?;
-    writeln!(out, "  🗺  CodeForge World Map")?;
-    out.reset()?;
+    writeln!(out, "  {}", "🗺  CodeForge World Map".bold())?;
 
     let home = VILLAGES
         .iter()
         .find(|v| v.id == home_village)
         .unwrap_or(&VILLAGES[2]);
-    out.set_color(ColorSpec::new().set_fg(Some(home.color)))?;
-    writeln!(out, "  本命村：{} ({})", home.display_name, home.language)?;
-    out.reset()?;
+    writeln!(
+        out,
+        "  {}",
+        format!("本命村：{} ({})", home.display_name, home.language).with(home.color)
+    )?;
     writeln!(out)?;
     Ok(())
 }
 
 fn render_grid(
-    out: &mut StandardStream,
+    out: &mut impl Write,
     stats: &[ZoneStats],
     home_village: &str,
 ) -> Result<()> {
@@ -89,7 +89,7 @@ fn render_grid(
     Ok(())
 }
 
-fn render_row(out: &mut StandardStream, cells: &[Cell]) -> Result<()> {
+fn render_row(out: &mut impl Write, cells: &[Cell]) -> Result<()> {
     // Five text rows (name, language, status, stats) plus top/bottom border.
     let top: String = cells
         .iter()
@@ -125,26 +125,17 @@ fn render_row(out: &mut StandardStream, cells: &[Cell]) -> Result<()> {
 }
 
 fn paint_cell_line(
-    out: &mut StandardStream,
+    out: &mut impl Write,
     cell: &Cell,
     text: &str,
 ) -> Result<()> {
     let padded = pad_visible(text, CARD_INNER);
-    let mut spec = ColorSpec::new();
-    match cell.tone {
-        CellTone::HomeUnlocked(color) => {
-            spec.set_fg(Some(color)).set_bold(true);
-        }
-        CellTone::Unlocked(color) => {
-            spec.set_fg(Some(color));
-        }
-        CellTone::Locked => {
-            spec.set_fg(Some(Color::Ansi256(240)));
-        }
-    }
-    out.set_color(&spec)?;
-    write!(out, "{}", padded)?;
-    out.reset()?;
+    let styled = match cell.tone {
+        CellTone::HomeUnlocked(color) => padded.with(color).bold(),
+        CellTone::Unlocked(color) => padded.with(color),
+        CellTone::Locked => padded.with(Color::AnsiValue(240)),
+    };
+    write!(out, "{}", styled)?;
     Ok(())
 }
 
@@ -160,21 +151,23 @@ fn unlocked_count(stats: &[ZoneStats], home_village: &str) -> usize {
 }
 
 fn render_footer(
-    out: &mut StandardStream,
+    out: &mut impl Write,
     stats: &[ZoneStats],
     home_village: &str,
 ) -> Result<()> {
     let unlocked = unlocked_count(stats, home_village);
     let total = stats.len();
-    out.set_color(ColorSpec::new().set_fg(Some(Color::Ansi256(244))))?;
     writeln!(
         out,
-        "  已解鎖 {}/{} 村落 · 門檻：{} concepts · `codeforge world --refresh` 重新掃描 L1",
-        unlocked,
-        total,
-        world::UNLOCK_THRESHOLD,
+        "  {}",
+        format!(
+            "已解鎖 {}/{} 村落 · 門檻：{} concepts · `codeforge world --refresh` 重新掃描 L1",
+            unlocked,
+            total,
+            world::UNLOCK_THRESHOLD,
+        )
+        .with(Color::AnsiValue(244))
     )?;
-    out.reset()?;
     writeln!(out)?;
     Ok(())
 }
