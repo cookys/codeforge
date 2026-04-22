@@ -1,4 +1,4 @@
-use termcolor::Color;
+use crossterm::style::Color;
 
 pub struct Village {
     pub id: &'static str,
@@ -121,7 +121,7 @@ pub static VILLAGES: &[Village] = &[
         display_name: "Strata Bazaar",
         language: "JavaScript",
         pet_name: "Wat",
-        color: Color::Ansi256(214),
+        color: Color::AnsiValue(214),
         tagline: "null ≠ undefined，callback 是歷史",
         ascii_small: "\
   ??!??\n\
