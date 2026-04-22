@@ -18,7 +18,6 @@ use super::super::local_map::RoomSummary;
 use super::super::styled::{StyledLine, StyledSpan};
 use super::{clip_to_width, pad_to_width, vis_width};
 use crossterm::style::Color;
-use unicode_width::UnicodeWidthStr;
 
 /// Default tile width. Grid math uses `cols = floor(panel_w / TILE_WIDTH)`.
 pub const TILE_WIDTH: usize = 10;

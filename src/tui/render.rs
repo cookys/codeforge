@@ -41,11 +41,13 @@ pub struct PositionedLine {
     pub spans: Vec<StyledSpan>,
 }
 
+/// Test-only impl — `plain_text()` is used by the render.rs test
+/// module (and integration tests via the pub API) but paint walks
+/// `spans` directly, so gating this behind cfg(test) keeps
+/// dead-code analysis clean in the production binary.
+#[cfg(test)]
 impl PositionedLine {
-    /// Concatenated text with style stripped. Primarily for tests
-    /// migrating from `line.plain_text().contains(...)` to
-    /// `line.plain_text().contains(...)`. Paint walks `spans` directly
-    /// and does not go through this helper.
+    /// Concatenated text with style stripped.
     pub fn plain_text(&self) -> String {
         let cap = self.spans.iter().map(|s| s.text.len()).sum();
         let mut out = String::with_capacity(cap);

@@ -78,18 +78,6 @@ impl StyledLine {
         Self { spans }
     }
 
-    /// Concatenated text with style stripped. Primarily for tests:
-    /// `assert!(line.plain_text().contains("…"))` replaces the old
-    /// `assert!(line.text.contains("…"))`.
-    pub fn plain_text(&self) -> String {
-        let cap = self.spans.iter().map(|s| s.text.len()).sum();
-        let mut out = String::with_capacity(cap);
-        for s in &self.spans {
-            out.push_str(&s.text);
-        }
-        out
-    }
-
     /// Sum of per-span visible widths. Avoids materialising the
     /// concatenated string for the common "how wide is this row" query.
     pub fn visible_width(&self) -> usize {
@@ -152,6 +140,23 @@ impl StyledLine {
             }
         }
         Self { spans: out_spans }
+    }
+}
+
+/// Test-only impl — `plain_text()` is used heavily by panel tests
+/// (`lines[i].plain_text().contains(...)`) but production code walks
+/// `spans` directly. Gating behind cfg(test) keeps dead-code analysis
+/// clean without sprinkling `#[allow(dead_code)]`.
+#[cfg(test)]
+impl StyledLine {
+    /// Concatenated text with style stripped.
+    pub fn plain_text(&self) -> String {
+        let cap = self.spans.iter().map(|s| s.text.len()).sum();
+        let mut out = String::with_capacity(cap);
+        for s in &self.spans {
+            out.push_str(&s.text);
+        }
+        out
     }
 }
 
