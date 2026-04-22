@@ -453,6 +453,9 @@ mod tests {
         assert_eq!(zone_color("doc"), Color::Magenta);
         assert_eq!(zone_color("docs"), Color::Magenta);
         assert_eq!(zone_color("memory"), Color::Magenta);
+        // Review-r1 NIT: .claude was in the mapping table + match arm
+        // but not asserted; regression-proof it.
+        assert_eq!(zone_color(".claude"), Color::Magenta);
     }
 
     #[test]
