@@ -1,4 +1,9 @@
 mod brain;
+// clan — CodeForge consumer of CodePower's ClanContentProvider contract
+// (Plan A Phase 2 skeleton, 2026-04-24). Not yet wired into pet::village;
+// integration lands in Plan B Phase 6.
+#[allow(dead_code)]
+mod clan;
 mod cli;
 mod commentary;
 mod craft;
