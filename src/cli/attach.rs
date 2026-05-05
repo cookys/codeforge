@@ -93,11 +93,10 @@ trait Spawner {
 struct RealSpawner;
 impl Spawner for RealSpawner {
     fn spawn(&self, args: &[String]) -> Result<()> {
-        let status = Command::new("tmux").args(args).status().map_err(|e| {
-            anyhow!(
-                "failed to invoke tmux: {e}. Is tmux installed and on $PATH?"
-            )
-        })?;
+        let status = Command::new("tmux")
+            .args(args)
+            .status()
+            .map_err(|e| anyhow!("failed to invoke tmux: {e}. Is tmux installed and on $PATH?"))?;
         if !status.success() {
             bail!("tmux split-window exited with status {status}");
         }
@@ -121,7 +120,10 @@ mod tests {
     }
     fn env_with_tmux() -> StubEnv {
         let mut m = HashMap::new();
-        m.insert("TMUX".to_string(), "/tmp/tmux-1000/default,42,0".to_string());
+        m.insert(
+            "TMUX".to_string(),
+            "/tmp/tmux-1000/default,42,0".to_string(),
+        );
         StubEnv(m)
     }
     fn env_empty() -> StubEnv {

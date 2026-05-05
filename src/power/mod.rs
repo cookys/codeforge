@@ -13,7 +13,13 @@ pub struct CharacterStats {
 
 impl Default for CharacterStats {
     fn default() -> Self {
-        Self { atk: 10, hp: 10, def: 10, sup: 10, ver: 10 }
+        Self {
+            atk: 10,
+            hp: 10,
+            def: 10,
+            sup: 10,
+            ver: 10,
+        }
     }
 }
 
@@ -40,7 +46,7 @@ impl CharacterStats {
             (base as i64 + delta).max(1) as u32
         };
         self.atk = apply(self.atk, &mut x);
-        self.hp  = apply(self.hp,  &mut x);
+        self.hp = apply(self.hp, &mut x);
         self.def = apply(self.def, &mut x);
         self.sup = apply(self.sup, &mut x);
         self.ver = apply(self.ver, &mut x);
@@ -61,7 +67,13 @@ pub struct StubPowerProvider {
 impl Default for StubPowerProvider {
     fn default() -> Self {
         Self {
-            base_stats: CharacterStats { atk: 15, hp: 15, def: 15, sup: 15, ver: 15 },
+            base_stats: CharacterStats {
+                atk: 15,
+                hp: 15,
+                def: 15,
+                sup: 15,
+                ver: 15,
+            },
             variance: 5,
         }
     }

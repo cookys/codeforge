@@ -2,9 +2,9 @@
 // ahead of use so the data model and on-disk layout stabilise early.
 #![allow(dead_code)]
 
+use crate::db;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use crate::db;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Episode {
@@ -12,7 +12,7 @@ pub struct Episode {
     pub date: String,
     pub project: String,
     pub summary: String,
-    pub outcome: String,  // success | failure | partial
+    pub outcome: String, // success | failure | partial
     pub tags: Vec<String>,
 }
 
@@ -34,7 +34,11 @@ pub fn record(ctx: &db::Context, episode: &Episode) -> Result<()> {
     let episodes_dir = ctx.brain_dir.join("episodes");
     std::fs::create_dir_all(&episodes_dir)?;
 
-    let filename = format!("{}-{}.json", episode.date, episode.id.chars().take(8).collect::<String>());
+    let filename = format!(
+        "{}-{}.json",
+        episode.date,
+        episode.id.chars().take(8).collect::<String>()
+    );
     let path = episodes_dir.join(filename);
     std::fs::write(path, serde_json::to_string_pretty(episode)?)?;
     Ok(())

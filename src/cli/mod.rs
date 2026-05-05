@@ -179,9 +179,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
     match cli.command {
         Commands::Init => init::run(&ctx),
-        Commands::Learn { text, paste, file } => {
-            learn::run(&ctx, text, paste, file)
-        }
+        Commands::Learn { text, paste, file } => learn::run(&ctx, text, paste, file),
         Commands::Memory { action } => match action {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),
             MemoryAction::Status => search::status(&ctx),
@@ -191,22 +189,32 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Adopt => adopt::run(&ctx),
         Commands::Pet => pet::run(&ctx),
         Commands::Statusline => statusline::run(&ctx),
-        Commands::Emit { event, fields, json } => emit::run(&ctx, event, fields, json),
-        Commands::Daemon { action } => daemon::run(&ctx, match action {
-            DaemonAction::Start => daemon::DaemonCmd::Start,
-            DaemonAction::Stop => daemon::DaemonCmd::Stop,
-            DaemonAction::Status => daemon::DaemonCmd::Status,
-            DaemonAction::Install => daemon::DaemonCmd::Install,
-        }),
+        Commands::Emit {
+            event,
+            fields,
+            json,
+        } => emit::run(&ctx, event, fields, json),
+        Commands::Daemon { action } => daemon::run(
+            &ctx,
+            match action {
+                DaemonAction::Start => daemon::DaemonCmd::Start,
+                DaemonAction::Stop => daemon::DaemonCmd::Stop,
+                DaemonAction::Status => daemon::DaemonCmd::Status,
+                DaemonAction::Install => daemon::DaemonCmd::Install,
+            },
+        ),
         Commands::Tui => tui::run(&ctx),
         Commands::Attach { size } => attach::run(size),
         Commands::Strategy { name } => strategy::run(&ctx, name.as_deref()),
-        Commands::Commentary { action } => commentary::run(&ctx, match action {
-            CommentaryAction::On => commentary::CommentaryCmd::On,
-            CommentaryAction::Off => commentary::CommentaryCmd::Off,
-            CommentaryAction::List { n } => commentary::CommentaryCmd::List { n },
-            CommentaryAction::Test { kind } => commentary::CommentaryCmd::Test { kind },
-        }),
+        Commands::Commentary { action } => commentary::run(
+            &ctx,
+            match action {
+                CommentaryAction::On => commentary::CommentaryCmd::On,
+                CommentaryAction::Off => commentary::CommentaryCmd::Off,
+                CommentaryAction::List { n } => commentary::CommentaryCmd::List { n },
+                CommentaryAction::Test { kind } => commentary::CommentaryCmd::Test { kind },
+            },
+        ),
         Commands::World { refresh } => world::run(&ctx, refresh),
         Commands::Snapshot { days } => snapshot::run(&ctx, days),
         Commands::Inventory => inventory::run(&ctx),

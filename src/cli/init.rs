@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
 use crate::db;
+use anyhow::{Context, Result};
 
 pub fn run(ctx: &db::Context) -> Result<()> {
     if ctx.is_initialized() {
@@ -20,8 +20,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     ];
 
     for dir in &dirs {
-        std::fs::create_dir_all(dir)
-            .with_context(|| format!("建立目錄失敗：{}", dir.display()))?;
+        std::fs::create_dir_all(dir).with_context(|| format!("建立目錄失敗：{}", dir.display()))?;
     }
 
     // 建立 log.md（人類可讀 signal 日誌）

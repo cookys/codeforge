@@ -100,11 +100,9 @@ pub fn hp_entry_penalty(prior_low: bool, current_low: bool) -> i32 {
 /// whether or not the daemon has processed it yet.
 pub fn seconds_since_last_activity(conn: &Connection, now_unix: i64) -> Result<i64> {
     let last: Option<i64> = conn
-        .query_row(
-            "SELECT max(created_at) FROM event_inbox",
-            [],
-            |r| r.get::<_, Option<i64>>(0),
-        )
+        .query_row("SELECT max(created_at) FROM event_inbox", [], |r| {
+            r.get::<_, Option<i64>>(0)
+        })
         .unwrap_or(None);
     match last {
         Some(ts) => Ok(now_unix.saturating_sub(ts).max(0)),
@@ -137,7 +135,13 @@ pub fn update_mood(
     let (activity_last, idle_last, prior_low) = gw
         .world()
         .get::<&MoodBookkeeping>(pet)
-        .map(|b| (b.activity_last_bump_at_unix, b.idle_last_penalty_at_unix, b.was_low_hp))
+        .map(|b| {
+            (
+                b.activity_last_bump_at_unix,
+                b.idle_last_penalty_at_unix,
+                b.was_low_hp,
+            )
+        })
         .unwrap_or((0, 0, current_low));
 
     let d_activity = activity_bump(seconds_idle, activity_last, now_unix);
@@ -161,7 +165,11 @@ pub fn update_mood(
     // values first, then hand a bare component to a freshly-scoped
     // mutable borrow so we don't overlap `pet` with the insert call.
     let next_bookkeeping = MoodBookkeeping {
-        activity_last_bump_at_unix: if d_activity > 0 { now_unix } else { activity_last },
+        activity_last_bump_at_unix: if d_activity > 0 {
+            now_unix
+        } else {
+            activity_last
+        },
         idle_last_penalty_at_unix: if d_idle < 0 { now_unix } else { idle_last },
         was_low_hp: current_low,
     };
@@ -226,7 +234,10 @@ mod tests {
     fn idle_penalty_repeats_every_bucket() {
         let now = 100_000;
         let last_pen = now - IDLE_BUCKET_SECS;
-        assert_eq!(idle_penalty(IDLE_BUCKET_SECS + 10, last_pen, now), IDLE_PENALTY);
+        assert_eq!(
+            idle_penalty(IDLE_BUCKET_SECS + 10, last_pen, now),
+            IDLE_PENALTY
+        );
     }
 
     #[test]
@@ -238,9 +249,24 @@ mod tests {
     #[test]
     fn boss_bump_per_boss() {
         let defeats = vec![
-            DefeatedMob { id: 1, kind: MobKind::Boss, name: "b1".into(), hp_max: 100 },
-            DefeatedMob { id: 2, kind: MobKind::Zombie, name: "z".into(), hp_max: 10 },
-            DefeatedMob { id: 3, kind: MobKind::Boss, name: "b2".into(), hp_max: 80 },
+            DefeatedMob {
+                id: 1,
+                kind: MobKind::Boss,
+                name: "b1".into(),
+                hp_max: 100,
+            },
+            DefeatedMob {
+                id: 2,
+                kind: MobKind::Zombie,
+                name: "z".into(),
+                hp_max: 10,
+            },
+            DefeatedMob {
+                id: 3,
+                kind: MobKind::Boss,
+                name: "b2".into(),
+                hp_max: 80,
+            },
         ];
         assert_eq!(boss_bump(&defeats), 2 * BOSS_BUMP);
     }
@@ -259,8 +285,16 @@ mod tests {
     #[test]
     fn hp_entry_penalty_only_on_threshold_cross() {
         assert_eq!(hp_entry_penalty(false, true), HP_LOW_PENALTY);
-        assert_eq!(hp_entry_penalty(true, true), 0, "must not fire every tick below");
-        assert_eq!(hp_entry_penalty(true, false), 0, "recovery is not a penalty");
+        assert_eq!(
+            hp_entry_penalty(true, true),
+            0,
+            "must not fire every tick below"
+        );
+        assert_eq!(
+            hp_entry_penalty(true, false),
+            0,
+            "recovery is not a penalty"
+        );
         assert_eq!(hp_entry_penalty(false, false), 0);
     }
 
@@ -354,7 +388,10 @@ mod tests {
 
         let mood = gw.world().get::<&Mood>(gw.pet()).unwrap();
         // +10 (activity) + +20 (boss) = +30
-        assert_eq!(mood.value, MOOD_DEFAULT + ACTIVITY_BUMP as u32 + BOSS_BUMP as u32);
+        assert_eq!(
+            mood.value,
+            MOOD_DEFAULT + ACTIVITY_BUMP as u32 + BOSS_BUMP as u32
+        );
     }
 
     #[test]
@@ -382,8 +419,14 @@ mod tests {
 
         // Between the two ticks: first: +10 activity -15 hp → -5 from 60 → 55
         // Second tick: +0 (already in low state, activity cooldown active) → 55
-        assert_eq!(v1, (MOOD_DEFAULT as i32 + ACTIVITY_BUMP + HP_LOW_PENALTY) as u32);
-        assert_eq!(v2, v1, "hp_low penalty must not fire every tick while below");
+        assert_eq!(
+            v1,
+            (MOOD_DEFAULT as i32 + ACTIVITY_BUMP + HP_LOW_PENALTY) as u32
+        );
+        assert_eq!(
+            v2, v1,
+            "hp_low penalty must not fire every tick while below"
+        );
     }
 
     #[test]

@@ -56,16 +56,11 @@ pub fn commentary_for(event_id: &str) -> Option<&'static str> {
     // these trigger once per codeforge lifetime, translation churn is
     // not worth the i18n ceremony until Phase 5 Nation themes.
     match event_id {
-        id if id.starts_with("first_zone_entry_") =>
-            Some("這裡的空氣跟之前不一樣……我記住了。"),
-        "first_boss_kill" =>
-            Some("剛才我感覺到了什麼……原來這就是「完成」的感覺。"),
-        "first_level_10" =>
-            Some("我……比上週的自己強了一點。謝謝你。"),
-        "first_legendary_ability" =>
-            Some("這個名字我要記一輩子。"),
-        "first_second_pet" =>
-            Some("你去了別的地方……帶回了新的夥伴。"),
+        id if id.starts_with("first_zone_entry_") => Some("這裡的空氣跟之前不一樣……我記住了。"),
+        "first_boss_kill" => Some("剛才我感覺到了什麼……原來這就是「完成」的感覺。"),
+        "first_level_10" => Some("我……比上週的自己強了一點。謝謝你。"),
+        "first_legendary_ability" => Some("這個名字我要記一輩子。"),
+        "first_second_pet" => Some("你去了別的地方……帶回了新的夥伴。"),
         _ => None,
     }
 }
@@ -114,7 +109,8 @@ pub fn check_and_trigger(
 
     // Rule: first Lv 10. Uses level_before vs level_after so multi-level
     // cascades in a single tick still trigger exactly once.
-    if level_before < 10 && level_after >= 10
+    if level_before < 10
+        && level_after >= 10
         && try_trigger(conn, "first_level_10", current_tick, None)?
         && first_line.is_none()
     {
@@ -125,7 +121,10 @@ pub fn check_and_trigger(
         let pet = gw.pet();
         let _ = gw.world_mut().insert_one(
             pet,
-            LastMessage { text: text.to_string(), tick_stamp: current_tick },
+            LastMessage {
+                text: text.to_string(),
+                tick_stamp: current_tick,
+            },
         );
     }
     Ok(())
@@ -337,7 +336,10 @@ mod tests {
 
     #[test]
     fn json_escape_handles_quotes_and_backslashes() {
-        assert_eq!(json_escape(r#"path "with" quote"#), r#"path \"with\" quote"#);
+        assert_eq!(
+            json_escape(r#"path "with" quote"#),
+            r#"path \"with\" quote"#
+        );
         assert_eq!(json_escape(r"a\b"), r"a\\b");
         assert_eq!(json_escape("a\nb"), "a\\nb");
     }

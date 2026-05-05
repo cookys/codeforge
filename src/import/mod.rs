@@ -1,5 +1,5 @@
-pub mod claude;
 pub mod chatgpt;
+pub mod claude;
 pub mod markdown;
 
 use anyhow::Result;
@@ -22,7 +22,10 @@ pub fn detect_format(path: &Path) -> Result<String> {
             return Ok("claude".to_string());
         }
         // ChatGPT export 格式
-        if v.as_array().map(|a| a.first().and_then(|x| x.get("title")).is_some()).unwrap_or(false) {
+        if v.as_array()
+            .map(|a| a.first().and_then(|x| x.get("title")).is_some())
+            .unwrap_or(false)
+        {
             return Ok("chatgpt".to_string());
         }
     }

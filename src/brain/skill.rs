@@ -4,8 +4,8 @@
 // Re-export dream::track 的 SkillRecord，統一存取點
 pub use crate::dream::track::SkillRecord;
 
-use anyhow::Result;
 use crate::db;
+use anyhow::Result;
 
 pub fn list(ctx: &db::Context) -> Result<Vec<SkillRecord>> {
     let skills_dir = ctx.brain_dir.join("skills");
@@ -23,6 +23,10 @@ pub fn list(ctx: &db::Context) -> Result<Vec<SkillRecord>> {
             }
         }
     }
-    records.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+    records.sort_by(|a, b| {
+        b.confidence
+            .partial_cmp(&a.confidence)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(records)
 }

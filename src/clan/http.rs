@@ -55,7 +55,11 @@ impl HttpClanContentProvider {
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
             .build()?;
-        Ok(Self { base_url, session_token, client })
+        Ok(Self {
+            base_url,
+            session_token,
+            client,
+        })
     }
 
     /// Load from `~/.codeforge/config.toml` with `CODEPOWER_TOKEN` env
@@ -63,7 +67,10 @@ impl HttpClanContentProvider {
     /// should fall back to `StubClanContentProvider`.
     pub fn from_config() -> anyhow::Result<Option<Self>> {
         let path = match dirs::home_dir() {
-            Some(mut p) => { p.push(".codeforge/config.toml"); p }
+            Some(mut p) => {
+                p.push(".codeforge/config.toml");
+                p
+            }
             None => return Ok(None),
         };
 
@@ -98,14 +105,16 @@ impl HttpClanContentProvider {
     /// Inspect `X-Protocol-Version`; return Err when the header is
     /// missing or does not match `PROTOCOL_VERSION`.
     fn verify_protocol(resp: &reqwest::Response) -> anyhow::Result<()> {
-        match resp.headers().get("X-Protocol-Version").and_then(|v| v.to_str().ok()) {
+        match resp
+            .headers()
+            .get("X-Protocol-Version")
+            .and_then(|v| v.to_str().ok())
+        {
             Some(v) if v == PROTOCOL_VERSION => Ok(()),
             Some(other) => anyhow::bail!(
                 "clan-content protocol mismatch: expected {PROTOCOL_VERSION}, got {other}"
             ),
-            None => anyhow::bail!(
-                "clan-content response is missing X-Protocol-Version header"
-            ),
+            None => anyhow::bail!("clan-content response is missing X-Protocol-Version header"),
         }
     }
 }
@@ -125,7 +134,8 @@ struct CodepowerSection {
 impl ClanContentProvider for HttpClanContentProvider {
     async fn available_clans(&self, user_id: UserId) -> anyhow::Result<Vec<ClanSummary>> {
         let url = self.url("/api/clan-content/clans");
-        let resp = self.authorize(self.client.get(&url).query(&[("user_id", user_id)]))
+        let resp = self
+            .authorize(self.client.get(&url).query(&[("user_id", user_id)]))
             .send()
             .await?;
         Self::verify_protocol(&resp)?;

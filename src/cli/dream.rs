@@ -1,6 +1,6 @@
-use anyhow::Result;
 use crate::db;
 use crate::dream::runner::DreamRunner;
+use anyhow::Result;
 
 pub fn run(ctx: &db::Context, only: Option<&str>, quiet: bool) -> Result<()> {
     ctx.ensure_initialized()?;

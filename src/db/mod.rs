@@ -36,7 +36,11 @@ impl Context {
 
         let db_path = data_dir.join("state.db");
 
-        Ok(Self { project_dir, brain_dir, db_path })
+        Ok(Self {
+            project_dir,
+            brain_dir,
+            db_path,
+        })
     }
 
     /// 開啟（或建立）game state SQLite DB（WAL mode）
@@ -47,16 +51,16 @@ impl Context {
         }
         let conn = Connection::open(&self.db_path)
             .with_context(|| format!("開啟 DB 失敗：{}", self.db_path.display()))?;
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
+        )?;
         Ok(conn)
     }
 
     /// 確認 .codeforge/ 目錄結構已初始化
     pub fn ensure_initialized(&self) -> Result<()> {
         if !self.project_dir.exists() {
-            anyhow::bail!(
-                ".codeforge/ 目錄不存在，請先執行 `codeforge init`"
-            );
+            anyhow::bail!(".codeforge/ 目錄不存在，請先執行 `codeforge init`");
         }
         Ok(())
     }
@@ -169,59 +173,69 @@ mod tests {
     #[test]
     fn migrations_run_clean() {
         let conn = open_migrated_memory_db();
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
              AND name IN ('pet','xp_events','badges','dream_runs','signal_cursors','settings')",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 6);
     }
 
     #[test]
     fn phase2a_tables_created() {
         let conn = open_migrated_memory_db();
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
              AND name IN ('pet_snapshot','game_world','combat_log','event_inbox','last_tick_at')",
-            [],
-            |row| row.get(0),
-        ).unwrap();
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 5);
     }
 
     #[test]
     fn phase2b_tables_created() {
         let conn = open_migrated_memory_db();
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' \
              AND name IN ('mobs','loot_inventory')",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 2);
     }
 
     #[test]
     fn phase2b_version_seeded() {
         let conn = open_migrated_memory_db();
-        let v3: i64 = conn.query_row(
-            "SELECT version FROM schema_version WHERE version=3",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let v3: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=3",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(v3, 3);
     }
 
     #[test]
     fn mobs_alive_partial_index_exists() {
         let conn = open_migrated_memory_db();
-        let n: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master \
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
              WHERE type='index' AND name='idx_mobs_alive'",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(n, 1);
     }
 
@@ -232,14 +246,18 @@ mod tests {
             "INSERT INTO loot_inventory (kind, name, quantity, first_acquired_at, last_acquired_at)
              VALUES ('item', 'Rare Item', 1, 1000, 1000)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         // Same (kind, name) must collide; caller is expected to UPSERT
         let err = conn.execute(
             "INSERT INTO loot_inventory (kind, name, quantity, first_acquired_at, last_acquired_at)
              VALUES ('item', 'Rare Item', 1, 2000, 2000)",
             [],
         ).unwrap_err();
-        assert!(err.to_string().to_lowercase().contains("unique"), "expected UNIQUE constraint, got: {err}");
+        assert!(
+            err.to_string().to_lowercase().contains("unique"),
+            "expected UNIQUE constraint, got: {err}"
+        );
     }
 
     #[test]
@@ -249,25 +267,27 @@ mod tests {
             "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
              VALUES ('rust', 'boss', 'src/auth.rs', 100, 100, 20, 15, 1000)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         // Same (zone, kind, name) while still alive → reject (scanner must UPSERT)
-        let err = conn.execute(
-            "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
+        let err = conn
+            .execute(
+                "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
              VALUES ('rust', 'boss', 'src/auth.rs', 100, 100, 20, 15, 2000)",
-            [],
-        ).unwrap_err();
+                [],
+            )
+            .unwrap_err();
         assert!(err.to_string().to_lowercase().contains("unique"));
 
         // But once defeated, a new instance may re-spawn (the partial index excludes it)
-        conn.execute(
-            "UPDATE mobs SET defeated_at = 3000 WHERE id = 1",
-            [],
-        ).unwrap();
+        conn.execute("UPDATE mobs SET defeated_at = 3000 WHERE id = 1", [])
+            .unwrap();
         conn.execute(
             "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
              VALUES ('rust', 'boss', 'src/auth.rs', 100, 100, 20, 15, 4000)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     #[test]
@@ -284,12 +304,14 @@ mod tests {
     #[test]
     fn event_inbox_unseen_index_exists() {
         let conn = open_migrated_memory_db();
-        let n: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM sqlite_master \
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
              WHERE type='index' AND name='idx_event_inbox_unseen'",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(n, 1);
     }
 
@@ -300,12 +322,15 @@ mod tests {
         conn.execute(
             "INSERT INTO event_inbox (payload, created_at) VALUES (?1, ?2)",
             rusqlite::params!["{\"event\":\"git_commit\"}", 1_700_000_000i64],
-        ).unwrap();
-        let (payload, created_at, seen_at): (String, i64, Option<i64>) = conn.query_row(
-            "SELECT payload, created_at, seen_at FROM event_inbox WHERE id=1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        ).unwrap();
+        )
+        .unwrap();
+        let (payload, created_at, seen_at): (String, i64, Option<i64>) = conn
+            .query_row(
+                "SELECT payload, created_at, seen_at FROM event_inbox WHERE id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
         assert_eq!(payload, "{\"event\":\"git_commit\"}");
         assert_eq!(created_at, 1_700_000_000);
         assert_eq!(seen_at, None);
@@ -314,12 +339,13 @@ mod tests {
         conn.execute(
             "UPDATE event_inbox SET seen_at = ?1 WHERE id = ?2",
             rusqlite::params![1_700_000_001i64, 1],
-        ).unwrap();
-        let seen_at: Option<i64> = conn.query_row(
-            "SELECT seen_at FROM event_inbox WHERE id=1",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        )
+        .unwrap();
+        let seen_at: Option<i64> = conn
+            .query_row("SELECT seen_at FROM event_inbox WHERE id=1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(seen_at, Some(1_700_000_001));
     }
 
@@ -329,7 +355,8 @@ mod tests {
         // rows with version=1 (because INSERT OR IGNORE had no UNIQUE to key off).
         // Running the new migration on such a DB must dedup before CREATE INDEX.
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             CREATE TABLE schema_version (
                 version INTEGER NOT NULL,
                 applied_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -337,16 +364,20 @@ mod tests {
             INSERT INTO schema_version (version) VALUES (1);
             INSERT INTO schema_version (version) VALUES (1);
             INSERT INTO schema_version (version) VALUES (1);
-        ").unwrap();
+        ",
+        )
+        .unwrap();
 
         // Should succeed (dedup first, then create UNIQUE index)
         migrations::run(&conn).unwrap();
 
-        let v1_rows: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM schema_version WHERE version=1",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let v1_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_version WHERE version=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(v1_rows, 1, "duplicate version=1 rows should be deduped");
     }
 
@@ -357,61 +388,71 @@ mod tests {
         migrations::run(&conn).unwrap();
         migrations::run(&conn).unwrap();
 
-        let theme_rows: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM settings WHERE key='theme'",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let theme_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM settings WHERE key='theme'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(theme_rows, 1);
 
-        let v1_rows: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM schema_version WHERE version=1",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let v1_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_version WHERE version=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(v1_rows, 1);
 
-        let v2_rows: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM schema_version WHERE version=2",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let v2_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM schema_version WHERE version=2",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(v2_rows, 1);
     }
 
     #[test]
     fn schema_version_seeded() {
         let conn = open_migrated_memory_db();
-        let v1: i64 = conn.query_row(
-            "SELECT version FROM schema_version WHERE version=1",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let v1: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(v1, 1);
 
-        let v2: i64 = conn.query_row(
-            "SELECT version FROM schema_version WHERE version=2",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let v2: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=2",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(v2, 2);
     }
 
     #[test]
     fn default_settings_seeded() {
         let conn = open_migrated_memory_db();
-        let theme: String = conn.query_row(
-            "SELECT value FROM settings WHERE key='theme'",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let theme: String = conn
+            .query_row("SELECT value FROM settings WHERE key='theme'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(theme, "amber");
 
-        let width: String = conn.query_row(
-            "SELECT value FROM settings WHERE key='statusline_width'",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let width: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key='statusline_width'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(width, "100");
     }
 
@@ -441,7 +482,9 @@ mod tests {
         )
         .unwrap();
         let path: Option<String> = conn
-            .query_row("SELECT origin_path FROM mobs WHERE id = 1", [], |r| r.get(0))
+            .query_row("SELECT origin_path FROM mobs WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(path.is_none(), "origin_path must default to NULL");
     }
@@ -457,7 +500,9 @@ mod tests {
         )
         .unwrap();
         let path: String = conn
-            .query_row("SELECT origin_path FROM mobs WHERE id = 1", [], |r| r.get(0))
+            .query_row("SELECT origin_path FROM mobs WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(path, "src/lib.rs");
     }
@@ -501,11 +546,9 @@ mod tests {
 
         // Legacy row preserved, origin_path = NULL
         let (name, path): (String, Option<String>) = conn
-            .query_row(
-                "SELECT name, origin_path FROM mobs WHERE id = 1",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
+            .query_row("SELECT name, origin_path FROM mobs WHERE id = 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .unwrap();
         assert_eq!(name, "legacy");
         assert!(path.is_none());
@@ -745,11 +788,9 @@ mod tests {
         )
         .unwrap();
         let strategy: String = conn
-            .query_row(
-                "SELECT strategy FROM pet_snapshot WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT strategy FROM pet_snapshot WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(strategy, "explorer");
     }
@@ -861,11 +902,8 @@ mod tests {
     #[test]
     fn phase3a_concept_count_defaults_zero_on_insert() {
         let conn = open_migrated_memory_db();
-        conn.execute(
-            "INSERT INTO game_world (zone_id) VALUES ('rust')",
-            [],
-        )
-        .unwrap();
+        conn.execute("INSERT INTO game_world (zone_id) VALUES ('rust')", [])
+            .unwrap();
         let c: i64 = conn
             .query_row(
                 "SELECT concept_count FROM game_world WHERE zone_id = 'rust'",
@@ -954,11 +992,9 @@ mod tests {
     fn phase3c_budget_single_row_seeded() {
         let conn = open_migrated_memory_db();
         let (id, last): (i64, Option<i64>) = conn
-            .query_row(
-                "SELECT id, last_emit_at FROM commentary_budget",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
+            .query_row("SELECT id, last_emit_at FROM commentary_budget", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .unwrap();
         assert_eq!(id, 1);
         assert_eq!(last, None);
@@ -1133,12 +1169,11 @@ mod tests {
         let conn = Connection::open(tmp.path().join("test.db")).unwrap();
         conn.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
-        ).unwrap();
-        let mode: String = conn.query_row(
-            "PRAGMA journal_mode",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        )
+        .unwrap();
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(mode, "wal");
     }
 }

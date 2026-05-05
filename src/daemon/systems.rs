@@ -91,7 +91,9 @@ pub fn set_message(gw: &mut GameWorld, text: impl Into<String>, tick_stamp: u64)
     let pet = gw.pet();
     let text = text.into();
     // Insert-or-replace via hecs — insert_one on existing replaces.
-    let _ = gw.world_mut().insert_one(pet, LastMessage { text, tick_stamp });
+    let _ = gw
+        .world_mut()
+        .insert_one(pet, LastMessage { text, tick_stamp });
 }
 
 #[cfg(test)]
@@ -170,7 +172,11 @@ mod tests {
         check_levelup(&mut gw);
         let l = gw.world().get::<&PetLevel>(gw.pet()).unwrap();
         // Large XP should produce multiple level-ups
-        assert!(l.level > 2, "expected multiple level-ups, got level {}", l.level);
+        assert!(
+            l.level > 2,
+            "expected multiple level-ups, got level {}",
+            l.level
+        );
     }
 
     #[test]

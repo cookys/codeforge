@@ -167,7 +167,10 @@ pub struct FeedRow {
 pub fn normalize_phrase(phrase: &str) -> String {
     let collapsed: String = phrase.split_whitespace().collect::<Vec<_>>().join(" ");
     let trimmed = collapsed.trim_end_matches(|c: char| {
-        matches!(c, '。' | '！' | '？' | '!' | '?' | '.' | ',' | '，' | '、' | ' ')
+        matches!(
+            c,
+            '。' | '！' | '？' | '!' | '?' | '.' | ',' | '，' | '、' | ' '
+        )
     });
     trimmed.to_string()
 }
@@ -223,10 +226,7 @@ mod tests {
 
     #[test]
     fn normalize_collapses_whitespace() {
-        assert_eq!(
-            normalize_phrase("  hello   world   "),
-            "hello world"
-        );
+        assert_eq!(normalize_phrase("  hello   world   "), "hello world");
     }
 
     #[test]

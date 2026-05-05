@@ -1,9 +1,9 @@
+use crate::db;
+use crate::memory::l0::{Signal, SignalSource, SignalWriter};
 /// Claude.ai web chat export 匯入器
 /// 格式：{"conversations": [...]} 或直接 [{...}]
 use anyhow::Result;
 use std::path::Path;
-use crate::db;
-use crate::memory::l0::{Signal, SignalSource, SignalWriter};
 
 pub fn ingest(ctx: &db::Context, path: &Path) -> Result<usize> {
     let content = std::fs::read_to_string(path)?;
@@ -21,22 +21,28 @@ pub fn ingest(ctx: &db::Context, path: &Path) -> Result<usize> {
     let mut count = 0;
 
     for conv in &conversations {
-        let messages = conv.get("chat_messages")
+        let messages = conv
+            .get("chat_messages")
             .or_else(|| conv.get("messages"))
             .and_then(|m| m.as_array());
 
         if let Some(msgs) = messages {
             for msg in msgs {
-                let role = msg.get("sender")
+                let role = msg
+                    .get("sender")
                     .or_else(|| msg.get("role"))
                     .and_then(|r| r.as_str())
                     .unwrap_or("");
 
                 // 只取 assistant（Claude）的回應，品質較高
-                if role != "assistant" { continue; }
+                if role != "assistant" {
+                    continue;
+                }
 
                 let text = extract_message_text(msg);
-                if text.len() < 50 { continue; }
+                if text.len() < 50 {
+                    continue;
+                }
 
                 let signal = Signal::new(text, SignalSource::WebChatClaude);
                 writer.append(&signal)?;
@@ -58,8 +64,13 @@ fn extract_message_text(msg: &serde_json::Value) -> String {
             return text.to_string();
         }
         if let Some(arr) = content.as_array() {
-            let parts: Vec<String> = arr.iter()
-                .filter_map(|p| p.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()))
+            let parts: Vec<String> = arr
+                .iter()
+                .filter_map(|p| {
+                    p.get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string())
+                })
                 .collect();
             return parts.join("\n");
         }

@@ -2,9 +2,9 @@
 // this in. Kept compiled to prevent bit-rot.
 #![allow(dead_code)]
 
-use anyhow::Result;
 use crate::db;
 use crate::memory::l1;
+use anyhow::Result;
 
 /// 投影 top-N L1 entries 到 .claude/memory/ 目錄
 pub fn project_to_claude_memory(ctx: &db::Context, top_n: usize) -> Result<usize> {
@@ -12,7 +12,12 @@ pub fn project_to_claude_memory(ctx: &db::Context, top_n: usize) -> Result<usize
     let mut entries = l1::scan_all(&store_dir)?;
 
     // 按 strength 排序，取 top-N
-    entries.sort_by(|a, b| b.frontmatter.strength.partial_cmp(&a.frontmatter.strength).unwrap_or(std::cmp::Ordering::Equal));
+    entries.sort_by(|a, b| {
+        b.frontmatter
+            .strength
+            .partial_cmp(&a.frontmatter.strength)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     entries.retain(|e| e.frontmatter.status == "active");
     entries.truncate(top_n);
 
@@ -37,7 +42,11 @@ pub fn project_to_claude_memory(ctx: &db::Context, top_n: usize) -> Result<usize
 
     // 寫入新投影
     for (i, entry) in entries.iter().enumerate() {
-        let filename = format!("codeforge-{:02}-{}.md", i + 1, l1::L1Entry::slugify(&entry.frontmatter.topic));
+        let filename = format!(
+            "codeforge-{:02}-{}.md",
+            i + 1,
+            l1::L1Entry::slugify(&entry.frontmatter.topic)
+        );
         let dest = memory_dir.join(filename);
         std::fs::write(&dest, &entry.body)?;
     }
@@ -53,7 +62,10 @@ fn project_id(_ctx: &db::Context) -> String {
     let cwd = std::env::current_dir().unwrap_or_default();
     let path_str = cwd.to_string_lossy();
     // 簡單替換：/ -> - 並取最後段
-    path_str.replace('/', "-").trim_start_matches('-').to_string()
+    path_str
+        .replace('/', "-")
+        .trim_start_matches('-')
+        .to_string()
 }
 
 fn update_agents_md(_ctx: &db::Context, top_entries: &[l1::L1Entry]) -> Result<()> {
@@ -69,9 +81,15 @@ fn update_agents_md(_ctx: &db::Context, top_entries: &[l1::L1Entry]) -> Result<(
     let summary = if top_entries.is_empty() {
         String::new()
     } else {
-        let items: Vec<String> = top_entries.iter()
+        let items: Vec<String> = top_entries
+            .iter()
             .take(10)
-            .map(|e| format!("- **{}** (strength: {:.2})", e.frontmatter.topic, e.frontmatter.strength))
+            .map(|e| {
+                format!(
+                    "- **{}** (strength: {:.2})",
+                    e.frontmatter.topic, e.frontmatter.strength
+                )
+            })
             .collect();
         format!(
             "{}\n## CodeForge Memory (top-{} active knowledge)\n\n{}\n\n{}",

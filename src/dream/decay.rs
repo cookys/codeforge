@@ -1,7 +1,7 @@
-/// Dream Decay：ACT-R activation 計算，更新 L1 strength
-use anyhow::Result;
 use crate::db;
 use crate::memory::l1;
+/// Dream Decay：ACT-R activation 計算，更新 L1 strength
+use anyhow::Result;
 
 pub struct DecayResult {
     pub updated: usize,
@@ -17,7 +17,9 @@ pub fn run(ctx: &db::Context) -> Result<DecayResult> {
     let mut updated = 0;
 
     for mut entry in entries {
-        if entry.frontmatter.status != "active" { continue; }
+        if entry.frontmatter.status != "active" {
+            continue;
+        }
 
         // 計算從建立日到現在的天數
         let created = chrono::NaiveDate::parse_from_str(&entry.frontmatter.created, "%Y-%m-%d")

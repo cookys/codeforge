@@ -45,22 +45,20 @@ impl<'a> FtsIndex<'a> {
              FROM memory_fts
              WHERE memory_fts MATCH ?1
              ORDER BY rank
-             LIMIT ?2"
+             LIMIT ?2",
         )?;
 
-        let results = stmt.query_map(
-            rusqlite::params![safe_query, limit as i64],
-            |row| {
+        let results = stmt
+            .query_map(rusqlite::params![safe_query, limit as i64], |row| {
                 Ok(SearchResult {
                     file_path: row.get(0)?,
                     title: row.get(1)?,
                     snippet: row.get(2)?,
                     rank: row.get(3)?,
                 })
-            },
-        )?
-        .filter_map(|r| r.ok())
-        .collect();
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok(results)
     }
@@ -75,7 +73,8 @@ impl<'a> FtsIndex<'a> {
         let count = entries.len();
 
         for entry in &entries {
-            let rel_path = entry.file_path
+            let rel_path = entry
+                .file_path
                 .strip_prefix(store_dir.parent().unwrap_or(store_dir))
                 .unwrap_or(&entry.file_path)
                 .to_string_lossy()
@@ -92,7 +91,13 @@ impl<'a> FtsIndex<'a> {
 fn sanitize_query(q: &str) -> String {
     // 移除 FTS5 特殊字元，保留字詞
     q.chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' { c } else { ' ' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' {
+                c
+            } else {
+                ' '
+            }
+        })
         .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()

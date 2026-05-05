@@ -1,8 +1,8 @@
+use crate::pet::village::Village;
+use crate::power::CharacterStats;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
-use crate::power::CharacterStats;
-use crate::pet::village::Village;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PetState {
@@ -35,11 +35,11 @@ impl PetState {
     }
 
     pub fn exists(conn: &Connection) -> Result<bool> {
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM pet WHERE id = 1",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(0);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pet WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap_or(0);
         Ok(count > 0)
     }
 
@@ -113,7 +113,11 @@ mod tests {
             level: 1,
             xp: 0,
             xp_to_next: 100,
-            atk: 10, hp: 10, def: 10, sup: 10, ver: 10,
+            atk: 10,
+            hp: 10,
+            def: 10,
+            sup: 10,
+            ver: 10,
         }
     }
 

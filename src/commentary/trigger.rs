@@ -197,13 +197,13 @@ mod tests {
 
     #[test]
     fn multiple_boss_kills_emit_one_trigger() {
-        let defeats = vec![
-            mob(MobKind::Boss, "boss A"),
-            mob(MobKind::Boss, "boss B"),
-        ];
+        let defeats = vec![mob(MobKind::Boss, "boss A"), mob(MobKind::Boss, "boss B")];
         let ctx = base_ctx(&defeats);
         let triggers = detect(&ctx);
-        let boss_count = triggers.iter().filter(|t| t.kind() == Kind::BossKill).count();
+        let boss_count = triggers
+            .iter()
+            .filter(|t| t.kind() == Kind::BossKill)
+            .count();
         assert_eq!(boss_count, 1);
     }
 
@@ -229,9 +229,16 @@ mod tests {
         ctx.level_before = 5;
         ctx.level_after = 7; // double level-up
         let triggers = detect(&ctx);
-        let ups: Vec<_> = triggers.iter().filter(|t| t.kind() == Kind::LevelUp).collect();
+        let ups: Vec<_> = triggers
+            .iter()
+            .filter(|t| t.kind() == Kind::LevelUp)
+            .collect();
         assert_eq!(ups.len(), 1);
-        if let Trigger::LevelUp { prev_level, new_level } = ups[0] {
+        if let Trigger::LevelUp {
+            prev_level,
+            new_level,
+        } = ups[0]
+        {
             assert_eq!(*prev_level, 5);
             assert_eq!(*new_level, 7);
         } else {
@@ -272,8 +279,13 @@ mod tests {
     #[test]
     fn pick_best_prefers_level_up_over_session_long() {
         let triggers = vec![
-            Trigger::SessionLong { duration_secs: 14400 },
-            Trigger::LevelUp { prev_level: 1, new_level: 2 },
+            Trigger::SessionLong {
+                duration_secs: 14400,
+            },
+            Trigger::LevelUp {
+                prev_level: 1,
+                new_level: 2,
+            },
         ];
         let best = pick_best(triggers).unwrap();
         assert_eq!(best.kind(), Kind::LevelUp);

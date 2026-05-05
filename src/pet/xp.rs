@@ -19,12 +19,7 @@ use crate::db;
 /// `amount` may be zero or negative; only positive values are queued
 /// (daemon has no XP-loss mechanic in P2a). The `xp_events` log is
 /// written regardless — the row is a historical record.
-pub fn award(
-    ctx: &db::Context,
-    source: &str,
-    amount: i64,
-    detail: Option<&str>,
-) -> Result<()> {
+pub fn award(ctx: &db::Context, source: &str, amount: i64, detail: Option<&str>) -> Result<()> {
     let conn = ctx.open_db()?;
 
     conn.execute(

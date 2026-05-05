@@ -1,7 +1,7 @@
-/// Dream Absorb：掃描 .claude/memory/ 並收編為 L0 signals
-use anyhow::Result;
 use crate::db;
 use crate::memory::l0::{Signal, SignalSource, SignalWriter};
+/// Dream Absorb：掃描 .claude/memory/ 並收編為 L0 signals
+use anyhow::Result;
 
 pub struct AbsorbResult {
     pub absorbed: usize,
@@ -36,7 +36,9 @@ pub fn run(ctx: &db::Context) -> Result<AbsorbResult> {
                 .ok()
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| chrono::DateTime::from_timestamp(d.as_secs() as i64, 0).unwrap_or_default());
+                .map(|d| {
+                    chrono::DateTime::from_timestamp(d.as_secs() as i64, 0).unwrap_or_default()
+                });
 
             let should_absorb = match (modified, last_absorb) {
                 (Some(m), Some(l)) => m > l,
@@ -67,8 +69,12 @@ pub fn run(ctx: &db::Context) -> Result<AbsorbResult> {
 
 fn walkdir_shallow(base: &std::path::Path, max_depth: usize) -> Vec<std::path::PathBuf> {
     fn walk(dir: &std::path::Path, depth: usize, max: usize, result: &mut Vec<std::path::PathBuf>) {
-        if depth > max { return; }
-        let Ok(entries) = std::fs::read_dir(dir) else { return; };
+        if depth > max {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.is_dir() {

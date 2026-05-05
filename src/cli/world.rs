@@ -71,11 +71,7 @@ fn render_header(out: &mut impl Write, home_village: &str) -> Result<()> {
     Ok(())
 }
 
-fn render_grid(
-    out: &mut impl Write,
-    stats: &[ZoneStats],
-    home_village: &str,
-) -> Result<()> {
+fn render_grid(out: &mut impl Write, stats: &[ZoneStats], home_village: &str) -> Result<()> {
     let mut cells: Vec<Cell> = stats
         .iter()
         .map(|s| Cell::from_stats(s, s.village_id == home_village))
@@ -124,11 +120,7 @@ fn render_row(out: &mut impl Write, cells: &[Cell]) -> Result<()> {
     Ok(())
 }
 
-fn paint_cell_line(
-    out: &mut impl Write,
-    cell: &Cell,
-    text: &str,
-) -> Result<()> {
+fn paint_cell_line(out: &mut impl Write, cell: &Cell, text: &str) -> Result<()> {
     let padded = pad_visible(text, CARD_INNER);
     let styled = match cell.tone {
         CellTone::HomeUnlocked(color) => padded.with(color).bold(),
@@ -150,11 +142,7 @@ fn unlocked_count(stats: &[ZoneStats], home_village: &str) -> usize {
         .count()
 }
 
-fn render_footer(
-    out: &mut impl Write,
-    stats: &[ZoneStats],
-    home_village: &str,
-) -> Result<()> {
+fn render_footer(out: &mut impl Write, stats: &[ZoneStats], home_village: &str) -> Result<()> {
     let unlocked = unlocked_count(stats, home_village);
     let total = stats.len();
     writeln!(
@@ -196,9 +184,7 @@ impl Cell {
         let name = village
             .map(|v| v.display_name.to_string())
             .unwrap_or_else(|| s.village_id.clone());
-        let language = village
-            .map(|v| v.language.to_string())
-            .unwrap_or_default();
+        let language = village.map(|v| v.language.to_string()).unwrap_or_default();
 
         // Home village always displays as unlocked even if the daemon /
         // refresh hasn't yet flipped the DB flag (e.g. brand-new install,
@@ -213,7 +199,12 @@ impl Cell {
         };
 
         let stats = if display_unlocked {
-            format!(" {} · ⚔ {} · 📖 {}", rank_label(s.rank), s.kill_count, s.concept_count)
+            format!(
+                " {} · ⚔ {} · 📖 {}",
+                rank_label(s.rank),
+                s.kill_count,
+                s.concept_count
+            )
         } else {
             format!(" — · ⚔ {} · 📖 {}", s.kill_count, s.concept_count)
         };
@@ -227,7 +218,13 @@ impl Cell {
             CellTone::Locked
         };
 
-        Self { name: format!(" {}", name), language: format!(" {}", language), status, stats, tone }
+        Self {
+            name: format!(" {}", name),
+            language: format!(" {}", language),
+            status,
+            stats,
+            tone,
+        }
     }
 
     fn nation_placeholder() -> Self {

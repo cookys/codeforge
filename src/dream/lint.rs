@@ -1,7 +1,7 @@
-/// Dream Lint：偵測矛盾、孤兒、缺口（rule-based，零 LLM 成本）
-use anyhow::Result;
 use crate::db;
 use crate::memory::l1;
+/// Dream Lint：偵測矛盾、孤兒、缺口（rule-based，零 LLM 成本）
+use anyhow::Result;
 
 pub struct LintResult {
     pub issues: usize,
@@ -21,9 +21,9 @@ pub fn run(ctx: &db::Context) -> Result<LintResult> {
         // 斷鏈 wikilinks 偵測
         for link in &entry.frontmatter.links {
             let slug = l1::L1Entry::slugify(link);
-            let exists = ["concepts", "connections", "qa"].iter().any(|dir| {
-                store_dir.join(dir).join(format!("{}.md", slug)).exists()
-            });
+            let exists = ["concepts", "connections", "qa"]
+                .iter()
+                .any(|dir| store_dir.join(dir).join(format!("{}.md", slug)).exists());
             if !exists {
                 issues += 1;
             }
