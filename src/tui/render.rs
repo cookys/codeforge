@@ -76,7 +76,7 @@ impl PositionedLine {
 /// preserves the Phase 2c behaviour (default List mode, no toggle
 /// support) so legacy tests keep passing without alteration.
 #[allow(clippy::too_many_arguments)] // composes four independent panels + two
-// overrides; splitting into a builder would hide the test call-site intent
+                                     // overrides; splitting into a builder would hide the test call-site intent
 pub fn build_frame(
     conn: &Connection,
     scan_root: &Path,
@@ -93,9 +93,9 @@ pub fn build_frame(
         Some(live) => {
             // Phase 3b: strategy falls back to the baseline Explorer when
             // the snapshot predates v6 (wait-for-tick window is <60s).
-            let strategy = live.strategy.unwrap_or(
-                crate::daemon::strategy::DEFAULT_STRATEGY,
-            );
+            let strategy = live
+                .strategy
+                .unwrap_or(crate::daemon::strategy::DEFAULT_STRATEGY);
             pet_panel::render(&live.state, strategy, layout.pet_status.width as usize)
         }
         None => placeholder_lines(
@@ -157,10 +157,9 @@ pub fn build_frame(
     // non-empty). Callers may still pass `Some(panel)` in other modes —
     // we just skip rendering then.
     let zoa_lines: Vec<StyledLine> = match (zoa, layout.mode) {
-        (Some(panel), LayoutMode::Wide) => panel.render(
-            layout.zoa.width as usize,
-            layout.zoa.height as usize,
-        ),
+        (Some(panel), LayoutMode::Wide) => {
+            panel.render(layout.zoa.width as usize, layout.zoa.height as usize)
+        }
         _ => Vec::new(),
     };
 
@@ -204,7 +203,12 @@ pub fn paint(frame: &Frame, out: &mut impl Write) -> Result<()> {
         for span in &line.spans {
             match span.fg {
                 Some(color) => {
-                    queue!(out, SetForegroundColor(color), Print(&span.text), ResetColor)?;
+                    queue!(
+                        out,
+                        SetForegroundColor(color),
+                        Print(&span.text),
+                        ResetColor
+                    )?;
                 }
                 None => {
                     queue!(out, Print(&span.text))?;
@@ -225,10 +229,20 @@ fn compose(
 ) -> Vec<PositionedLine> {
     let cap = pet_lines.len() + zoa_lines.len() + map_lines.len() + log_lines.len();
     let mut out = Vec::with_capacity(cap);
-    push_section(&mut out, pet_lines, layout.pet_status.x, layout.pet_status.y);
+    push_section(
+        &mut out,
+        pet_lines,
+        layout.pet_status.x,
+        layout.pet_status.y,
+    );
     push_section(&mut out, zoa_lines, layout.zoa.x, layout.zoa.y);
     push_section(&mut out, map_lines, layout.local_map.x, layout.local_map.y);
-    push_section(&mut out, log_lines, layout.combat_log.x, layout.combat_log.y);
+    push_section(
+        &mut out,
+        log_lines,
+        layout.combat_log.x,
+        layout.combat_log.y,
+    );
     out
 }
 
@@ -329,7 +343,10 @@ mod tests {
         )
         .unwrap();
         let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
-        let has_ferris = frame.lines.iter().any(|l| l.plain_text().contains("Ferris"));
+        let has_ferris = frame
+            .lines
+            .iter()
+            .any(|l| l.plain_text().contains("Ferris"));
         assert!(has_ferris, "pet name must appear in frame");
     }
 
@@ -337,14 +354,20 @@ mod tests {
     fn build_frame_includes_local_map_header() {
         let conn = fresh();
         let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
-        assert!(frame.lines.iter().any(|l| l.plain_text().contains("Local Map")));
+        assert!(frame
+            .lines
+            .iter()
+            .any(|l| l.plain_text().contains("Local Map")));
     }
 
     #[test]
     fn build_frame_includes_combat_log_header() {
         let conn = fresh();
         let frame = build_frame(&conn, Path::new("/repo"), None, 80, 20, None, None, None).unwrap();
-        assert!(frame.lines.iter().any(|l| l.plain_text().contains("Combat Log")));
+        assert!(frame
+            .lines
+            .iter()
+            .any(|l| l.plain_text().contains("Combat Log")));
     }
 
     #[test]
@@ -367,7 +390,8 @@ mod tests {
     #[test]
     fn build_frame_respects_layout_positions() {
         let conn = fresh();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None, None).unwrap();
+        let frame =
+            build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None, None).unwrap();
         // Pet status lines should be at rows 0..3
         let pet_rows: Vec<u16> = frame
             .lines
@@ -377,10 +401,7 @@ mod tests {
             .collect();
         assert!(!pet_rows.is_empty());
         // Combat log should be at col 40 (40% of 100)
-        assert!(frame
-            .lines
-            .iter()
-            .any(|l| l.col == 40 && l.row >= 3));
+        assert!(frame.lines.iter().any(|l| l.col == 40 && l.row >= 3));
     }
 
     #[test]
@@ -434,7 +455,8 @@ mod tests {
         const N: u32 = 50;
         let start = std::time::Instant::now();
         for _ in 0..N {
-            let frame = build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None, None).unwrap();
+            let frame =
+                build_frame(&conn, Path::new("/repo"), None, 100, 40, None, None, None).unwrap();
             sink.clear();
             paint(&frame, &mut sink).unwrap();
         }
@@ -470,18 +492,33 @@ mod tests {
             "你不在的 8 小時：".to_string(),
             "  → 擊殺 ghost ×5".to_string(),
         ];
-        let frame =
-            build_frame(&conn, Path::new("/repo"), None, 100, 30, Some(&welcome), None, None).unwrap();
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            Some(&welcome),
+            None,
+            None,
+        )
+        .unwrap();
 
         // The welcome-back title must appear (it replaces the normal
         // "⚔ Combat Log" header).
         assert!(
-            frame.lines.iter().any(|l| l.plain_text().contains("歸來摘要")),
+            frame
+                .lines
+                .iter()
+                .any(|l| l.plain_text().contains("歸來摘要")),
             "welcome-back title must appear in frame"
         );
         // The real combat_log row should NOT appear in the override frame.
         assert!(
-            !frame.lines.iter().any(|l| l.plain_text().contains("ghost — x")),
+            !frame
+                .lines
+                .iter()
+                .any(|l| l.plain_text().contains("ghost — x")),
             "override frame must not show real combat_log content"
         );
     }
@@ -495,11 +532,17 @@ mod tests {
         let conn = fresh();
         let frame = build_frame(&conn, Path::new("/repo"), None, 72, 20, None, None, None).unwrap();
         assert!(
-            !frame.lines.iter().any(|l| l.plain_text().contains("Local Map")),
+            !frame
+                .lines
+                .iter()
+                .any(|l| l.plain_text().contains("Local Map")),
             "Narrow mode must not render the Local Map panel"
         );
         // CombatLog panel still there — it's the sole bottom widget.
-        assert!(frame.lines.iter().any(|l| l.plain_text().contains("Combat Log")));
+        assert!(frame
+            .lines
+            .iter()
+            .any(|l| l.plain_text().contains("Combat Log")));
     }
 
     #[test]
@@ -509,8 +552,14 @@ mod tests {
         let conn = fresh();
         let frame = build_frame(&conn, Path::new("/repo"), None, 50, 20, None, None, None).unwrap();
         // No Combat Log / Local Map at all.
-        assert!(!frame.lines.iter().any(|l| l.plain_text().contains("Combat Log")));
-        assert!(!frame.lines.iter().any(|l| l.plain_text().contains("Local Map")));
+        assert!(!frame
+            .lines
+            .iter()
+            .any(|l| l.plain_text().contains("Combat Log")));
+        assert!(!frame
+            .lines
+            .iter()
+            .any(|l| l.plain_text().contains("Local Map")));
         // Pet placeholder must still appear so the caller can at least
         // display something before bailing.
         assert!(frame.lines.iter().any(|l| l.plain_text().contains("adopt")));
@@ -521,10 +570,23 @@ mod tests {
         // 140 cols → Wide. Passing Some(ZoaPanel) should render it at x=0.
         let conn = fresh();
         let zoa = super::ZoaPanel::new();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 140, 30, None, Some(&zoa), None).unwrap();
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            140,
+            30,
+            None,
+            Some(&zoa),
+            None,
+        )
+        .unwrap();
         // Zoa occupies col 0 at rows >= 3 (below the pet header). Look for
         // the top frame row which contains "_______".
-        let zoa_top_row = frame.lines.iter().find(|l| l.col == 0 && l.row >= 3 && l.plain_text().contains("_______"));
+        let zoa_top_row = frame
+            .lines
+            .iter()
+            .find(|l| l.col == 0 && l.row >= 3 && l.plain_text().contains("_______"));
         assert!(
             zoa_top_row.is_some(),
             "Wide mode must render Zoa's top skull-cap row at col 0"
@@ -537,9 +599,22 @@ mod tests {
         // (there's no reserved column for it).
         let conn = fresh();
         let zoa = super::ZoaPanel::new();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, Some(&zoa), None).unwrap();
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            100,
+            30,
+            None,
+            Some(&zoa),
+            None,
+        )
+        .unwrap();
         assert!(
-            !frame.lines.iter().any(|l| l.plain_text().contains("_______")),
+            !frame
+                .lines
+                .iter()
+                .any(|l| l.plain_text().contains("_______")),
             "Standard mode must not render Zoa frames"
         );
     }
@@ -549,7 +624,17 @@ mod tests {
         // Wide at 140 cols: zoa x=0, map x=24, log x=24+map_w.
         let conn = fresh();
         let zoa = super::ZoaPanel::new();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 140, 30, None, Some(&zoa), None).unwrap();
+        let frame = build_frame(
+            &conn,
+            Path::new("/repo"),
+            None,
+            140,
+            30,
+            None,
+            Some(&zoa),
+            None,
+        )
+        .unwrap();
         // Local Map header must appear at col 24 (ZOA_WIDTH).
         let map_header = frame
             .lines
@@ -571,13 +656,20 @@ mod tests {
             [],
         )
         .unwrap();
-        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None, None).unwrap();
+        let frame =
+            build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None, None).unwrap();
         assert!(
-            frame.lines.iter().any(|l| l.plain_text().contains("unique-marker")),
+            frame
+                .lines
+                .iter()
+                .any(|l| l.plain_text().contains("unique-marker")),
             "normal frame must surface real combat_log rows"
         );
         assert!(
-            !frame.lines.iter().any(|l| l.plain_text().contains("歸來摘要")),
+            !frame
+                .lines
+                .iter()
+                .any(|l| l.plain_text().contains("歸來摘要")),
             "no welcome-back title without override"
         );
     }
@@ -611,7 +703,9 @@ mod tests {
         use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
         let conn = fresh();
         seed_mobs_with_paths(&conn, &["src/cli/a.rs", "doc/x.md", "target/z.rs"]);
-        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::Grid,
+        };
         let frame = build_frame(
             &conn,
             Path::new("/repo"),
@@ -635,7 +729,10 @@ mod tests {
             "grid mode must emit tile borders inside local_map rect"
         );
         // And the "Local Map" header (list-mode only) must NOT appear.
-        assert!(!frame.lines.iter().any(|l| l.plain_text().contains("📍 Local Map")));
+        assert!(!frame
+            .lines
+            .iter()
+            .any(|l| l.plain_text().contains("📍 Local Map")));
     }
 
     #[test]
@@ -643,7 +740,9 @@ mod tests {
         use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
         let conn = fresh();
         seed_mobs_with_paths(&conn, &["src/a.rs"]);
-        let panel = LocalMapPanel { display_mode: DisplayMode::List };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::List,
+        };
         let frame = build_frame(
             &conn,
             Path::new("/repo"),
@@ -656,7 +755,10 @@ mod tests {
         )
         .unwrap();
         // List mode keeps the "📍 Local Map" header row.
-        assert!(frame.lines.iter().any(|l| l.plain_text().contains("📍 Local Map")));
+        assert!(frame
+            .lines
+            .iter()
+            .any(|l| l.plain_text().contains("📍 Local Map")));
         // And marker row for the sole mob directory.
         assert!(frame.lines.iter().any(|l| l.plain_text().contains("src")));
     }
@@ -666,9 +768,12 @@ mod tests {
         // Phase 2c behaviour pin: callers that pass None get list mode.
         let conn = fresh();
         seed_mobs_with_paths(&conn, &["src/a.rs"]);
-        let frame = build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None, None)
-            .unwrap();
-        assert!(frame.lines.iter().any(|l| l.plain_text().contains("📍 Local Map")));
+        let frame =
+            build_frame(&conn, Path::new("/repo"), None, 100, 30, None, None, None).unwrap();
+        assert!(frame
+            .lines
+            .iter()
+            .any(|l| l.plain_text().contains("📍 Local Map")));
     }
 
     #[test]
@@ -676,7 +781,9 @@ mod tests {
         use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
         let conn = fresh();
         seed_mobs_with_paths(&conn, &["src/cli/a.rs"]);
-        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::Grid,
+        };
         // cwd is under src/ → RoomSummary::is_current is true for "src"
         // → render_tile adds `@` in the badge row.
         let frame = build_frame(
@@ -694,7 +801,10 @@ mod tests {
             .lines
             .iter()
             .any(|l| in_local_map(l, 100, 30) && l.plain_text().contains('@'));
-        assert!(has_at_marker, "current dir must show @ overlay in grid tile");
+        assert!(
+            has_at_marker,
+            "current dir must show @ overlay in grid tile"
+        );
     }
 
     #[test]
@@ -705,7 +815,9 @@ mod tests {
         use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
         let conn = fresh();
         seed_mobs_with_paths(&conn, &["前端/foo.ts"]);
-        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::Grid,
+        };
         let frame = build_frame(
             &conn,
             Path::new("/repo"),
@@ -722,7 +834,10 @@ mod tests {
             .lines
             .iter()
             .any(|l| in_local_map(l, 100, 30) && l.plain_text().contains("前端"));
-        assert!(cjk_visible, "CJK dir name must survive the grid render pipeline");
+        assert!(
+            cjk_visible,
+            "CJK dir name must survive the grid render pipeline"
+        );
     }
 
     // ─── B11 P4: ANSI snapshot tests on paint output ─────────────────
@@ -741,7 +856,9 @@ mod tests {
         // depending on terminal capability at runtime. Accept either —
         // the point of the test is "at least one fg escape appeared".
         seed_mobs_with_paths(&conn, &["src/cli/a.rs"]);
-        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::Grid,
+        };
         let frame = build_frame(
             &conn,
             Path::new("/repo"),
@@ -772,7 +889,9 @@ mod tests {
         use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
         let conn = fresh();
         seed_mobs_with_paths(&conn, &["src/a.rs"]);
-        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::Grid,
+        };
         let frame = build_frame(
             &conn,
             Path::new("/repo"),
@@ -799,7 +918,9 @@ mod tests {
         use super::super::panels::local_map::{DisplayMode, LocalMapPanel};
         let conn = fresh();
         seed_mobs_with_paths(&conn, &["src/a.rs"]);
-        let panel = LocalMapPanel { display_mode: DisplayMode::List };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::List,
+        };
         let frame = build_frame(
             &conn,
             Path::new("/repo"),

@@ -422,7 +422,15 @@ mod tests {
         (conn, world)
     }
 
-    fn spawn_mob(conn: &Connection, zone: &str, kind: MobKind, name: &str, hp: u32, atk: u32, def: u32) -> i64 {
+    fn spawn_mob(
+        conn: &Connection,
+        zone: &str,
+        kind: MobKind,
+        name: &str,
+        hp: u32,
+        atk: u32,
+        def: u32,
+    ) -> i64 {
         conn.execute(
             "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, difficulty, spawned_at)
              VALUES (?1, ?2, ?3, ?4, ?4, ?5, ?6, 1, 100)",
@@ -493,7 +501,15 @@ mod tests {
         // Saturating_sub guards against u32 underflow
         let (conn, mut world) = fresh();
         for i in 0..5 {
-            spawn_mob(&conn, "rust", MobKind::Boss, &format!("b{i}"), 1000, 200, 10);
+            spawn_mob(
+                &conn,
+                "rust",
+                MobKind::Boss,
+                &format!("b{i}"),
+                1000,
+                200,
+                10,
+            );
         }
         for t in 100..200 {
             run_tick(&conn, &mut world, t, 9_000).unwrap();
@@ -518,7 +534,15 @@ mod tests {
         let (conn, mut world) = fresh();
         // Pet's home village is "rust" (default seed). Spawn only python mobs.
         for i in 0..3 {
-            spawn_mob(&conn, "python", MobKind::Zombie, &format!("py-z{i}"), 1, 1, 1);
+            spawn_mob(
+                &conn,
+                "python",
+                MobKind::Zombie,
+                &format!("py-z{i}"),
+                1,
+                1,
+                1,
+            );
         }
         let s = run_tick(&conn, &mut world, 100, 9_000).unwrap();
         assert_eq!(s.attacks, 0, "pet should not attack other zones' mobs");
@@ -533,9 +557,11 @@ mod tests {
             let s = run_tick(&conn, &mut world, t, 9_000).unwrap();
             if !s.defeats.is_empty() {
                 let hp: i64 = conn
-                    .query_row("SELECT hp FROM mobs WHERE id = ?1", rusqlite::params![id], |r| {
-                        r.get(0)
-                    })
+                    .query_row(
+                        "SELECT hp FROM mobs WHERE id = ?1",
+                        rusqlite::params![id],
+                        |r| r.get(0),
+                    )
                     .unwrap();
                 assert_eq!(hp, 0);
                 return;
@@ -549,10 +575,7 @@ mod tests {
     /// Helper: set pet's strategy without going through the CLI.
     fn set_strategy(world: &mut GameWorld, s: Strategy) {
         let pet = world.pet();
-        let mut ps = world
-            .world_mut()
-            .get::<&mut PetStrategy>(pet)
-            .unwrap();
+        let mut ps = world.world_mut().get::<&mut PetStrategy>(pet).unwrap();
         ps.value = s;
     }
 
@@ -779,10 +802,7 @@ mod tests {
             // Give the pet enough atk that clamped 95% hit rate applies
             {
                 let pet = world.pet();
-                let mut stats = world
-                    .world_mut()
-                    .get::<&mut PetStats>(pet)
-                    .unwrap();
+                let mut stats = world.world_mut().get::<&mut PetStats>(pet).unwrap();
                 stats.atk = 100;
                 stats.ver = 100;
             }
@@ -813,10 +833,7 @@ mod tests {
             set_strategy(&mut world, strategy);
             {
                 let pet = world.pet();
-                let mut stats = world
-                    .world_mut()
-                    .get::<&mut PetStats>(pet)
-                    .unwrap();
+                let mut stats = world.world_mut().get::<&mut PetStats>(pet).unwrap();
                 stats.def = 20;
             }
             spawn_mob(&conn, "rust", MobKind::Boss, "hitter", 10_000, 50, 1);

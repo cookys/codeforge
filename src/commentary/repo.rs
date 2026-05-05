@@ -96,12 +96,7 @@ pub fn seen_within(
 
 /// Record a phrase emission in history. First-time insertions seed
 /// `first_used_at`; repeats bump `last_used_at` + increment `use_count`.
-pub fn record_history(
-    conn: &Connection,
-    phrase_hash: &str,
-    kind: Kind,
-    now: i64,
-) -> Result<()> {
+pub fn record_history(conn: &Connection, phrase_hash: &str, kind: Kind, now: i64) -> Result<()> {
     conn.execute(
         "INSERT INTO commentary_history
              (phrase_hash, kind, first_used_at, last_used_at, use_count)
@@ -309,9 +304,7 @@ mod tests {
         let thirty_days = 30 * 86_400;
         record_history(&conn, &hash, Kind::LevelUp, 0).unwrap();
         assert!(seen_within(&conn, &hash, Kind::LevelUp, thirty_days, thirty_days).unwrap());
-        assert!(
-            !seen_within(&conn, &hash, Kind::LevelUp, thirty_days + 1, thirty_days).unwrap()
-        );
+        assert!(!seen_within(&conn, &hash, Kind::LevelUp, thirty_days + 1, thirty_days).unwrap());
     }
 
     #[test]
@@ -406,6 +399,9 @@ mod tests {
             "INSERT INTO commentary_budget (id, last_emit_at) VALUES (2, 1000)",
             [],
         );
-        assert!(err.is_err(), "CHECK constraint should prevent multi-row budget");
+        assert!(
+            err.is_err(),
+            "CHECK constraint should prevent multi-row budget"
+        );
     }
 }

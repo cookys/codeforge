@@ -42,7 +42,9 @@ pub fn craft(conn: &mut Connection, recipe: &Recipe, now: i64) -> Result<()> {
         if (have as u32) < ing.quantity {
             bail!(
                 "材料不足：需要 {}× {}，持有 {}×",
-                ing.quantity, ing.name, have
+                ing.quantity,
+                ing.name,
+                have
             );
         }
         // Decrement — if it would hit zero, delete the row so the
@@ -119,10 +121,7 @@ pub fn use_item(
         )
         .ok();
     if already_live.is_some() {
-        bail!(
-            "「{}」的效果仍在此區域生效中，到期後再使用",
-            item_name
-        );
+        bail!("「{}」的效果仍在此區域生效中，到期後再使用", item_name);
     }
 
     let have: i64 = tx

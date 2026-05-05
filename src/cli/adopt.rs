@@ -1,8 +1,8 @@
-use anyhow::Result;
 use crate::db;
-use crate::pet::village::{VILLAGES, Village};
 use crate::pet::state::PetState;
+use crate::pet::village::{Village, VILLAGES};
 use crate::power::{PowerProvider, StubPowerProvider};
+use anyhow::Result;
 use crossterm::style::{Color, Stylize};
 use std::io::Write;
 
@@ -14,7 +14,10 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     // 已經選過村了嗎？
     if PetState::exists(&conn)? {
         let pet = PetState::load(&conn)?;
-        println!("你已經選擇了 {} 村，本命寵是 {} Lv.{}", pet.village, pet.name, pet.level);
+        println!(
+            "你已經選擇了 {} 村，本命寵是 {} Lv.{}",
+            pet.village, pet.name, pet.level
+        );
         println!("使用 `codeforge pet` 查看詳情");
         return Ok(());
     }
@@ -37,7 +40,10 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         "5" => (&VILLAGES[4], false),
         "r" | "random" => {
             use std::time::{SystemTime, UNIX_EPOCH};
-            let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().subsec_nanos();
+            let t = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos();
             let idx = (t as usize) % VILLAGES.len();
             (&VILLAGES[idx], true)
         }
@@ -51,7 +57,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     // Random Pick 加 10% 總屬性（Lucky Hatchling 效果）
     if bonus_stats {
         stats.atk = (stats.atk as f32 * 1.1) as u32;
-        stats.hp  = (stats.hp  as f32 * 1.1) as u32;
+        stats.hp = (stats.hp as f32 * 1.1) as u32;
         stats.def = (stats.def as f32 * 1.1) as u32;
         stats.sup = (stats.sup as f32 * 1.1) as u32;
         stats.ver = (stats.ver as f32 * 1.1) as u32;
@@ -71,9 +77,27 @@ fn render_village_menu() -> Result<()> {
     let mut stdout = std::io::stdout();
 
     // 標題
-    writeln!(stdout, "\n  {}", "╔══════════════════════════════════════════════╗".with(Color::Yellow).bold())?;
-    writeln!(stdout, "  {}", "║        歡迎來到 CodeForge — 選擇你的村落     ║".with(Color::Yellow).bold())?;
-    writeln!(stdout, "  {}\n", "╚══════════════════════════════════════════════╝".with(Color::Yellow).bold())?;
+    writeln!(
+        stdout,
+        "\n  {}",
+        "╔══════════════════════════════════════════════╗"
+            .with(Color::Yellow)
+            .bold()
+    )?;
+    writeln!(
+        stdout,
+        "  {}",
+        "║        歡迎來到 CodeForge — 選擇你的村落     ║"
+            .with(Color::Yellow)
+            .bold()
+    )?;
+    writeln!(
+        stdout,
+        "  {}\n",
+        "╚══════════════════════════════════════════════╝"
+            .with(Color::Yellow)
+            .bold()
+    )?;
 
     for (i, v) in VILLAGES.iter().enumerate() {
         // 村號與名稱
@@ -108,15 +132,20 @@ fn render_pet_intro(village: &Village, pet: &PetState, is_random: bool) -> Resul
         writeln!(
             stdout,
             "  {}",
-            format!("✦ Lucky Hatchling！命運為你選擇了 {} ✦", village.display_name)
-                .with(Color::Yellow)
-                .bold()
+            format!(
+                "✦ Lucky Hatchling！命運為你選擇了 {} ✦",
+                village.display_name
+            )
+            .with(Color::Yellow)
+            .bold()
         )?;
     } else {
         writeln!(
             stdout,
             "  {}",
-            format!("你踏入了 {}", village.display_name).with(Color::Yellow).bold()
+            format!("你踏入了 {}", village.display_name)
+                .with(Color::Yellow)
+                .bold()
         )?;
     }
     writeln!(stdout)?;
@@ -135,8 +164,10 @@ fn render_pet_intro(village: &Village, pet: &PetState, is_random: bool) -> Resul
             .bold()
     )?;
 
-    println!("  ATK:{:3}  HP:{:3}  DEF:{:3}  SUP:{:3}  VER:{:3}",
-        pet.atk, pet.hp, pet.def, pet.sup, pet.ver);
+    println!(
+        "  ATK:{:3}  HP:{:3}  DEF:{:3}  SUP:{:3}  VER:{:3}",
+        pet.atk, pet.hp, pet.def, pet.sup, pet.ver
+    );
 
     if is_random {
         println!("  ★ Lucky Hatchling 徽章解鎖！");

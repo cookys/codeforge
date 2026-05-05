@@ -134,11 +134,9 @@ mod tests {
         drain_once(&conn).unwrap();
 
         let seen_at: Option<i64> = conn
-            .query_row(
-                "SELECT seen_at FROM event_inbox WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT seen_at FROM event_inbox WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(seen_at.is_some());
     }
@@ -218,5 +216,4 @@ mod tests {
             vec!["old-unseen", "recent-seen", "recent-unseen"]
         );
     }
-
 }

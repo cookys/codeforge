@@ -29,7 +29,9 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-const PROJECT_ROOT = '/home/codepower/projects/codeforge';
+// Derive repo root from __filename: <repo>/.claude/scripts/check-dev-flow.js
+// → dirname(scripts) → dirname(.claude) → <repo>
+const PROJECT_ROOT = path.dirname(path.dirname(path.dirname(__filename)));
 const projectHash = crypto.createHash('sha1').update(PROJECT_ROOT).digest('hex').slice(0, 12);
 const markerPath = path.join(os.homedir(), '.claude', `.dev-flow-warned-${projectHash}`);
 
@@ -37,10 +39,10 @@ function isCodeTouch(input) {
   const toolName = input.tool_name || '';
   const toolInput = input.tool_input || {};
 
-  // Edit / Write on src/**/*.rs
+  // Edit / Write on src/**/*.rs (under this repo, regardless of clone dir name)
   if (toolName === 'Edit' || toolName === 'Write') {
     const p = toolInput.file_path || '';
-    if (p.includes('/codeforge/src/') && p.endsWith('.rs')) return true;
+    if (p.startsWith(PROJECT_ROOT + '/src/') && p.endsWith('.rs')) return true;
   }
 
   // Bash commands that mark code-work boundary

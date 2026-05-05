@@ -108,9 +108,17 @@ pub fn run_one_with_env(
     // 6. Level-up check AFTER combat XP is applied. Snapshot level either
     // side of the check — first_events uses the delta to detect crossings
     // that the cascade may jump over in one tick.
-    let level_before = world.world().get::<&PetLevel>(world.pet()).map(|l| l.level).unwrap_or(0);
+    let level_before = world
+        .world()
+        .get::<&PetLevel>(world.pet())
+        .map(|l| l.level)
+        .unwrap_or(0);
     systems::check_levelup(world);
-    let level_after = world.world().get::<&PetLevel>(world.pet()).map(|l| l.level).unwrap_or(level_before);
+    let level_after = world
+        .world()
+        .get::<&PetLevel>(world.pet())
+        .map(|l| l.level)
+        .unwrap_or(level_before);
 
     // 6b. Phase 3d: mood decay. Runs after combat so boss kills and
     // post-counter HP are final, and before serialize so the new mood
@@ -216,7 +224,9 @@ fn set_last_message_from_defeats(
         )
     };
     let pet = gw.pet();
-    let _ = gw.world_mut().insert_one(pet, LastMessage { text, tick_stamp });
+    let _ = gw
+        .world_mut()
+        .insert_one(pet, LastMessage { text, tick_stamp });
 }
 
 fn truncate_name(s: &str, n: usize) -> String {
@@ -247,7 +257,11 @@ mod tests {
         run_one(&conn, &mut world).unwrap();
 
         let tick_count: i64 = conn
-            .query_row("SELECT tick_count FROM last_tick_at WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT tick_count FROM last_tick_at WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(tick_count, 1);
 
@@ -275,7 +289,9 @@ mod tests {
 
         // Event marked seen
         let seen: Option<i64> = conn
-            .query_row("SELECT seen_at FROM event_inbox WHERE id = 1", [], |r| r.get(0))
+            .query_row("SELECT seen_at FROM event_inbox WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert!(seen.is_some());
     }
@@ -305,7 +321,11 @@ mod tests {
         run_one(&conn, &mut world).unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT tick_count FROM last_tick_at WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT tick_count FROM last_tick_at WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 3);
     }
@@ -412,11 +432,7 @@ mod tests {
             if n > 0 {
                 // Ghost drops Dead Code Crystal — verify name
                 let name: String = conn
-                    .query_row(
-                        "SELECT name FROM loot_inventory LIMIT 1",
-                        [],
-                        |r| r.get(0),
-                    )
+                    .query_row("SELECT name FROM loot_inventory LIMIT 1", [], |r| r.get(0))
                     .unwrap();
                 assert_eq!(name, "Dead Code Crystal");
                 return;
@@ -498,7 +514,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(defeated.is_none(), "cross-zone mobs must not be attacked in P2b");
+        assert!(
+            defeated.is_none(),
+            "cross-zone mobs must not be attacked in P2b"
+        );
     }
 
     // ─── Phase 3b review fix: CLI → daemon strategy race ──────────
@@ -527,11 +546,9 @@ mod tests {
         // Strategy must still be 'aggressive' — not overwritten by the
         // stale ECS value.
         let strategy: String = conn
-            .query_row(
-                "SELECT strategy FROM pet_snapshot WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT strategy FROM pet_snapshot WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(strategy, "aggressive");
 
@@ -550,9 +567,15 @@ mod tests {
         let (conn, mut world) = fresh();
         run_one(&conn, &mut world).unwrap();
 
-        let mob_rows: i64 = conn.query_row("SELECT COUNT(*) FROM mobs", [], |r| r.get(0)).unwrap();
-        let loot_rows: i64 = conn.query_row("SELECT COUNT(*) FROM loot_inventory", [], |r| r.get(0)).unwrap();
-        let log_rows: i64 = conn.query_row("SELECT COUNT(*) FROM combat_log", [], |r| r.get(0)).unwrap();
+        let mob_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM mobs", [], |r| r.get(0))
+            .unwrap();
+        let loot_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM loot_inventory", [], |r| r.get(0))
+            .unwrap();
+        let log_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM combat_log", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(mob_rows, 0);
         assert_eq!(loot_rows, 0);
         assert_eq!(log_rows, 0);

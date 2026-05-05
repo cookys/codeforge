@@ -112,10 +112,7 @@ pub fn generate_rule_based(
 ///
 /// Output is trimmed and truncated to 60 CJK characters (CJK-safe via
 /// `.chars().take()` per HARD RULE).
-pub async fn generate_haiku(
-    api_key: &str,
-    ctx: &GenContext<'_>,
-) -> Result<Generated> {
+pub async fn generate_haiku(api_key: &str, ctx: &GenContext<'_>) -> Result<Generated> {
     let prompt = build_prompt(ctx);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
@@ -157,7 +154,10 @@ pub async fn generate_haiku(
 fn build_prompt(ctx: &GenContext<'_>) -> String {
     let trigger_line = match ctx.trigger {
         Trigger::BossKill { mob_name, .. } => format!("剛擊殺 Boss：{}", mob_name),
-        Trigger::LevelUp { prev_level, new_level } => {
+        Trigger::LevelUp {
+            prev_level,
+            new_level,
+        } => {
             format!("升級了！Lv.{} → Lv.{}", prev_level, new_level)
         }
         Trigger::SessionLong { duration_secs } => {
@@ -465,7 +465,9 @@ mod tests {
     #[test]
     fn rule_based_deterministic_given_same_salt() {
         let conn = open_db();
-        let trig = Trigger::SessionLong { duration_secs: 5 * 3600 };
+        let trig = Trigger::SessionLong {
+            duration_secs: 5 * 3600,
+        };
         let ctx = sample_ctx(&trig, "scholar");
         let a = generate_rule_based(&conn, &ctx, 42, 1000).unwrap();
         let b = generate_rule_based(&conn, &ctx, 42, 1000).unwrap();

@@ -50,12 +50,13 @@ fn load_inventory(conn: &Connection) -> Result<Vec<(String, String, i64)>> {
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
-fn render_items(
-    out: &mut impl Write,
-    items: &[(String, String, i64)],
-) -> Result<()> {
+fn render_items(out: &mut impl Write, items: &[(String, String, i64)]) -> Result<()> {
     writeln!(out)?;
-    writeln!(out, "  {}", format!("🎒 Inventory ({} 類)", items.len()).bold())?;
+    writeln!(
+        out,
+        "  {}",
+        format!("🎒 Inventory ({} 類)", items.len()).bold()
+    )?;
     if items.is_empty() {
         writeln!(out, "    （空的 — 去打 MOB 收集材料！）")?;
         return Ok(());
@@ -102,7 +103,13 @@ fn render_effects(
 
 fn render_recipes(out: &mut impl Write, recipes: &[Recipe]) -> Result<()> {
     writeln!(out)?;
-    writeln!(out, "  {}", "🛠  可用配方（`codeforge craft <name>`）".with(Color::Cyan).bold())?;
+    writeln!(
+        out,
+        "  {}",
+        "🛠  可用配方（`codeforge craft <name>`）"
+            .with(Color::Cyan)
+            .bold()
+    )?;
     for r in recipes {
         let ings: Vec<String> = r
             .ingredients

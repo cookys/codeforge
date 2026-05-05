@@ -1,8 +1,8 @@
+use crate::db;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::db;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SignalSource {
@@ -47,7 +47,10 @@ impl<'a> SignalWriter<'a> {
     /// 取得今日的 JSONL 檔路徑
     fn today_file(&self) -> std::path::PathBuf {
         let date = Utc::now().format("%Y-%m-%d").to_string();
-        self.ctx.project_dir.join("signals").join(format!("{}.jsonl", date))
+        self.ctx
+            .project_dir
+            .join("signals")
+            .join(format!("{}.jsonl", date))
     }
 
     /// Append signal 到 JSONL，同步更新人類可讀 log.md，回傳 signal id
@@ -91,7 +94,14 @@ impl<'a> SignalWriter<'a> {
 
         let preview = truncate_str(&signal.content, 80);
 
-        writeln!(f, "- `{}` [{}] {} — {}", signal.id.chars().take(8).collect::<String>(), source_str, signal.timestamp, preview)?;
+        writeln!(
+            f,
+            "- `{}` [{}] {} — {}",
+            signal.id.chars().take(8).collect::<String>(),
+            source_str,
+            signal.timestamp,
+            preview
+        )?;
         Ok(())
     }
 }
@@ -115,11 +125,13 @@ pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result
         let file_name = path.file_name().unwrap().to_string_lossy().to_string();
 
         // 取得上次編譯到的 offset
-        let cursor: i64 = conn.query_row(
-            "SELECT last_offset FROM signal_cursors WHERE source_file = ?1",
-            rusqlite::params![&file_name],
-            |row| row.get(0),
-        ).unwrap_or(0);
+        let cursor: i64 = conn
+            .query_row(
+                "SELECT last_offset FROM signal_cursors WHERE source_file = ?1",
+                rusqlite::params![&file_name],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
         let content = std::fs::read_to_string(&path)?;
         if cursor as usize >= content.len() {
@@ -136,7 +148,9 @@ pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result
         let slice = &content[char_start..];
         for line in slice.lines() {
             let line = line.trim();
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             if let Ok(s) = serde_json::from_str::<Signal>(line) {
                 if !s.compiled {
                     signals.push(s);
@@ -149,10 +163,16 @@ pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result
 }
 
 /// 標記 signal 為已編譯（更新 cursor）
-pub fn mark_compiled(ctx: &db::Context, conn: &rusqlite::Connection, file_date: &str) -> Result<()> {
+pub fn mark_compiled(
+    ctx: &db::Context,
+    conn: &rusqlite::Connection,
+    file_date: &str,
+) -> Result<()> {
     let file_name = format!("{}.jsonl", file_date);
     let path = ctx.project_dir.join("signals").join(&file_name);
-    let size = std::fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0);
+    let size = std::fs::metadata(&path)
+        .map(|m| m.len() as i64)
+        .unwrap_or(0);
 
     conn.execute(
         "INSERT OR REPLACE INTO signal_cursors (source_file, last_offset, updated_at) VALUES (?1, ?2, datetime('now'))",

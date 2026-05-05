@@ -207,9 +207,7 @@ impl GameWorld {
                 .optional()?;
 
             let (village, level, xp, xp_to_next, atk, hp, def, sup, ver) =
-                from_pet.unwrap_or_else(|| {
-                    ("rust".to_string(), 1, 0, 100, 10, 10, 10, 10, 10)
-                });
+                from_pet.unwrap_or_else(|| ("rust".to_string(), 1, 0, 100, 10, 10, 10, 10, 10));
             let hp_max = hp.max(10);
             // Phase 1 row has no mood / strategy — seed defaults.
             (
@@ -238,22 +236,37 @@ impl GameWorld {
 
         let pet = world.spawn((
             PetIdentity { village },
-            PetLevel { level, xp, xp_to_next },
+            PetLevel {
+                level,
+                xp,
+                xp_to_next,
+            },
             PetVitals { hp, hp_max },
             PetStats { atk, def, sup, ver },
-            Mood { value: mood_value, tick_stamp: mood_ts },
+            Mood {
+                value: mood_value,
+                tick_stamp: mood_ts,
+            },
             // Bookkeeping starts at zeros on every daemon boot — see note
             // on MoodBookkeeping about why we don't persist these.
             MoodBookkeeping::default(),
-            PetStrategy { value: strategy_value },
+            PetStrategy {
+                value: strategy_value,
+            },
         ));
 
         Ok(Self { world, pet })
     }
 
-    pub fn world(&self) -> &World { &self.world }
-    pub fn world_mut(&mut self) -> &mut World { &mut self.world }
-    pub fn pet(&self) -> Entity { self.pet }
+    pub fn world(&self) -> &World {
+        &self.world
+    }
+    pub fn world_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+    pub fn pet(&self) -> Entity {
+        self.pet
+    }
 
     /// Phase 3b: sync `PetStrategy` component from `pet_snapshot.strategy`.
     ///
@@ -269,11 +282,9 @@ impl GameWorld {
     /// tick), this is a no-op and the load-time default remains.
     pub fn refresh_strategy_from_db(&mut self, conn: &Connection) -> Result<()> {
         let stored: Option<String> = conn
-            .query_row(
-                "SELECT strategy FROM pet_snapshot WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT strategy FROM pet_snapshot WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .optional()?;
         let Some(s) = stored else { return Ok(()) };
         let fresh = Strategy::from_str(&s).unwrap_or(DEFAULT_STRATEGY);
@@ -446,11 +457,9 @@ mod tests {
             .unwrap();
         assert_eq!(rows, 1);
         let (level, xp): (i64, i64) = conn
-            .query_row(
-                "SELECT level, xp FROM pet_snapshot WHERE id = 1",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
+            .query_row("SELECT level, xp FROM pet_snapshot WHERE id = 1", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .unwrap();
         assert_eq!(level, 5);
         assert_eq!(xp, 123);
@@ -486,7 +495,10 @@ mod tests {
         assert_eq!(level.xp, 340);
         let vitals = gw.world.get::<&PetVitals>(gw.pet).unwrap();
         assert_eq!(vitals.hp, 95);
-        assert_eq!(vitals.hp_max, 110, "hp_max comes from snapshot, not derived");
+        assert_eq!(
+            vitals.hp_max, 110,
+            "hp_max comes from snapshot, not derived"
+        );
     }
 
     #[test]
@@ -494,7 +506,13 @@ mod tests {
         let conn = fresh_conn();
         let mut gw = GameWorld::load_or_init(&conn).unwrap();
         gw.world
-            .insert_one(gw.pet, LastMessage { text: "又是 TODO？".to_string(), tick_stamp: 1 })
+            .insert_one(
+                gw.pet,
+                LastMessage {
+                    text: "又是 TODO？".to_string(),
+                    tick_stamp: 1,
+                },
+            )
             .unwrap();
         gw.serialize_to_db(&conn, 1).unwrap();
 
@@ -518,22 +536,35 @@ mod tests {
         gw.world
             .insert_one(
                 gw.pet,
-                LastMessage { text: "old kill".to_string(), tick_stamp: 10 },
+                LastMessage {
+                    text: "old kill".to_string(),
+                    tick_stamp: 10,
+                },
             )
             .unwrap();
 
         // Within TTL: message writes through.
-        gw.serialize_to_db(&conn, 10 + LAST_MESSAGE_TTL_TICKS - 1).unwrap();
+        gw.serialize_to_db(&conn, 10 + LAST_MESSAGE_TTL_TICKS - 1)
+            .unwrap();
         let msg: Option<String> = conn
-            .query_row("SELECT last_message FROM pet_snapshot WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT last_message FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(msg, Some("old kill".to_string()));
 
         // Past TTL: message is nulled out even though the ECS component
         // is still present (cheap read — no mutation needed every tick).
-        gw.serialize_to_db(&conn, 10 + LAST_MESSAGE_TTL_TICKS).unwrap();
+        gw.serialize_to_db(&conn, 10 + LAST_MESSAGE_TTL_TICKS)
+            .unwrap();
         let msg: Option<String> = conn
-            .query_row("SELECT last_message FROM pet_snapshot WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT last_message FROM pet_snapshot WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(msg, None);
     }
@@ -652,11 +683,9 @@ mod tests {
         gw.serialize_to_db(&conn, 1).unwrap();
 
         let strategy: String = conn
-            .query_row(
-                "SELECT strategy FROM pet_snapshot WHERE id = 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT strategy FROM pet_snapshot WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(strategy, "aggressive");
     }

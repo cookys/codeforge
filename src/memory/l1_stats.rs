@@ -25,11 +25,42 @@ use std::path::Path;
 /// was actually working in that ecosystem.
 fn keywords_for_village() -> &'static [(&'static str, &'static [&'static str])] {
     &[
-        ("rust", &["rust", "cargo", "rustc", "cargo.toml", "ferris", "tokio", "clippy"]),
-        ("python", &["python", "pip", "django", "flask", "requirements.txt", "pyproject", "pytest"]),
+        (
+            "rust",
+            &[
+                "rust",
+                "cargo",
+                "rustc",
+                "cargo.toml",
+                "ferris",
+                "tokio",
+                "clippy",
+            ],
+        ),
+        (
+            "python",
+            &[
+                "python",
+                "pip",
+                "django",
+                "flask",
+                "requirements.txt",
+                "pyproject",
+                "pytest",
+            ],
+        ),
         ("typescript", &["typescript", "tsconfig", "tsc", "ts-node"]),
         ("go", &["golang", "go.mod", "goroutine", "gopath", "gofmt"]),
-        ("javascript", &["javascript", "npm", "node.js", "package.json", "node_modules"]),
+        (
+            "javascript",
+            &[
+                "javascript",
+                "npm",
+                "node.js",
+                "package.json",
+                "node_modules",
+            ],
+        ),
     ]
 }
 
@@ -106,7 +137,11 @@ mod tests {
     #[test]
     fn rust_keyword_counts_toward_rust_village() {
         let dir = TempDir::new().unwrap();
-        write_concept(dir.path(), "trait-objects", "Rust trait objects use vtables.");
+        write_concept(
+            dir.path(),
+            "trait-objects",
+            "Rust trait objects use vtables.",
+        );
         let counts = language_distribution(dir.path()).unwrap();
         assert_eq!(counts.get("rust"), Some(&1));
         // Python shouldn't be tripped by a Rust-only concept

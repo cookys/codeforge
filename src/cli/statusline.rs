@@ -1,7 +1,3 @@
-/// Statusline — 兩欄渲染：info（左）+ art（右）
-/// info 欄 pad 到 panel_w，後接 2 空格，再寫 art（已 pad 到 ART_W）
-/// UX Pro palette: 三層亮度 (Tier1=222-231 身份, Tier2=71-179 狀態, Tier3=236-246 背景)
-use anyhow::Result;
 use crate::commentary::display::statusline_override;
 use crate::daemon::strategy::{Strategy, DEFAULT_STRATEGY};
 use crate::db;
@@ -10,11 +6,15 @@ use crate::pet::live_state::LiveState;
 use crate::pet::session::{get_last_seen, update_last_seen, WelcomeBackSummary};
 use crate::pet::state::PetState;
 use crate::pet::village::VILLAGES;
+/// Statusline — 兩欄渲染：info（左）+ art（右）
+/// info 欄 pad 到 panel_w，後接 2 空格，再寫 art（已 pad 到 ART_W）
+/// UX Pro palette: 三層亮度 (Tier1=222-231 身份, Tier2=71-179 狀態, Tier3=236-246 背景)
+use anyhow::Result;
 use owo_colors::OwoColorize;
-use unicode_width::UnicodeWidthStr;
+use rust_i18n::t;
 use std::io::{self, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
-use rust_i18n::t;
+use unicode_width::UnicodeWidthStr;
 
 pub fn run(ctx: &db::Context) -> Result<()> {
     let mut data = read_status_input();
@@ -22,7 +22,9 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let has_pet = LiveState::exists(&conn).unwrap_or(false);
 
     let width: usize = std::env::var("CODEFORGE_WIDTH")
-        .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100);
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -30,7 +32,11 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     // LiveState composes daemon-authored pet_snapshot (fallback: Phase 1 pet)
     // with an overlay of unseen event_inbox XP — so the pet number reacts
     // to hook events immediately, without waiting for the daemon tick.
-    let loaded = if has_pet { LiveState::load(&conn).ok().flatten() } else { None };
+    let loaded = if has_pet {
+        LiveState::load(&conn).ok().flatten()
+    } else {
+        None
+    };
 
     // Phase 3d §3.1: Welcome Back Report. Compute BEFORE updating
     // last_seen — otherwise the first post-gap call overwrites its own
@@ -101,11 +107,11 @@ struct StatusInput {
     raw: serde_json::Value,
     model: Option<String>,
     cwd: Option<String>,
-    version: Option<String>,           // running session version (from /proc tree)
-    latest_version: Option<String>,    // latest installed version (symlink target)
-    update_available: bool,            // latest > session version
-    message: Option<String>,           // pet speech bubble (from JSON "message" field)
-    context_pct: Option<f64>,          // 0.0–1.0
+    version: Option<String>, // running session version (from /proc tree)
+    latest_version: Option<String>, // latest installed version (symlink target)
+    update_available: bool,  // latest > session version
+    message: Option<String>, // pet speech bubble (from JSON "message" field)
+    context_pct: Option<f64>, // 0.0–1.0
     context_window_size: Option<u64>,
     five_hour_pct: Option<f64>,
     five_hour_resets_at: Option<i64>,
@@ -122,32 +128,37 @@ fn read_status_input() -> StatusInput {
             let _ = std::fs::write("/tmp/codeforge-sl.json", &line);
         }
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
-            let model = v["model"]["display_name"].as_str()
+            let model = v["model"]["display_name"]
+                .as_str()
                 .or_else(|| v["model"]["id"].as_str())
                 .or_else(|| v["model"].as_str())
                 .map(|s| s.replace("claude-", "").replace("-20", " 20"));
 
-            let context_pct = v["context_window"]["used_percentage"].as_f64()
+            let context_pct = v["context_window"]["used_percentage"]
+                .as_f64()
                 .map(|p| p / 100.0);
             let context_window_size = v["context_window"]["context_window_size"].as_u64();
-            let five_hour_pct = v["rate_limits"]["five_hour"]["used_percentage"].as_f64()
+            let five_hour_pct = v["rate_limits"]["five_hour"]["used_percentage"]
+                .as_f64()
                 .map(|p| p / 100.0);
             let five_hour_resets_at = v["rate_limits"]["five_hour"]["resets_at"].as_i64();
-            let seven_day_pct = v["rate_limits"]["seven_day"]["used_percentage"].as_f64()
+            let seven_day_pct = v["rate_limits"]["seven_day"]["used_percentage"]
+                .as_f64()
                 .map(|p| p / 100.0);
             let seven_day_resets_at = v["rate_limits"]["seven_day"]["resets_at"].as_i64();
 
             // Compute version info once — avoids triple subprocess spawn.
             // session_v: running CC version from /proc tree; latest_v: from `claude --version`
             let session_v = claude_session_version();
-            let latest_v  = claude_latest_version();
+            let latest_v = claude_latest_version();
             let update_available = matches!((&session_v, &latest_v),
                 (Some(s), Some(l)) if s != l);
 
             return StatusInput {
                 raw: v.clone(),
                 model,
-                cwd: v["cwd"].as_str()
+                cwd: v["cwd"]
+                    .as_str()
                     .or_else(|| v["workspace"]["current_dir"].as_str())
                     .map(|s| s.to_string()),
                 version: session_v.or_else(|| latest_v.clone()),
@@ -170,22 +181,22 @@ fn read_status_input() -> StatusInput {
 
 type Rgb = (u8, u8, u8);
 
-const DELIM:    Rgb = (0x44, 0x44, 0x44); // 238 — ( )
-const MODEL_C:  Rgb = (0xFF, 0xD7, 0x87); // 222 — model name
-const CTX_SZ:   Rgb = (0xD7, 0xAF, 0x5F); // 179 — ctx window size
-const CWD_C:    Rgb = (0x5F, 0xAF, 0xAF); // 73  — cwd path
+const DELIM: Rgb = (0x44, 0x44, 0x44); // 238 — ( )
+const MODEL_C: Rgb = (0xFF, 0xD7, 0x87); // 222 — model name
+const CTX_SZ: Rgb = (0xD7, 0xAF, 0x5F); // 179 — ctx window size
+const CWD_C: Rgb = (0x5F, 0xAF, 0xAF); // 73  — cwd path
 const BRANCH_C: Rgb = (0x87, 0xD7, 0x87); // 114 — git branch
-const BAR_LOW:  Rgb = (0x87, 0xD7, 0x87); // 114 — bar <50%
-const BAR_MID:  Rgb = (0xD7, 0xAF, 0x5F); // 179 — bar 50-80%
+const BAR_LOW: Rgb = (0x87, 0xD7, 0x87); // 114 — bar <50%
+const BAR_MID: Rgb = (0xD7, 0xAF, 0x5F); // 179 — bar 50-80%
 const BAR_HIGH: Rgb = (0xD7, 0x5F, 0x5F); // 167 — bar >80%
-const BAR_EMPTY:Rgb = (0x30, 0x30, 0x30); // 236 — bar ▯
-const BAR_LBL:  Rgb = (0x8A, 0x8A, 0x8A); // 245 — "5h" "7d" "ctx"
-const REMAIN:   Rgb = (0x58, 0x58, 0x58); // 240 — "4h2m"
+const BAR_EMPTY: Rgb = (0x30, 0x30, 0x30); // 236 — bar ▯
+const BAR_LBL: Rgb = (0x8A, 0x8A, 0x8A); // 245 — "5h" "7d" "ctx"
+const REMAIN: Rgb = (0x58, 0x58, 0x58); // 240 — "4h2m"
 const PET_NAME: Rgb = (0xEE, 0xEE, 0xEE); // 255 — pet name
-const PET_LV:   Rgb = (0xFF, 0xD7, 0x87); // 222 — "Lv.N"
+const PET_LV: Rgb = (0xFF, 0xD7, 0x87); // 222 — "Lv.N"
 const STAT_LBL: Rgb = (0x58, 0x58, 0x58); // 240 — "ATK:"
 const STAT_VAL: Rgb = (0x94, 0x94, 0x94); // 246 — stat numbers
-const MEM_ACT:  Rgb = (0x5F, 0xAF, 0x5F); // 71  — memory active
+const MEM_ACT: Rgb = (0x5F, 0xAF, 0x5F); // 71  — memory active
 const UPDATE_C: Rgb = (0xFF, 0xAF, 0x00); // 214 — amber update banner
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
@@ -210,14 +221,21 @@ fn seg(inner: &str, inner_vis: usize) -> (String, usize) {
 }
 
 fn bar_rgb(pct: f64) -> Rgb {
-    if pct < 0.5 { BAR_LOW } else if pct < 0.8 { BAR_MID } else { BAR_HIGH }
+    if pct < 0.5 {
+        BAR_LOW
+    } else if pct < 0.8 {
+        BAR_MID
+    } else {
+        BAR_HIGH
+    }
 }
 
 /// Colored progress bar (filled=semantic, empty=dim 236)
 fn colored_bar(pct: f64, width: usize) -> String {
     let filled = ((pct.clamp(0.0, 1.0)) * width as f64) as usize;
     let empty = width - filled;
-    format!("{}{}",
+    format!(
+        "{}{}",
         tcs("▮".repeat(filled), bar_rgb(pct)),
         tcs("▯".repeat(empty), BAR_EMPTY)
     )
@@ -225,37 +243,69 @@ fn colored_bar(pct: f64, width: usize) -> String {
 
 /// HP bar color: green >60%, amber 30-60%, red <30%
 fn hp_rgb(hp: u32) -> Rgb {
-    if hp > 60 { BAR_LOW } else if hp > 30 { BAR_MID } else { BAR_HIGH }
+    if hp > 60 {
+        BAR_LOW
+    } else if hp > 30 {
+        BAR_MID
+    } else {
+        BAR_HIGH
+    }
 }
 
 /// Visible column width (handles wide chars: CJK=2col, ASCII/▮▯=1col)
 /// Use this for calculating layout, NOT str.len() or chars().count()
-fn vis(s: &str) -> usize { UnicodeWidthStr::width(s) }
+fn vis(s: &str) -> usize {
+    UnicodeWidthStr::width(s)
+}
 
 /// Shorten path keeping tail, using column width (~/projects/very/long → …/very/long)
 fn shorten_path(path: &str, max_cols: usize) -> String {
-    if max_cols == 0 { return "…".to_string(); }
-    if vis(path) <= max_cols { return path.to_string(); }
+    if max_cols == 0 {
+        return "…".to_string();
+    }
+    if vis(path) <= max_cols {
+        return path.to_string();
+    }
     // Walk from end, collect chars until we've used max_cols-1 columns
     let mut cols = 0usize;
-    let tail: String = path.chars().rev().take_while(|c| {
-        let w = UnicodeWidthStr::width(c.encode_utf8(&mut [0u8; 4]));
-        if cols + w > max_cols - 1 { return false; }
-        cols += w; true
-    }).collect::<String>().chars().rev().collect();
+    let tail: String = path
+        .chars()
+        .rev()
+        .take_while(|c| {
+            let w = UnicodeWidthStr::width(c.encode_utf8(&mut [0u8; 4]));
+            if cols + w > max_cols - 1 {
+                return false;
+            }
+            cols += w;
+            true
+        })
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
     format!("…{}", tail)
 }
 
 /// Shorten string keeping head, using column width
 fn shorten_str(s: &str, max_cols: usize) -> String {
-    if max_cols == 0 { return "…".to_string(); }
-    if vis(s) <= max_cols { return s.to_string(); }
+    if max_cols == 0 {
+        return "…".to_string();
+    }
+    if vis(s) <= max_cols {
+        return s.to_string();
+    }
     let mut cols = 0usize;
-    let head: String = s.chars().take_while(|c| {
-        let w = UnicodeWidthStr::width(c.encode_utf8(&mut [0u8; 4]));
-        if cols + w > max_cols - 1 { return false; }
-        cols += w; true
-    }).collect();
+    let head: String = s
+        .chars()
+        .take_while(|c| {
+            let w = UnicodeWidthStr::width(c.encode_utf8(&mut [0u8; 4]));
+            if cols + w > max_cols - 1 {
+                return false;
+            }
+            cols += w;
+            true
+        })
+        .collect();
     format!("{}…", head)
 }
 
@@ -270,9 +320,13 @@ fn to_home_rel(path: &str) -> String {
 }
 
 fn fmt_ctx_window(n: u64) -> String {
-    if n >= 1_000_000 { format!("{}M", n / 1_000_000) }
-    else if n >= 1_000 { format!("{}k", n / 1_000) }
-    else { format!("{}", n) }
+    if n >= 1_000_000 {
+        format!("{}M", n / 1_000_000)
+    } else if n >= 1_000 {
+        format!("{}k", n / 1_000)
+    } else {
+        format!("{}", n)
+    }
 }
 
 /// Strip ANSI/VT escape sequences from a string for visible-width measurement.
@@ -286,9 +340,11 @@ fn strip_ansi(s: &str) -> String {
     while let Some(c) = chars.next() {
         if c == '\x1b' && chars.peek() == Some(&'[') {
             chars.next(); // consume '['
-            // Consume until ANSI CSI final byte (0x40–0x7E = '@'–'~')
+                          // Consume until ANSI CSI final byte (0x40–0x7E = '@'–'~')
             for c2 in chars.by_ref() {
-                if ('\x40'..='\x7e').contains(&c2) { break; }
+                if ('\x40'..='\x7e').contains(&c2) {
+                    break;
+                }
             }
         } else {
             out.push(c);
@@ -298,19 +354,29 @@ fn strip_ansi(s: &str) -> String {
 }
 
 /// Visible column width of an ANSI string (excludes escape codes)
-fn ansi_vis(s: &str) -> usize { vis(&strip_ansi(s)) }
+fn ansi_vis(s: &str) -> usize {
+    vis(&strip_ansi(s))
+}
 
 /// Pad an ANSI string to at least `width` visible columns with trailing spaces
 fn pad_to_vis(s: &str, width: usize) -> String {
     let w = ansi_vis(s);
-    if w < width { format!("{}{}", s, " ".repeat(width - w)) } else { s.to_string() }
+    if w < width {
+        format!("{}{}", s, " ".repeat(width - w))
+    } else {
+        s.to_string()
+    }
 }
 
 fn fmt_remaining(resets_at: i64) -> String {
     let secs = (resets_at - chrono::Utc::now().timestamp()).max(0) as u64;
-    if secs >= 86400 { format!("{}d{}h", secs / 86400, (secs % 86400) / 3600) }
-    else if secs >= 3600 { format!("{}h{}m", secs / 3600, (secs % 3600) / 60) }
-    else { format!("{}m", secs / 60) }
+    if secs >= 86400 {
+        format!("{}d{}h", secs / 86400, (secs % 86400) / 3600)
+    } else if secs >= 3600 {
+        format!("{}h{}m", secs / 3600, (secs % 3600) / 60)
+    } else {
+        format!("{}m", secs / 60)
+    }
 }
 
 /// Extract Claude version from a binary path like:
@@ -339,7 +405,9 @@ fn claude_session_version() -> Option<String> {
     let mut pid = std::process::id();
     for _ in 0..10 {
         pid = ppid(pid)?;
-        if pid <= 1 { break; }
+        if pid <= 1 {
+            break;
+        }
         if let Ok(exe) = std::fs::read_link(format!("/proc/{}/exe", pid)) {
             if let Some(ver) = extract_claude_ver(&exe.to_string_lossy()) {
                 return Some(ver);
@@ -350,14 +418,17 @@ fn claude_session_version() -> Option<String> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn claude_session_version() -> Option<String> { None }
+fn claude_session_version() -> Option<String> {
+    None
+}
 
 /// Version of the Claude binary on disk — follows symlink to latest installed.
 /// Output format: "2.1.107 (Claude Code)" → strip → "2.1.107"
 fn claude_latest_version() -> Option<String> {
     std::process::Command::new("claude")
         .arg("--version")
-        .output().ok()
+        .output()
+        .ok()
         .filter(|o| o.status.success())
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| {
@@ -373,7 +444,8 @@ fn claude_latest_version() -> Option<String> {
 fn git_branch() -> Option<String> {
     std::process::Command::new("git")
         .args(["branch", "--show-current"])
-        .output().ok()
+        .output()
+        .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
@@ -401,8 +473,12 @@ fn usage_bare(label: &str, pct: f64, remain: Option<String>) -> String {
         Some(s) => format!(" {}", tc(s, REMAIN)),
         None => String::new(),
     };
-    format!("{} {} {}{}",
-        tc(label, BAR_LBL), bar, tc(&pct_num, (r, g, b)), remain_part,
+    format!(
+        "{} {} {}{}",
+        tc(label, BAR_LBL),
+        bar,
+        tc(&pct_num, (r, g, b)),
+        remain_part,
     )
 }
 
@@ -418,7 +494,8 @@ fn usage_seg(label: &str, pct: f64, remain: Option<String>) -> String {
     let remain_vis = remain.as_deref().map(|s| 1 + vis(s)).unwrap_or(0);
 
     // inner: "5h ▮▮▯▯▯▯ 8% 4h2m"
-    let inner = format!("{} {} {}{}",
+    let inner = format!(
+        "{} {} {}{}",
         tc(label, BAR_LBL),
         bar,
         tc(&pct_num, (r, g, b)),
@@ -449,7 +526,7 @@ fn render_rows<W: Write>(out: &mut W, rows: &[Row], info_w: usize) -> Result<()>
     for row in rows {
         match &row.art {
             Some(art) => writeln!(out, "{}  {}", pad_to_vis(&row.info, info_w), art)?,
-            None      => writeln!(out, "{}", row.info)?,
+            None => writeln!(out, "{}", row.info)?,
         }
     }
     Ok(())
@@ -463,7 +540,11 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
         let m_s = shorten_str(m, 20);
         id_parts.push(seg(&tc_bold(&m_s, MODEL_C), vis(&m_s)).0);
     }
-    let cwd_raw = data.cwd.clone().or_else(current_dir_short).unwrap_or_else(|| "~".to_string());
+    let cwd_raw = data
+        .cwd
+        .clone()
+        .or_else(current_dir_short)
+        .unwrap_or_else(|| "~".to_string());
     let cwd_s = shorten_path(&to_home_rel(&cwd_raw), 28);
     id_parts.push(seg(&tc(&cwd_s, CWD_C), vis(&cwd_s)).0);
     if let Some(b) = git_branch() {
@@ -472,8 +553,14 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
     }
 
     let rows = vec![
-        Row { art: None, info: id_parts.join("  ") },
-        Row { art: None, info: build_usage_line(data, width) },
+        Row {
+            art: None,
+            info: id_parts.join("  "),
+        },
+        Row {
+            art: None,
+            info: build_usage_line(data, width),
+        },
     ];
     render_rows(out, &rows, 0)
 }
@@ -491,7 +578,9 @@ fn render_full<W: Write>(
     let vrgb = village.rgb();
 
     let branch = git_branch().unwrap_or_else(|| "—".to_string());
-    let cwd_raw = data.cwd.clone()
+    let cwd_raw = data
+        .cwd
+        .clone()
         .or_else(current_dir_short)
         .unwrap_or_else(|| "~".to_string());
     let cwd_home = to_home_rel(&cwd_raw);
@@ -499,7 +588,13 @@ fn render_full<W: Write>(
     // Helper: wrap content in box row │ content {pad} │ = exactly panel_w visible
     let box_mid = |content: &str, left: &str, right: &str| -> String {
         let pad = panel_w.saturating_sub(vis(left) + ansi_vis(content) + vis(right));
-        format!("{}{}{}{}", tc(left, DELIM), content, " ".repeat(pad), tc(right, DELIM))
+        format!(
+            "{}{}{}{}",
+            tc(left, DELIM),
+            content,
+            " ".repeat(pad),
+            tc(right, DELIM)
+        )
     };
 
     let art_lines: Vec<&str> = village.ascii_small.lines().collect();
@@ -514,10 +609,16 @@ fn render_full<W: Write>(
             let m_s = shorten_str(m, 18);
             let cw_s = fmt_ctx_window(cw);
             let v = vis(&m_s) + 3 + vis(&cw_s); // "m (cw)"
-            (format!("{} {}{}{}",
-                tc_bold(&m_s, MODEL_C),
-                tc("(", DELIM), tc(&cw_s, CTX_SZ), tc(")", DELIM),
-            ), v)
+            (
+                format!(
+                    "{} {}{}{}",
+                    tc_bold(&m_s, MODEL_C),
+                    tc("(", DELIM),
+                    tc(&cw_s, CTX_SZ),
+                    tc(")", DELIM),
+                ),
+                v,
+            )
         }
         (Some(m), None) => {
             let m_s = shorten_str(m, 18);
@@ -543,10 +644,11 @@ fn render_full<W: Write>(
     // Not addressed for degenerate terminals — default width is 100.
     let branch_avail = panel_w.saturating_sub(16 + model_vis + cwd_vis).max(4);
     let branch_short = shorten_str(&branch, branch_avail);
-    let branch_vis   = vis(&branch_short);
+    let branch_vis = vis(&branch_short);
     let r0_fill = panel_w.saturating_sub(16 + model_vis + cwd_vis + branch_vis);
 
-    let row0_info = format!("{}{}{}{}{}{}{}{}",
+    let row0_info = format!(
+        "{}{}{}{}{}{}{}{}",
         tc("╭─ ", DELIM),
         model_text,
         tc(" ─── ", DELIM),
@@ -562,10 +664,18 @@ fn render_full<W: Write>(
     let row1_info = {
         let mut parts: Vec<String> = Vec::new();
         if let Some(pct) = data.five_hour_pct {
-            parts.push(usage_bare("5h", pct, data.five_hour_resets_at.map(fmt_remaining)));
+            parts.push(usage_bare(
+                "5h",
+                pct,
+                data.five_hour_resets_at.map(fmt_remaining),
+            ));
         }
         if let Some(pct) = data.seven_day_pct {
-            parts.push(usage_bare("7d", pct, data.seven_day_resets_at.map(fmt_remaining)));
+            parts.push(usage_bare(
+                "7d",
+                pct,
+                data.seven_day_resets_at.map(fmt_remaining),
+            ));
         }
         if let Some(pct) = data.context_pct {
             parts.push(usage_bare("ctx", pct, None));
@@ -580,7 +690,8 @@ fn render_full<W: Write>(
     let vname = t!(&vkey);
     let vname_vis = vis(&vname);
     let r2_fill = panel_w.saturating_sub(3 + vname_vis + 1 + 1); // ├─ + name + space + ┤
-    let row2_info = format!("{}{}{}{}{}",
+    let row2_info = format!(
+        "{}{}{}{}{}",
         tc("├─ ", DELIM),
         tc_bold(&vname, vrgb),
         tc(" ", DELIM),
@@ -593,14 +704,18 @@ fn render_full<W: Write>(
     // When update available: show "⬆ vX.Y.Z" (latest = upgrade target)
     // When up to date:       show "vX.Y.Z"   (current running, dimmed)
     let (ver_str, ver_vis) = if data.update_available {
-        let latest = data.latest_version.as_deref()
+        let latest = data
+            .latest_version
+            .as_deref()
             .map(|v| format!("v{}", v))
             .unwrap_or_else(|| "—".to_string());
         let s = format!("{} {}", tc_bold("⬆", UPDATE_C), tc(&latest, UPDATE_C));
         let w = 2 + vis(&latest); // ⬆(1) + space(1) + version
         (s, w)
     } else {
-        let cur = data.version.as_deref()
+        let cur = data
+            .version
+            .as_deref()
             .map(|v| format!("v{}", v))
             .unwrap_or_else(|| "—".to_string());
         let w = vis(&cur);
@@ -612,13 +727,15 @@ fn render_full<W: Write>(
     let art = |i: usize| -> Option<String> {
         art_lines.get(i).map(|s| {
             let w = vis(s);
-            let pad = if w < ART_W { " ".repeat(ART_W - w) } else { String::new() };
+            let pad = if w < ART_W {
+                " ".repeat(ART_W - w)
+            } else {
+                String::new()
+            };
             format!("{}{}", tcs(s.to_string(), vrgb), pad)
         })
     };
-    let art_s = |i: usize| -> String {
-        art(i).unwrap_or_else(|| " ".repeat(ART_W))
-    };
+    let art_s = |i: usize| -> String { art(i).unwrap_or_else(|| " ".repeat(ART_W)) };
 
     // ── Rows 3-5: pet stats or speech bubble ─────────────────────────────────
     //
@@ -637,11 +754,24 @@ fn render_full<W: Write>(
 
     if let Some(msg) = data.message.as_deref() {
         // Write rows 0-2 with normal render_rows
-        render_rows(out, &[
-            Row { art: art(0), info: row0_info },
-            Row { art: art(1), info: row1_info },
-            Row { art: art(2), info: row2_info },
-        ], panel_w)?;
+        render_rows(
+            out,
+            &[
+                Row {
+                    art: art(0),
+                    info: row0_info,
+                },
+                Row {
+                    art: art(1),
+                    info: row1_info,
+                },
+                Row {
+                    art: art(2),
+                    info: row2_info,
+                },
+            ],
+            panel_w,
+        )?;
 
         // Bubble geometry (right-aligned: right edge at panel_w-1)
         // Clamp message to max safe width to prevent row overflow.
@@ -657,7 +787,8 @@ fn render_full<W: Write>(
 
         // Row 3: │ {left}╭{─×bw-2}╮  — bubble top, right edge at panel_w-1
         // Width: 2 + left_fill + bw = panel_w ✓
-        let r3 = format!("{}{}{}{}{}",
+        let r3 = format!(
+            "{}{}{}{}{}",
             tc("│ ", DELIM),
             " ".repeat(left_fill),
             tc("╭", vrgb),
@@ -665,11 +796,18 @@ fn render_full<W: Write>(
             tc("╮", vrgb),
         );
         // Gap: `\ ` → \ at panel_w, space at panel_w+1
-        writeln!(out, "{}{} {}", pad_to_vis(&r3, panel_w), tc("\\", vrgb), art_s(3))?;
+        writeln!(
+            out,
+            "{}{} {}",
+            pad_to_vis(&r3, panel_w),
+            tc("\\", vrgb),
+            art_s(3)
+        )?;
 
         // Row 4: │ {left}│ {msg}{pad}·│  — bubble content
         // Width: 2 + left_fill + 2 + msg_vis_w + inner_pad + 1 + 1 = panel_w ✓
-        let r4 = format!("{}{}{}{}{}{}{}",
+        let r4 = format!(
+            "{}{}{}{}{}{}{}",
             tc("│ ", DELIM),
             " ".repeat(left_fill),
             tc("│ ", vrgb),
@@ -679,7 +817,13 @@ fn render_full<W: Write>(
             tc("│", vrgb),
         );
         // Gap: ` >` → space at panel_w, > at panel_w+1
-        writeln!(out, "{} {}{}", pad_to_vis(&r4, panel_w), tc(">", vrgb), art_s(4))?;
+        writeln!(
+            out,
+            "{} {}{}",
+            pad_to_vis(&r4, panel_w),
+            tc(">", vrgb),
+            art_s(4)
+        )?;
 
         // Row 5: normal frame bottom border, tail `/` in gap
         // "╰─ "(3) + mem_label + " " + mem_status + " "(1) + fill + " "(1) + ver + " ──╯"(4)
@@ -689,7 +833,8 @@ fn render_full<W: Write>(
         let mem_status = t!("ui.status_active").to_string();
         let r5_fixed = 3 + vis(&mem_label) + 1 + vis(&mem_status) + 2 + ver_vis + 4;
         let r5_fill = panel_w.saturating_sub(r5_fixed);
-        let r5 = format!("{}{}{}{}{}{}{}{}",
+        let r5 = format!(
+            "{}{}{}{}{}{}{}{}",
             tc("╰─ ", DELIM),
             tc(&mem_label, STAT_LBL),
             tc_bold(&format!(" {}", mem_status), MEM_ACT),
@@ -700,19 +845,26 @@ fn render_full<W: Write>(
             tc(" ──╯", DELIM),
         );
         // Gap: `/ ` → / at panel_w, space at panel_w+1
-        writeln!(out, "{}{} {}", pad_to_vis(&r5, panel_w), tc("/", vrgb), art_s(5))?;
-
+        writeln!(
+            out,
+            "{}{} {}",
+            pad_to_vis(&r5, panel_w),
+            tc("/", vrgb),
+            art_s(5)
+        )?;
     } else {
         // ── Row 3: pet HP / XP ───────────────────────────────────────────────
 
         let hp_pct = (pet.hp as f64 / 100.0).clamp(0.0, 1.0);
         let hp_filled = (hp_pct * 6.0) as usize;
-        let hp_bar = format!("{}{}",
+        let hp_bar = format!(
+            "{}{}",
             tcs("█".repeat(hp_filled), hp_rgb(pet.hp)),
             tcs("░".repeat(6 - hp_filled), BAR_EMPTY),
         );
         let xp_filled = ((pet.xp as f64 / pet.xp_to_next as f64).clamp(0.0, 1.0) * 6.0) as usize;
-        let xp_bar = format!("{}{}",
+        let xp_bar = format!(
+            "{}{}",
             tcs("█".repeat(xp_filled), vrgb),
             tcs("░".repeat(6 - xp_filled), BAR_EMPTY),
         );
@@ -733,11 +885,15 @@ fn render_full<W: Write>(
             })
             .unwrap_or_default();
 
-        let r3_content = format!("{} {}  {} {} {}  {} {} {}/{}{}",
+        let r3_content = format!(
+            "{} {}  {} {} {}  {} {} {}/{}{}",
             tc_bold(&pet.name, PET_NAME),
             tc(&format!("{}{}", t!("stat.lv"), pet.level), PET_LV),
-            tc(&t!("stat.hp"), STAT_LBL), hp_bar, tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
-            tc(&t!("stat.xp"), STAT_LBL), xp_bar,
+            tc(&t!("stat.hp"), STAT_LBL),
+            hp_bar,
+            tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
+            tc(&t!("stat.xp"), STAT_LBL),
+            xp_bar,
             tc(&pet.xp.to_string(), vrgb),
             tc(&pet.xp_to_next.to_string(), STAT_VAL),
             unlock_suffix,
@@ -751,11 +907,16 @@ fn render_full<W: Write>(
         // active. Short tag (3 chars) keeps the row tight on 100-col panels.
         let r4_content = format!(
             "{} {}  {} {}  {} {}  {} {}  {} {}",
-            tc(&t!("stat.atk"), STAT_LBL), tc(&format!("{:2}", pet.atk), STAT_VAL),
-            tc(&t!("stat.def"), STAT_LBL), tc(&format!("{:2}", pet.def), STAT_VAL),
-            tc(&t!("stat.sup"), STAT_LBL), tc(&format!("{:2}", pet.sup), STAT_VAL),
-            tc(&t!("stat.ver"), STAT_LBL), tc(&format!("{:2}", pet.ver), STAT_VAL),
-            tc("strat:", STAT_LBL), tc(strategy.short_tag(), STAT_VAL),
+            tc(&t!("stat.atk"), STAT_LBL),
+            tc(&format!("{:2}", pet.atk), STAT_VAL),
+            tc(&t!("stat.def"), STAT_LBL),
+            tc(&format!("{:2}", pet.def), STAT_VAL),
+            tc(&t!("stat.sup"), STAT_LBL),
+            tc(&format!("{:2}", pet.sup), STAT_VAL),
+            tc(&t!("stat.ver"), STAT_LBL),
+            tc(&format!("{:2}", pet.ver), STAT_VAL),
+            tc("strat:", STAT_LBL),
+            tc(strategy.short_tag(), STAT_VAL),
         );
         let row4_info = box_mid(&r4_content, "│ ", "│");
 
@@ -767,7 +928,8 @@ fn render_full<W: Write>(
         let mem_status = t!("ui.status_active").to_string();
         let r5_fixed = 3 + vis(&mem_label) + 1 + vis(&mem_status) + 2 + ver_vis + 4;
         let r5_fill = panel_w.saturating_sub(r5_fixed);
-        let row5_info = format!("{}{}{}{}{}{}{}{}",
+        let row5_info = format!(
+            "{}{}{}{}{}{}{}{}",
             tc("╰─ ", DELIM),
             tc(&mem_label, STAT_LBL),
             tc_bold(&format!(" {}", mem_status), MEM_ACT),
@@ -779,12 +941,30 @@ fn render_full<W: Write>(
         );
 
         let rows = vec![
-            Row { art: art(0), info: row0_info },
-            Row { art: art(1), info: row1_info },
-            Row { art: art(2), info: row2_info },
-            Row { art: art(3), info: row3_info },
-            Row { art: art(4), info: row4_info },
-            Row { art: art(5), info: row5_info },
+            Row {
+                art: art(0),
+                info: row0_info,
+            },
+            Row {
+                art: art(1),
+                info: row1_info,
+            },
+            Row {
+                art: art(2),
+                info: row2_info,
+            },
+            Row {
+                art: art(3),
+                info: row3_info,
+            },
+            Row {
+                art: art(4),
+                info: row4_info,
+            },
+            Row {
+                art: art(5),
+                info: row5_info,
+            },
         ];
         render_rows(out, &rows, panel_w)?;
     }
@@ -811,7 +991,9 @@ fn build_usage_line(data: &StatusInput, _panel_w: usize) -> String {
 
     if segs.is_empty() {
         if std::env::var("CODEFORGE_DEBUG").is_ok() {
-            let keys: Vec<String> = data.raw.as_object()
+            let keys: Vec<String> = data
+                .raw
+                .as_object()
                 .map(|m| m.keys().cloned().collect())
                 .unwrap_or_default();
             return tc(&format!("keys: {}", keys.join(", ")), STAT_VAL);
@@ -821,4 +1003,3 @@ fn build_usage_line(data: &StatusInput, _panel_w: usize) -> String {
 
     segs.join("  ")
 }
-

@@ -1,7 +1,7 @@
-use anyhow::Result;
 use crate::db;
 use crate::pet::live_state::LiveState;
 use crate::pet::village::VILLAGES;
+use anyhow::Result;
 use crossterm::style::{Color, Stylize};
 use std::io::Write;
 
@@ -17,7 +17,10 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         }
     };
     let pet = &live.state;
-    let village = VILLAGES.iter().find(|v| v.id == pet.village).unwrap_or(&VILLAGES[2]);
+    let village = VILLAGES
+        .iter()
+        .find(|v| v.id == pet.village)
+        .unwrap_or(&VILLAGES[2]);
 
     let mut stdout = std::io::stdout();
 
@@ -39,7 +42,11 @@ pub fn run(ctx: &db::Context) -> Result<()> {
 
     // 名稱與等級
     write!(stdout, "  {} ", pet.name.as_str().with(Color::White).bold())?;
-    writeln!(stdout, "{}", format!("Lv.{}", pet.level).with(Color::Yellow))?;
+    writeln!(
+        stdout,
+        "{}",
+        format!("Lv.{}", pet.level).with(Color::Yellow)
+    )?;
 
     // XP bar
     let xp_pct = (pet.xp as f32 / pet.xp_to_next as f32 * 20.0) as usize;
@@ -48,15 +55,28 @@ pub fn run(ctx: &db::Context) -> Result<()> {
 
     // 屬性
     println!();
-    println!("  ATK:{:3}  HP:{:3}  DEF:{:3}  SUP:{:3}  VER:{:3}",
-        pet.atk, pet.hp, pet.def, pet.sup, pet.ver);
+    println!(
+        "  ATK:{:3}  HP:{:3}  DEF:{:3}  SUP:{:3}  VER:{:3}",
+        pet.atk, pet.hp, pet.def, pet.sup, pet.ver
+    );
 
     // 徽章
     let badges = crate::pet::badges::list(&conn)?;
     if !badges.is_empty() {
         println!();
-        write!(stdout, "  {}", format!("★ 徽章 ({})：", badges.len()).with(Color::Yellow))?;
-        println!("{}", badges.iter().map(|b| b.name.as_str()).collect::<Vec<_>>().join("  "));
+        write!(
+            stdout,
+            "  {}",
+            format!("★ 徽章 ({})：", badges.len()).with(Color::Yellow)
+        )?;
+        println!(
+            "{}",
+            badges
+                .iter()
+                .map(|b| b.name.as_str())
+                .collect::<Vec<_>>()
+                .join("  ")
+        );
     }
 
     render_recent_combat(&mut stdout, &conn)?;
@@ -91,9 +111,7 @@ fn render_recent_combat(stdout: &mut impl Write, conn: &rusqlite::Connection) ->
         } else {
             format!(" · {loot_s}")
         };
-        println!(
-            "    [{at}] {kind:<12} {short_name}  (+{xp} XP){loot_tail}"
-        );
+        println!("    [{at}] {kind:<12} {short_name}  (+{xp} XP){loot_tail}");
     }
     Ok(())
 }
@@ -111,7 +129,13 @@ fn render_inventory(stdout: &mut impl Write, conn: &rusqlite::Connection) -> Res
         return Ok(());
     }
     println!();
-    writeln!(stdout, "  {}", format!("🎒 Inventory ({} 類)：", rows.len()).with(Color::Green).bold())?;
+    writeln!(
+        stdout,
+        "  {}",
+        format!("🎒 Inventory ({} 類)：", rows.len())
+            .with(Color::Green)
+            .bold()
+    )?;
     for (kind, name, qty) in rows {
         if qty == 1 {
             println!("    · {name} ({kind})");

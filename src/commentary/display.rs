@@ -74,17 +74,17 @@ pub fn recent_commentary(conn: &Connection, max: usize) -> Result<Vec<Commentary
     )?;
     let rows = stmt.query_map(rusqlite::params![max as i64], |r| {
         let kind_s: String = r.get(2)?;
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, i64>(1)?,
-            kind_s,
-        ))
+        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, kind_s))
     })?;
     let mut out = Vec::with_capacity(max);
     for row in rows {
         let (phrase, created_at, kind_s) = row?;
         let kind = Kind::from_str(&kind_s).unwrap_or(Kind::ManualTest);
-        out.push(CommentaryEntry { phrase, created_at, kind });
+        out.push(CommentaryEntry {
+            phrase,
+            created_at,
+            kind,
+        });
     }
     Ok(out)
 }
@@ -261,9 +261,13 @@ mod tests {
     // so the other tests don't have to hard-code magic numbers that might
     // drift if the mixing constants ever change.
     fn find_show_seed() -> i64 {
-        (0..1_000_000).find(|&n| should_show(n)).expect("at least one hit in 1M seeds")
+        (0..1_000_000)
+            .find(|&n| should_show(n))
+            .expect("at least one hit in 1M seeds")
     }
     fn find_miss_seed() -> i64 {
-        (0..1_000_000).find(|&n| !should_show(n)).expect("at least one miss in 1M seeds")
+        (0..1_000_000)
+            .find(|&n| !should_show(n))
+            .expect("at least one miss in 1M seeds")
     }
 }

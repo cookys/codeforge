@@ -1,4 +1,39 @@
+# Build artifacts
 /target
-# Session-local state written by Claude Code hooks
+**/*.rs.bk
+*.pdb
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data (created by codeforge init / dream / learn)
+.codeforge/
+
+# SQLite databases (defense in depth — also covered by .codeforge/)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Claude Code session-local state
 .claude/session-start-sha
 .claude/scripts/session-digest.log
+.claude/settings.local.json
+**/CLAUDE.local.md
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

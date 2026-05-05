@@ -34,12 +34,36 @@ pub struct AbilityUnlock {
 /// the pet's village (Iron Skin / Scripted / Concurrent / …) and will
 /// slot in when the legendary system lands.
 pub const ABILITY_UNLOCKS: &[AbilityUnlock] = &[
-    AbilityUnlock { required_level: 5,  name: "Quick Eye",     kind: "passive" },
-    AbilityUnlock { required_level: 10, name: "Focus Strike",  kind: "active"  },
-    AbilityUnlock { required_level: 15, name: "Tome Sense",    kind: "passive" },
-    AbilityUnlock { required_level: 20, name: "Village Aura",  kind: "passive" },
-    AbilityUnlock { required_level: 30, name: "Memory Recall", kind: "passive" },
-    AbilityUnlock { required_level: 50, name: "Legendary",     kind: "village" },
+    AbilityUnlock {
+        required_level: 5,
+        name: "Quick Eye",
+        kind: "passive",
+    },
+    AbilityUnlock {
+        required_level: 10,
+        name: "Focus Strike",
+        kind: "active",
+    },
+    AbilityUnlock {
+        required_level: 15,
+        name: "Tome Sense",
+        kind: "passive",
+    },
+    AbilityUnlock {
+        required_level: 20,
+        name: "Village Aura",
+        kind: "passive",
+    },
+    AbilityUnlock {
+        required_level: 30,
+        name: "Memory Recall",
+        kind: "passive",
+    },
+    AbilityUnlock {
+        required_level: 50,
+        name: "Legendary",
+        kind: "village",
+    },
 ];
 
 /// Return the next ability the pet will unlock, or `None` once every entry
