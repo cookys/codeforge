@@ -14,6 +14,11 @@ pub mod http;
 pub mod provider;
 pub mod stub;
 
+// Public-API skeleton — re-exports in place ahead of village.rs wire-up
+// (Plan B Phase 6). Suppresses unused-imports until consumers land.
+#[allow(unused_imports)]
 pub use http::HttpClanContentProvider;
+#[allow(unused_imports)]
 pub use provider::{BlueprintId, ClanContentProvider, ClanId, ClanSummary, PetBlueprint, UserId};
+#[allow(unused_imports)]
 pub use stub::StubClanContentProvider;
