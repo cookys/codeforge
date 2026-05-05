@@ -29,13 +29,19 @@ pub struct StyledSpan {
 impl StyledSpan {
     /// Default-fg span. Paint emits a bare `Print(text)` for this.
     pub fn plain(text: impl Into<String>) -> Self {
-        Self { text: text.into(), fg: None }
+        Self {
+            text: text.into(),
+            fg: None,
+        }
     }
 
     /// Coloured span. Paint brackets the text with `SetForegroundColor`
     /// / `ResetColor` so stateful colour does not leak into the next span.
     pub fn colored(text: impl Into<String>, fg: Color) -> Self {
-        Self { text: text.into(), fg: Some(fg) }
+        Self {
+            text: text.into(),
+            fg: Some(fg),
+        }
     }
 
     /// Visible column width (CJK-safe via unicode-width).
@@ -69,7 +75,9 @@ impl StyledLine {
         if s.is_empty() {
             return Self::empty();
         }
-        Self { spans: vec![StyledSpan::plain(s)] }
+        Self {
+            spans: vec![StyledSpan::plain(s)],
+        }
     }
 
     /// Build from a pre-computed span list (used by panels that mix
@@ -147,7 +155,10 @@ impl StyledLine {
                     truncated.push(ch);
                 }
                 if !truncated.is_empty() {
-                    out_spans.push(StyledSpan { text: truncated, fg: span.fg });
+                    out_spans.push(StyledSpan {
+                        text: truncated,
+                        fg: span.fg,
+                    });
                 }
                 break;
             }
@@ -198,7 +209,10 @@ mod tests {
     #[test]
     fn line_plain_of_empty_string_is_empty_spans() {
         let l = StyledLine::plain("");
-        assert!(l.spans.is_empty(), "empty string must collapse to zero spans");
+        assert!(
+            l.spans.is_empty(),
+            "empty string must collapse to zero spans"
+        );
     }
 
     #[test]
@@ -222,9 +236,9 @@ mod tests {
     #[test]
     fn visible_width_sums_spans_cjk_safe() {
         let l = StyledLine::from_spans(vec![
-            StyledSpan::plain("│"),     // 1 col
-            StyledSpan::plain("前端"),   // 4 cols
-            StyledSpan::plain("│"),     // 1 col
+            StyledSpan::plain("│"),    // 1 col
+            StyledSpan::plain("前端"), // 4 cols
+            StyledSpan::plain("│"),    // 1 col
         ]);
         assert_eq!(l.visible_width(), 6);
     }
@@ -247,9 +261,7 @@ mod tests {
 
     #[test]
     fn pad_to_width_preserves_existing_colored_spans() {
-        let l = StyledLine::from_spans(vec![
-            StyledSpan::colored("red", Color::Red),
-        ]);
+        let l = StyledLine::from_spans(vec![StyledSpan::colored("red", Color::Red)]);
         let padded = l.pad_to_width(8);
         assert_eq!(padded.visible_width(), 8);
         assert_eq!(padded.spans.len(), 2);
@@ -285,9 +297,9 @@ mod tests {
     #[test]
     fn clip_to_width_drops_spans_past_boundary() {
         let l = StyledLine::from_spans(vec![
-            StyledSpan::colored("red", Color::Red),       // 3 cols
-            StyledSpan::plain("middle"),                   // 6 cols
-            StyledSpan::colored("tail", Color::Blue),      // 4 cols — dropped entirely when w < 9
+            StyledSpan::colored("red", Color::Red),   // 3 cols
+            StyledSpan::plain("middle"),              // 6 cols
+            StyledSpan::colored("tail", Color::Blue), // 4 cols — dropped entirely when w < 9
         ]);
         let clipped = l.clip_to_width(9);
         assert_eq!(clipped.visible_width(), 9);
@@ -301,15 +313,18 @@ mod tests {
     #[test]
     fn clip_to_width_truncates_partial_span_preserving_fg() {
         let l = StyledLine::from_spans(vec![
-            StyledSpan::colored("red", Color::Red),        // 3 cols
-            StyledSpan::plain("xxxxx"),                    // 5 cols
+            StyledSpan::colored("red", Color::Red), // 3 cols
+            StyledSpan::plain("xxxxx"),             // 5 cols
         ]);
         let clipped = l.clip_to_width(5);
         assert_eq!(clipped.visible_width(), 5);
         assert_eq!(clipped.plain_text(), "redxx");
         assert_eq!(clipped.spans.len(), 2);
         assert_eq!(clipped.spans[1].fg, None);
-        assert_eq!(clipped.spans[1].text, "xx", "partial-span text truncated to 2 cols");
+        assert_eq!(
+            clipped.spans[1].text, "xx",
+            "partial-span text truncated to 2 cols"
+        );
     }
 
     #[test]
@@ -320,7 +335,11 @@ mod tests {
             StyledSpan::plain("前端後端"), // 8 cols total
         ]);
         let clipped = l.clip_to_width(3);
-        assert_eq!(clipped.visible_width(), 2, "can't split a 2-col char across 3-col budget");
+        assert_eq!(
+            clipped.visible_width(),
+            2,
+            "can't split a 2-col char across 3-col budget"
+        );
         assert_eq!(clipped.plain_text(), "前");
     }
 

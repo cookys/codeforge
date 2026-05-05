@@ -1,6 +1,6 @@
+use crate::db;
 use anyhow::Result;
 use std::time::Instant;
-use crate::db;
 
 pub struct DreamRunner<'a> {
     ctx: &'a db::Context,
@@ -17,7 +17,9 @@ impl<'a> DreamRunner<'a> {
         let conn = self.ctx.open_db()?;
         db::migrations::run(&conn)?;
 
-        if !self.quiet { println!("⟳ Dream cycle 開始..."); }
+        if !self.quiet {
+            println!("⟳ Dream cycle 開始...");
+        }
 
         let mut compiled = 0;
         let mut l1_created = 0;
@@ -30,30 +32,47 @@ impl<'a> DreamRunner<'a> {
                     compiled = r.signals_processed;
                     l1_created = r.l1_created;
                     l1_updated = r.l1_updated;
-                    if !self.quiet { println!("  compile  ✓ {} signals → {} 新增 {} 更新", compiled, l1_created, l1_updated); }
+                    if !self.quiet {
+                        println!(
+                            "  compile  ✓ {} signals → {} 新增 {} 更新",
+                            compiled, l1_created, l1_updated
+                        );
+                    }
                 }
                 "lint" => {
                     let r = super::lint::run(self.ctx)?;
-                    if !self.quiet { println!("  lint     ✓ {} 問題偵測", r.issues); }
+                    if !self.quiet {
+                        println!("  lint     ✓ {} 問題偵測", r.issues);
+                    }
                 }
                 "dedup" => {
                     let r = super::dedup::run(self.ctx)?;
-                    if !self.quiet { println!("  dedup    ✓ {} 重複標記", r.marked); }
+                    if !self.quiet {
+                        println!("  dedup    ✓ {} 重複標記", r.marked);
+                    }
                 }
                 "absorb" => {
                     let r = super::absorb::run(self.ctx)?;
-                    if !self.quiet { println!("  absorb   ✓ {} 條 Claude Code 記憶吸收", r.absorbed); }
+                    if !self.quiet {
+                        println!("  absorb   ✓ {} 條 Claude Code 記憶吸收", r.absorbed);
+                    }
                 }
                 "decay" => {
                     let r = super::decay::run(self.ctx)?;
-                    if !self.quiet { println!("  decay    ✓ {} 條 strength 更新", r.updated); }
+                    if !self.quiet {
+                        println!("  decay    ✓ {} 條 strength 更新", r.updated);
+                    }
                 }
                 "track" => {
                     let r = super::track::run(self.ctx, &conn)?;
-                    if !self.quiet { println!("  track    ✓ {} 個 skill 更新", r.skills_updated); }
+                    if !self.quiet {
+                        println!("  track    ✓ {} 個 skill 更新", r.skills_updated);
+                    }
                 }
                 unknown => {
-                    if !self.quiet { eprintln!("  警告：未知的 dream 操作 '{}'，跳過", unknown); }
+                    if !self.quiet {
+                        eprintln!("  警告：未知的 dream 操作 '{}'，跳過", unknown);
+                    }
                 }
             }
         }
@@ -73,7 +92,9 @@ impl<'a> DreamRunner<'a> {
             ],
         )?;
 
-        if !self.quiet { println!("✓ Dream cycle 完成（{}ms）", elapsed_ms); }
+        if !self.quiet {
+            println!("✓ Dream cycle 完成（{}ms）", elapsed_ms);
+        }
 
         Ok(())
     }

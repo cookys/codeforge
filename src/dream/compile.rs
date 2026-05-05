@@ -1,9 +1,9 @@
+use crate::db;
+use crate::memory::fts::FtsIndex;
+use crate::memory::{l0, l1};
 /// Dream Compile：L0 signals → L1 Markdown（增量，使用 Claude Agent SDK）
 use anyhow::Result;
 use rusqlite::Connection;
-use crate::db;
-use crate::memory::{l0, l1};
-use crate::memory::fts::FtsIndex;
 
 pub struct CompileResult {
     pub signals_processed: usize,
@@ -14,7 +14,11 @@ pub struct CompileResult {
 pub async fn run(ctx: &db::Context, conn: &Connection) -> Result<CompileResult> {
     let signals = l0::read_uncompiled(ctx, conn)?;
     if signals.is_empty() {
-        return Ok(CompileResult { signals_processed: 0, l1_created: 0, l1_updated: 0 });
+        return Ok(CompileResult {
+            signals_processed: 0,
+            l1_created: 0,
+            l1_updated: 0,
+        });
     }
 
     let store_dir = ctx.project_dir.join("store");
@@ -71,7 +75,11 @@ pub async fn run(ctx: &db::Context, conn: &Connection) -> Result<CompileResult> 
                 // signal 品質不足，存在 L0 但不升至 L1
             }
             Err(e) => {
-                eprintln!("  警告：compile signal {} 失敗：{}", signal.id.chars().take(8).collect::<String>(), e);
+                eprintln!(
+                    "  警告：compile signal {} 失敗：{}",
+                    signal.id.chars().take(8).collect::<String>(),
+                    e
+                );
             }
         }
     }
@@ -174,7 +182,11 @@ type 說明：
     let body_text = v["body"].as_str().unwrap_or("").to_string();
     let links: Vec<String> = v["links"]
         .as_array()
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                .collect()
+        })
         .unwrap_or_default();
 
     let now = chrono::Utc::now().format("%Y-%m-%d").to_string();
@@ -206,7 +218,10 @@ fn compile_rule_based(signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
     }
 
     // 簡單的 rule-based 分類
-    let kind = if content.contains('?') || content.to_lowercase().contains("如何") || content.to_lowercase().contains("怎麼") {
+    let kind = if content.contains('?')
+        || content.to_lowercase().contains("如何")
+        || content.to_lowercase().contains("怎麼")
+    {
         l1::L1Type::Qa
     } else if content.contains(" vs ") || content.contains(" 和 ") || content.contains(" 與 ") {
         l1::L1Type::Connection
@@ -215,7 +230,10 @@ fn compile_rule_based(signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
     };
 
     // 取前 50 字作為 topic
-    let topic = content.chars().take(50).collect::<String>()
+    let topic = content
+        .chars()
+        .take(50)
+        .collect::<String>()
         .split_whitespace()
         .take(6)
         .collect::<Vec<_>>()
@@ -228,17 +246,21 @@ fn compile_rule_based(signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
         created: now.clone(),
         updated: now,
         sources: vec![signal.id.clone()],
-        links: vec![],  // rule-based 無 wikilinks（LLM 才能生成）
+        links: vec![], // rule-based 無 wikilinks（LLM 才能生成）
         refs: 0,
         last_ref: None,
-        strength: 0.7,  // rule-based 品質較低
+        strength: 0.7, // rule-based 品質較低
         status: "active".to_string(),
     };
 
     Ok(Some(l1::L1Entry {
         frontmatter: fm,
         title: topic,
-        body: format!("# {}\n\n{}", content.chars().take(50).collect::<String>(), content),
+        body: format!(
+            "# {}\n\n{}",
+            content.chars().take(50).collect::<String>(),
+            content
+        ),
         file_path: std::path::PathBuf::new(),
     }))
 }

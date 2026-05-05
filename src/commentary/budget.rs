@@ -31,7 +31,10 @@ pub fn opt_in_enabled(conn: &Connection) -> Result<bool> {
 
 fn env_opt_in() -> bool {
     match std::env::var(OPT_IN_ENV) {
-        Ok(v) => matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "on" | "yes"),
+        Ok(v) => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "on" | "yes"
+        ),
         Err(_) => false,
     }
 }
@@ -88,13 +91,17 @@ mod tests {
         // Avoid touching the real process env in multi-threaded tests —
         // swap to an isolated check via matches!().
         for v in ["1", "true", "TRUE", "yes", "on", "On"] {
-            let matched =
-                matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "on" | "yes");
+            let matched = matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "on" | "yes"
+            );
             assert!(matched, "value {:?} should opt in", v);
         }
         for v in ["0", "false", "", "maybe"] {
-            let matched =
-                matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "on" | "yes");
+            let matched = matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "on" | "yes"
+            );
             assert!(!matched, "value {:?} should stay off", v);
         }
     }

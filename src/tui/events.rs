@@ -145,12 +145,18 @@ mod tests {
 
     #[test]
     fn q_triggers_quit() {
-        assert_eq!(classify(&key(KeyCode::Char('q'), KeyModifiers::NONE)), Some(TuiEvent::Quit));
+        assert_eq!(
+            classify(&key(KeyCode::Char('q'), KeyModifiers::NONE)),
+            Some(TuiEvent::Quit)
+        );
     }
 
     #[test]
     fn esc_triggers_quit() {
-        assert_eq!(classify(&key(KeyCode::Esc, KeyModifiers::NONE)), Some(TuiEvent::Quit));
+        assert_eq!(
+            classify(&key(KeyCode::Esc, KeyModifiers::NONE)),
+            Some(TuiEvent::Quit)
+        );
     }
 
     #[test]
@@ -310,10 +316,11 @@ mod tests {
         });
         // blocking_send from a non-blocking context via spawn_blocking
         // mirrors what spawn_keyboard_task does internally.
-        let send_task = tokio::task::spawn_blocking(move || {
-            sender.blocking_send(TuiEvent::Quit)
-        });
-        assert!(send_task.await.unwrap().is_ok(), "blocking_send must deliver Quit");
+        let send_task = tokio::task::spawn_blocking(move || sender.blocking_send(TuiEvent::Quit));
+        assert!(
+            send_task.await.unwrap().is_ok(),
+            "blocking_send must deliver Quit"
+        );
         assert!(consumer.await.unwrap(), "consumer must observe Quit");
     }
 }

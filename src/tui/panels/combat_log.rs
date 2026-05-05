@@ -4,8 +4,8 @@
 //! them with `commentary_feed` entries, newest-first. Pure function of
 //! pre-loaded slices so tests can feed fixtures without hitting SQLite.
 
-use super::pad_to_width;
 use super::super::styled::StyledLine;
+use super::pad_to_width;
 use crate::commentary::display::CommentaryEntry;
 use chrono::{TimeZone, Utc};
 
@@ -91,7 +91,10 @@ pub fn render_mixed(
     // avoids allocating a combined Vec for sorting.
     let merged = merge_newest_first(combat, commentary);
     if merged.is_empty() {
-        out.push(StyledLine::plain(pad_to_width("  (no activity yet)", width)));
+        out.push(StyledLine::plain(pad_to_width(
+            "  (no activity yet)",
+            width,
+        )));
         while out.len() < max_rows {
             out.push(StyledLine::plain(pad_to_width("", width)));
         }
@@ -229,11 +232,7 @@ mod tests {
 
     #[test]
     fn loot_appended_after_dot() {
-        let lines = render(
-            &[row("boss", "big", 50, Some("Rare Item"))],
-            80,
-            3,
-        );
+        let lines = render(&[row("boss", "big", 50, Some("Rare Item"))], 80, 3);
         assert!(lines[1].plain_text().contains("· Rare Item"));
     }
 
@@ -312,9 +311,13 @@ mod tests {
         let lines = render_mixed(&combat, &commentary, 80, 5);
         // header + 3 entries
         assert!(lines[0].plain_text().contains("Combat Log"));
-        assert!(lines[1].plain_text().contains("💬") && lines[1].plain_text().contains("newest phrase"));
+        assert!(
+            lines[1].plain_text().contains("💬") && lines[1].plain_text().contains("newest phrase")
+        );
         assert!(lines[2].plain_text().contains("⚔") && lines[2].plain_text().contains("boss"));
-        assert!(lines[3].plain_text().contains("💬") && lines[3].plain_text().contains("oldest phrase"));
+        assert!(
+            lines[3].plain_text().contains("💬") && lines[3].plain_text().contains("oldest phrase")
+        );
     }
 
     #[test]

@@ -133,10 +133,7 @@ pub fn apply_for_defeats(
     }
     let mut total_xp: u32 = 0;
     for def in defeats {
-        let mut rng = Rng::from_seed(hash_seed(
-            rng_salt ^ 0x0A11_1007_BADC_0FFE,
-            def.id as u64,
-        ));
+        let mut rng = Rng::from_seed(hash_seed(rng_salt ^ 0x0A11_1007_BADC_0FFE, def.id as u64));
         let drops = roll_drops(def.kind, &mut rng);
 
         let mut xp_this_drop = 0u32;
@@ -201,7 +198,14 @@ fn log_defeat(
         "INSERT INTO combat_log
              (zone_id, mob_name, mob_kind, xp_gained, loot, occurred_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![zone_id, def.name, def.kind.as_str(), xp as i64, loot, occurred],
+        rusqlite::params![
+            zone_id,
+            def.name,
+            def.kind.as_str(),
+            xp as i64,
+            loot,
+            occurred
+        ],
     )?;
     Ok(())
 }
@@ -245,7 +249,10 @@ mod tests {
             assert!(
                 drops.iter().any(|d| matches!(
                     d,
-                    LootDrop::Item { name: "Rare Item", .. }
+                    LootDrop::Item {
+                        name: "Rare Item",
+                        ..
+                    }
                 )),
                 "Boss primary 'Rare Item' missing at seed {seed}"
             );
@@ -291,7 +298,15 @@ mod tests {
         for seed in 0..1000u64 {
             let mut rng = Rng::from_seed(seed);
             let drops = roll_drops(MobKind::Boss, &mut rng);
-            if drops.iter().any(|d| matches!(d, LootDrop::Item { name: "L1 Connection Tome", .. })) {
+            if drops.iter().any(|d| {
+                matches!(
+                    d,
+                    LootDrop::Item {
+                        name: "L1 Connection Tome",
+                        ..
+                    }
+                )
+            }) {
                 tome_count += 1;
             }
         }

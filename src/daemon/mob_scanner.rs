@@ -44,11 +44,7 @@ pub fn should_scan_this_tick(tick_count: u64) -> bool {
 /// End-to-end: if scan fires this tick AND a scan dir is configured, walk
 /// it, analyze files, and upsert MOBs. Swallows scanner-level errors
 /// (filesystem hiccups shouldn't break the tick) — logs to stderr.
-pub fn rate_limited_scan(
-    tx: &Connection,
-    zone_id: &str,
-    tick_count: u64,
-) -> Result<usize> {
+pub fn rate_limited_scan(tx: &Connection, zone_id: &str, tick_count: u64) -> Result<usize> {
     rate_limited_scan_with_dir(tx, zone_id, tick_count, resolve_scan_dir().as_deref())
 }
 
@@ -306,7 +302,9 @@ fn count_branches(s: &str) -> usize {
     // Keyword boundaries chosen to avoid false positives on identifiers
     // like `if_let` or `match_pattern`. Not perfect but good enough.
     let mut n = 0usize;
-    for pat in [" if ", "\tif ", "}else", " else ", " match ", " for ", " while ", "case "] {
+    for pat in [
+        " if ", "\tif ", "}else", " else ", " match ", " for ", " while ", "case ",
+    ] {
         n += s.matches(pat).count();
     }
     n
@@ -606,7 +604,11 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
         let n = persist_scan(&conn, &specs).unwrap();
         assert_eq!(n, 2);
         let rows: i64 = conn
-            .query_row("SELECT COUNT(*) FROM mobs WHERE defeated_at IS NULL", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM mobs WHERE defeated_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(rows, 2);
     }
@@ -629,8 +631,9 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
     #[test]
     fn persist_scan_writes_origin_path() {
         let conn = fresh_conn();
-        let specs = vec![MobSpec::new("rust", MobKind::Boss, "foo".to_string())
-            .with_origin_path("src/foo.rs")];
+        let specs =
+            vec![MobSpec::new("rust", MobKind::Boss, "foo".to_string())
+                .with_origin_path("src/foo.rs")];
         persist_scan(&conn, &specs).unwrap();
         let path: Option<String> = conn
             .query_row("SELECT origin_path FROM mobs LIMIT 1", [], |r| r.get(0))
@@ -668,10 +671,7 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
         // Forward-slash normalized relative path
         assert_eq!(p, "src/x.rs");
         // Never absolute
-        assert!(
-            !p.starts_with('/'),
-            "origin_path must be relative, got {p}"
-        );
+        assert!(!p.starts_with('/'), "origin_path must be relative, got {p}");
     }
 
     #[test]
@@ -679,7 +679,8 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
         let conn = fresh_conn();
         let specs = vec![MobSpec::new("rust", MobKind::Ghost, "src/a.rs".to_string())];
         persist_scan(&conn, &specs).unwrap();
-        conn.execute("UPDATE mobs SET defeated_at = 9999", []).unwrap();
+        conn.execute("UPDATE mobs SET defeated_at = 9999", [])
+            .unwrap();
         // Partial index excludes defeated rows — new spawn allowed
         let n = persist_scan(&conn, &specs).unwrap();
         assert_eq!(n, 1);

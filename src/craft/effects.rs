@@ -178,9 +178,7 @@ mod tests {
     #[test]
     fn is_effect_active_returns_false_when_empty() {
         let conn = fresh();
-        assert!(
-            !is_effect_active(&conn, EffectKind::SuppressGhostSpawn, "rust", 1_000).unwrap()
-        );
+        assert!(!is_effect_active(&conn, EffectKind::SuppressGhostSpawn, "rust", 1_000).unwrap());
     }
 
     #[test]
@@ -195,13 +193,7 @@ mod tests {
             "Ghost Repellent",
         )
         .unwrap();
-        assert!(is_effect_active(
-            &conn,
-            EffectKind::SuppressGhostSpawn,
-            "rust",
-            1_500
-        )
-        .unwrap());
+        assert!(is_effect_active(&conn, EffectKind::SuppressGhostSpawn, "rust", 1_500).unwrap());
     }
 
     #[test]
@@ -216,13 +208,7 @@ mod tests {
             "Ghost Repellent",
         )
         .unwrap();
-        assert!(!is_effect_active(
-            &conn,
-            EffectKind::SuppressGhostSpawn,
-            "python",
-            1_500
-        )
-        .unwrap());
+        assert!(!is_effect_active(&conn, EffectKind::SuppressGhostSpawn, "python", 1_500).unwrap());
     }
 
     #[test]
@@ -237,20 +223,8 @@ mod tests {
             "Refactor Blueprint",
         )
         .unwrap();
-        assert!(is_effect_active(
-            &conn,
-            EffectKind::ReduceDifficulty,
-            "rust",
-            1_500
-        )
-        .unwrap());
-        assert!(is_effect_active(
-            &conn,
-            EffectKind::ReduceDifficulty,
-            "python",
-            1_500
-        )
-        .unwrap());
+        assert!(is_effect_active(&conn, EffectKind::ReduceDifficulty, "rust", 1_500).unwrap());
+        assert!(is_effect_active(&conn, EffectKind::ReduceDifficulty, "python", 1_500).unwrap());
     }
 
     #[test]

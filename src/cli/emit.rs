@@ -22,7 +22,12 @@ pub const MAX_PAYLOAD_BYTES: usize = 65_536;
 /// - `--json '{"event":"foo","extra":"bar"}'`: raw payload, stored as-is
 /// - `event_name` + optional `fields`: payload built as
 ///   `{"event":"<event_name>","ts":<unix_ts>,<fields>}`
-pub fn run(ctx: &Context, event: Option<String>, fields: Vec<String>, json: Option<String>) -> Result<()> {
+pub fn run(
+    ctx: &Context,
+    event: Option<String>,
+    fields: Vec<String>,
+    json: Option<String>,
+) -> Result<()> {
     let payload = match (json, event) {
         (Some(j), _) => {
             if j.len() > MAX_PAYLOAD_BYTES {
@@ -52,9 +57,7 @@ pub fn run(ctx: &Context, event: Option<String>, fields: Vec<String>, json: Opti
             built
         }
         (None, None) => {
-            return Err(anyhow!(
-                "必須指定 event 名稱或 --json payload"
-            ));
+            return Err(anyhow!("必須指定 event 名稱或 --json payload"));
         }
     };
 
@@ -139,6 +142,9 @@ mod tests {
         assert_eq!(parse_value("-5"), serde_json::Value::Number((-5i64).into()));
         assert_eq!(parse_value("abc"), serde_json::Value::String("abc".into()));
         // Decimals stay as string — keep the integer/string split simple
-        assert_eq!(parse_value("3.14"), serde_json::Value::String("3.14".into()));
+        assert_eq!(
+            parse_value("3.14"),
+            serde_json::Value::String("3.14".into())
+        );
     }
 }

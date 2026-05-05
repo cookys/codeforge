@@ -26,10 +26,7 @@ rust_i18n::i18n!("locales", fallback = "en");
 
 fn detect_locale() -> String {
     std::env::var("CODEFORGE_LOCALE")
-        .unwrap_or_else(|_| {
-            sys_locale::get_locale()
-                .unwrap_or_else(|| "en".to_string())
-        })
+        .unwrap_or_else(|_| sys_locale::get_locale().unwrap_or_else(|| "en".to_string()))
 }
 
 fn main() -> Result<()> {

@@ -5,8 +5,8 @@
 //! Strategy (§2). Pure function of `PetState` + `Strategy` + width; no
 //! terminal IO.
 
-use super::pad_to_width;
 use super::super::styled::StyledLine;
+use super::pad_to_width;
 use crate::daemon::strategy::Strategy;
 use crate::pet::ability::next_unlock;
 use crate::pet::state::PetState;
@@ -33,7 +33,11 @@ pub fn render(pet: &PetState, strategy: Strategy, width: usize) -> Vec<StyledLin
     // for TUI visual weight (the panel has room; statusline uses short_tag).
     let stats = format!(
         "ATK:{:3}  DEF:{:3}  SUP:{:3}  VER:{:3}  strat:{}",
-        pet.atk, pet.def, pet.sup, pet.ver, strategy.as_str()
+        pet.atk,
+        pet.def,
+        pet.sup,
+        pet.ver,
+        strategy.as_str()
     );
 
     vec![
@@ -114,7 +118,11 @@ mod tests {
     fn bars_reflect_values() {
         let lines = render(&sample(), s_explorer(), 60);
         // HP=82/100 → ceil(0.82*6) = 5 filled
-        assert!(lines[1].plain_text().contains("█████░"), "got: {}", lines[1].plain_text());
+        assert!(
+            lines[1].plain_text().contains("█████░"),
+            "got: {}",
+            lines[1].plain_text()
+        );
     }
 
     #[test]
@@ -133,7 +141,11 @@ mod tests {
         p.hp = 500; // > max
         let lines = render(&p, s_explorer(), 60);
         // Bar should be fully filled (6 █, 0 ░)
-        assert!(lines[1].plain_text().contains("██████"), "got: {}", lines[1].plain_text());
+        assert!(
+            lines[1].plain_text().contains("██████"),
+            "got: {}",
+            lines[1].plain_text()
+        );
     }
 
     #[test]
@@ -162,7 +174,11 @@ mod tests {
         let mut p = sample();
         p.level = 5;
         let lines = render(&p, s_explorer(), 80);
-        assert!(lines[1].plain_text().contains("Focus Strike"), "got: {}", lines[1].plain_text());
+        assert!(
+            lines[1].plain_text().contains("Focus Strike"),
+            "got: {}",
+            lines[1].plain_text()
+        );
         assert!(lines[1].plain_text().contains("Lv 10"));
     }
 
@@ -172,7 +188,11 @@ mod tests {
         let mut p = sample();
         p.level = 12;
         let lines = render(&p, s_explorer(), 80);
-        assert!(lines[1].plain_text().contains("Tome Sense"), "got: {}", lines[1].plain_text());
+        assert!(
+            lines[1].plain_text().contains("Tome Sense"),
+            "got: {}",
+            lines[1].plain_text()
+        );
     }
 
     #[test]
@@ -181,7 +201,11 @@ mod tests {
         let mut p = sample();
         p.level = 60;
         let lines = render(&p, s_explorer(), 80);
-        assert!(!lines[1].plain_text().contains("next:"), "got: {}", lines[1].plain_text());
+        assert!(
+            !lines[1].plain_text().contains("next:"),
+            "got: {}",
+            lines[1].plain_text()
+        );
     }
 
     // ─── Phase 3b: Strategy display ─────────────────────────────────

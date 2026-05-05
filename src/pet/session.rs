@@ -104,7 +104,10 @@ impl WelcomeBackSummary {
     /// frames/colors. Format follows spec §3.1 example.
     pub fn render_lines(&self) -> Vec<String> {
         let mut out = Vec::with_capacity(4);
-        out.push(format!("你不在的 {}：", human_duration(self.absence_seconds)));
+        out.push(format!(
+            "你不在的 {}：",
+            human_duration(self.absence_seconds)
+        ));
 
         for (kind, count) in &self.kills_by_kind {
             out.push(format!("  → 擊殺 {} ×{}", kind, count));
@@ -115,15 +118,17 @@ impl WelcomeBackSummary {
         if let Some((hp, hp_max)) = self.hp {
             let ratio = hp as f32 / hp_max.max(1) as f32;
             let pct = (ratio * 100.0).round() as u32;
-            let hint = if ratio < 0.3 { "（建議休息一下）" } else { "" };
+            let hint = if ratio < 0.3 {
+                "（建議休息一下）"
+            } else {
+                ""
+            };
             out.push(format!("  → HP {}% {}", pct, hint).trim_end().to_string());
         }
 
         // Pure-idle case: show the巡邏 line so the player doesn't feel the
         // report is broken when genuinely nothing happened.
-        if !self.has_content()
-            || (self.kills_by_kind.is_empty() && self.loot_count == 0)
-        {
+        if !self.has_content() || (self.kills_by_kind.is_empty() && self.loot_count == 0) {
             out.push("  → Ferris 在這裡巡邏，沒有發現新威脅。".to_string());
         }
         out
@@ -268,7 +273,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             summary.kills_by_kind,
-            vec![("boss".into(), 2), ("ghost".into(), 1), ("zombie".into(), 5)],
+            vec![
+                ("boss".into(), 2),
+                ("ghost".into(), 1),
+                ("zombie".into(), 5)
+            ],
             "sorted ascending by kind"
         );
     }
@@ -287,9 +296,13 @@ mod tests {
             [],
         )
         .unwrap();
-        let summary =
-            WelcomeBackSummary::build(&conn, since, now, None).unwrap().unwrap();
-        assert!(summary.kills_by_kind.is_empty(), "kill before last_seen must be excluded");
+        let summary = WelcomeBackSummary::build(&conn, since, now, None)
+            .unwrap()
+            .unwrap();
+        assert!(
+            summary.kills_by_kind.is_empty(),
+            "kill before last_seen must be excluded"
+        );
     }
 
     #[test]
@@ -310,8 +323,9 @@ mod tests {
             [since - 3600],
         )
         .unwrap();
-        let summary =
-            WelcomeBackSummary::build(&conn, since, now, None).unwrap().unwrap();
+        let summary = WelcomeBackSummary::build(&conn, since, now, None)
+            .unwrap()
+            .unwrap();
         assert_eq!(summary.loot_count, 3);
     }
 
@@ -358,7 +372,7 @@ mod tests {
     fn human_duration_scales_by_magnitude() {
         assert_eq!(human_duration(600), "10 分鐘");
         assert_eq!(human_duration(3600), "1 小時");
-        assert_eq!(human_duration(3900), "1 小時");      // <10 min remainder dropped
+        assert_eq!(human_duration(3900), "1 小時"); // <10 min remainder dropped
         assert_eq!(human_duration(4500), "1 小時 15 分");
         assert_eq!(human_duration(86_400 + 3600), "1 天 1 小時");
         assert_eq!(human_duration(3 * 86_400), "3 天");

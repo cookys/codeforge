@@ -104,7 +104,9 @@ pub fn recipes() -> &'static [Recipe] {
 /// names (CLI surfaces the error).
 pub fn find_recipe(name: &str) -> Option<&'static Recipe> {
     let lower = name.trim().to_ascii_lowercase();
-    recipes().iter().find(|r| r.product.name.to_ascii_lowercase() == lower)
+    recipes()
+        .iter()
+        .find(|r| r.product.name.to_ascii_lowercase() == lower)
 }
 
 #[cfg(test)]
@@ -142,7 +144,11 @@ mod tests {
         // is ever added, relax this but keep a unit test for the crafts
         // that SHOULD have an effect (the three §3.5 recipes).
         for r in recipes() {
-            assert!(r.effect.is_some(), "recipe {:?} missing effect", r.product.name);
+            assert!(
+                r.effect.is_some(),
+                "recipe {:?} missing effect",
+                r.product.name
+            );
         }
     }
 

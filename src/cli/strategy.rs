@@ -42,7 +42,11 @@ pub fn run(ctx: &db::Context, name: Option<&str>) -> Result<()> {
             };
             upsert_strategy(&conn, parsed)?;
             println!("✓ 策略切換為 {}", parsed.as_str());
-            println!("  ATK 倍率 {:.2}x  DEF 倍率 {:.2}x", parsed.atk_mult(), parsed.def_mult());
+            println!(
+                "  ATK 倍率 {:.2}x  DEF 倍率 {:.2}x",
+                parsed.atk_mult(),
+                parsed.def_mult()
+            );
         }
     }
     Ok(())
@@ -53,11 +57,9 @@ pub fn run(ctx: &db::Context, name: Option<&str>) -> Result<()> {
 ///   - the stored value fails to parse (corrupt — should not happen)
 pub(crate) fn read_current(conn: &rusqlite::Connection) -> Result<Strategy> {
     let stored: Option<String> = conn
-        .query_row(
-            "SELECT strategy FROM pet_snapshot WHERE id = 1",
-            [],
-            |r| r.get(0),
-        )
+        .query_row("SELECT strategy FROM pet_snapshot WHERE id = 1", [], |r| {
+            r.get(0)
+        })
         .optional()?;
     Ok(stored
         .and_then(|s| Strategy::from_str(&s))
