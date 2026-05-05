@@ -4,14 +4,13 @@
 
 ## Active
 
-| Project | Description | Started |
-|---------|------------|---------|
-| [public-readiness](2026-05-05-public-readiness/README.md) | 公開 GitHub 前 cleanup — 4 audit blockers (LICENSE / README / .gitignore / 路徑硬編碼) + 9 recommendations (Cargo.toml metadata / Anthropic disclaimer / PRIVACY / cargo-deny / CI workflow / CONTRIBUTING / CODE_OF_CONDUCT / branch prune / v0.1.0 tag)；Board Decision A：CodePower 同步公開不 redact `src/clan/*` | 2026-05-05 |
+_(none)_
 
 ## Archived
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [public-readiness](_archive/2026-05-05-public-readiness/README.md) | 公開 GitHub 前 cleanup — 4 audit blockers (LICENSE / README / .gitignore / 路徑硬編碼) + 9 recommendations (Cargo.toml metadata / Anthropic disclaimer / PRIVACY / cargo-deny / CI workflow / CONTRIBUTING / CODE_OF_CONDUCT / branch prune / v0.0.1 tag) + lore (CodeForge↔CodePower smithy framing)。Board A：CodePower 同步公開不 redact `src/clan/*`；repo 公開到 https://github.com/cookys/codeforge | 2026-05-05 ✅ |
 | [zone-color-paint-layer](_archive/2026-04-22-zone-color-paint-layer/README.md) | B11 — render 層升級成 `Vec<StyledLine>`（per-span fg）；paint 走 `SetForegroundColor`/`ResetColor` per-span；local_map tile-grid border 依 `zone_color(dir)` 著色，名稱/badge 保留 default-fg；5 panel render 全遷移；`zone_color` 換 `crossterm::style::Color` + 移除 `#[allow(dead_code)]`；`StyledLine::clip_to_width` CJK-safe 新 primitive；完成 tile-map-localmap criterion #3 的 ANSI snapshot。P1-P4 + QG + r1 2 IMPORTANT + 1 NIT fixes + r2 CLEAN，+23 tests (643 → 666) | 2026-04-22 ✅ |
 | [tile-map-localmap](_archive/2026-04-21-tile-map-localmap/README.md) | Local Map tile-grid 模式（Revival World 風）—— 10×3 box-drawn tile + CJK 名 + mob badge + `@` current-dir overlay + `g`/`l` runtime toggle + `<30 cols` 自動 fallback list + `…+N more` overflow；zone_color mapping（paint 整合 → B11）、`TuiEvent` enum 取代 `mpsc<()>`、Quit 走 `blocking_send` 保送達。P1-P4 + QG + r1 2 CRITICAL + 1 IMPORTANT fixes + r2 CLEAN，+58 tests（643 total） | 2026-04-21 ✅ |
 | [tui-foundation](_archive/2026-04-18-tui-foundation/README.md) | Adaptive TUI — LayoutMode enum (Compact/Narrow/Standard/Wide) + breakpoint dispatch；`codeforge attach` tmux companion pane；Zoa ASCII animation pipeline (Idle 4 frames, Phase 4 infra)，P1-P4 + QG + r1 3 IMPORTANT fixes + r2 CLEAN，+30 tests (585 total) | 2026-04-18 ✅ |

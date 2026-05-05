@@ -2,9 +2,7 @@
 
 ## Active Plans
 
-| Plan | Created | Project |
-|------|---------|---------|
-| [public-readiness](2026-05-05-public-readiness.md) | 2026-05-05 | [2026-05-05-public-readiness](../projects/2026-05-05-public-readiness/) |
+_(none)_
 
 ---
 
@@ -12,6 +10,7 @@
 
 | Plan | Created | Moved to Project |
 |------|---------|-----------------|
+| [public-readiness](2026-05-05-public-readiness.md) | 2026-05-05 | [2026-05-05-public-readiness](../projects/_archive/2026-05-05-public-readiness/) |
 | [zone-color-paint-layer](2026-04-21-zone-color-paint-layer.md) | 2026-04-21 | [2026-04-22-zone-color-paint-layer](../projects/_archive/2026-04-22-zone-color-paint-layer/) |
 | [tile-map-localmap](2026-04-20-tile-map-localmap.md) | 2026-04-20 | [2026-04-21-tile-map-localmap](../projects/_archive/2026-04-21-tile-map-localmap/) |
 | [tui-foundation](2026-04-18-tui-foundation.md) | 2026-04-18 | [2026-04-18-tui-foundation](../projects/_archive/2026-04-18-tui-foundation/) |

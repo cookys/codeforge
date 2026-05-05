@@ -1,6 +1,6 @@
 # CodeForge Backlog
 
-Last audited: 2026-04-17
+Last audited: 2026-05-05
 
 Items confirmed low-priority or blocked by external dependencies. Each item has a trigger condition for when to pick it up.
 
@@ -89,4 +89,13 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 **Premise**: Phase 3e 的 `Doppelganger Ward` item 可 craft + use，`active_effects` table 正確寫入，但 daemon 沒有 doppelganger split 邏輯 —— 整個 split mechanic（on-defeat spawn / cascade / stats 繼承）在 spec §2 只有一行，需要先補 design 才能寫 code。Ward 目前 storage-only，`codeforge inventory` 會顯示警語提醒玩家。
 **Trigger**: `doc/proposals/2026-04-18-doppelganger-split.md` 有 `## Decision` 區塊 —— user 回答三個參數（`split_trigger` / `max_children` / `child_stat_ratio`）後可直接進入 L-size 實作。
 **Status 2026-04-18**: Proposal 已寫，等 user decision。預設答案（A/A/A）列在 proposal 文末。
+
+---
+
+## B12 — `.claude/settings.json` Path Templating + Setup Script
+
+**Area**: `.claude/settings.json`, new `scripts/setup-hooks.sh` or `codeforge init --hooks`
+**Premise**: `.claude/settings.json` ships with absolute hook paths (e.g. `/home/codepower/projects/codeforge/.claude/scripts/check-improvements.js`). Claude Code does not yet support relative paths in hook configuration, so every cloner must manually edit 6 paths after cloning. README documents this in "First-time Claude Code hook setup" but it's friction. Two solutions discussed: (a) ship `settings.json.template` with `<REPO_ROOT>` placeholder + a `scripts/setup-hooks.sh` (or `codeforge init --hooks`) that rewrites paths on first run; (b) wait for Claude Code to support relative paths and switch.
+**Trigger**: Pick up when (1) a contributor reports broken hooks after clone, OR (2) Claude Code adds relative-path support (then this becomes a sub-task of switching to relative paths), OR (3) > 5 stars on the public repo (signals contributor influx).
+**Status 2026-05-05**: Identified during public-readiness audit (`doc/projects/_archive/2026-05-05-public-readiness/`). Deferred out of scope per that L-task's Design Decision 3 to keep scope focused. S-size if option (a), trivial if option (b).
 
