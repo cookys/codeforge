@@ -49,15 +49,16 @@ Tracks: 公開 GitHub 前的 4 項 blockers + 9 項 hygiene recommendations（4-
 
 | Phase | Status | Commit |
 |-------|--------|--------|
-| P1 LICENSE + .gitignore | pending | — |
-| P2 Path / personal-info sanitize | pending | — |
-| P3 README + Cargo.toml + Privacy + name decision | pending | — |
-| P4 deny.toml + CONTRIBUTING + CODE_OF_CONDUCT + CI workflow | pending | — |
-| P5 QG + review + merge + tag + (Board pause) + push | pending | — |
-| QG (cargo check + clippy + test) | pending | — |
-| Review r1 | pending | — |
-| Fix r1 findings | pending | — |
+| P1 LICENSE + .gitignore | ✅ done | `7b64baa` |
+| P2 Path / personal-info sanitize | ✅ done | `9cd7703` |
+| P3 README + Cargo.toml + Privacy + name decision | ✅ done | `23c88a6` |
+| P4 deny.toml + CONTRIBUTING + CODE_OF_CONDUCT + CI workflow | ✅ done | `c66d21f` |
+| QG (fmt + clippy + test 669/669 + secret scan) | ✅ done | `1f7af43`, `8522c77` |
+| Review r1 | ✅ done (2 IMPORTANT + 2 MINOR) | — |
+| Fix r1 findings | 🔄 in_progress | — |
 | Review r2 | pending | — |
 | Merge to main | pending | — |
 | Post-merge verify | pending | — |
+| Prune stale branches + tag v0.1.0 | pending | — |
+| Board pause + gh repo create + push | pending | — |
 | Archive | pending | — |

@@ -39,10 +39,10 @@ function isCodeTouch(input) {
   const toolName = input.tool_name || '';
   const toolInput = input.tool_input || {};
 
-  // Edit / Write on src/**/*.rs
+  // Edit / Write on src/**/*.rs (under this repo, regardless of clone dir name)
   if (toolName === 'Edit' || toolName === 'Write') {
     const p = toolInput.file_path || '';
-    if (p.includes('/codeforge/src/') && p.endsWith('.rs')) return true;
+    if (p.startsWith(PROJECT_ROOT + '/src/') && p.endsWith('.rs')) return true;
   }
 
   // Bash commands that mark code-work boundary
