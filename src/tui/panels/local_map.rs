@@ -73,7 +73,10 @@ pub fn render_list(rooms: &[RoomSummary], width: usize, max_rows: usize) -> Vec<
     out.push(StyledLine::plain(pad_to_width("📍 Local Map", width)));
 
     if rooms.is_empty() {
-        out.push(StyledLine::plain(pad_to_width("  (no mobs scanned)", width)));
+        out.push(StyledLine::plain(pad_to_width(
+            "  (no mobs scanned)",
+            width,
+        )));
         while out.len() < max_rows {
             out.push(StyledLine::plain(pad_to_width("", width)));
         }
@@ -166,7 +169,9 @@ mod tests {
 
     #[test]
     fn renders_exactly_max_rows_lines() {
-        let rooms = (0..3).map(|i| room(&format!("d{i}"), 1, 0, false)).collect::<Vec<_>>();
+        let rooms = (0..3)
+            .map(|i| room(&format!("d{i}"), 1, 0, false))
+            .collect::<Vec<_>>();
         let lines = render_list(&rooms, 30, 5);
         assert_eq!(lines.len(), 5);
     }
@@ -186,7 +191,9 @@ mod tests {
 
     #[test]
     fn caps_rooms_at_max_rows_minus_header() {
-        let rooms: Vec<_> = (0..20).map(|i| room(&format!("d{i}"), 1, 0, false)).collect();
+        let rooms: Vec<_> = (0..20)
+            .map(|i| room(&format!("d{i}"), 1, 0, false))
+            .collect();
         let lines = render_list(&rooms, 30, 5);
         assert_eq!(lines.len(), 5);
         // 1 header + 4 rooms = 5
@@ -229,7 +236,9 @@ mod tests {
 
     #[test]
     fn dispatcher_list_mode_renders_old_format() {
-        let panel = LocalMapPanel { display_mode: DisplayMode::List };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::List,
+        };
         let rooms = vec![room("src", 2, 0, true)];
         let lines = render(&panel, &rooms, 40, 5);
         // List-mode header comes through.
@@ -240,7 +249,9 @@ mod tests {
 
     #[test]
     fn dispatcher_grid_mode_renders_tile_borders() {
-        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::Grid,
+        };
         let rooms = vec![room("src", 2, 0, false)];
         let lines = render(&panel, &rooms, 40, 6);
         // Grid mode: first row should be a tile top border.
@@ -251,11 +262,16 @@ mod tests {
 
     #[test]
     fn dispatcher_grid_mode_falls_back_to_list_below_min_width() {
-        let panel = LocalMapPanel { display_mode: DisplayMode::Grid };
+        let panel = LocalMapPanel {
+            display_mode: DisplayMode::Grid,
+        };
         let rooms = vec![room("src", 2, 0, false)];
         // 28 cols < MIN_GRID_WIDTH (30) → fallback to list.
         let lines = render(&panel, &rooms, 28, 6);
-        assert!(lines[0].plain_text().contains("Local Map"), "expected list header as fallback");
+        assert!(
+            lines[0].plain_text().contains("Local Map"),
+            "expected list header as fallback"
+        );
     }
 
     #[test]

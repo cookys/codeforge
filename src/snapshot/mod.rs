@@ -72,8 +72,7 @@ pub fn collect(conn: &Connection, days: i64) -> Result<SnapshotData> {
     let kills_by_kind = kills_by_kind(conn, days)?;
     let top_streak = longest_streak(conn, days)?;
     let zones = world::load_all(conn)?;
-    let generated_date = conn
-        .query_row("SELECT date('now')", [], |r| r.get::<_, String>(0))?;
+    let generated_date = conn.query_row("SELECT date('now')", [], |r| r.get::<_, String>(0))?;
     Ok(SnapshotData {
         pet,
         generated_date,
@@ -172,7 +171,12 @@ mod tests {
         conn.execute(
             "INSERT INTO combat_log (zone_id, mob_name, mob_kind, xp_gained, occurred_at)
              VALUES (?1, ?2, ?3, 10, datetime('now', ?4))",
-            rusqlite::params![zone, format!("{kind}-mob"), kind, format!("-{offset_days} days")],
+            rusqlite::params![
+                zone,
+                format!("{kind}-mob"),
+                kind,
+                format!("-{offset_days} days")
+            ],
         )
         .unwrap();
     }
@@ -275,7 +279,10 @@ mod tests {
         insert_kill(&conn, "rust", "boss", 2);
         insert_kill(&conn, "rust", "boss", 1);
         let out = longest_streak(&conn, 7).unwrap();
-        assert_eq!(out.count, 2, "only in-window kills contribute to the streak");
+        assert_eq!(
+            out.count, 2,
+            "only in-window kills contribute to the streak"
+        );
     }
 
     #[test]

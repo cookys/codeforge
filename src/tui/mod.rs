@@ -188,7 +188,11 @@ fn paint_once(
         let mut stdout = io::stdout();
         use crossterm::{cursor, queue, style::Print, terminal};
         use std::io::Write;
-        queue!(stdout, terminal::Clear(terminal::ClearType::All), cursor::MoveTo(0, 0))?;
+        queue!(
+            stdout,
+            terminal::Clear(terminal::ClearType::All),
+            cursor::MoveTo(0, 0)
+        )?;
         let msg = format!(
             "終端寬度 {cols} 太窄（需 ≥ 60）— 請放大視窗（codeforge statusline 可印精簡狀態）"
         );

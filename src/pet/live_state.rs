@@ -52,16 +52,14 @@ impl LiveState {
     /// Propagates SQL errors — callers shouldn't conflate "no pet" with
     /// "DB locked / schema missing / IO failure".
     pub fn exists(conn: &Connection) -> Result<bool> {
-        let snap: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pet_snapshot WHERE id = 1", [], |r| {
+        let snap: i64 =
+            conn.query_row("SELECT COUNT(*) FROM pet_snapshot WHERE id = 1", [], |r| {
                 r.get(0)
             })?;
         if snap > 0 {
             return Ok(true);
         }
-        let pet: i64 = conn.query_row("SELECT COUNT(*) FROM pet WHERE id = 1", [], |r| {
-            r.get(0)
-        })?;
+        let pet: i64 = conn.query_row("SELECT COUNT(*) FROM pet WHERE id = 1", [], |r| r.get(0))?;
         Ok(pet > 0)
     }
 
@@ -167,8 +165,7 @@ fn load_from_snapshot(conn: &Connection) -> Result<Option<SnapshotBundle>> {
             // Unknown values fall back to the default rather than being
             // elevated to None — we still *have* a strategy, it's just the
             // safe one the daemon would also pick on load.
-            let strategy =
-                Strategy::from_str(&strategy_str).or(Some(DEFAULT_STRATEGY));
+            let strategy = Strategy::from_str(&strategy_str).or(Some(DEFAULT_STRATEGY));
             (state, last_message, Some(mood), strategy)
         },
     ))
@@ -182,8 +179,7 @@ fn load_from_pet(conn: &Connection) -> Result<Option<PetState>> {
 }
 
 fn sum_unseen_xp(conn: &Connection) -> Result<(u32, u32)> {
-    let mut stmt =
-        conn.prepare("SELECT payload FROM event_inbox WHERE seen_at IS NULL")?;
+    let mut stmt = conn.prepare("SELECT payload FROM event_inbox WHERE seen_at IS NULL")?;
     let mut rows = stmt.query([])?;
     let mut count: u32 = 0;
     let mut total: u32 = 0;
@@ -330,10 +326,7 @@ mod tests {
             &conn,
             r#"{"event":"xp_award","xp":7,"source":"learn","detail":"note"}"#,
         );
-        insert_event(
-            &conn,
-            r#"{"event":"xp_award","xp":3,"source":"search"}"#,
-        );
+        insert_event(&conn, r#"{"event":"xp_award","xp":3,"source":"search"}"#);
         let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.pending_xp, 10);
         assert_eq!(live.state.xp, 15);
@@ -358,11 +351,8 @@ mod tests {
         let conn = fresh();
         seed_snapshot(&conn, 10, 1);
         insert_event(&conn, r#"{"event":"git_commit"}"#);
-        conn.execute(
-            "UPDATE event_inbox SET seen_at = 9999 WHERE id = 1",
-            [],
-        )
-        .unwrap();
+        conn.execute("UPDATE event_inbox SET seen_at = 9999 WHERE id = 1", [])
+            .unwrap();
 
         let live = LiveState::load(&conn).unwrap().unwrap();
         assert_eq!(live.pending_events, 0);
@@ -374,7 +364,10 @@ mod tests {
     fn empty_db_returns_none() {
         let conn = fresh();
         let live = LiveState::load(&conn).unwrap();
-        assert!(live.is_none(), "no pet anywhere → None, not zero-filled state");
+        assert!(
+            live.is_none(),
+            "no pet anywhere → None, not zero-filled state"
+        );
     }
 
     #[test]
@@ -461,6 +454,9 @@ mod tests {
         // silently report "no pet".
         let conn = Connection::open_in_memory().unwrap();
         let result = LiveState::exists(&conn);
-        assert!(result.is_err(), "missing table must surface, not return false");
+        assert!(
+            result.is_err(),
+            "missing table must surface, not return false"
+        );
     }
 }

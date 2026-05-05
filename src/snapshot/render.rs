@@ -112,7 +112,11 @@ fn zone_lines(zones: &[ZoneStats]) -> Vec<String> {
         } else {
             // Indent the second rank so it sits roughly under its cell.
             // A half-card offset works for the 2×2 layout at CARD_WIDTH 58.
-            format!("{}    {}", pad_visible(&rank_left, CARD_WIDTH / 2 - 2), rank_right)
+            format!(
+                "{}    {}",
+                pad_visible(&rank_left, CARD_WIDTH / 2 - 2),
+                rank_right
+            )
         };
         out.push(pair_zone);
         out.push(pair_rank);
@@ -333,7 +337,11 @@ mod tests {
                 continue;
             }
             // visible width between the two ║ chars must equal CARD_WIDTH.
-            let inner: String = line.chars().skip(1).take(line.chars().count() - 2).collect();
+            let inner: String = line
+                .chars()
+                .skip(1)
+                .take(line.chars().count() - 2)
+                .collect();
             let w = UnicodeWidthStr::width(inner.as_str());
             assert_eq!(
                 w, CARD_WIDTH,
@@ -355,7 +363,10 @@ mod tests {
     #[test]
     fn render_locked_zone_shows_question_marks() {
         let out = render(&sample_data());
-        assert!(out.contains("？？？"), "locked zone must show ??? placeholder");
+        assert!(
+            out.contains("？？？"),
+            "locked zone must show ??? placeholder"
+        );
         assert!(out.contains("（未解鎖）"));
     }
 
@@ -438,7 +449,11 @@ mod tests {
             if !line.starts_with('║') {
                 continue;
             }
-            let inner: String = line.chars().skip(1).take(line.chars().count() - 2).collect();
+            let inner: String = line
+                .chars()
+                .skip(1)
+                .take(line.chars().count() - 2)
+                .collect();
             assert_eq!(
                 UnicodeWidthStr::width(inner.as_str()),
                 CARD_WIDTH,

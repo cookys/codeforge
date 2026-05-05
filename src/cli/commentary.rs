@@ -121,7 +121,11 @@ fn test(conn: &Connection, kind_arg: Option<&str>) -> Result<()> {
         },
     )?;
 
-    println!("✓ 測試 commentary（{}, {}）：", kind.as_str(), generated.source.as_str());
+    println!(
+        "✓ 測試 commentary（{}, {}）：",
+        kind.as_str(),
+        generated.source.as_str()
+    );
     println!("  {}", generated.phrase);
     println!("  已寫入 commentary_feed，下次 statusline / TUI refresh 可見。");
     println!("  注意：test 不會更新 commentary_history 的 30-day dedup 窗。");
@@ -139,9 +143,13 @@ fn synth_trigger(kind: Kind, level: u32) -> crate::commentary::trigger::Trigger 
             prev_level: level.saturating_sub(1),
             new_level: level,
         },
-        Kind::SessionLong => Trigger::SessionLong { duration_secs: 14_400 },
+        Kind::SessionLong => Trigger::SessionLong {
+            duration_secs: 14_400,
+        },
         Kind::LongIdle => Trigger::LongIdle { absence_secs: 1800 },
-        Kind::ZoneUnlock => Trigger::ZoneUnlock { zone_id: "test".into() },
+        Kind::ZoneUnlock => Trigger::ZoneUnlock {
+            zone_id: "test".into(),
+        },
         // Dedicated ManualTest variant (added in review r1 finding #5 fix)
         // means pool selection keys on Kind::ManualTest and the
         // ManualTest-specific phrase pool is reached, rather than
@@ -283,11 +291,7 @@ mod tests {
         assert!(!rows[0].phrase.is_empty());
         // commentary_history must stay empty — test writes are not real emissions.
         let hits: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM commentary_history",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM commentary_history", [], |r| r.get(0))
             .unwrap();
         assert_eq!(hits, 0, "test() must not update commentary_history");
     }
@@ -317,7 +321,11 @@ mod tests {
         let conn = fresh();
         test(&conn, None).unwrap();
         let kind: String = conn
-            .query_row("SELECT kind FROM commentary_feed ORDER BY id DESC LIMIT 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT kind FROM commentary_feed ORDER BY id DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(kind, "manual_test");
     }
@@ -347,7 +355,10 @@ mod tests {
             test(&conn, Some(kind)).unwrap();
             let rows = repo::recent_feed(&conn, 1).unwrap();
             assert_eq!(rows.len(), 1, "kind {kind} produced nothing");
-            assert!(!rows[0].phrase.is_empty(), "kind {kind} produced empty phrase");
+            assert!(
+                !rows[0].phrase.is_empty(),
+                "kind {kind} produced empty phrase"
+            );
         }
     }
 

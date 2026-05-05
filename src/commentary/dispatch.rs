@@ -155,12 +155,10 @@ pub async fn execute_dispatch(
     };
 
     let generated: Generated = match api_key {
-        Some(key) if !key.is_empty() => {
-            match generator::generate_haiku(&key, &gen_ctx).await {
-                Ok(g) => g,
-                Err(_e) => generate_rule_blocking(&db_path, &gen_ctx, &pending)?,
-            }
-        }
+        Some(key) if !key.is_empty() => match generator::generate_haiku(&key, &gen_ctx).await {
+            Ok(g) => g,
+            Err(_e) => generate_rule_blocking(&db_path, &gen_ctx, &pending)?,
+        },
         _ => generate_rule_blocking(&db_path, &gen_ctx, &pending)?,
     };
 
@@ -311,7 +309,8 @@ mod tests {
             hp_max: 100,
         };
         // First call reserves at t=0
-        let first = decide_and_reserve(&conn, &world, std::slice::from_ref(&boss), 1, 1, 0, 1, 0).unwrap();
+        let first =
+            decide_and_reserve(&conn, &world, std::slice::from_ref(&boss), 1, 1, 0, 1, 0).unwrap();
         assert!(first.is_some());
         // Second call 30 min later — within 1h window — should be None
         let second = decide_and_reserve(&conn, &world, &[boss], 1, 1, 0, 2, 1800).unwrap();
@@ -372,7 +371,9 @@ mod tests {
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            execute_dispatch(db_path.clone(), pending, None).await.unwrap();
+            execute_dispatch(db_path.clone(), pending, None)
+                .await
+                .unwrap();
         });
 
         let conn = Connection::open(&db_path).unwrap();
@@ -384,7 +385,11 @@ mod tests {
 
         // History recorded
         let count: i64 = conn
-            .query_row("SELECT use_count FROM commentary_history WHERE kind='boss_kill'", [], |r| r.get(0))
+            .query_row(
+                "SELECT use_count FROM commentary_history WHERE kind='boss_kill'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 1);
     }
@@ -401,7 +406,10 @@ mod tests {
         }
         let pending = PendingDispatch {
             kind: Kind::LevelUp,
-            trigger: Trigger::LevelUp { prev_level: 4, new_level: 5 },
+            trigger: Trigger::LevelUp {
+                prev_level: 4,
+                new_level: 5,
+            },
             tone: Tone::new("python", "explorer"),
             pet_name: "Spam".into(),
             pet_level: 5,
@@ -413,7 +421,9 @@ mod tests {
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            execute_dispatch(db_path.clone(), pending, Some(String::new())).await.unwrap();
+            execute_dispatch(db_path.clone(), pending, Some(String::new()))
+                .await
+                .unwrap();
         });
 
         let conn = Connection::open(&db_path).unwrap();

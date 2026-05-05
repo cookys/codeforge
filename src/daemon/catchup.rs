@@ -49,8 +49,11 @@ mod tests {
         // 14 days * 24h * 60min = 20160 ticks missed (1 tick / 60s)
         let effective = compute_effective_ticks(20160);
         // tail = 19920, sqrt ≈ 141.1 → 240 + 141 = 381
-        assert!((380..=385).contains(&effective),
-            "expected ~381 effective ticks for 2-week idle, got {}", effective);
+        assert!(
+            (380..=385).contains(&effective),
+            "expected ~381 effective ticks for 2-week idle, got {}",
+            effective
+        );
     }
 
     #[test]

@@ -332,7 +332,11 @@ mod tests {
     fn every_line_hits_requested_width() {
         let lines = render_tile(&room("daemon", 2, 0, true), TILE_WIDTH, TILE_HEIGHT);
         for (i, l) in lines.iter().enumerate() {
-            assert_eq!(l.visible_width(), TILE_WIDTH, "row {i} width mismatch: {l:?}");
+            assert_eq!(
+                l.visible_width(),
+                TILE_WIDTH,
+                "row {i} width mismatch: {l:?}"
+            );
         }
     }
 
@@ -512,7 +516,9 @@ mod tests {
 
     #[test]
     fn compute_grid_places_row_major() {
-        let rs: Vec<_> = (0..5).map(|i| room(&format!("d{i}"), 0, 0, false)).collect();
+        let rs: Vec<_> = (0..5)
+            .map(|i| room(&format!("d{i}"), 0, 0, false))
+            .collect();
         // 30×3 → cols=3, rows=1, capacity=3. Rooms 0/1/2 placed; 3/4 overflow.
         let (layout, placed, overflow) = compute_grid(&rs, 30, 3);
         assert_eq!(layout.capacity, 3);
@@ -525,7 +531,9 @@ mod tests {
 
     #[test]
     fn compute_grid_wraps_into_second_row() {
-        let rs: Vec<_> = (0..5).map(|i| room(&format!("d{i}"), 0, 0, false)).collect();
+        let rs: Vec<_> = (0..5)
+            .map(|i| room(&format!("d{i}"), 0, 0, false))
+            .collect();
         // 30×6 → cols=3, rows=2. Rooms 3/4 wrap to row=1.
         let (_, placed, _) = compute_grid(&rs, 30, 6);
         assert_eq!(placed[3].0, TileCoord { col: 0, row: 1 });
@@ -534,7 +542,9 @@ mod tests {
 
     #[test]
     fn compute_grid_fits_exact_capacity_no_overflow() {
-        let rs: Vec<_> = (0..24).map(|i| room(&format!("d{i}"), 0, 0, false)).collect();
+        let rs: Vec<_> = (0..24)
+            .map(|i| room(&format!("d{i}"), 0, 0, false))
+            .collect();
         let (_, placed, overflow) = compute_grid(&rs, 40, 20);
         assert_eq!(placed.len(), 24);
         assert_eq!(overflow, 0);
@@ -553,7 +563,9 @@ mod tests {
 
     #[test]
     fn render_grid_every_row_matches_panel_width() {
-        let rooms: Vec<_> = (0..8).map(|i| room(&format!("d{i}"), 1, 0, false)).collect();
+        let rooms: Vec<_> = (0..8)
+            .map(|i| room(&format!("d{i}"), 1, 0, false))
+            .collect();
         let frame = render_grid(&rooms, 40, 12);
         for (i, l) in frame.iter().enumerate() {
             assert_eq!(l.visible_width(), 40, "row {i} width mismatch: {l:?}");
@@ -572,10 +584,7 @@ mod tests {
 
     #[test]
     fn render_grid_cjk_name_preserves_alignment() {
-        let rooms = vec![
-            room("前端", 1, 0, false),
-            room("後端", 0, 2, true),
-        ];
+        let rooms = vec![room("前端", 1, 0, false), room("後端", 0, 2, true)];
         let frame = render_grid(&rooms, 40, 12);
         for (i, l) in frame.iter().enumerate() {
             assert_eq!(l.visible_width(), 40, "row {i} width mismatch");
@@ -586,16 +595,23 @@ mod tests {
 
     #[test]
     fn render_grid_overflow_shows_indicator() {
-        let rooms: Vec<_> = (0..30).map(|i| room(&format!("d{i}"), 1, 0, false)).collect();
+        let rooms: Vec<_> = (0..30)
+            .map(|i| room(&format!("d{i}"), 1, 0, false))
+            .collect();
         // 40×6 → cols=4, rows=2, capacity=8 → 22 overflow.
         let frame = render_grid(&rooms, 40, 6);
         let last = frame.last().unwrap();
-        assert!(last.plain_text().contains("…+22 more"), "expected overflow indicator, got {last:?}");
+        assert!(
+            last.plain_text().contains("…+22 more"),
+            "expected overflow indicator, got {last:?}"
+        );
     }
 
     #[test]
     fn render_grid_no_overflow_omits_indicator() {
-        let rooms: Vec<_> = (0..4).map(|i| room(&format!("d{i}"), 0, 0, false)).collect();
+        let rooms: Vec<_> = (0..4)
+            .map(|i| room(&format!("d{i}"), 0, 0, false))
+            .collect();
         let frame = render_grid(&rooms, 40, 6);
         let last = frame.last().unwrap();
         assert!(!last.plain_text().contains("more"));
@@ -613,7 +629,9 @@ mod tests {
 
     #[test]
     fn render_grid_overflow_indicator_keeps_row_width() {
-        let rooms: Vec<_> = (0..50).map(|i| room(&format!("d{i}"), 1, 0, false)).collect();
+        let rooms: Vec<_> = (0..50)
+            .map(|i| room(&format!("d{i}"), 1, 0, false))
+            .collect();
         let frame = render_grid(&rooms, 40, 9);
         let last = frame.last().unwrap();
         assert_eq!(last.visible_width(), 40);
@@ -655,11 +673,19 @@ mod tests {
         let lines = render_tile(&room("daemon", 0, 0, false), 10, 3);
         let name_row = &lines[1];
         assert_eq!(name_row.spans.len(), 3);
-        assert_eq!(name_row.spans[0].fg, Some(Color::White), "left border = daemon colour");
+        assert_eq!(
+            name_row.spans[0].fg,
+            Some(Color::White),
+            "left border = daemon colour"
+        );
         assert_eq!(name_row.spans[0].text, "│");
         assert_eq!(name_row.spans[1].fg, None, "dir name stays default-fg");
         assert!(name_row.spans[1].text.contains("daemon"));
-        assert_eq!(name_row.spans[2].fg, Some(Color::White), "right border = daemon colour");
+        assert_eq!(
+            name_row.spans[2].fg,
+            Some(Color::White),
+            "right border = daemon colour"
+        );
         assert_eq!(name_row.spans[2].text, "│");
     }
 
@@ -669,7 +695,10 @@ mod tests {
         let badge_row = &lines[2];
         assert_eq!(badge_row.spans.len(), 3);
         assert_eq!(badge_row.spans[0].fg, Some(Color::Cyan));
-        assert_eq!(badge_row.spans[1].fg, None, "badge content stays default-fg");
+        assert_eq!(
+            badge_row.spans[1].fg, None,
+            "badge content stays default-fg"
+        );
         assert!(badge_row.spans[1].text.contains("🧟2"));
         assert_eq!(badge_row.spans[2].fg, Some(Color::Cyan));
     }
@@ -709,11 +738,15 @@ mod tests {
         // 40×3 = 4 cols × 1 row = capacity 4; feed 10 rooms → 6 overflow.
         // Bottom row (badge row) carries coloured `│` spans from the
         // first few tiles plus the default-fg `…+6 more` overlay.
-        let rooms: Vec<_> = (0..10).map(|i| room(&format!("d{i}"), 1, 0, false)).collect();
+        let rooms: Vec<_> = (0..10)
+            .map(|i| room(&format!("d{i}"), 1, 0, false))
+            .collect();
         let frame = render_grid(&rooms, 40, 3);
         let last = frame.last().unwrap();
         assert!(
-            last.spans.iter().any(|s| s.fg.is_none() && s.text.contains("…+6 more")),
+            last.spans
+                .iter()
+                .any(|s| s.fg.is_none() && s.text.contains("…+6 more")),
             "overflow indicator must appear as default-fg span"
         );
         assert!(

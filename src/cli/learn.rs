@@ -1,7 +1,7 @@
-use anyhow::Result;
-use std::path::PathBuf;
 use crate::db;
 use crate::memory::l0::{Signal, SignalSource, SignalWriter};
+use anyhow::Result;
+use std::path::PathBuf;
 
 pub fn run(
     ctx: &db::Context,
@@ -46,7 +46,11 @@ pub fn run(
 
 fn read_clipboard() -> Result<String> {
     // 嘗試常見剪貼簿工具
-    for cmd in &["xclip -selection clipboard -o", "xsel --clipboard --output", "pbpaste"] {
+    for cmd in &[
+        "xclip -selection clipboard -o",
+        "xsel --clipboard --output",
+        "pbpaste",
+    ] {
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         if let Ok(out) = std::process::Command::new(parts[0])
             .args(&parts[1..])

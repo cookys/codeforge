@@ -29,12 +29,12 @@ pub struct L1Frontmatter {
     pub topic: String,
     pub created: String,
     pub updated: String,
-    pub sources: Vec<String>,       // L0 signal ids
-    pub links: Vec<String>,         // wikilinks [[topic]]（至少 2 個）
-    pub refs: usize,                // 被引用次數
-    pub last_ref: Option<String>,   // 最後被引用時間
-    pub strength: f32,              // ACT-R activation（0.0–1.0）
-    pub status: String,             // active | superseded | archived
+    pub sources: Vec<String>,     // L0 signal ids
+    pub links: Vec<String>,       // wikilinks [[topic]]（至少 2 個）
+    pub refs: usize,              // 被引用次數
+    pub last_ref: Option<String>, // 最後被引用時間
+    pub strength: f32,            // ACT-R activation（0.0–1.0）
+    pub status: String,           // active | superseded | archived
 }
 
 impl Default for L1Frontmatter {
@@ -87,7 +87,8 @@ impl L1Entry {
         };
 
         // 從 body 第一行 # 標題提取 title
-        let title = body.lines()
+        let title = body
+            .lines()
             .find(|l| l.starts_with("# "))
             .map(|l| l[2..].trim().to_string())
             .unwrap_or_else(|| {
@@ -97,7 +98,12 @@ impl L1Entry {
                     .to_string()
             });
 
-        Ok(Self { frontmatter, title, body, file_path: path })
+        Ok(Self {
+            frontmatter,
+            title,
+            body,
+            file_path: path,
+        })
     }
 
     /// 寫入 Markdown 檔案
@@ -118,8 +124,15 @@ impl L1Entry {
 
     /// 從 topic 生成 slug（去除特殊字元）
     pub fn slugify(topic: &str) -> String {
-        topic.chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' })
+        topic
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
             .collect::<String>()
             .split('-')
             .filter(|s| !s.is_empty())
@@ -133,7 +146,9 @@ pub fn scan_all(store_dir: &Path) -> Result<Vec<L1Entry>> {
     let mut entries = Vec::new();
     for subdir in &["concepts", "connections", "qa"] {
         let dir = store_dir.join(subdir);
-        if !dir.exists() { continue; }
+        if !dir.exists() {
+            continue;
+        }
         for entry in std::fs::read_dir(&dir)? {
             let path = entry?.path();
             if path.extension().map(|e| e == "md").unwrap_or(false) {

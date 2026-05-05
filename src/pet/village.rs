@@ -7,20 +7,20 @@ pub struct Village {
     pub pet_name: &'static str,
     pub color: Color,
     pub tagline: &'static str,
-    pub ascii_small: &'static str,  // 6 行 × ≤10 字（statusline 用）
-    pub ascii_full: &'static str,   // 完整版（pet card / TUI 用）
+    pub ascii_small: &'static str, // 6 行 × ≤10 字（statusline 用）
+    pub ascii_full: &'static str,  // 完整版（pet card / TUI 用）
 }
 
 impl Village {
     /// UX Pro ANSI256 RGB for this village (for owo-colors statusline)
     pub fn rgb(&self) -> (u8, u8, u8) {
         match self.id {
-            "rust"       => (0xD7, 0x5F, 0x00), // 166 #D75F00 — Rust orange
+            "rust" => (0xD7, 0x5F, 0x00),       // 166 #D75F00 — Rust orange
             "typescript" => (0x5F, 0xAF, 0xFF), // 75  #5FAFFF — TS brand blue
-            "python"     => (0xFF, 0xD7, 0x00), // 184 #FFD700 — Python gold
-            "go"         => (0x5F, 0xD7, 0xD7), // 80  #5FD7D7 — Go cyan-teal
+            "python" => (0xFF, 0xD7, 0x00),     // 184 #FFD700 — Python gold
+            "go" => (0x5F, 0xD7, 0xD7),         // 80  #5FD7D7 — Go cyan-teal
             "javascript" => (0xFF, 0xAF, 0x00), // 214 #FFAF00 — JS amber-yellow
-            _            => (0xAF, 0x87, 0xD7), // 140 #AF87D7 — default slate-violet
+            _ => (0xAF, 0x87, 0xD7),            // 140 #AF87D7 — default slate-violet
         }
     }
 }

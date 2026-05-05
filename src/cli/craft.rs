@@ -33,7 +33,11 @@ pub fn run(ctx: &db::Context, name: Option<String>) -> Result<()> {
         .iter()
         .map(|i| format!("{}× {}", i.quantity, i.name))
         .collect();
-    println!("✓ 合成成功：{}  （消耗 {}）", recipe.product.name, ings.join(" + "));
+    println!(
+        "✓ 合成成功：{}  （消耗 {}）",
+        recipe.product.name,
+        ings.join(" + ")
+    );
     if let Some(effect) = recipe.effect.as_ref() {
         println!(
             "  使用時觸發：{}（持續 {} 天）— 執行 `codeforge use \"{}\"`",

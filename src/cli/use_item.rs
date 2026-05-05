@@ -125,11 +125,9 @@ mod tests {
 
         let conn = ctx.open_db().unwrap();
         let zone: String = conn
-            .query_row(
-                "SELECT zone_id FROM active_effects LIMIT 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT zone_id FROM active_effects LIMIT 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(zone, "python", "zone comes from pet.village");
     }
@@ -152,11 +150,9 @@ mod tests {
 
         let conn = ctx.open_db().unwrap();
         let zone: Option<String> = conn
-            .query_row(
-                "SELECT zone_id FROM active_effects LIMIT 1",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT zone_id FROM active_effects LIMIT 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(zone, None, "no pet → global effect (zone_id NULL)");
     }

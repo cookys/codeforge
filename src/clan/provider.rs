@@ -49,18 +49,9 @@ pub struct PetBlueprint {
 
 #[async_trait]
 pub trait ClanContentProvider: Send + Sync {
-    async fn available_clans(
-        &self,
-        user_id: UserId,
-    ) -> anyhow::Result<Vec<ClanSummary>>;
+    async fn available_clans(&self, user_id: UserId) -> anyhow::Result<Vec<ClanSummary>>;
 
-    async fn clan_pets(
-        &self,
-        clan_id: ClanId,
-    ) -> anyhow::Result<Vec<PetBlueprint>>;
+    async fn clan_pets(&self, clan_id: ClanId) -> anyhow::Result<Vec<PetBlueprint>>;
 
-    async fn blueprint(
-        &self,
-        id: BlueprintId,
-    ) -> anyhow::Result<Option<PetBlueprint>>;
+    async fn blueprint(&self, id: BlueprintId) -> anyhow::Result<Option<PetBlueprint>>;
 }

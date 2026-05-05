@@ -114,7 +114,10 @@ pub fn send_sigterm(pid: u32, timeout: Duration) -> Result<()> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
-    Err(anyhow!("daemon 收到 SIGTERM 但 {}s 內未退出", timeout.as_secs()))
+    Err(anyhow!(
+        "daemon 收到 SIGTERM 但 {}s 內未退出",
+        timeout.as_secs()
+    ))
 }
 
 /// Build a shutdown Notify and register tokio signal handlers for SIGTERM + SIGINT.

@@ -96,7 +96,11 @@ mod tests {
     }
 
     fn ev(id: i64, payload: &str) -> InboxEvent {
-        InboxEvent { id, payload: payload.to_string(), created_at: 0 }
+        InboxEvent {
+            id,
+            payload: payload.to_string(),
+            created_at: 0,
+        }
     }
 
     #[test]
@@ -104,7 +108,10 @@ mod tests {
         let mut gw = fresh_world();
         let awarded = dispatch(&mut gw, &ev(1, r#"{"event":"git_commit","sha":"abc"}"#));
         assert_eq!(awarded, 20);
-        let l = gw.world().get::<&crate::daemon::ecs::PetLevel>(gw.pet()).unwrap();
+        let l = gw
+            .world()
+            .get::<&crate::daemon::ecs::PetLevel>(gw.pet())
+            .unwrap();
         assert_eq!(l.xp, 20);
     }
 
@@ -113,7 +120,10 @@ mod tests {
         let mut gw = fresh_world();
         let awarded = dispatch(&mut gw, &ev(1, r#"{"event":"never_heard_of_it"}"#));
         assert_eq!(awarded, 0);
-        let l = gw.world().get::<&crate::daemon::ecs::PetLevel>(gw.pet()).unwrap();
+        let l = gw
+            .world()
+            .get::<&crate::daemon::ecs::PetLevel>(gw.pet())
+            .unwrap();
         assert_eq!(l.xp, 0);
     }
 
@@ -141,10 +151,7 @@ mod tests {
             0,
             "wrong-case event name should not award XP"
         );
-        assert_eq!(
-            dispatch(&mut gw, &ev(2, r#"{"event":"GIT_COMMIT"}"#)),
-            0
-        );
+        assert_eq!(dispatch(&mut gw, &ev(2, r#"{"event":"GIT_COMMIT"}"#)), 0);
     }
 
     #[test]
@@ -184,10 +191,7 @@ mod tests {
 
     #[test]
     fn xp_for_payload_xp_award() {
-        assert_eq!(
-            xp_for_payload(r#"{"event":"xp_award","xp":12}"#),
-            12
-        );
+        assert_eq!(xp_for_payload(r#"{"event":"xp_award","xp":12}"#), 12);
         assert_eq!(xp_for_payload(r#"{"event":"xp_award","xp":0}"#), 0);
     }
 

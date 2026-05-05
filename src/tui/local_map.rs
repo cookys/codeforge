@@ -57,13 +57,11 @@ pub fn compute(
 
     // Stable alphabetical by directory; `(unknown)` floats to the bottom
     // so it doesn't take the top slot when mixed with real dirs.
-    out.sort_by(|a, b| {
-        match (a.directory.as_str(), b.directory.as_str()) {
-            ("(unknown)", "(unknown)") => std::cmp::Ordering::Equal,
-            ("(unknown)", _) => std::cmp::Ordering::Greater,
-            (_, "(unknown)") => std::cmp::Ordering::Less,
-            (x, y) => x.cmp(y),
-        }
+    out.sort_by(|a, b| match (a.directory.as_str(), b.directory.as_str()) {
+        ("(unknown)", "(unknown)") => std::cmp::Ordering::Equal,
+        ("(unknown)", _) => std::cmp::Ordering::Greater,
+        (_, "(unknown)") => std::cmp::Ordering::Less,
+        (x, y) => x.cmp(y),
     });
     Ok(out)
 }
@@ -154,7 +152,14 @@ mod tests {
     fn groups_by_top_level_directory() {
         let conn = fresh();
         insert_mob(&conn, "rust", "zombie", "a", Some("src/cli/foo.rs"), false);
-        insert_mob(&conn, "rust", "ghost", "b", Some("src/daemon/bar.rs"), false);
+        insert_mob(
+            &conn,
+            "rust",
+            "ghost",
+            "b",
+            Some("src/daemon/bar.rs"),
+            false,
+        );
         insert_mob(&conn, "rust", "boss", "c", Some("doc/x.md"), false);
 
         let rooms = compute(&conn, Path::new("/repo"), None).unwrap();
@@ -214,8 +219,7 @@ mod tests {
         insert_mob(&conn, "rust", "zombie", "a", Some("src/cli/foo.rs"), false);
         insert_mob(&conn, "rust", "zombie", "b", Some("doc/x.md"), false);
 
-        let rooms =
-            compute(&conn, Path::new("/repo"), Some(Path::new("/repo/src/cli"))).unwrap();
+        let rooms = compute(&conn, Path::new("/repo"), Some(Path::new("/repo/src/cli"))).unwrap();
         let src = rooms.iter().find(|r| r.directory == "src").unwrap();
         assert!(src.is_current);
         let doc = rooms.iter().find(|r| r.directory == "doc").unwrap();

@@ -303,7 +303,12 @@ mod tests {
         // base ordering exactly.
         let zones = vec![zone("rust", 999), zone("python", 0)];
         for s in [Strategy::Aggressive, Strategy::Defensive, Strategy::Scholar] {
-            for kind in [MobKind::Boss, MobKind::Elite, MobKind::Zombie, MobKind::Ghost] {
+            for kind in [
+                MobKind::Boss,
+                MobKind::Elite,
+                MobKind::Zombie,
+                MobKind::Ghost,
+            ] {
                 assert_eq!(
                     s.priority_order_ctx(kind, "rust", &zones),
                     s.priority_order(kind) as u32,
@@ -332,7 +337,12 @@ mod tests {
         // the Phase 2b id-order behaviour.
         let zones = vec![zone("rust", 42)];
         let s = Strategy::Explorer;
-        let kinds = [MobKind::Boss, MobKind::Elite, MobKind::Zombie, MobKind::Ghost];
+        let kinds = [
+            MobKind::Boss,
+            MobKind::Elite,
+            MobKind::Zombie,
+            MobKind::Ghost,
+        ];
         let scores: Vec<u32> = kinds
             .iter()
             .map(|k| s.priority_order_ctx(*k, "rust", &zones))

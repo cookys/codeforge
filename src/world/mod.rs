@@ -73,12 +73,7 @@ pub struct ZoneStats {
 }
 
 impl ZoneStats {
-    fn from_row(
-        village_id: String,
-        unlocked: bool,
-        kill_count: u32,
-        concept_count: u32,
-    ) -> Self {
+    fn from_row(village_id: String, unlocked: bool, kill_count: u32, concept_count: u32) -> Self {
         let rank = rank_for(kill_count);
         Self {
             village_id,
@@ -133,8 +128,7 @@ pub fn refresh_from_l1(conn: &Connection, store_dir: &Path, home_village: &str) 
     for village in VILLAGES {
         let concept_count = distribution.get(village.id).copied().unwrap_or(0);
         let is_home = village.id == home_village;
-        let should_unlock =
-            is_home || concept_count >= UNLOCK_THRESHOLD;
+        let should_unlock = is_home || concept_count >= UNLOCK_THRESHOLD;
 
         conn.execute(
             "INSERT INTO game_world (zone_id, unlocked, concept_count)

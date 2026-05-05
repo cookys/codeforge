@@ -14,10 +14,10 @@ pub mod catchup;
 pub mod combat;
 pub mod ecs;
 pub mod events;
+pub mod first_events;
 pub mod inbox;
 pub mod lifecycle;
 pub mod loot;
-pub mod first_events;
 pub mod mob;
 pub mod mob_scanner;
 pub mod mood;
@@ -92,7 +92,9 @@ pub async fn run_tick_loop(
 /// let a commentary failure crash the daemon. Commentary is cosmetic; the
 /// tick already committed, so the game state is intact either way.
 fn spawn_commentary_dispatch(db_path: PathBuf, pending: dispatch::PendingDispatch) {
-    let api_key = std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty());
+    let api_key = std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .filter(|k| !k.is_empty());
     // Keep the kind for the error log — pending is moved into the future.
     let kind_tag = pending.kind.as_str();
     tokio::spawn(async move {
@@ -134,11 +136,9 @@ async fn startup_catchup(conn: &mut Connection, world: &mut ecs::GameWorld) -> R
 }
 
 fn read_last_tick_at(conn: &Connection) -> Result<Option<u64>> {
-    match conn.query_row(
-        "SELECT tick_at FROM last_tick_at WHERE id = 1",
-        [],
-        |r| r.get::<_, i64>(0),
-    ) {
+    match conn.query_row("SELECT tick_at FROM last_tick_at WHERE id = 1", [], |r| {
+        r.get::<_, i64>(0)
+    }) {
         Ok(v) => Ok(Some(v as u64)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(e.into()),
@@ -178,7 +178,11 @@ mod tests {
         startup_catchup(&mut conn, &mut world).await.unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT tick_count FROM last_tick_at WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT tick_count FROM last_tick_at WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 0); // seeded, not replayed
 
@@ -209,7 +213,11 @@ mod tests {
         startup_catchup(&mut conn, &mut world).await.unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT tick_count FROM last_tick_at WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT tick_count FROM last_tick_at WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(count, 15); // 5 seeded + 10 replayed
 
@@ -242,7 +250,11 @@ mod tests {
         .unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT tick_count FROM last_tick_at WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT tick_count FROM last_tick_at WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(count >= 1);
     }

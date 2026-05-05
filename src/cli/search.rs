@@ -1,6 +1,6 @@
-use anyhow::Result;
 use crate::db;
 use crate::memory::fts::FtsIndex;
+use anyhow::Result;
 
 pub fn run(ctx: &db::Context, query: &str, limit: usize) -> Result<()> {
     ctx.ensure_initialized()?;
@@ -21,7 +21,11 @@ pub fn run(ctx: &db::Context, query: &str, limit: usize) -> Result<()> {
         println!("     {}", r.file_path);
         if let Some(snippet) = &r.snippet {
             let s = snippet.replace('\n', " ");
-            let s = if s.chars().count() > 120 { format!("{}…", s.chars().take(120).collect::<String>()) } else { s };
+            let s = if s.chars().count() > 120 {
+                format!("{}…", s.chars().take(120).collect::<String>())
+            } else {
+                s
+            };
             println!("     {}", s);
         }
         println!();
@@ -40,9 +44,11 @@ pub fn status(ctx: &db::Context) -> Result<()> {
     let count_md = |subdir: &str| -> usize {
         let path = l1_dir.join(subdir);
         std::fs::read_dir(path)
-            .map(|d| d.filter_map(|e| e.ok()).filter(|e| {
-                e.path().extension().map(|x| x == "md").unwrap_or(false)
-            }).count())
+            .map(|d| {
+                d.filter_map(|e| e.ok())
+                    .filter(|e| e.path().extension().map(|x| x == "md").unwrap_or(false))
+                    .count()
+            })
             .unwrap_or(0)
     };
 

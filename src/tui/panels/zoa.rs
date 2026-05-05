@@ -20,8 +20,8 @@
 
 use std::time::{Duration, Instant};
 
-use super::pad_to_width;
 use super::super::styled::StyledLine;
+use super::pad_to_width;
 
 /// Fixed visible-column width of every Zoa frame. Matches
 /// `crate::tui::layout::ZOA_WIDTH` so the panel fits the allocated
@@ -205,11 +205,7 @@ impl ZoaPanel {
         let frame = &frames[self.frame_idx % frames.len()];
         let mut out: Vec<StyledLine> = Vec::with_capacity(height);
         for (i, _) in (0..height).enumerate() {
-            let row = if i < FRAME_HEIGHT {
-                frame[i]
-            } else {
-                ""
-            };
+            let row = if i < FRAME_HEIGHT { frame[i] } else { "" };
             out.push(StyledLine::plain(pad_to_width(row, width)));
         }
         out
@@ -230,8 +226,8 @@ impl Default for ZoaPanel {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::vis_width;
+    use super::*;
 
     #[test]
     fn idle_frames_are_24_wide() {
@@ -348,7 +344,10 @@ mod tests {
         let mut z = ZoaPanel::new();
         z.frame_idx = 2;
         z.set_emotion(Emotion::Idle); // same as default
-        assert_eq!(z.frame_idx, 2, "no-op emotion change must not restart animation");
+        assert_eq!(
+            z.frame_idx, 2,
+            "no-op emotion change must not restart animation"
+        );
     }
 
     #[test]
