@@ -51,14 +51,24 @@ Tracks: 公開 GitHub 前的 4 項 blockers + 9 項 hygiene recommendations（4-
 |-------|--------|--------|
 | P1 LICENSE + .gitignore | ✅ done | `7b64baa` |
 | P2 Path / personal-info sanitize | ✅ done | `9cd7703` |
-| P3 README + Cargo.toml + Privacy + name decision | ✅ done | `23c88a6` |
+| P3 README + Cargo.toml + Privacy + name decision (`codeforge` kept) | ✅ done | `23c88a6` |
 | P4 deny.toml + CONTRIBUTING + CODE_OF_CONDUCT + CI workflow | ✅ done | `c66d21f` |
 | QG (fmt + clippy + test 669/669 + secret scan) | ✅ done | `1f7af43`, `8522c77` |
 | Review r1 | ✅ done (2 IMPORTANT + 2 MINOR) | — |
-| Fix r1 findings | 🔄 in_progress | — |
-| Review r2 | pending | — |
-| Merge to main | pending | — |
-| Post-merge verify | pending | — |
-| Prune stale branches + tag v0.1.0 | pending | — |
-| Board pause + gh repo create + push | pending | — |
-| Archive | pending | — |
+| Fix r1 findings (toolchain pin + path-gate portability) | ✅ done | `066a6c7` |
+| Review r2 | ✅ CLEAN | — |
+| Merge to main | ✅ done | `e5d984b` |
+| Post-merge verify (key files in main + Cargo metadata) | ✅ done | — |
+| Prune 4 stale `feature/*` branches | ✅ done | — |
+| Version bump 0.1.0 → 0.0.1 (preview, per Board) | ✅ done | `9844b88` |
+| Author email → GitHub noreply (linked profile for v0.0.1) | ✅ done | (config) |
+| Lore / cosmology (CodeForge ↔ CodePower smithy framing) | ✅ done | `f42b62b` |
+| Tag `v0.0.1` (re-tagged from v0.1.0 + at lore commit) | ✅ done | — |
+| Board pause + `gh repo create --public` + push main + push tag | ✅ done | — |
+| Archive | 🔄 in_progress | — |
+
+## Outcome
+
+**`https://github.com/cookys/codeforge` 公開上線 ✅** — `v0.0.1` released, CI 第一次 run 觸發中。
+
+**Settings.json template + setup script** 進 BACKLOG B12（per Design Decision 3）。
