@@ -22,7 +22,9 @@ const crypto = require('crypto');
 const digestDir = path.join(os.homedir(), '.claude', 'session-digests');
 const queuePath = path.join(os.homedir(), '.claude', 'improvement-queue.json');
 
-const PROJECT_ROOT = '/home/codepower/projects/codeforge';
+// Derive repo root from __filename: <repo>/.claude/scripts/check-improvements.js
+// → dirname(scripts) → dirname(.claude) → <repo>
+const PROJECT_ROOT = path.dirname(path.dirname(path.dirname(__filename)));
 const projectHash = crypto.createHash('sha1').update(PROJECT_ROOT).digest('hex').slice(0, 12);
 const devFlowMarker = path.join(os.homedir(), '.claude', `.dev-flow-warned-${projectHash}`);
 
