@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-_(none)_
+| Plan | Created | Project |
+|------|---------|---------|
+| [public-readiness](2026-05-05-public-readiness.md) | 2026-05-05 | [2026-05-05-public-readiness](../projects/2026-05-05-public-readiness/) |
 
 ---
 

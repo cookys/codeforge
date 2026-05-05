@@ -4,7 +4,9 @@
 
 ## Active
 
-_(none)_
+| Project | Description | Started |
+|---------|------------|---------|
+| [public-readiness](2026-05-05-public-readiness/README.md) | 公開 GitHub 前 cleanup — 4 audit blockers (LICENSE / README / .gitignore / 路徑硬編碼) + 9 recommendations (Cargo.toml metadata / Anthropic disclaimer / PRIVACY / cargo-deny / CI workflow / CONTRIBUTING / CODE_OF_CONDUCT / branch prune / v0.1.0 tag)；Board Decision A：CodePower 同步公開不 redact `src/clan/*` | 2026-05-05 |
 
 ## Archived
 
