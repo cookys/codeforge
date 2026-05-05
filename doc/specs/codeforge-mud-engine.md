@@ -6,9 +6,36 @@
 
 ## Vision
 
-把 MUD 搬上來。
+把 MUD 搬上來。**先打鐵，再上場。**
 
-CodeForge 不只是記憶工具——它是一個以 codebase 為世界地圖的 MUD，以程式工作為遊戲引擎，以 pet 為玩家角色的長期陪伴系統。User 在放置工作（idle coding）的時候，pet 自動打怪抓寶；偶爾 pet 會對著 user 的工作說幾句垃圾話；大小地圖追蹤 user 探索過的程式世界。
+CodeForge 不只是記憶工具 — 它是 **CodePower 生態系裡的私人鍛造間**：以 codebase 為世界地圖的 MUD，以程式工作為遊戲引擎，以 pet 為玩家角色的長期陪伴系統。User 在放置工作（idle coding）的時候，pet 自動打怪抓寶；偶爾 pet 會對著 user 的工作說幾句垃圾話；大小地圖追蹤 user 探索過的程式世界。
+
+### 雙系統 Cosmology
+
+|  | CodePower（鬥技場 / Coliseum） | CodeForge（鍛造間 / Smithy） |
+|--|------------------------------|-----------------------------|
+| **氣質** | 公開、聯邦、競技 | 私人、寧靜、累積 |
+| **發生什麼** | Nation × Nation 團戰、scoring 排行、federated 賽事 | L0 → L1 知識淬煉、寵物養成、loot 鍛造、本機 codebase 探索 |
+| **動力學** | 提供能量（generates） | 塑形（shapes） |
+
+**「Power 提供能量，Forge 塑形」**。
+
+CodeForge 的 `forge` 動詞同時涵蓋四層：
+
+1. **燒紅原料**（temper）— L0 raw signals：你 `learn` 寫下的每一條粗胚
+2. **錘打成形**（shape）— L1 dream compile：用 Anthropic Haiku 把 L0 鍛成結構化 knowledge
+3. **淬火定型**（quench）— Pet leveling、Zone Mastery、loot crafting：在戰鬥中固定下來的成果
+4. **鑄造盟約**（forge alliance）— Phase 5 Nation P2P：你跟其他 nation 的連結
+
+Build tool 圈的「forge」（GitHub / SourceForge 那種）只用第一層；CodeForge 用全部四層。
+
+### 三種使用層次
+
+1. **Solo Smith**（純單機）— 只跑 CodeForge：一人在自己 codebase 跑 MUD、養寵物、累積記憶。完全不需要 CodePower。
+2. **Connected Smith**（聯邦客）— 把 forge 連到一個 CodePower nation：帶著 forged loot / 知識 / pet level 進場參戰，contribution 變 score。
+3. **Multi-Nation Pilgrim**（Phase 5）— 透過 Nation P2P 同時連多個 CodePower 實例：在不同社群之間 forge 不同的盟約。
+
+不需要先選一邊。先打鐵，等準備好再上場。
 
 ---
 
