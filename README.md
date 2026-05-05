@@ -10,6 +10,15 @@ Active development. Phases 1, 2 (a/b/c) and 3 (a/b/c/d/e/f) shipped. Phase 4 (Zo
 
 Full architecture in [`doc/specs/codeforge-mud-engine.md`](doc/specs/codeforge-mud-engine.md).
 
+## Lore — Why CodeForge
+
+CodeForge is the personal smithy of the CodePower ecosystem.
+
+**CodePower** is the arena — public, federated, competitive; where Nations battle and code becomes score.
+**CodeForge** is your forge — private, contemplative, accumulative; where raw signals become knowledge, where pets are raised, where your codebase becomes an explorable map.
+
+Power generates, Forge shapes. Smith alone, or carry your forged self into the arena.
+
 ## Install
 
 ```bash

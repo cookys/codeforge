@@ -4,9 +4,19 @@ Claude Code 工作指南。
 
 ## Project Overview
 
-CodeForge 是 Claude Code power-user 的 CLI 工具集：跨 session 記憶管理 + 遊戲化寵物陪伴系統（MUD 引擎）。目標是讓每個 session 都能從上次中斷的地方繼續，並在程式工作中找到遊樂場感。
+CodeForge 是 **CodePower 生態系裡的私人鍛造間**（personal smithy）— 給 Claude Code power-user 用的 Rust CLI 工具集。
 
-**Vision**: 把 MUD 搬上來。codebase 是世界地圖，技術債是怪物，pet 是玩家角色。
+**雙支柱**：
+- **Memory pipeline** — L0 raw signals → L1 compiled knowledge（透過 Anthropic Haiku）
+- **MUD 引擎** — codebase 是世界地圖、技術債是怪物、pet 是玩家角色
+
+**生態系定位**：
+- **CodePower**（鬥技場）— 公開、聯邦、競技；Nation 團戰、scoring 排行、federated 賽事
+- **CodeForge**（鍛造間）— 私人、寧靜、累積；知識淬煉、寵物養成、loot 鍛造、本機 codebase 探索
+
+**「Power 提供能量，Forge 塑形」**。三種用法：(1) Solo Smith — 純單機跑 MUD；(2) Connected Smith — 連到一個 CodePower nation 帶 forged self 參戰；(3) Multi-Nation Pilgrim（Phase 5）— 透過 Nation P2P 同時連多個 nation。
+
+**Vision**: 把 MUD 搬上來。先打鐵，再上場。
 
 ## Tech Stack
 
