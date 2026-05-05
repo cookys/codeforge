@@ -19,3 +19,19 @@ git config user.email "<your-email>"
 git config user.name "<Your Name>"
 ```
 或設定 global：`git config --global user.email "..."` + `git config --global user.name "..."`
+
+## `gh repo create --push` 含 GitHub Actions workflow 需要 `workflow` scope
+
+**Date**: 2026-05-05 | **Context**: 第一次把 codeforge repo push 到 public GitHub
+**Problem**: `gh repo create cookys/codeforge --public --source=. --remote=origin --push` 建好 repo 但 push main 被拒：
+```
+! [remote rejected] HEAD -> main (refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)
+```
+gh CLI 預設 OAuth token scopes 是 `repo, gist, read:org` — 沒有 `workflow`。GitHub 對 `.github/workflows/*` 強制要求專用 `workflow` scope。
+**Solution**: 互動式刷新加 scope（user 自己跑，因要瀏覽器 + one-time code）：
+```bash
+gh auth refresh -s workflow
+# → 印 one-time code → 開瀏覽器 → 確認 → Authentication complete
+git push -u origin main && git push origin <tag>
+```
+**When this fires**: 任何 repo 含 `.github/workflows/*.yml` 第一次 push 到 GitHub。Repo 已建（即使 push 失敗）— 重 push 即可，不需重 create。
