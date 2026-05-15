@@ -63,3 +63,22 @@ gh auth refresh -s workflow
 git push -u origin main && git push origin <tag>
 ```
 **When this fires**: 任何 repo 含 `.github/workflows/*.yml` 第一次 push 到 GitHub。Repo 已建（即使 push 失敗）— 重 push 即可，不需重 create。
+
+## Per-command git identity override（HARD RULE 合規 commit）
+
+**Date**: 2026-05-15 | **Context**: Mnemos repo（剛 rename 自 personal-knowledge-base）首次 commit 時報 `Author identity unknown`。MEMORY.md HARD RULE「NEVER update the git config」禁止用 `git config user.email "..."` 解。
+**Problem**: Fresh clone / 剛 rename 的 repo 沒有 git config，commit 失敗：
+```
+fatal: unable to auto-detect email address (got 'codepower@hostname.(none)')
+```
+傳統解法（修 repo-local config）違反 HARD RULE — config 一改就跨 session 持續，且不同 repo 該用不同 identity（PKB 用 `cookys@stranity.com`、codeforge 用 `2537196+cookys@users.noreply.github.com`）。
+**Solution**: 用 `-c` 在 commit 那條 command 上臨時 inject identity，不寫進 config：
+```bash
+git -c user.name=cookys -c user.email=cookys@stranity.com commit -m "..."
+```
+每次 commit 都帶 `-c`，hash 出來的 author 就是當下指定的 identity，repo config 始終保持原狀。
+**When this fires**:
+- 任何剛 clone / 剛 rename / 剛 init 的 repo，**第一次 commit 之前**
+- 多 repo 各自不同 identity 的場景（GitHub no-reply email vs personal email vs work email）
+- 若 user 明確要求 "set git config for this repo permanently"，才允許 modify config — 預設一律走 `-c` override
+**Related**: `codeforge git repo 需要獨立 git config` 條目歷史紀錄；MEMORY.md HARD RULE「NEVER update the git config」
