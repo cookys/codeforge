@@ -22,17 +22,35 @@ Power generates, Forge shapes. Smith alone, or carry your forged self into the a
 ## Install
 
 For a step-by-step walkthrough, see [`doc/getting-started.md`](doc/getting-started.md).
-The short version:
+
+**Option 1 — curl installer (no Rust required)** *(available from v0.0.2 onward; see [`doc/specs/codeforge-release-pipeline.md`](doc/specs/codeforge-release-pipeline.md))*
 
 ```bash
-git clone https://github.com/cookys/codeforge
-cd codeforge
-cargo install --path .
+curl -sSL https://raw.githubusercontent.com/cookys/codeforge/main/install.sh | sh
 ```
 
-Requires Rust stable. The built binary lands in `~/.cargo/bin/codeforge`.
+Downloads the prebuilt binary for Linux/macOS (x86_64 or arm64) and
+installs to `~/.cargo/bin` or `~/.local/bin`. Respects
+`CODEFORGE_VERSION`, `CODEFORGE_INSTALL_DIR`, `CODEFORGE_FORCE` env vars.
 
-Then wire it into Claude Code:
+**Option 2 — `cargo binstall` (Rust users, no compile)**
+
+```bash
+cargo binstall codeforge
+```
+
+**Option 3 — `cargo install` (developers / from source)**
+
+```bash
+cargo install --git https://github.com/cookys/codeforge
+# or, for a local clone:
+git clone https://github.com/cookys/codeforge && cd codeforge && cargo install --path .
+```
+
+Requires Rust stable (MSRV 1.85). The built binary lands in
+`~/.cargo/bin/codeforge`.
+
+**Then wire it into Claude Code:**
 
 ```bash
 codeforge install
@@ -47,6 +65,25 @@ preserved.
 
 `codeforge install --hooks` (SessionStart / PreToolUse / etc) is on the
 roadmap — see [`doc/specs/codeforge-install-subcommand.md`](doc/specs/codeforge-install-subcommand.md).
+
+**macOS first-run note:** if Gatekeeper blocks the binary, run once:
+
+```bash
+xattr -d com.apple.quarantine "$(command -v codeforge)"
+```
+
+(Code-signing/notarization deferred until v1.0.)
+
+## Uninstall
+
+`codeforge install --uninstall` (covered by [`codeforge-install-subcommand.md`](doc/specs/codeforge-install-subcommand.md)
+once shipped) will reverse the settings.json patch. For now:
+
+```bash
+# Remove statusLine block from ~/.claude/settings.json (manual edit), then:
+rm "$(command -v codeforge)"
+rm -rf ~/.codeforge ~/.local/share/codeforge
+```
 
 ## Quickstart
 
