@@ -41,8 +41,9 @@ const PROJECT_DIR_ENV_PLACEHOLDER: &str = "${CLAUDE_PROJECT_DIR}";
 /// Flags:
 /// - `--hooks`: install global-safe hooks (`emit-session` + `session-digest`).
 /// - `--all`:   statusLine + global hooks.
-/// - `--project-hooks`: wire all 4 codeforge-clone-only scripts into
-///   `$CWD/.claude/settings.json`. Requires CWD to be a codeforge clone.
+/// - `--project-hooks`: wire the 3 codeforge-clone-only hooks (2 scripts +
+///   1 inline `codeforge dream` command) into `$CWD/.claude/settings.json`.
+///   Requires CWD to be a codeforge clone.
 /// - `--dry-run`: print resulting JSON + extraction plan, no writes.
 /// - `--force`:  clear all hook entries (including non-codeforge) before
 ///   writing. Requires `--yes` (or interactive confirmation).
@@ -533,6 +534,10 @@ fn hook_is_codeforge(h: &Value) -> bool {
 
 /// Known codeforge-owned hook commands shipped before the marker was added.
 /// Keep this list tight — broadening it risks clobbering user hooks.
+///
+/// TODO: remove this once all field installs have cycled through a
+/// `--project-hooks` run (which adds the marker). Safe to delete when
+/// no production .claude/settings.json carries an un-marker codeforge entry.
 fn is_legacy_codeforge_command(cmd: &str) -> bool {
     cmd.starts_with("codeforge dream")
 }
@@ -837,6 +842,31 @@ mod tests {
         // SessionEnd/PreCompact entries (only codeforge ones) → removed → arrays collapsed
         assert!(s["hooks"].get("SessionEnd").is_none());
         assert!(s["hooks"].get("PreCompact").is_none());
+    }
+
+    #[test]
+    fn unpatch_hooks_removes_legacy_unmarker_dream_entry() {
+        // Pre-2.2 .claude/settings.json shape: dream entry hand-written, no marker.
+        // unpatch_hooks shares group_is_codeforge with patch_hooks, so the
+        // legacy detection must propagate to uninstall too — otherwise a
+        // user running `codeforge uninstall` before ever cycling through the
+        // new --project-hooks would leave the legacy dream entry behind.
+        let mut s = json!({
+            "hooks": {
+                "SessionEnd": [{
+                    "matcher": "",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "codeforge dream --quiet 2>/dev/null || true",
+                        "timeout": 30000
+                    }]
+                }]
+            }
+        });
+        let action = unpatch_hooks(&mut s).unwrap();
+        assert_eq!(action, "已移除");
+        // Empty SessionEnd array collapsed → entire hooks key removed
+        assert!(s.as_object().unwrap().get("hooks").is_none());
     }
 
     #[test]
