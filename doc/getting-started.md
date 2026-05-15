@@ -1,0 +1,162 @@
+# Getting Started with CodeForge
+
+5 minutes from clone to working Claude Code statusline + pet.
+
+## What you'll have at the end
+
+- `codeforge` on your `$PATH`
+- A statusline panel in Claude Code showing your model, dir, git branch,
+  token-usage bars, and a pet that levels up as you code
+- A per-project memory store (`.codeforge/`) that captures learnings
+  during sessions
+
+## Prerequisites
+
+- **Rust stable** — `rustup` from <https://rustup.rs> if you don't have
+  it. The `cargo install` route is currently the only supported path;
+  binary releases (cargo-binstall, `curl | sh`) are on the roadmap, see
+  [`doc/plans/release-pipeline.md`](plans/release-pipeline.md) once
+  shipped.
+- **Claude Code** — <https://claude.com/claude-code> if you don't.
+- **(optional) Node 20+** — only needed for the SessionStart / PreToolUse
+  hooks (not the statusline). Skip if you only want the statusline.
+- **(optional) `ANTHROPIC_API_KEY`** — needed for `codeforge dream`
+  (memory compilation, L0 → L1 via Haiku). Skip if you only want the
+  pet + statusline.
+
+## Step 1 — Build and install the binary
+
+```bash
+git clone https://github.com/cookys/codeforge ~/projects/codeforge
+cd ~/projects/codeforge
+cargo install --path .
+```
+
+Output ends with `Installed package codeforge v0.0.1`. The binary lands
+at `~/.cargo/bin/codeforge`.
+
+Quick check:
+
+```bash
+codeforge --version
+```
+
+If the command isn't found, `~/.cargo/bin` isn't on your shell's
+`$PATH`. Add it via:
+
+```bash
+. ~/.cargo/env   # adds ~/.cargo/bin for the current shell
+```
+
+…or permanently in your shell rc file. The next step works around this
+automatically, so don't worry too much.
+
+## Step 2 — Wire CodeForge into Claude Code
+
+```bash
+codeforge install
+```
+
+This patches `~/.claude/settings.json` to set `codeforge statusline` as
+the Claude Code statusLine hook — using the **absolute path** of the
+binary, so it works even when `~/.cargo/bin` isn't on PATH for the
+shells Claude Code spawns (a common rustup quirk).
+
+Re-running is safe — it prints `已是最新（無變動）` if nothing changed.
+
+Other keys in `settings.json` (your theme, permission settings, etc.)
+are preserved.
+
+## Step 3 — Initialize your project store
+
+Pick a project you work on. From inside that project:
+
+```bash
+cd ~/projects/<your-repo>
+codeforge init
+```
+
+This creates `.codeforge/` (per-project memory + pet state). Output:
+
+```
+✓ CodeForge 初始化完成
+  專案記憶：/home/you/projects/<your-repo>/.codeforge
+  個人 brain：/home/you/.codeforge/brain
+  狀態 DB：/home/you/.local/share/codeforge/state.db
+```
+
+**Want one shared memory across all projects instead?** Set
+`CODEFORGE_DIR=~/.codeforge/global` in your shell rc, then `codeforge
+init` in that dir once. All projects will read/write the same store.
+See [`.env.example`](../.env.example) for the global pattern.
+
+## Step 4 — Adopt your pet
+
+```bash
+codeforge adopt
+```
+
+Interactive prompt — pick a village (language affinity). Each village
+gives a different starter pet:
+
+- **Scriptorium Vast** — Python
+- **Border Garrison** — TypeScript
+- **The Forge-Ruins** — Rust
+- **(more)** — see `codeforge adopt` output for the full list
+
+Pick one and confirm. This bootstraps the pet record that the
+statusline + `codeforge pet` commands read from.
+
+## Step 5 — Verify in Claude Code
+
+Open Claude Code in the project you just initialized:
+
+```bash
+cd ~/projects/<your-repo>
+claude
+```
+
+The statusline panel should now show:
+
+- Your model name + workspace + git branch (line 1)
+- Token usage bars: 5h / 7d / context (line 2)
+- Your pet's location, level, HP, XP, stats (lines 3-4)
+- Memory status + codeforge version (line 5)
+- ASCII pet portrait on the right
+
+If you see only a minimal one-line statusline (just `CodeForge / model /
+dir / branch`), your pet record isn't loaded — re-run `codeforge adopt`
+and confirm `codeforge pet` shows stats.
+
+If you see nothing at all, Claude Code didn't pick up the settings.json
+change. Try `/clear` or restart Claude Code.
+
+## What's next
+
+- `codeforge learn "tokio::select! preserves cancellation across branches"`
+  — log a learning into the L0 raw-signal store.
+- `export ANTHROPIC_API_KEY=sk-ant-... && codeforge dream` — compile L0
+  signals into structured L1 knowledge via Haiku.
+- `codeforge memory search "tokio cancellation"` — search the compiled
+  knowledge base.
+- `codeforge pet` — full pet status panel (longer than statusline).
+- `codeforge snapshot` — generate a shareable ASCII monthly report
+  card.
+- `codeforge world` — render the world map (codebase as zones).
+
+For the optional SessionStart / PreToolUse / SessionEnd hooks
+(auto-tracking sessions, codebase health checks, dream-on-close), see
+[`doc/specs/codeforge-install-subcommand.md`](specs/codeforge-install-subcommand.md)
+— `codeforge install --hooks` is on the roadmap.
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `codeforge: command not found` after `cargo install` | `~/.cargo/bin` not on PATH | `. ~/.cargo/env` for this shell; add to `~/.zshrc` / `~/.bashrc` permanently. **Or** just run `codeforge install` — it writes the absolute path so Claude Code finds it. |
+| Statusline shows minimal `CodeForge / model / dir / branch` only | No pet adopted | `codeforge adopt` then `codeforge pet` to verify |
+| Statusline shows nothing | Claude Code didn't reload settings.json | `/clear` or restart Claude Code |
+| `codeforge install` rejected with `settings.json 根節點不是 object` | Existing settings.json is a JSON array or non-object | Open `~/.claude/settings.json` and wrap content in `{}` or back it up and start fresh |
+| `codeforge dream` fails with API error | `ANTHROPIC_API_KEY` missing or invalid | `export ANTHROPIC_API_KEY=sk-ant-...` from <https://console.anthropic.com/> |
+
+For deeper issues, file at <https://github.com/cookys/codeforge/issues>.
