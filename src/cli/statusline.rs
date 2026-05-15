@@ -591,8 +591,12 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
         "",
     );
 
-    // Row 1 — usage bars (bare, space-separated — same as render_full row 1)
-    // OR onboarding hint right-aligned + dim when no usage data.
+    // Row 1 — usage bars on LEFT, onboarding hint right-aligned on the
+    // SAME row. Hint stays visible regardless of usage data because
+    // "no pet adopted" is orthogonal to "Claude is reporting usage" —
+    // the user can be deep in a CC session and still need the nudge.
+    // Degradation: if the row is too narrow to fit both, hint shrinks
+    // to "→ adopt"; if still no room, hint is dropped entirely.
     let mut usage_parts: Vec<String> = Vec::new();
     if let Some(pct) = data.five_hour_pct {
         usage_parts.push(usage_bare(
@@ -611,14 +615,31 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
     if let Some(pct) = data.context_pct {
         usage_parts.push(usage_bare("ctx", pct, None));
     }
-    let row1 = if !usage_parts.is_empty() {
-        format!(" {}", usage_parts.join("   "))
+    let usage_left = if usage_parts.is_empty() {
+        tc("─", delim_c)
     } else {
-        let hint = "→ codeforge adopt";
-        let hint_vis = vis(hint);
-        let lead = tc("─", delim_c);
-        let pad = width.saturating_sub(1 + 1 + hint_vis + 1);
-        format!(" {}{}{}", lead, " ".repeat(pad), tc(hint, HINT_C))
+        usage_parts.join("   ")
+    };
+    let usage_left_vis = ansi_vis(&usage_left);
+    // Two hint forms, picked by available width
+    let hint_long = "→ codeforge adopt";
+    let hint_short = "→ adopt";
+    let min_gap = 3; // breathing room between usage and hint
+    let avail_for_hint = width
+        .saturating_sub(1 + usage_left_vis + min_gap + 1); // leading space + content + gap + trailing
+    let hint_render = if avail_for_hint >= vis(hint_long) {
+        Some((hint_long, vis(hint_long)))
+    } else if avail_for_hint >= vis(hint_short) {
+        Some((hint_short, vis(hint_short)))
+    } else {
+        None
+    };
+    let row1 = match hint_render {
+        Some((h, hv)) => {
+            let pad = width.saturating_sub(1 + usage_left_vis + hv + 1);
+            format!(" {}{}{}", usage_left, " ".repeat(pad), tc(h, HINT_C))
+        }
+        None => format!(" {}", usage_left),
     };
 
     let rows = vec![
