@@ -1,26 +1,69 @@
-use crate::db;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 use std::fs;
+use std::io::{self, BufRead, Write as _};
 use std::path::{Path, PathBuf};
+
+/// Options for `codeforge install`.
+pub struct InstallOpts {
+    pub hooks: bool,
+    pub all: bool,
+    pub project_hooks: bool,
+    pub dry_run: bool,
+    pub force: bool,
+    pub yes: bool,
+    pub settings_path: Option<PathBuf>,
+    pub quiet: bool,
+}
+
+/// Options for `codeforge uninstall`.
+pub struct UninstallOpts {
+    pub statusline: bool,
+    pub hooks: bool,
+    pub settings_path: Option<PathBuf>,
+    pub quiet: bool,
+}
+
+const MARKER_KEY: &str = "_installed_by";
+const MARKER_PREFIX: &str = "codeforge@";
 
 /// `codeforge install` — wire Claude Code integration.
 ///
 /// Default (no flags): patches `~/.claude/settings.json` with a
 /// `statusLine` block pointing to the binary's absolute path.
 ///
-/// `--hooks`: also installs global-safe Claude Code hooks
-/// (`emit-session` + `session-digest`). Scripts are embedded into the
-/// binary at compile time (`include_str!`) and extracted to
-/// `~/.local/share/codeforge/hooks/<version>/` at install time. Hook
-/// entries are tagged with `_installed_by: "codeforge@<version>"` so
-/// re-running replaces our entries in place without disturbing
-/// user-owned hooks.
-///
-/// `--all`: equivalent to default + `--hooks`.
-pub fn run(_ctx: &db::Context, hooks: bool, all: bool) -> Result<()> {
-    let install_statusline = !hooks || all;
-    let install_hooks = hooks || all;
+/// Flags:
+/// - `--hooks`: install global-safe hooks (`emit-session` + `session-digest`).
+/// - `--all`:   statusLine + global hooks.
+/// - `--project-hooks`: wire all 4 codeforge-clone-only scripts into
+///   `$CWD/.claude/settings.json`. Requires CWD to be a codeforge clone.
+/// - `--dry-run`: print resulting JSON + extraction plan, no writes.
+/// - `--force`:  clear all hook entries (including non-codeforge) before
+///   writing. Requires `--yes` (or interactive confirmation).
+/// - `--yes`:    skip confirmation prompts.
+/// - `--settings-path P`: override target settings.json.
+/// - `--quiet`:  no stdout (exit code reflects result).
+pub fn run(opts: InstallOpts) -> Result<()> {
+    // --project-hooks is mutually exclusive with --hooks/--all (different scope target)
+    if opts.project_hooks && (opts.hooks || opts.all) {
+        bail!("--project-hooks 不能跟 --hooks / --all 同時使用（前者寫 $CWD/.claude，後者寫 ~/.claude）");
+    }
+
+    let install_statusline = !opts.hooks && !opts.project_hooks || opts.all;
+    let install_hooks = opts.hooks || opts.all;
+    let install_project_hooks = opts.project_hooks;
+
+    if opts.force && !opts.yes {
+        say(opts.quiet, "⚠ --force 會清除 settings.json 內所有 hook entries（含非 codeforge）。");
+        if !prompt_confirm("確定要繼續？輸入 'yes' 確認: ")? {
+            bail!("使用者取消 --force 操作");
+        }
+    }
+
+    if install_project_hooks {
+        run_install_project_hooks(&opts)?;
+        return Ok(());
+    }
 
     let exe = std::env::current_exe().context("讀取 codeforge binary 路徑失敗")?;
     let exe_str = exe
@@ -28,29 +71,150 @@ pub fn run(_ctx: &db::Context, hooks: bool, all: bool) -> Result<()> {
         .ok_or_else(|| anyhow!("binary 路徑含非 UTF-8 字元：{}", exe.display()))?
         .to_string();
 
-    let settings_path = settings_json_path()?;
-    println!("  目標 settings.json: {}", settings_path.display());
+    let settings_path = opts
+        .settings_path
+        .clone()
+        .map(Ok)
+        .unwrap_or_else(default_global_settings_path)?;
+    say(opts.quiet, &format!("  目標 settings.json: {}", settings_path.display()));
 
     let mut settings = load_settings(&settings_path)?;
 
     if install_statusline {
         let cmd = format!("{} statusline", exe_str);
-        let action = patch_statusline(&mut settings, &cmd)?;
-        println!("✓ statusLine {}", action);
-        println!("  command: {}", cmd);
+        let action = patch_statusline(&mut settings, &cmd, opts.force)?;
+        say(opts.quiet, &format!("✓ statusLine {}", action));
+        say(opts.quiet, &format!("  command: {}", cmd));
     }
 
     if install_hooks {
-        let hooks_dir = extract_hook_scripts()?;
-        let action = patch_hooks(&mut settings, &hooks_dir)?;
-        println!("✓ hooks {}", action);
-        println!("  scripts: {}", hooks_dir.display());
+        let hooks_dir = if opts.dry_run {
+            // Don't actually extract files in dry-run; show the path that would be used
+            default_data_local_dir()?
+                .join("codeforge")
+                .join("hooks")
+                .join(env!("CARGO_PKG_VERSION"))
+        } else {
+            extract_hook_scripts()?
+        };
+        let action = patch_hooks(&mut settings, &hooks_dir, opts.force, /*project=*/ false)?;
+        say(opts.quiet, &format!("✓ hooks {}", action));
+        say(opts.quiet, &format!("  scripts: {}", hooks_dir.display()));
+    }
+
+    if opts.dry_run {
+        say(opts.quiet, "");
+        say(opts.quiet, "─── dry-run: 將寫入下列 settings.json 內容 ───");
+        if !opts.quiet {
+            println!("{}", serde_json::to_string_pretty(&settings)?);
+        }
+        say(opts.quiet, "─── 結束（無檔案被修改） ───");
+        return Ok(());
     }
 
     write_settings_atomic(&settings_path, &settings)?;
+    say(opts.quiet, "");
+    say(opts.quiet, "生效方式：下個 user message 或 /clear 之後 Claude Code 會 pick up 新設定。");
+    Ok(())
+}
 
-    println!();
-    println!("生效方式：下個 user message 或 /clear 之後 Claude Code 會 pick up 新設定。");
+/// `codeforge uninstall` — remove codeforge-tagged entries.
+pub fn run_uninstall(opts: UninstallOpts) -> Result<()> {
+    // If neither flag set, default to "everything"
+    let remove_statusline = !opts.statusline && !opts.hooks || opts.statusline;
+    let remove_hooks = !opts.statusline && !opts.hooks || opts.hooks;
+
+    let settings_path = opts
+        .settings_path
+        .clone()
+        .map(Ok)
+        .unwrap_or_else(default_global_settings_path)?;
+
+    if !settings_path.exists() {
+        say(opts.quiet, &format!("settings.json 不存在：{}（沒事可做）", settings_path.display()));
+        return Ok(());
+    }
+
+    say(opts.quiet, &format!("  目標 settings.json: {}", settings_path.display()));
+    let mut settings = load_settings(&settings_path)?;
+
+    if remove_statusline {
+        let action = unpatch_statusline(&mut settings)?;
+        say(opts.quiet, &format!("✓ statusLine {}", action));
+    }
+
+    if remove_hooks {
+        let action = unpatch_hooks(&mut settings)?;
+        say(opts.quiet, &format!("✓ hooks {}", action));
+
+        // Also remove the extracted scripts dir
+        let base = default_data_local_dir()?.join("codeforge").join("hooks");
+        if base.exists() {
+            fs::remove_dir_all(&base)
+                .with_context(|| format!("移除 {} 失敗", base.display()))?;
+            say(opts.quiet, &format!("✓ removed {}", base.display()));
+        }
+    }
+
+    write_settings_atomic(&settings_path, &settings)?;
+    Ok(())
+}
+
+fn run_install_project_hooks(opts: &InstallOpts) -> Result<()> {
+    let cwd = std::env::current_dir().context("讀取 CWD 失敗")?;
+    let cwd_str = cwd
+        .to_str()
+        .ok_or_else(|| anyhow!("CWD 含非 UTF-8 字元：{}", cwd.display()))?
+        .to_string();
+
+    ensure_in_codeforge_repo(&cwd)?;
+
+    let settings_path = opts
+        .settings_path
+        .clone()
+        .unwrap_or_else(|| cwd.join(".claude").join("settings.json"));
+    say(opts.quiet, &format!("  目標 settings.json: {}", settings_path.display()));
+
+    // The 4 scripts live in $CWD/.claude/scripts/ — already present in the repo.
+    let scripts_dir = cwd.join(".claude").join("scripts");
+    for name in PROJECT_HOOK_SCRIPT_NAMES {
+        let p = scripts_dir.join(name);
+        if !p.exists() {
+            bail!("找不到必要 script：{}（執行位置不像 codeforge clone）", p.display());
+        }
+    }
+
+    let mut settings = load_settings(&settings_path)?;
+    let action = patch_hooks(&mut settings, &scripts_dir, opts.force, /*project=*/ true)?;
+    say(opts.quiet, &format!("✓ project hooks {}", action));
+    say(opts.quiet, &format!("  scripts: {}", scripts_dir.display()));
+    say(opts.quiet, &format!("  clone root: {}", cwd_str));
+
+    if opts.dry_run {
+        say(opts.quiet, "");
+        say(opts.quiet, "─── dry-run: 將寫入下列 settings.json 內容 ───");
+        if !opts.quiet {
+            println!("{}", serde_json::to_string_pretty(&settings)?);
+        }
+        say(opts.quiet, "─── 結束（無檔案被修改） ───");
+        return Ok(());
+    }
+
+    write_settings_atomic(&settings_path, &settings)?;
+    Ok(())
+}
+
+fn ensure_in_codeforge_repo(cwd: &Path) -> Result<()> {
+    let cargo_toml = cwd.join("Cargo.toml");
+    if !cargo_toml.exists() {
+        bail!("--project-hooks 必須在 codeforge clone root 執行（缺 Cargo.toml）：{}", cwd.display());
+    }
+    let content = fs::read_to_string(&cargo_toml)
+        .with_context(|| format!("讀取 {} 失敗", cargo_toml.display()))?;
+    // Look for `name = "codeforge"` in the [package] section (simple substring is OK)
+    if !content.contains("name = \"codeforge\"") {
+        bail!("Cargo.toml 的 package name 不是 codeforge：{}", cargo_toml.display());
+    }
     Ok(())
 }
 
@@ -81,7 +245,7 @@ fn write_settings_atomic(path: &Path, settings: &Value) -> Result<()> {
     fs::rename(&tmp, path).with_context(|| format!("rename 到 {} 失敗", path.display()))
 }
 
-fn settings_json_path() -> Result<PathBuf> {
+fn default_global_settings_path() -> Result<PathBuf> {
     if let Ok(p) = std::env::var("CODEFORGE_CLAUDE_SETTINGS") {
         return Ok(PathBuf::from(p));
     }
@@ -89,16 +253,42 @@ fn settings_json_path() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".claude").join("settings.json"))
 }
 
+fn default_data_local_dir() -> Result<PathBuf> {
+    if let Some(p) = dirs::data_local_dir() {
+        return Ok(p);
+    }
+    let home = std::env::var("HOME").context("HOME 未設定且無 data_local_dir")?;
+    Ok(PathBuf::from(home).join(".local").join("share"))
+}
+
 // ─── statusLine block ─────────────────────────────────────────────────────
 
-fn patch_statusline(settings: &mut Value, cmd: &str) -> Result<&'static str> {
+fn current_marker() -> String {
+    format!("{}{}", MARKER_PREFIX, env!("CARGO_PKG_VERSION"))
+}
+
+fn statusline_is_codeforge(v: &Value) -> bool {
+    v.get(MARKER_KEY)
+        .and_then(|x| x.as_str())
+        .is_some_and(|s| s.starts_with(MARKER_PREFIX))
+}
+
+fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'static str> {
     require_object_root(settings)?;
     let new_block = json!({
         "type": "command",
         "command": cmd,
+        MARKER_KEY: current_marker(),
     });
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("statusLine").cloned();
+    if let Some(p) = &prior {
+        if !statusline_is_codeforge(p) && !force {
+            bail!(
+                "settings.json.statusLine 已被其他程式設定（不是 codeforge）；使用 --force 覆蓋"
+            );
+        }
+    }
     obj.insert("statusLine".to_string(), new_block.clone());
     Ok(match prior {
         None => "新增",
@@ -107,22 +297,41 @@ fn patch_statusline(settings: &mut Value, cmd: &str) -> Result<&'static str> {
     })
 }
 
+fn unpatch_statusline(settings: &mut Value) -> Result<&'static str> {
+    require_object_root(settings)?;
+    let obj = settings.as_object_mut().expect("checked");
+    match obj.get("statusLine").cloned() {
+        None => Ok("不存在（無變動）"),
+        Some(v) if statusline_is_codeforge(&v) => {
+            obj.remove("statusLine");
+            Ok("已移除")
+        }
+        Some(_) => Ok("保留（非 codeforge 寫入）"),
+    }
+}
+
 // ─── hooks block ──────────────────────────────────────────────────────────
 
-const MARKER_KEY: &str = "_installed_by";
-const MARKER_PREFIX: &str = "codeforge@";
-
 /// The 2 global-safe scripts. Project-specific scripts
-/// (check-improvements, check-dev-flow) belong in
-/// `<codeforge>/.claude/settings.json` and are NOT installed by `--hooks`.
+/// (check-improvements, check-dev-flow) are NOT installed by `--hooks`.
 const HOOK_SCRIPTS: &[(&str, &str)] = &[
     ("emit-session.js", include_str!("../../.claude/scripts/emit-session.js")),
     ("session-digest.js", include_str!("../../.claude/scripts/session-digest.js")),
 ];
 
+/// All 4 scripts (used by `--project-hooks`). These already live in the
+/// codeforge clone at `.claude/scripts/`, so we only need the names —
+/// no embedding required (extraction goes nowhere; the scripts ARE in cwd).
+const PROJECT_HOOK_SCRIPT_NAMES: &[&str] = &[
+    "emit-session.js",
+    "session-digest.js",
+    "check-improvements.js",
+    "check-dev-flow.js",
+];
+
 fn extract_hook_scripts() -> Result<PathBuf> {
     let version = env!("CARGO_PKG_VERSION");
-    let base = data_local_dir()?
+    let base = default_data_local_dir()?
         .join("codeforge")
         .join("hooks")
         .join(version);
@@ -136,37 +345,59 @@ fn extract_hook_scripts() -> Result<PathBuf> {
     Ok(base)
 }
 
-fn data_local_dir() -> Result<PathBuf> {
-    if let Some(p) = dirs::data_local_dir() {
-        return Ok(p);
-    }
-    // Fallback for unusual envs
-    let home = std::env::var("HOME").context("HOME 未設定且無 data_local_dir")?;
-    Ok(PathBuf::from(home).join(".local").join("share"))
-}
-
-fn patch_hooks(settings: &mut Value, hooks_dir: &Path) -> Result<&'static str> {
+fn patch_hooks(
+    settings: &mut Value,
+    scripts_dir: &Path,
+    force: bool,
+    project: bool,
+) -> Result<&'static str> {
     require_object_root(settings)?;
-    let version = env!("CARGO_PKG_VERSION");
-    let marker = format!("{}{}", MARKER_PREFIX, version);
+    let marker = current_marker();
 
-    let emit_path = hooks_dir.join("emit-session.js");
-    let digest_path = hooks_dir.join("session-digest.js");
+    let emit_path = scripts_dir.join("emit-session.js");
+    let digest_path = scripts_dir.join("session-digest.js");
 
-    let entries = [
-        ("SessionStart", vec![hook_entry(&format!(
-            "node {} session_start",
-            emit_path.display()
-        ), 3000, &marker)]),
-        ("SessionEnd", vec![
-            hook_entry(&format!("node {} session_end", emit_path.display()), 3000, &marker),
-            hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
-        ]),
-        ("PreCompact", vec![hook_entry(&format!(
-            "node {}",
-            digest_path.display()
-        ), 30000, &marker)]),
-    ];
+    // Build the entries we want to insert. Layout differs slightly between
+    // `--hooks` (2 scripts wired across SessionStart/SessionEnd/PreCompact)
+    // and `--project-hooks` (4 scripts; adds check-improvements at
+    // SessionStart and check-dev-flow at PreToolUse).
+    let entries: Vec<(&str, Option<&str>, Vec<Value>)> = if project {
+        let check_improvements = scripts_dir.join("check-improvements.js");
+        let check_dev_flow = scripts_dir.join("check-dev-flow.js");
+        vec![
+            ("SessionStart", None, vec![
+                hook_entry(&format!("node {}", check_improvements.display()), 10000, &marker),
+                hook_entry(&format!("node {} session_start", emit_path.display()), 3000, &marker),
+            ]),
+            ("PreToolUse", Some("Edit|Write|Bash"), vec![
+                hook_entry(&format!("node {}", check_dev_flow.display()), 5000, &marker),
+            ]),
+            ("SessionEnd", None, vec![
+                hook_entry(&format!("node {} session_end", emit_path.display()), 3000, &marker),
+                hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
+            ]),
+            ("PreCompact", None, vec![
+                hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
+            ]),
+        ]
+    } else {
+        vec![
+            ("SessionStart", None, vec![hook_entry(
+                &format!("node {} session_start", emit_path.display()),
+                3000,
+                &marker,
+            )]),
+            ("SessionEnd", None, vec![
+                hook_entry(&format!("node {} session_end", emit_path.display()), 3000, &marker),
+                hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
+            ]),
+            ("PreCompact", None, vec![hook_entry(
+                &format!("node {}", digest_path.display()),
+                30000,
+                &marker,
+            )]),
+        ]
+    };
 
     let obj = settings.as_object_mut().expect("checked");
     let hooks_root = obj
@@ -176,35 +407,72 @@ fn patch_hooks(settings: &mut Value, hooks_dir: &Path) -> Result<&'static str> {
         .as_object_mut()
         .ok_or_else(|| anyhow!("settings.hooks 不是 object"))?;
 
+    if force {
+        // Clear everything under hooks/ before re-installing
+        hooks_root.clear();
+    }
+
     let mut any_change = false;
     let mut had_prior = false;
-    for (hook_type, our_entries) in entries.iter() {
+    for (hook_type, matcher, our_entries) in entries.iter() {
         let arr = hooks_root
             .entry(hook_type.to_string())
             .or_insert_with(|| json!([]));
         let arr = arr
             .as_array_mut()
             .ok_or_else(|| anyhow!("settings.hooks.{} 不是 array", hook_type))?;
-        // Drop any prior codeforge-tagged group
         let before = arr.len();
         arr.retain(|group| !group_is_codeforge(group));
         if arr.len() != before {
             had_prior = true;
         }
-        // Append our group
         arr.push(json!({
-            "matcher": "",
+            "matcher": matcher.unwrap_or(""),
             "hooks": our_entries,
         }));
         any_change = true;
     }
 
-    let action = match (had_prior, any_change) {
-        (false, true) => "新增",
-        (true, _) => "更新",
-        (_, false) => "已是最新（無變動）",
+    Ok(match (had_prior, any_change, force) {
+        (_, _, true) => "重置（--force）",
+        (false, true, _) => "新增",
+        (true, _, _) => "更新",
+        (_, false, _) => "已是最新（無變動）",
+    })
+}
+
+fn unpatch_hooks(settings: &mut Value) -> Result<&'static str> {
+    require_object_root(settings)?;
+    let obj = settings.as_object_mut().expect("checked");
+    let Some(hooks_root) = obj.get_mut("hooks") else {
+        return Ok("不存在（無變動）");
     };
-    Ok(action)
+    let Some(hooks_obj) = hooks_root.as_object_mut() else {
+        return Ok("hooks 不是 object，跳過");
+    };
+    let mut removed = 0usize;
+    let type_names: Vec<String> = hooks_obj.keys().cloned().collect();
+    for ty in &type_names {
+        if let Some(arr) = hooks_obj.get_mut(ty).and_then(|v| v.as_array_mut()) {
+            let before = arr.len();
+            arr.retain(|group| !group_is_codeforge(group));
+            removed += before - arr.len();
+        }
+    }
+    // Collapse empty arrays
+    hooks_obj.retain(|_, v| match v.as_array() {
+        Some(a) => !a.is_empty(),
+        None => true,
+    });
+    // Collapse empty hooks object
+    if hooks_obj.is_empty() {
+        obj.remove("hooks");
+    }
+    Ok(if removed > 0 {
+        "已移除"
+    } else {
+        "無 codeforge entries（無變動）"
+    })
 }
 
 fn hook_entry(command: &str, timeout_ms: u64, marker: &str) -> Value {
@@ -216,8 +484,8 @@ fn hook_entry(command: &str, timeout_ms: u64, marker: &str) -> Value {
     })
 }
 
-/// A "hook group" (Claude Code's `hooks` array entry) is codeforge-owned
-/// when every entry in its inner `hooks` array carries our marker.
+/// A "hook group" is codeforge-owned when every entry in its `hooks`
+/// array carries our marker.
 fn group_is_codeforge(group: &Value) -> bool {
     let Some(inner) = group.get("hooks").and_then(|h| h.as_array()) else {
         return false;
@@ -255,45 +523,89 @@ fn value_type_name(v: &Value) -> &'static str {
     }
 }
 
+fn say(quiet: bool, msg: &str) {
+    if !quiet {
+        println!("{}", msg);
+    }
+}
+
+fn prompt_confirm(prompt: &str) -> Result<bool> {
+    print!("{}", prompt);
+    io::stdout().flush().ok();
+    let stdin = io::stdin();
+    let mut line = String::new();
+    stdin.lock().read_line(&mut line)?;
+    Ok(line.trim().eq_ignore_ascii_case("yes"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn statusline_cmd(s: &Value) -> &str {
+        s["statusLine"]["command"].as_str().unwrap()
+    }
+
     #[test]
     fn statusline_merge_into_empty() {
         let mut s = json!({});
-        let action = patch_statusline(&mut s, "/abs/codeforge statusline").unwrap();
+        let action = patch_statusline(&mut s, "/abs/codeforge statusline", false).unwrap();
         assert_eq!(action, "新增");
-        assert_eq!(s["statusLine"]["command"], "/abs/codeforge statusline");
+        assert_eq!(statusline_cmd(&s), "/abs/codeforge statusline");
+        // V2.2 adds marker
+        assert!(s["statusLine"][MARKER_KEY]
+            .as_str()
+            .unwrap()
+            .starts_with("codeforge@"));
     }
 
     #[test]
     fn statusline_merge_preserves_unrelated() {
         let mut s = json!({"theme": "auto"});
-        patch_statusline(&mut s, "/x statusline").unwrap();
+        patch_statusline(&mut s, "/x statusline", false).unwrap();
         assert_eq!(s["theme"], "auto");
-        assert_eq!(s["statusLine"]["command"], "/x statusline");
+        assert_eq!(statusline_cmd(&s), "/x statusline");
     }
 
     #[test]
-    fn statusline_idempotent() {
+    fn statusline_idempotent_on_own() {
         let mut s = json!({});
-        patch_statusline(&mut s, "/x statusline").unwrap();
-        let action = patch_statusline(&mut s, "/x statusline").unwrap();
+        patch_statusline(&mut s, "/x statusline", false).unwrap();
+        let action = patch_statusline(&mut s, "/x statusline", false).unwrap();
         assert_eq!(action, "已是最新（無變動）");
     }
 
     #[test]
-    fn statusline_overwrites_different_cmd() {
-        let mut s = json!({"statusLine": {"type": "command", "command": "/old"}});
-        let action = patch_statusline(&mut s, "/new statusline").unwrap();
+    fn statusline_overwrites_codeforge_marker() {
+        let mut s = json!({});
+        patch_statusline(&mut s, "/old codeforge statusline", false).unwrap();
+        let action = patch_statusline(&mut s, "/new codeforge statusline", false).unwrap();
         assert_eq!(action, "更新");
+        assert_eq!(statusline_cmd(&s), "/new codeforge statusline");
+    }
+
+    #[test]
+    fn statusline_refuses_user_owned_without_force() {
+        // User has their own statusLine (no marker)
+        let mut s = json!({"statusLine": {"type": "command", "command": "/user/script"}});
+        let err = patch_statusline(&mut s, "/new statusline", false).unwrap_err();
+        assert!(err.to_string().contains("force"));
+        // The user's statusLine is untouched
+        assert_eq!(s["statusLine"]["command"], "/user/script");
+    }
+
+    #[test]
+    fn statusline_overwrites_user_owned_with_force() {
+        let mut s = json!({"statusLine": {"type": "command", "command": "/user/script"}});
+        let action = patch_statusline(&mut s, "/new statusline", /*force=*/ true).unwrap();
+        assert_eq!(action, "更新");
+        assert_eq!(statusline_cmd(&s), "/new statusline");
     }
 
     #[test]
     fn statusline_rejects_array_root() {
         let mut s = json!(["arr"]);
-        let err = patch_statusline(&mut s, "/x").unwrap_err();
+        let err = patch_statusline(&mut s, "/x", false).unwrap_err();
         assert!(err.to_string().contains("array"));
     }
 
@@ -301,7 +613,7 @@ mod tests {
     fn group_is_codeforge_detects_marker() {
         let ours = json!({
             "matcher": "",
-            "hooks": [{"type": "command", "command": "x", MARKER_KEY: "codeforge@0.0.1"}]
+            "hooks": [{"type": "command", "command": "x", MARKER_KEY: "codeforge@0.0.2"}]
         });
         assert!(group_is_codeforge(&ours));
 
@@ -314,34 +626,46 @@ mod tests {
         let mixed = json!({
             "matcher": "",
             "hooks": [
-                {"type": "command", "command": "x", MARKER_KEY: "codeforge@0.0.1"},
-                {"type": "command", "command": "y"},  // no marker → not ours
+                {"type": "command", "command": "x", MARKER_KEY: "codeforge@0.0.2"},
+                {"type": "command", "command": "y"},
             ]
         });
         assert!(!group_is_codeforge(&mixed));
-
-        let no_hooks = json!({"matcher": ""});
-        assert!(!group_is_codeforge(&no_hooks));
     }
 
     #[test]
     fn patch_hooks_creates_block() {
         let mut s = json!({});
         let dir = PathBuf::from("/tmp/cf-test");
-        let action = patch_hooks(&mut s, &dir).unwrap();
+        let action = patch_hooks(&mut s, &dir, false, false).unwrap();
         assert_eq!(action, "新增");
-        // Three hook types written
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["SessionEnd"].is_array());
         assert!(s["hooks"]["PreCompact"].is_array());
-        // SessionEnd has 2 inner hooks (emit + digest)
         let session_end = &s["hooks"]["SessionEnd"][0]["hooks"];
         assert_eq!(session_end.as_array().unwrap().len(), 2);
-        // Marker present
-        assert!(s["hooks"]["SessionStart"][0]["hooks"][0][MARKER_KEY]
-            .as_str()
-            .unwrap()
-            .starts_with("codeforge@"));
+    }
+
+    #[test]
+    fn patch_hooks_project_layout_includes_pre_tool_use() {
+        let mut s = json!({});
+        let dir = PathBuf::from("/tmp/cf-test");
+        patch_hooks(&mut s, &dir, false, /*project=*/ true).unwrap();
+        // All 4 hook types present
+        assert!(s["hooks"]["SessionStart"].is_array());
+        assert!(s["hooks"]["PreToolUse"].is_array());
+        assert!(s["hooks"]["SessionEnd"].is_array());
+        assert!(s["hooks"]["PreCompact"].is_array());
+        // PreToolUse has the Edit|Write|Bash matcher
+        assert_eq!(s["hooks"]["PreToolUse"][0]["matcher"], "Edit|Write|Bash");
+        // SessionStart has 2 hooks (check-improvements + emit-session)
+        assert_eq!(
+            s["hooks"]["SessionStart"][0]["hooks"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -354,27 +678,95 @@ mod tests {
                 }]
             }
         });
-        patch_hooks(&mut s, Path::new("/tmp")).unwrap();
-        // User's group still present (no marker → preserved)
+        patch_hooks(&mut s, Path::new("/tmp"), false, false).unwrap();
         let session_start = s["hooks"]["SessionStart"].as_array().unwrap();
         assert_eq!(session_start.len(), 2);
         assert_eq!(session_start[0]["hooks"][0]["command"], "user-script.sh");
-        // Our group appended
         assert!(group_is_codeforge(&session_start[1]));
+    }
+
+    #[test]
+    fn patch_hooks_force_clears_user_entries() {
+        let mut s = json!({
+            "hooks": {
+                "SessionStart": [{
+                    "matcher": "",
+                    "hooks": [{"type": "command", "command": "user-script.sh"}]
+                }],
+                "PreToolUse": [{
+                    "matcher": "*",
+                    "hooks": [{"type": "command", "command": "user-other"}]
+                }]
+            }
+        });
+        let action = patch_hooks(&mut s, Path::new("/tmp"), /*force=*/ true, false).unwrap();
+        assert_eq!(action, "重置（--force）");
+        // User's PreToolUse should be gone entirely (we don't write to it in non-project mode)
+        assert!(s["hooks"].get("PreToolUse").is_none());
+        // User's SessionStart should be gone — replaced by our entry only
+        let ss = s["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(ss.len(), 1, "force should leave only codeforge entry");
+        assert!(group_is_codeforge(&ss[0]));
     }
 
     #[test]
     fn patch_hooks_replaces_own_prior_entries() {
         let mut s = json!({});
-        patch_hooks(&mut s, Path::new("/tmp/v1")).unwrap();
+        patch_hooks(&mut s, Path::new("/tmp/v1"), false, false).unwrap();
         let len_after_first = s["hooks"]["SessionStart"].as_array().unwrap().len();
-        // Re-run: prior codeforge entries should be replaced, not appended
-        let action = patch_hooks(&mut s, Path::new("/tmp/v2")).unwrap();
+        let action = patch_hooks(&mut s, Path::new("/tmp/v2"), false, false).unwrap();
         assert_eq!(action, "更新");
         let len_after_second = s["hooks"]["SessionStart"].as_array().unwrap().len();
-        assert_eq!(
-            len_after_first, len_after_second,
-            "re-running --hooks should not accumulate duplicate entries"
-        );
+        assert_eq!(len_after_first, len_after_second);
+    }
+
+    #[test]
+    fn unpatch_hooks_removes_only_codeforge() {
+        let mut s = json!({});
+        patch_hooks(&mut s, Path::new("/tmp"), false, false).unwrap();
+        // Add a user hook alongside
+        let user = json!({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": "user.sh"}]
+        });
+        s["hooks"]["SessionStart"]
+            .as_array_mut()
+            .unwrap()
+            .push(user.clone());
+        // Now uninstall
+        let action = unpatch_hooks(&mut s).unwrap();
+        assert_eq!(action, "已移除");
+        // User entry preserved
+        let ss = s["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(ss.len(), 1);
+        assert_eq!(ss[0]["hooks"][0]["command"], "user.sh");
+        // SessionEnd/PreCompact entries (only codeforge ones) → removed → arrays collapsed
+        assert!(s["hooks"].get("SessionEnd").is_none());
+        assert!(s["hooks"].get("PreCompact").is_none());
+    }
+
+    #[test]
+    fn unpatch_hooks_collapses_empty_root() {
+        let mut s = json!({});
+        patch_hooks(&mut s, Path::new("/tmp"), false, false).unwrap();
+        unpatch_hooks(&mut s).unwrap();
+        // No user entries anywhere → the entire `hooks` key should be removed
+        assert!(s.as_object().unwrap().get("hooks").is_none());
+    }
+
+    #[test]
+    fn unpatch_statusline_removes_only_codeforge() {
+        // Codeforge-tagged → removed
+        let mut s = json!({});
+        patch_statusline(&mut s, "/x statusline", false).unwrap();
+        let action = unpatch_statusline(&mut s).unwrap();
+        assert_eq!(action, "已移除");
+        assert!(s.as_object().unwrap().get("statusLine").is_none());
+
+        // User-owned → preserved
+        let mut s2 = json!({"statusLine": {"type": "command", "command": "/user"}});
+        let action = unpatch_statusline(&mut s2).unwrap();
+        assert_eq!(action, "保留（非 codeforge 寫入）");
+        assert_eq!(s2["statusLine"]["command"], "/user");
     }
 }

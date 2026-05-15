@@ -41,6 +41,39 @@ pub enum Commands {
         /// 同時安裝 statusLine 與 hooks（等同 --hooks 加 statusLine 預設）
         #[arg(long)]
         all: bool,
+        /// 安裝 codeforge-clone-only hooks（4 個 scripts）到 $CWD/.claude/settings.json；只能在 codeforge clone 內執行
+        #[arg(long)]
+        project_hooks: bool,
+        /// 印出將要套用的 settings.json 內容與 extraction 計畫，不做任何寫入
+        #[arg(long)]
+        dry_run: bool,
+        /// 清掉 hooks 內所有 entries（包含非 codeforge）再寫入 codeforge 的條目；需搭配 --yes
+        #[arg(long)]
+        force: bool,
+        /// 跳過 --force 的確認提示
+        #[arg(long)]
+        yes: bool,
+        /// 覆蓋 settings.json 路徑（預設 ~/.claude/settings.json 或 $CWD/.claude/settings.json for --project-hooks）
+        #[arg(long, value_name = "PATH")]
+        settings_path: Option<std::path::PathBuf>,
+        /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// 移除 codeforge 寫入的 settings.json 條目與 hooks scripts
+    Uninstall {
+        /// 只移除 statusLine（若指向 current_exe）
+        #[arg(long)]
+        statusline: bool,
+        /// 只移除 hooks 與 extracted scripts
+        #[arg(long)]
+        hooks: bool,
+        /// 覆蓋 settings.json 路徑
+        #[arg(long, value_name = "PATH")]
+        settings_path: Option<std::path::PathBuf>,
+        /// 安靜模式
+        #[arg(long)]
+        quiet: bool,
     },
     /// 手動新增知識條目
     Learn {
@@ -189,7 +222,36 @@ pub fn run(cli: Cli) -> Result<()> {
 
     match cli.command {
         Commands::Init => init::run(&ctx),
-        Commands::Install { hooks, all } => install::run(&ctx, hooks, all),
+        Commands::Install {
+            hooks,
+            all,
+            project_hooks,
+            dry_run,
+            force,
+            yes,
+            settings_path,
+            quiet,
+        } => install::run(install::InstallOpts {
+            hooks,
+            all,
+            project_hooks,
+            dry_run,
+            force,
+            yes,
+            settings_path,
+            quiet,
+        }),
+        Commands::Uninstall {
+            statusline,
+            hooks,
+            settings_path,
+            quiet,
+        } => install::run_uninstall(install::UninstallOpts {
+            statusline,
+            hooks,
+            settings_path,
+            quiet,
+        }),
         Commands::Learn { text, paste, file } => learn::run(&ctx, text, paste, file),
         Commands::Memory { action } => match action {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),
