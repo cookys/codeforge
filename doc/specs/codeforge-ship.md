@@ -3,7 +3,7 @@
 > Status: **STUB** · Owner: cookys · Created: 2026-05-15
 > Sprint 1 啟動時 expand 完整 schema + Haiku digest prompt + L1 reading strategy + retry/queue 設計。
 >
-> This stub exists to unblock PKB Sprint 0-2 (`cookys/personal-knowledge-base/docs/specs/20-sprint-0-2.md` D1.1) — the full spec must be written before Sprint 1 implementation starts.
+> This stub exists to unblock Mnemos Sprint 0-2 (`cookys/personal-knowledge-base/docs/specs/20-sprint-0-2.md` D1.1) — the full spec must be written before Sprint 1 implementation starts.
 
 ---
 
@@ -13,13 +13,13 @@ CodeForge 既有 memory pipeline 是 L0 raw signals → Haiku → L1 compiled ma
 
 但 L1 是 per-session per-repo 的本地知識，沒有跨 repo aggregation 也沒有送進中央 brain。
 
-**`codeforge ship`** 把 L1 + git log + 今日 session jsonl 再 digest 成 L2 daily ledger，POST 到 PKB（`POST /v1/ingest/ledger`），讓 PKB 端可以萃取 atom 進入跨 repo / 跨 session 的 active memory。
+**`codeforge ship`** 把 L1 + git log + 今日 session jsonl 再 digest 成 L2 daily ledger，POST 到 Mnemos（`POST /v1/ingest/ledger`），讓 Mnemos 端可以萃取 atom 進入跨 repo / 跨 session 的 active memory。
 
 ---
 
 ## 2. 角色定位
 
-`codeforge ship` 不是玩具子命令，是 **CodeForge 作為 PKB source 的職責**。Day-1 就是 critical path（不是 nice-to-have）— SessionEnd hook 觸發、失敗有 retry policy、結果影響 PKB 資料完整性。
+`codeforge ship` 不是玩具子命令，是 **CodeForge 作為 Mnemos source 的職責**。Day-1 就是 critical path（不是 nice-to-have）— SessionEnd hook 觸發、失敗有 retry policy、結果影響 Mnemos 資料完整性。
 
 但實作上仍然只是 codeforge binary 的一個 subcommand（不另外開新 binary，依照 spec discussion 拍板的 single-binary 原則）。
 
@@ -28,8 +28,8 @@ CodeForge 既有 memory pipeline 是 L0 raw signals → Haiku → L1 compiled ma
 ## 3. CLI Surface
 
 ```
-codeforge ship                  # 預設：digest 今日 (UTC)，POST 到 ~/.config/pkb-rs.env 指定的 endpoint
-codeforge ship --date 2026-05-15  # 指定日期 (re-ship 不覆寫，PKB 端 dedup by ship_id)
+codeforge ship                  # 預設：digest 今日 (UTC)，POST 到 ~/.config/mnemos.env 指定的 endpoint
+codeforge ship --date 2026-05-15  # 指定日期 (re-ship 不覆寫，Mnemos dedup by ship_id)
 codeforge ship --dry-run        # 印 ledger JSON 不送
 codeforge ship --no-hook        # 抑制 retry 寫 ship-failed/（hook 用）
 codeforge ship --resend         # 從 ~/.codeforge/ship-failed/ 補送
@@ -100,11 +100,11 @@ Sprint 1 啟動時定義:
 
 ## 7. Cite Subcommand
 
-`codeforge pkb-cli context|cite` 是另一個 subcommand，spec 在 [`codeforge-pkb-cli.md`](codeforge-pkb-cli.md)（也是 stub，待 Sprint 1 寫）。
+`codeforge mnemos-cli context|cite` 是另一個 subcommand，spec 在 [`codeforge-mnemos-cli.md`](codeforge-mnemos-cli.md)（也是 stub，待 Sprint 1 寫）。
 
-`ship` 跟 `pkb-cli cite` 的協作:
-- ship 結束時順便偵測「本 session transcript 是否引用任何 PKB atom」
-- 偵測到 → 對每個 atom 呼叫 `pkb-cli cite <atom_id>`
+`ship` 跟 `mnemos-cli cite` 的協作:
+- ship 結束時順便偵測「本 session transcript 是否引用任何 Mnemos atom」
+- 偵測到 → 對每個 atom 呼叫 `mnemos-cli cite <atom_id>`
 - Sprint 1 用 fulltext_match heuristic；Sprint 5+ 改 Haiku
 
 ---
@@ -148,7 +148,7 @@ Sprint 1 啟動時定義:
 - Haiku digest prompt 完整版
 - L1 → ledger payload 的 reduce 演算法（多 concept 文件如何 merge / dedup）
 - struggled / rabbit_holes 偵測 heuristic 的精確規則
-- `pkb-cli context` 的 topic 推導邏輯
+- `mnemos-cli context` 的 topic 推導邏輯
 - error log + structured logging
 - unit + integration tests
 - locales/{en,zh-TW}.yaml strings
