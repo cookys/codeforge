@@ -235,7 +235,13 @@ Do NOT import CodePower's codebase into CodeForge tests or vice versa. CodeForge
 
 ### Hook Path Note
 
-`.claude/settings.json` contains absolute paths to the session scripts (e.g. `/home/codepower/projects/codeforge/.claude/scripts/check-improvements.js`). These must be updated if the repo is moved or cloned to a different machine. Claude Code hooks do not support relative paths.
+Project `.claude/settings.json` carries **codeforge-clone-only** hooks: `check-improvements.js` (SessionStart), `check-dev-flow.js` (PreToolUse), `codeforge dream --quiet` (SessionEnd). The script paths use `${CLAUDE_PROJECT_DIR}/.claude/scripts/...` (Claude Code env var, expanded at hook spawn) — no per-clone hand-editing needed.
+
+The **product-wide** scripts (`emit-session.js`, `session-digest.js`) are no longer in project settings — they're installed globally via `codeforge install --all` to `~/.claude/settings.json`. This avoids dual-fire when working in the codeforge clone (project + global both used to fire the same script). Contributors after fresh clone must run `codeforge install --all` once to get full functionality.
+
+Two known V2.2 install bugs tracked in `~/.claude/improvement-queue.json`:
+1. `--project-hooks` doesn't model the non-script `codeforge dream` SessionEnd entry — re-running drops it (manual edit required to restore until fixed)
+2. `--project-hooks` had a naive append-not-replace bug for unmarkered entries; mostly obviated by the V2.2 marker-tagged baseline now committed
 
 ## Knowledge Management
 
