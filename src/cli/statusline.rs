@@ -551,6 +551,35 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
         let b_s = shorten_str(&b, 22);
         id_parts.push(seg(&tc(&b_s, BRANCH_C), vis(&b_s)).0);
     }
+    // Claude Code version + update banner (mirrors render_full's amber ⬆ marker).
+    // Suppressed when neither session nor latest version resolved (likely
+    // running outside the CC process tree — tests, manual invocation).
+    if data.version.is_some() || data.latest_version.is_some() {
+        let (ver_inner, ver_vis) = if data.update_available {
+            let latest = data
+                .latest_version
+                .as_deref()
+                .map(|v| format!("v{}", v))
+                .unwrap_or_else(|| "—".to_string());
+            let s = format!("{} {}", tc_bold("⬆", UPDATE_C), tc(&latest, UPDATE_C));
+            (s, 2 + vis(&latest))
+        } else {
+            let cur = data
+                .version
+                .as_deref()
+                .map(|v| format!("v{}", v))
+                .unwrap_or_else(|| "—".to_string());
+            (tc(&cur, DELIM), vis(&cur))
+        };
+        id_parts.push(seg(&ver_inner, ver_vis).0);
+    }
+    // Onboarding hint: render_no_pet means no pet adopted. Surface the next
+    // command in dim gray so users discover the upgrade path without us
+    // shouting. Disappears the moment they adopt (this branch isn't reached).
+    {
+        let hint = "→ codeforge init";
+        id_parts.push(seg(&tc(hint, DELIM), vis(hint)).0);
+    }
 
     let rows = vec![
         Row {
