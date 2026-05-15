@@ -549,22 +549,20 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
 
     let branch_full = git_branch().unwrap_or_else(|| "—".to_string());
     let ab_str = fmt_ahead_behind(git_ahead_behind());
-    let ab_part = if ab_str.is_empty() {
-        String::new()
+    // ab_part carries ONLY its leading space (matches render_full's pattern).
+    // The space BEFORE branch is always written explicitly so cwd and branch
+    // can't glue together when ab_part is empty (no-upstream case).
+    let (ab_part, ab_vis) = if ab_str.is_empty() {
+        (String::new(), 0)
     } else {
-        format!(" {} ", tc(&ab_str, AHEAD_BEHIND))
-    };
-    let ab_vis = if ab_str.is_empty() {
-        0
-    } else {
-        2 + vis(&ab_str)
+        (format!(" {}", tc(&ab_str, AHEAD_BEHIND)), 1 + vis(&ab_str))
     };
 
     let (ver_str, ver_vis) = render_version(data, delim_c);
 
-    // Budget — leading space(1) + model + " ── "(4) + cwd + ab + " "(1) + branch
-    //   + " "(1) + fill(N) + " "(1) + version
-    let fixed = 1 + model_vis + 4 + 1 + ab_vis + 1 + 1 + ver_vis;
+    // Layout: " " model " ── " cwd <ab_part> " " branch " " fill(N) " " version
+    //   fixed widths: 1 + model + 4 + ab_vis + 1 + 1 + 1 + ver_vis
+    let fixed = 1 + model_vis + 4 + ab_vis + 1 + 1 + 1 + ver_vis;
     // Allocate cwd ≥ 10 cols, branch ≥ 4 cols.
     let cwd_budget = width.saturating_sub(fixed + 4).max(10);
     let cwd_display = shorten_path(&cwd_home, cwd_budget);
@@ -577,18 +575,14 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
         .max(2);
 
     let row0 = format!(
-        " {}{}{}{}{} {} {}{} {}",
+        " {}{}{}{} {} {} {}",
         model_text,
         tc(" ── ", delim_c),
         tc(&cwd_display, CWD_C),
         ab_part,
         tc(&branch_display, BRANCH_C),
         tcs("─".repeat(fill), delim_c),
-        " ",
         ver_str,
-        // trailing dummy so format!'s positional alignment is obvious;
-        // the actual right-edge alignment comes from `fill` math above.
-        "",
     );
 
     // Row 1 — usage bars on LEFT, onboarding hint right-aligned on the
