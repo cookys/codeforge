@@ -29,6 +29,22 @@ cargo install --path .
 
 Requires Rust stable. The built binary lands in `~/.cargo/bin/codeforge`.
 
+Then wire it into Claude Code:
+
+```bash
+codeforge install
+```
+
+This patches `~/.claude/settings.json` to use `codeforge statusline` as
+Claude Code's statusLine hook — with the binary's absolute path, so it
+works even when `~/.cargo/bin` isn't on the spawned shell's PATH (common
+when `rustup` was installed with `--no-modify-path`). Re-run after
+upgrading codeforge to refresh the path. Other keys in settings.json are
+preserved.
+
+`codeforge install --hooks` (SessionStart / PreToolUse / etc) is on the
+roadmap — see [`doc/specs/codeforge-install-subcommand.md`](doc/specs/codeforge-install-subcommand.md).
+
 ## Quickstart
 
 ```bash
