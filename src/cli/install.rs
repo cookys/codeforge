@@ -27,6 +27,12 @@ pub struct UninstallOpts {
 const MARKER_KEY: &str = "_installed_by";
 const MARKER_PREFIX: &str = "codeforge@";
 
+/// Claude Code env-var placeholder. Claude Code expands `${CLAUDE_PROJECT_DIR}`
+/// to the absolute project root before spawning hook processes
+/// (https://code.claude.com/docs/en/hooks.md). Using this in committed
+/// settings.json makes the file portable across every clone.
+const PROJECT_DIR_ENV_PLACEHOLDER: &str = "${CLAUDE_PROJECT_DIR}";
+
 /// `codeforge install` — wire Claude Code integration.
 ///
 /// Default (no flags): patches `~/.claude/settings.json` with a
@@ -175,19 +181,24 @@ fn run_install_project_hooks(opts: &InstallOpts) -> Result<()> {
         .unwrap_or_else(|| cwd.join(".claude").join("settings.json"));
     say(opts.quiet, &format!("  目標 settings.json: {}", settings_path.display()));
 
-    // The 4 scripts live in $CWD/.claude/scripts/ — already present in the repo.
-    let scripts_dir = cwd.join(".claude").join("scripts");
+    // Existence check uses the real CWD path (resolves $CLAUDE_PROJECT_DIR for us locally).
+    let scripts_dir_real = cwd.join(".claude").join("scripts");
     for name in PROJECT_HOOK_SCRIPT_NAMES {
-        let p = scripts_dir.join(name);
+        let p = scripts_dir_real.join(name);
         if !p.exists() {
             bail!("找不到必要 script：{}（執行位置不像 codeforge clone）", p.display());
         }
     }
 
+    // Written into command strings — uses Claude Code's documented env var so the
+    // committed settings.json is portable across every clone. Claude Code expands
+    // `${CLAUDE_PROJECT_DIR}` before spawning the hook process.
+    let scripts_dir_template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER).join(".claude").join("scripts");
+
     let mut settings = load_settings(&settings_path)?;
-    let action = patch_hooks(&mut settings, &scripts_dir, opts.force, /*project=*/ true)?;
+    let action = patch_hooks(&mut settings, &scripts_dir_template, opts.force, /*project=*/ true)?;
     say(opts.quiet, &format!("✓ project hooks {}", action));
-    say(opts.quiet, &format!("  scripts: {}", scripts_dir.display()));
+    say(opts.quiet, &format!("  scripts: {}", scripts_dir_template.display()));
     say(opts.quiet, &format!("  clone root: {}", cwd_str));
 
     if opts.dry_run {
@@ -666,6 +677,27 @@ mod tests {
                 .len(),
             2
         );
+    }
+
+    #[test]
+    fn project_mode_uses_claude_project_dir_placeholder() {
+        // Mimics run_install_project_hooks: pass the env-var template path,
+        // not a real on-disk path. Verifies the commands written into
+        // settings.json are portable (no per-machine absolute paths).
+        let mut s = json!({});
+        let template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER).join(".claude").join("scripts");
+        patch_hooks(&mut s, &template, false, /*project=*/ true).unwrap();
+        let cmd = s["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
+        assert!(
+            cmd.contains("${CLAUDE_PROJECT_DIR}/.claude/scripts/check-improvements.js"),
+            "expected env-var placeholder in command, got: {}",
+            cmd
+        );
+        // No absolute /home/, /Users/, or C:\ paths should leak
+        assert!(!cmd.contains("/home/"), "unexpected absolute /home/ path: {}", cmd);
+        assert!(!cmd.contains("/Users/"), "unexpected absolute /Users/ path: {}", cmd);
     }
 
     #[test]

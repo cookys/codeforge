@@ -1,48 +1,68 @@
 {
   "hooks": {
-    "SessionStart": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "node /home/codepower/projects/codeforge/.claude/scripts/check-improvements.js",
-        "timeout": 10000
-      }, {
-        "type": "command",
-        "command": "node /home/codepower/projects/codeforge/.claude/scripts/emit-session.js session_start",
-        "timeout": 3000
-      }]
-    }],
-    "PreToolUse": [{
-      "matcher": "Edit|Write|Bash",
-      "hooks": [{
-        "type": "command",
-        "command": "node /home/codepower/projects/codeforge/.claude/scripts/check-dev-flow.js",
-        "timeout": 5000
-      }]
-    }],
-    "PreCompact": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "node /home/codepower/projects/codeforge/.claude/scripts/session-digest.js",
-        "timeout": 30000
-      }]
-    }],
-    "SessionEnd": [{
-      "matcher": "",
-      "hooks": [{
-        "type": "command",
-        "command": "codeforge dream --quiet 2>/dev/null || true",
-        "timeout": 30000
-      }, {
-        "type": "command",
-        "command": "node /home/codepower/projects/codeforge/.claude/scripts/emit-session.js session_end",
-        "timeout": 3000
-      }, {
-        "type": "command",
-        "command": "node /home/codepower/projects/codeforge/.claude/scripts/session-digest.js",
-        "timeout": 30000
-      }]
-    }]
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "_installed_by": "codeforge@0.0.2",
+            "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/session-digest.js",
+            "timeout": 30000,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "_installed_by": "codeforge@0.0.2",
+            "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/check-dev-flow.js",
+            "timeout": 5000,
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write|Bash"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "_installed_by": "codeforge@0.0.2",
+            "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/emit-session.js session_end",
+            "timeout": 3000,
+            "type": "command"
+          },
+          {
+            "_installed_by": "codeforge@0.0.2",
+            "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/session-digest.js",
+            "timeout": 30000,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "_installed_by": "codeforge@0.0.2",
+            "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/check-improvements.js",
+            "timeout": 10000,
+            "type": "command"
+          },
+          {
+            "_installed_by": "codeforge@0.0.2",
+            "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/emit-session.js session_start",
+            "timeout": 3000,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ]
   }
 }

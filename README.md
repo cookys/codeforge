@@ -115,11 +115,15 @@ For the global memory store pattern (one shared store across projects), see [`.e
 
 ## First-time Claude Code hook setup
 
-CodeForge ships a `.claude/settings.json` that wires SessionStart / PreToolUse / SessionEnd hooks. The hook commands use absolute paths (Claude Code does not yet support relative paths in hook configuration). After cloning, edit `.claude/settings.json` and replace **every occurrence** of the example prefix `/home/codepower/projects/codeforge/` with the absolute path to your local clone.
+CodeForge ships a `.claude/settings.json` that wires SessionStart / PreToolUse / SessionEnd hooks. The hook commands use `${CLAUDE_PROJECT_DIR}` (Claude Code's documented env var for the project root, expanded before each hook spawn), so the committed file works in every clone without modification.
 
-The two `.claude/scripts/check-*.js` files derive `PROJECT_ROOT` from `__filename` and work without modification.
+If you need to regenerate it (e.g., after a settings.json corruption, or for a non-standard layout), run:
 
-A first-run setup script that rewrites `settings.json` paths is tracked in BACKLOG.
+```bash
+codeforge install --project-hooks --force --yes
+```
+
+This writes the same portable `${CLAUDE_PROJECT_DIR}` paths back into `$CWD/.claude/settings.json`.
 
 ## Phase Roadmap
 
