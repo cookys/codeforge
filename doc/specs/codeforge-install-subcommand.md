@@ -25,6 +25,30 @@ Add `Install(InstallArgs)` / `Uninstall(UninstallArgs)` variants to
 
 ## 1. `--hooks` design decisions
 
+### Scope insight: not all 4 scripts are globally safe
+
+Audit of the 4 scripts under `.claude/scripts/`:
+
+| Script | Scope | Reason |
+|---|---|---|
+| `emit-session.js` | **global** | Just shells `codeforge emit` with cwd from stdin. Project-agnostic. |
+| `session-digest.js` | **global** | Reads transcript from stdin, writes to `~/.claude/session-digests/`. Project-agnostic. |
+| `check-improvements.js` | **codeforge-repo-only** | Reads `<PROJECT_ROOT>/.claude/knowledge/INDEX.md`. Only meaningful inside the codeforge clone. |
+| `check-dev-flow.js` | **codeforge-repo-only** | Hardcodes codeforge's `src/` + Rust file patterns. |
+
+`codeforge install --hooks` (writing to `~/.claude/settings.json` = ALL
+sessions in ALL projects) should install only the **global** scripts.
+The codeforge-repo-only scripts belong in `<codeforge>/.claude/settings.json`
+(committed as part of the codeforge repo, only fires when Claude Code is
+opened in the codeforge dir).
+
+V2 split:
+- `codeforge install --hooks` (default `--global`): writes emit-session
+  + session-digest to `~/.claude/settings.json`.
+- `codeforge install --project-hooks` (cwd-scoped): writes all 4 to
+  `$CWD/.claude/settings.json`. Only makes sense from the codeforge
+  clone — `bail!` if `Cargo.toml` doesn't name the package `codeforge`.
+
 ### Script delivery: **embed via `include_str!`, extract on install**
 
 Total script size is ~1188 lines / ~40 KB. Embedding wins:

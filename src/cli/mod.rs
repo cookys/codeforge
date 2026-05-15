@@ -33,8 +33,15 @@ pub struct Cli {
 pub enum Commands {
     /// 初始化 .codeforge/ 目錄結構
     Init,
-    /// 將 codeforge 寫進 ~/.claude/settings.json（statusLine hook，用絕對路徑）
-    Install,
+    /// 將 codeforge 寫進 ~/.claude/settings.json（statusLine + 可選 hooks）
+    Install {
+        /// 安裝 global-safe hooks（emit-session, session-digest）
+        #[arg(long)]
+        hooks: bool,
+        /// 同時安裝 statusLine 與 hooks（等同 --hooks 加 statusLine 預設）
+        #[arg(long)]
+        all: bool,
+    },
     /// 手動新增知識條目
     Learn {
         /// 知識內容（省略時從 stdin 讀取）
@@ -182,7 +189,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
     match cli.command {
         Commands::Init => init::run(&ctx),
-        Commands::Install => install::run(&ctx),
+        Commands::Install { hooks, all } => install::run(&ctx, hooks, all),
         Commands::Learn { text, paste, file } => learn::run(&ctx, text, paste, file),
         Commands::Memory { action } => match action {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),
