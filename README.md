@@ -21,6 +21,9 @@ Power generates, Forge shapes. Smith alone, or carry your forged self into the a
 
 ## Install
 
+For a step-by-step walkthrough, see [`doc/getting-started.md`](doc/getting-started.md).
+The short version:
+
 ```bash
 git clone https://github.com/cookys/codeforge
 cd codeforge
