@@ -8,6 +8,8 @@ CodeForge gives Claude Code sessions persistent cross-session memory and a gamif
 
 Active development. Phases 1, 2 (a/b/c) and 3 (a/b/c/d/e/f) shipped. Phase 4 (Zoa 3D animation) and Phase 5 (Nation P2P) on the roadmap.
 
+CodeForge is also the first **Mnemos source** — Sprint 1 of the [Mnemos](https://github.com/cookys/mnemos) Gen-2 active memory daemon adds `codeforge ship` (daily L2 ledger producer) and `codeforge mnemos-cli cite` (natural citation write-back). See [Mnemos Integration](#mnemos-integration) below.
+
 Full architecture in [`doc/specs/codeforge-mud-engine.md`](doc/specs/codeforge-mud-engine.md).
 
 ## Lore — Why CodeForge
@@ -82,10 +84,30 @@ A first-run setup script that rewrites `settings.json` paths is tracked in BACKL
 
 Design specs for upcoming phases live in [`doc/specs/codeforge-mud-engine.md`](doc/specs/codeforge-mud-engine.md) and [`doc/specs/nation-p2p-design.md`](doc/specs/nation-p2p-design.md).
 
+## Mnemos Integration
+
+Beyond the local Memory pipeline + MUD engine, CodeForge is also a **Mnemos source** — it produces a daily L2 ledger from each coding session and ships it to [Mnemos](https://github.com/cookys/mnemos), the central active-memory daemon (Gen-2 successor to PKB).
+
+Two subcommands handle the integration (Sprint 1 deliverable, see [`doc/specs/codeforge-ship.md`](doc/specs/codeforge-ship.md)):
+
+- `codeforge ship` — at SessionEnd, digest the day's L1 + git log + session jsonl into an L2 ledger and POST to Mnemos. Retry policy + failure queue built in.
+- `codeforge mnemos-cli cite <atom_id>` — when a session referenced a Mnemos atom, write back the citation so Mnemos can rank by usage.
+
+Endpoint defaults to `http://127.0.0.1:8845/v1/ingest/ledger` (configurable via `~/.config/mnemos.env`). The ledger payload schema is the joint contract — defined in `cookys/mnemos:docs/specs/10-source-contract.md` §5.1.
+
+This makes CodeForge the **coding source** for Mnemos's multi-source brain (alongside Slack, LINE, Email, Docs, Photos). It is **production critical path**, not a toy subcommand.
+
+| Sprint | CodeForge deliverable | Status |
+|--------|------------------------|--------|
+| Mnemos Sprint 1 | `ship` + `mnemos-cli cite` end-to-end | spec stub; expand at sprint launch |
+| Mnemos Sprint 2 | `mnemos-cli context` for SessionStart hook | planned |
+| Mnemos Sprint 5+ | Replace fulltext_match cite heuristic with Haiku detection | backlog |
+
 ## Data & Privacy
 
 - All data stays on your machine in `.codeforge/` (per-project) or `$CODEFORGE_DIR` (global).
 - When `ANTHROPIC_API_KEY` is set, your raw signals (the text you pass to `codeforge learn`) are sent to Anthropic's `claude-haiku-4-5` model for L0 → L1 compilation. This is subject to [Anthropic's privacy policy](https://www.anthropic.com/privacy).
+- When `codeforge ship` runs (Mnemos Sprint 1+), the L2 ledger is POSTed to your **local** Mnemos daemon at `127.0.0.1:8845` — same machine, no external upload. Mnemos itself stores data locally in `~/.mnemos/data/`.
 - The project author collects no telemetry and runs no servers.
 - `.codeforge/codeforge.db` (SQLite) and `.codeforge/signals/*.jsonl` contain your raw inputs and compiled knowledge — both are gitignored by default.
 
