@@ -6,9 +6,10 @@ Claude Code 工作指南。
 
 CodeForge 是 **CodePower 生態系裡的私人鍛造間**（personal smithy）— 給 Claude Code power-user 用的 Rust CLI 工具集。
 
-**雙支柱**：
-- **Memory pipeline** — L0 raw signals → L1 compiled knowledge（透過 Anthropic Haiku）
+**三支柱**：
+- **Memory pipeline** — L0 raw signals → L1 compiled knowledge（透過 Anthropic Haiku），本機累積
 - **MUD 引擎** — codebase 是世界地圖、技術債是怪物、pet 是玩家角色
+- **Mnemos source role** — `codeforge ship` 把 L1 + git log + session jsonl 再 digest 成 L2 daily ledger、POST 到 Mnemos（中央 brain）；`codeforge mnemos-cli cite` 在 session 結尾回填用過的 atom。**Production critical path**（不是 nice-to-have）— SessionEnd hook 觸發、失敗有 retry policy、結果影響 Mnemos 資料完整性。詳見 [`doc/specs/codeforge-ship.md`](doc/specs/codeforge-ship.md)。
 
 **生態系定位**：
 - **CodePower**（鬥技場）— 公開、聯邦、競技；Nation 團戰、scoring 排行、federated 賽事
@@ -131,6 +132,7 @@ src/
 |------|---------|
 | `doc/specs/codeforge-mud-engine.md` | Phase 2+ MUD engine — daemon, combat, TUI, §3 黏著度機制, §3.10 Nation Theme |
 | `doc/specs/nation-p2p-design.md` | Phase 5 Nation P2P — credential schema, Organizer role, P2P integrity |
+| `doc/specs/codeforge-ship.md` | Mnemos source role — L2 ledger producer + cite client (stub; Sprint 1 expand) |
 | `.claude/rpg-engine-spec.md` | Phase 1 architectural decisions (daemon model, write ownership) |
 | `.claude/i18n-spec.md` | i18n two-layer design (compile-time UI + runtime content) |
 
@@ -154,6 +156,49 @@ src/
 | 5a | Nation Plugin + credential verify (ed25519) | planned |
 | 5b | Organizer cross-Nation events | planned |
 | 5c | Nation Statusline Theme (tiered unlock) | planned |
+
+## Mnemos Integration Roadmap
+
+Orthogonal to MUD Phase Roadmap above; aligned with Mnemos sprint cadence (`cookys/mnemos:docs/specs/20-sprint-0-2.md`).
+
+| Sprint | Deliverable | Status |
+|--------|-------------|--------|
+| Mnemos Sprint 0 | Mnemos Rust foundation (no codeforge work) | blocked on Mnemos |
+| Mnemos Sprint 1 | `codeforge ship` + `codeforge mnemos-cli cite` end-to-end; SessionEnd hook chain `dream → ship` | spec stub at `doc/specs/codeforge-ship.md`; expand at sprint launch |
+| Mnemos Sprint 2 | `mnemos-cli context` for SessionStart hook (cross-source atom recall) | planned |
+| Mnemos Sprint 5+ | Replace fulltext_match cite heuristic with Haiku-based detection | backlog |
+
+## CodeForge ↔ Mnemos Interaction
+
+Mnemos (`cookys/mnemos`) is the central brain that ingests from multiple sources (Slack, LINE, Email, Docs, ...). CodeForge is one of those sources — the **coding** source.
+
+### Ship (session-end, daily L2 digest)
+
+`codeforge ship` runs at session end (chained after `dream --quiet` in the SessionEnd hook). It reads:
+- `.codeforge/store/concepts/*.md` (L1 compiled knowledge)
+- `git log` for the day's commits
+- `~/.claude/projects/<slug>/<uuid>.jsonl` for today's session transcripts
+- `.codeforge/codeforge.db` for metrics
+
+Then digests via Haiku and POSTs the L2 ledger payload to Mnemos at `http://127.0.0.1:8845/v1/ingest/ledger`. CodeForge spec: [`doc/specs/codeforge-ship.md`](doc/specs/codeforge-ship.md). Mnemos endpoint contract: `cookys/mnemos:docs/specs/10-source-contract.md` §5.1.
+
+### Cite (natural citation, client-side write-back)
+
+When `ship` detects a session referenced any Mnemos atom (Sprint 1: fulltext_match heuristic; Sprint 5+: Haiku-based), it calls `codeforge mnemos-cli cite <atom_id>` per atom. Mnemos increments `citation_count`, updates `last_cited_at`, drives the active-memory ranking signal. Mnemos contract: `cookys/mnemos:docs/specs/10-source-contract.md` §11.
+
+### Retry policy
+
+Per Mnemos source-contract §9.1: 1s → 5s → 30s exponential backoff, 4 attempts. Failure writes `~/.codeforge/ship-failed/<ship_id>.json` for next-ship retry. `--no-hook` mode suppresses the failed/ write to avoid hook startup latency.
+
+### Critical path note
+
+`codeforge ship` is **production critical path**, not a nice-to-have toy. It runs on every SessionEnd, has explicit retry policy, and its success affects Mnemos data completeness. Treat schema changes / API changes here with the same rigor as core memory pipeline changes.
+
+### Cross-project sync rule (Mnemos edge)
+
+- CodeForge-side code + spec lives here (this repo) — `src/cli/ship.rs`, `src/cli/mnemos_cli.rs`, `doc/specs/codeforge-ship.md`
+- Mnemos-side ingest contract + atom schema lives in `cookys/mnemos:docs/specs/*.md` — never duplicated here
+- When a design decision spans both (e.g., evidence_refs naming), the **Mnemos repo's `docs/specs/10-source-contract.md` is the single source of truth**; this repo's spec quotes / links it
 
 ## CodePower ↔ CodeForge Interaction
 
