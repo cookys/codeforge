@@ -1,6 +1,20 @@
 # Rust Patterns — CodeForge
 
-<!-- last-verified: 2026-04-16 -->
+<!-- last-verified: 2026-05-15 -->
+
+## Cargo.lock v4 forces minimum Cargo 1.78
+
+**Date**: 2026-05-15
+**Problem**: Setting `rust-toolchain.toml` `channel = "1.75"` (architect
+spec for MSRV pinning) failed build immediately: `lock file version 4
+was found, but this version of Cargo does not understand this lock
+file`. Cargo.lock v4 was introduced in Cargo 1.78.
+**Solution**: Don't use `rust-toolchain.toml` for MSRV declaration;
+it forces every contributor + CI to download that exact version.
+Declare MSRV via `rust-version = "1.85"` in `[package]` of Cargo.toml
+— this is the standard MSRV mechanism. CI matrix uses
+`dtolnay/rust-toolchain@1.85` for release builds; `ci.yml` keeps
+`@stable` for regular checks.
 
 ## CJK 字串截斷必須用 .chars().take(N)
 

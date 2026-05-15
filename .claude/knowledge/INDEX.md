@@ -4,6 +4,9 @@
 
 | Date | Category | Title | File |
 |------|----------|-------|------|
+| 2026-05-15 | env | `~/.cargo/bin` not on PATH for Claude Code spawned shells — silent statusline failure → `codeforge install` writes abs path | `environment.md` |
+| 2026-05-15 | env | Hook scripts under `.claude/scripts/` split into global-safe (emit-session, session-digest) vs codeforge-repo-only (check-improvements, check-dev-flow) | `environment.md` |
+| 2026-05-15 | build | Cargo.lock v4 requires Cargo ≥1.78 → MSRV declared as `rust-version = "1.85"` in Cargo.toml, not `rust-toolchain.toml` (avoids forcing toolchain download) | `rust-patterns.md` |
 | 2026-05-05 | env | `gh repo create --push` 含 `.github/workflows/*` 需 token 帶 `workflow` scope（`gh auth refresh -s workflow`） | `environment.md` |
 | 2026-05-05 | harness | Anthropic API output filter 擋 anti-harassment 標準正典文本 — 改用 thin shell + URL reference | `harness-patterns.md` |
 | 2026-05-05 | harness | Claude Code Write PreToolUse hook 擋 `.github/workflows/*.yml` — 用 Bash heredoc bypass | `harness-patterns.md` |
