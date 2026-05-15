@@ -2,14 +2,14 @@
 # Only keys that differ from en.yaml need to be listed here.
 
 # UI chrome
-ui.memory_label: "記憶："
+ui.memory_label: "記憶"
 ui.status_active: "運作中"
 
-# Stat labels
-stat.atk: "攻："
-stat.def: "防："
-stat.sup: "輔："
-stat.ver: "版："
+# Stat labels — V2 style: 去冒號，靠顏色/字重對比閱讀為「標籤 數值」
+stat.atk: "攻"
+stat.def: "防"
+stat.sup: "輔"
+stat.ver: "版"
 stat.hp: "血"
 stat.xp: "經"
 stat.lv: "等."

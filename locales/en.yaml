@@ -2,15 +2,16 @@
 # All keys must exist here. Other locales only need to override what they translate.
 
 # UI chrome
-ui.memory_label: "Memory:"
+ui.memory_label: "memory"
 ui.status_active: "active"
 # ui.status_inactive not used: statusline only renders when CC is active
 
-# Stat labels (include punctuation — e.g. colon — so locales can use different separators)
-stat.atk: "ATK:"
-stat.def: "DEF:"
-stat.sup: "SUP:"
-stat.ver: "VER:"
+# Stat labels — no trailing colon (V2 statusline style: "ATK 18" reads as a
+# label-value pair via color/weight contrast, not punctuation).
+stat.atk: "ATK"
+stat.def: "DEF"
+stat.sup: "SUP"
+stat.ver: "VER"
 stat.hp: "HP"
 stat.xp: "XP"
 stat.lv: "Lv."
