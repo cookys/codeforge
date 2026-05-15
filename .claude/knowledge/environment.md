@@ -1,6 +1,34 @@
 # Environment — CodeForge
 
-<!-- last-verified: 2026-05-05 -->
+<!-- last-verified: 2026-05-15 -->
+
+## `~/.cargo/bin` not on PATH for Claude Code spawned shells
+
+**Date**: 2026-05-15
+**Problem**: `codeforge statusline` configured in `~/.claude/settings.json`
+as `"command": "codeforge statusline"` silently fails for users who
+installed rustup with `--no-modify-path` (or whose dotfiles lack a cargo
+PATH block). The Bash tool spawns non-interactive shells that don't
+fully source `~/.zshrc`, so `~/.cargo/bin` isn't on PATH → `codeforge`
+not found → Claude Code shows no statusline at all (no error visible).
+**Solution**: `codeforge install` (shipped this session) writes the
+binary's absolute path via `std::env::current_exe()` into settings.json.
+Works regardless of PATH.
+
+## Hook scripts under `.claude/scripts/` have different scopes
+
+**Date**: 2026-05-15
+**Problem**: All 4 scripts (`emit-session`, `session-digest`,
+`check-improvements`, `check-dev-flow`) sit in the same dir but only 2
+are project-agnostic. `check-improvements.js` and `check-dev-flow.js`
+hardcode codeforge's repo layout and would noise-fail or produce false
+data when fired in any non-codeforge Claude Code session.
+**Solution**: `codeforge install --hooks` only installs the 2
+project-agnostic scripts (`emit-session` + `session-digest`) to
+`~/.claude/settings.json` (global). The repo-specific ones stay in
+`<codeforge>/.claude/settings.json` (project-scoped). V2.2 plan
+in `doc/specs/codeforge-install-subcommand.md` adds `--project-hooks`
+flag for installing all 4 to a target repo.
 
 ## codeforge init 目錄
 
