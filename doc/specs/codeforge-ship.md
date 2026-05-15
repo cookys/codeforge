@@ -3,7 +3,7 @@
 > Status: **STUB** · Owner: cookys · Created: 2026-05-15
 > Sprint 1 啟動時 expand 完整 schema + Haiku digest prompt + L1 reading strategy + retry/queue 設計。
 >
-> This stub exists to unblock Mnemos Sprint 0-2 (`cookys/personal-knowledge-base/docs/specs/20-sprint-0-2.md` D1.1) — the full spec must be written before Sprint 1 implementation starts.
+> This stub exists to unblock Mnemos Sprint 0-2 (`cookys/mnemos/docs/specs/20-sprint-0-2.md` D1.1) — the full spec must be written before Sprint 1 implementation starts.
 
 ---
 
@@ -42,7 +42,7 @@ codeforge ship --resend         # 從 ~/.codeforge/ship-failed/ 補送
 
 ## 4. 輸出 Schema
 
-對齊 [`personal-knowledge-base/docs/specs/10-source-contract.md`](#) §5.1 `source: codeforge_ledger`。
+對齊 [`mnemos/docs/specs/10-source-contract.md`](#) §5.1 `source: codeforge_ledger`。
 
 完整 envelope + payload 在 source-contract 那邊定義；本 spec 只負責「CodeForge 端如何產出這個 payload」。
 
