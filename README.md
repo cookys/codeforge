@@ -115,15 +115,38 @@ For the global memory store pattern (one shared store across projects), see [`.e
 
 ## First-time Claude Code hook setup
 
-CodeForge ships a `.claude/settings.json` that wires SessionStart / PreToolUse / SessionEnd hooks. The hook commands use `${CLAUDE_PROJECT_DIR}` (Claude Code's documented env var for the project root, expanded before each hook spawn), so the committed file works in every clone without modification.
+CodeForge hooks come in two layers, each scoped to a different responsibility:
 
-If you need to regenerate it (e.g., after a settings.json corruption, or for a non-standard layout), run:
+**Layer 1 — Codeforge-clone-only hooks** (committed in this repo at `.claude/settings.json`):
+
+- `check-improvements.js` (SessionStart) — surfaces unprocessed digests + improvement queue
+- `check-dev-flow.js` (PreToolUse) — enforces dev-flow before code touches
+- `codeforge dream --quiet` (SessionEnd) — compiles L0 → L1 via Haiku
+
+These use `${CLAUDE_PROJECT_DIR}` (Claude Code's documented env var for the project root, expanded before each hook spawn), so the committed file works in every clone without modification.
+
+If you need to regenerate it (e.g., after a settings.json corruption), run:
 
 ```bash
 codeforge install --project-hooks --force --yes
 ```
 
-This writes the same portable `${CLAUDE_PROJECT_DIR}` paths back into `$CWD/.claude/settings.json`.
+(This currently rewrites the script-based entries but does not yet model the `codeforge dream` SessionEnd entry — until that's tracked, manual edit is required for that line. See improvement-queue.)
+
+**Layer 2 — Product-wide hooks** (installed globally to `~/.claude/settings.json`):
+
+- `emit-session.js` (SessionStart + SessionEnd) — session boundary signals
+- `session-digest.js` (PreCompact + SessionEnd) — captures errors/corrections to `~/.claude/session-digests/`
+
+These fire in **every** Claude Code session (any project), not just inside the codeforge clone. Install once after first build:
+
+```bash
+codeforge install --all
+```
+
+Idempotent. Re-run after upgrading codeforge to refresh the path.
+
+**Why split**: keeping Layer 2 globally avoids the dual-fire problem — if both project + global settings carry the same script entries, hooks run twice per event. Each layer owns a distinct responsibility, single-source-of-truth.
 
 ## Phase Roadmap
 
