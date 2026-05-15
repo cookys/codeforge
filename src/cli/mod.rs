@@ -10,6 +10,7 @@ mod dream;
 mod emit;
 mod ingest;
 mod init;
+mod install;
 mod inventory;
 mod learn;
 mod pet;
@@ -32,6 +33,8 @@ pub struct Cli {
 pub enum Commands {
     /// 初始化 .codeforge/ 目錄結構
     Init,
+    /// 將 codeforge 寫進 ~/.claude/settings.json（statusLine hook，用絕對路徑）
+    Install,
     /// 手動新增知識條目
     Learn {
         /// 知識內容（省略時從 stdin 讀取）
@@ -179,6 +182,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
     match cli.command {
         Commands::Init => init::run(&ctx),
+        Commands::Install => install::run(&ctx),
         Commands::Learn { text, paste, file } => learn::run(&ctx, text, paste, file),
         Commands::Memory { action } => match action {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),
