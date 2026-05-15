@@ -2,6 +2,7 @@
 name = "codeforge"
 version = "0.0.1"
 edition = "2021"
+rust-version = "1.85"
 license = "Apache-2.0"
 description = "Claude Code power-user toolkit — memory management + gamification"
 authors = ["cookys"]
@@ -69,3 +70,14 @@ dotenvy = "0.15"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Release distribution — see doc/specs/codeforge-release-pipeline.md
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/codeforge-{ version }-{ target }.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "codeforge-{ version }-{ target }/{ bin }{ binary-ext }"
+
+[profile.release]
+strip = "symbols"
+lto = "thin"
+codegen-units = 1

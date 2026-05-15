@@ -1,0 +1,56 @@
+name: Release smoke
+
+# Smoke-test the release workflow on PRs that touch its inputs.
+# Builds linux-x86_64 only (cheap), asserts the tarball assembles
+# correctly. Does NOT publish anything.
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release.yml'
+      - '.github/workflows/release-smoke.yml'
+      - 'install.sh'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  smoke:
+    name: Build linux-x86_64 tarball
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.85
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --release --locked --target x86_64-unknown-linux-gnu
+
+      - name: Assemble tarball
+        run: |
+          set -euo pipefail
+          v=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          t=x86_64-unknown-linux-gnu
+          dir="codeforge-${v}-${t}"
+          mkdir -p "dist/${dir}"
+          cp "target/${t}/release/codeforge" "dist/${dir}/codeforge"
+          cp README.md LICENSE "dist/${dir}/"
+          strip "dist/${dir}/codeforge"
+          (cd dist && tar czf "${dir}.tar.gz" "${dir}")
+          ls -la dist/
+          tar tzf "dist/${dir}.tar.gz"
+          # Verify the binary inside the tarball runs
+          tar xzf "dist/${dir}.tar.gz" -C /tmp
+          /tmp/${dir}/codeforge --version
+
+  shellcheck:
+    name: shellcheck install.sh
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck install.sh
