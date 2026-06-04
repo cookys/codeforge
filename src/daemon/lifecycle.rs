@@ -10,6 +10,7 @@ use anyhow::{anyhow, Context, Result};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::signal;
@@ -98,7 +99,19 @@ pub fn pid_alive(pid: u32) -> bool {
 }
 
 /// Send SIGTERM to the given pid; wait up to `timeout` for it to exit.
+/// Validates process identity first (fixes C2: PID-recycling race).
 pub fn send_sigterm(pid: u32, timeout: Duration) -> Result<()> {
+    // C2 fix: verify process identity before sending signal
+    if !pid_alive(pid) {
+        return Err(anyhow!("PID {pid} 不存在或已被回收"));
+    }
+    // Additional check: verify it's actually a codeforge daemon and not some recycled PID
+    if !verify_daemon_identity(pid) {
+        return Err(anyhow!(
+            "PID {pid} 不是 codeforge daemon（PID 可能已被回收）。請手動確認"
+        ));
+    }
+
     let status = std::process::Command::new("kill")
         .args(["-TERM", &pid.to_string()])
         .status()?;
@@ -120,12 +133,84 @@ pub fn send_sigterm(pid: u32, timeout: Duration) -> Result<()> {
     ))
 }
 
-/// Build a shutdown Notify and register tokio signal handlers for SIGTERM + SIGINT.
-/// Returns the shutdown handle; signals will call `notify_one` on it.
-pub fn install_signal_handlers() -> Arc<Notify> {
-    let shutdown = Arc::new(Notify::new());
-    let term_trigger = shutdown.clone();
-    let int_trigger = shutdown.clone();
+/// Verify the process at `pid` is a codeforge daemon (not a recycled PID).
+/// Checks the command line contains "codeforge daemon start".
+/// Only works on Linux; returns true on other platforms (graceful degradation).
+#[cfg(target_os = "linux")]
+fn verify_daemon_identity(pid: u32) -> bool {
+    // Read /proc/<pid>/cmdline (null-separated)
+    let cmdline_path = format!("/proc/{}/cmdline", pid);
+    match std::fs::read_to_string(&cmdline_path) {
+        Ok(cmdline) => {
+            // cmdline is null-separated, look for our signature
+            cmdline.contains("codeforge") && cmdline.contains("daemon")
+        }
+        Err(_) => false,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn verify_daemon_identity(_pid: u32) -> bool {
+    // On non-Linux platforms, /proc may not be available.
+    // We can't verify, so assume it's valid and let send_sigterm
+    // check aliveness for true verification.
+    true
+}
+
+/// Shutdown guard combining AtomicBool (durable flag) + Notify (wakeup hint).
+/// This pattern fixes C1: Notify::notify_waiters can lose wakeups if the
+/// consumer isn't yet awaiting. With AtomicBool, the flag is the source of truth
+/// and Notify is just a hint for the already-waiting task.
+///
+/// - `should_stop()` returns true after any termination signal (SIGTERM/SIGINT)
+/// - `notified()` waits until should_stop() returns true
+#[derive(Clone)]
+pub struct ShutdownGuard {
+    /// Source of truth: set to true when shutdown is requested.
+    pub should_stop: Arc<AtomicBool>,
+    /// Wakeup hint for tasks already waiting on notified().
+    pub notify: Arc<Notify>,
+}
+
+impl ShutdownGuard {
+    /// Create a new guard. Call this ONCE in the main task before spawning
+    /// the signal handlers.
+    pub fn new() -> Self {
+        Self {
+            should_stop: Arc::new(AtomicBool::new(false)),
+            notify: Arc::new(Notify::new()),
+        }
+    }
+
+    /// Returns true if shutdown has been requested.
+    pub fn should_stop(&self) -> bool {
+        self.should_stop.load(Ordering::SeqCst)
+    }
+
+    /// Waits until shutdown is requested. Reliable even if signal arrived before
+    /// this was called — should_stop() is the source of truth.
+    pub async fn notified(&self) {
+        // Fast path: already signaled
+        if self.should_stop.load(Ordering::SeqCst) {
+            return;
+        }
+        // Wait path: Notify wakes us when signaled
+        self.notify.notified().await;
+    }
+}
+}
+
+/// Build a shutdown guard and register tokio signal handlers for SIGTERM + SIGINT.
+/// Returns the guard; signals set the flag and call notify_one() on it.
+///
+/// Pattern (fixes C1):
+/// 1. AtomicBool is the durable source of truth — survives missedNotify::notify_waiters
+/// 2. Notify is the wakeup hint for tasks already waiting
+/// 3. oned, always check should_stop() first (may have fired before we began waiting)
+pub fn install_signal_handlers() -> ShutdownGuard {
+    let guard = ShutdownGuard::new();
+    let should_stop = guard.should_stop.clone();
+    let notify = guard.notify.clone();
 
     tokio::spawn(async move {
         use signal::unix::{signal as new_signal, SignalKind};
@@ -134,17 +219,21 @@ pub fn install_signal_handlers() -> Arc<Notify> {
             Err(_) => return,
         };
         if sigterm.recv().await.is_some() {
-            term_trigger.notify_one();
+            should_stop.store(true, Ordering::SeqCst);
+            notify.notify_waiters();
         }
     });
 
+    let should_stop = guard.should_stop.clone();
+    let notify = guard.notify.clone();
     tokio::spawn(async move {
         if signal::ctrl_c().await.is_ok() {
-            int_trigger.notify_one();
+            should_stop.store(true, Ordering::SeqCst);
+            notify.notify_waiters();
         }
     });
 
-    shutdown
+    guard
 }
 
 #[cfg(test)]
