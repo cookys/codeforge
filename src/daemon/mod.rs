@@ -39,7 +39,7 @@ use crate::commentary::dispatch;
 pub const TICK_INTERVAL_SECS: u64 = 60;
 pub const CATCHUP_BURST_MS: u64 = 100;
 
-/// Run the daemon tick loop until `shutdown` is notified.
+/// Run the daemon tick loop until `shutdown` signals stop.
 ///
 /// Holds a GameWorld in memory across ticks. Initial load pulls from the
 /// Phase 1 `pet` table (CLI-owned) or seeds defaults for fresh installs.
@@ -49,7 +49,7 @@ pub const CATCHUP_BURST_MS: u64 = 100;
 pub async fn run_tick_loop(
     conn: &mut Connection,
     tick_interval: Duration,
-    shutdown: Arc<Notify>,
+    shutdown: lifecycle::ShutdownGuard,
     db_path: PathBuf,
 ) -> Result<()> {
     let mut world = ecs::GameWorld::load_or_init(conn)?;
@@ -82,8 +82,13 @@ pub async fn run_tick_loop(
                 }
             }
             _ = shutdown.notified() => {
+                // Already checked should_stop() via notified() completing
                 return Ok(());
             }
+        }
+        // After each tick, check if we should exit before waiting for next tick
+        if shutdown.should_stop() {
+            return Ok(());
         }
     }
 }
