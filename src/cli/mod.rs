@@ -209,6 +209,9 @@ pub enum MnemosCliAction {
         /// 最高敏感度層級（public/work/private，預設 public）
         #[arg(long)]
         max_sensitivity: Option<String>,
+        /// 附 top-3 相關 theme summary（粗粒度上下文，排在 atoms 前；舊 server 無此欄則靜默略過）
+        #[arg(long)]
+        with_themes: bool,
     },
     /// 回報某 atom 被引用（POST cite，bump citation_count）
     Cite {
@@ -371,10 +374,12 @@ pub fn run(cli: Cli) -> Result<()> {
                     topic,
                     max,
                     max_sensitivity,
+                    with_themes,
                 } => mnemos_cli::MnemosCliCmd::Context {
                     topic,
                     max,
                     max_sensitivity,
+                    with_themes,
                 },
                 MnemosCliAction::Cite {
                     atom_id,

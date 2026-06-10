@@ -18,6 +18,8 @@ pub enum MnemosCliCmd {
         topic: Option<String>,
         max: Option<usize>,
         max_sensitivity: Option<String>,
+        /// P-E: ask Mnemos for top-3 theme summaries (`include_themes=true`).
+        with_themes: bool,
     },
     Cite {
         atom_id: String,
@@ -39,7 +41,8 @@ pub fn run(ctx: &db::Context, cmd: MnemosCliCmd) -> Result<()> {
             topic,
             max,
             max_sensitivity,
-        } => run_context(ctx, &cfg, &rt, topic, max, max_sensitivity),
+            with_themes,
+        } => run_context(ctx, &cfg, &rt, topic, max, max_sensitivity, with_themes),
         MnemosCliCmd::Cite {
             atom_id,
             matched_text,
@@ -109,6 +112,7 @@ fn run_cite_detect(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_context(
     ctx: &db::Context,
     cfg: &MnemosConfig,
@@ -116,6 +120,7 @@ fn run_context(
     topic: Option<String>,
     max: Option<usize>,
     max_sensitivity: Option<String>,
+    with_themes: bool,
 ) -> Result<()> {
     // Derive topic from git branch + recent commits when not provided.
     let repo_parent = ctx
@@ -127,22 +132,54 @@ fn run_context(
 
     let header = rust_i18n::t!("mnemos.context_header").to_string();
     let empty = rust_i18n::t!("mnemos.context_empty").to_string();
-    let resp = rt.block_on(fetch_context(cfg, &topic, max, max_sensitivity.as_deref()));
+    let resp = rt.block_on(fetch_context_opts(
+        cfg,
+        &topic,
+        max,
+        max_sensitivity.as_deref(),
+        with_themes,
+    ));
     match resp {
-        Ok(atoms) => {
+        Ok(r) => {
+            // Themes render before atoms (coarse-grained first, P-E). An old server
+            // without the `themes` field deserializes to [] → block silently skipped.
             print!(
                 "{}",
-                context::format_markdown_with(&header, &empty, &topic, &atoms.atoms)
+                context::format_markdown_with(&header, &empty, &topic, &r.atoms, &r.themes)
             );
             Ok(())
         }
         Err(e) => {
             // Don't fail SessionStart hard — emit an empty-but-valid block + warn.
             eprintln!("⚠ {}: {e}", rust_i18n::t!("mnemos.context_failed"));
-            print!("{}", context::format_markdown_with(&header, &empty, &topic, &[]));
+            print!(
+                "{}",
+                context::format_markdown_with(&header, &empty, &topic, &[], &[])
+            );
             Ok(())
         }
     }
+}
+
+/// Build the context query params (pure — unit-testable flag propagation).
+/// `with_themes=true` → `include_themes=true` (Mnemos P-E; older servers ignore it).
+fn context_query_params(
+    topic: &str,
+    max: Option<usize>,
+    max_sensitivity: Option<&str>,
+    with_themes: bool,
+) -> Vec<(&'static str, String)> {
+    let mut q: Vec<(&'static str, String)> = vec![("topic", topic.to_string())];
+    if let Some(m) = max {
+        q.push(("max", m.to_string()));
+    }
+    if let Some(s) = max_sensitivity {
+        q.push(("max_sensitivity", s.to_string()));
+    }
+    if with_themes {
+        q.push(("include_themes", "true".to_string()));
+    }
+    q
 }
 
 async fn fetch_context(
@@ -151,14 +188,19 @@ async fn fetch_context(
     max: Option<usize>,
     max_sensitivity: Option<&str>,
 ) -> Result<ContextResponse> {
+    fetch_context_opts(cfg, topic, max, max_sensitivity, false).await
+}
+
+async fn fetch_context_opts(
+    cfg: &MnemosConfig,
+    topic: &str,
+    max: Option<usize>,
+    max_sensitivity: Option<&str>,
+    with_themes: bool,
+) -> Result<ContextResponse> {
     let client = transport::http_client();
-    let mut req = client.get(cfg.context_url()).query(&[("topic", topic)]);
-    if let Some(m) = max {
-        req = req.query(&[("max", m.to_string())]);
-    }
-    if let Some(s) = max_sensitivity {
-        req = req.query(&[("max_sensitivity", s)]);
-    }
+    let mut req = client.get(cfg.context_url());
+    req = req.query(&context_query_params(topic, max, max_sensitivity, with_themes));
     if let Some(tok) = &cfg.token {
         req = req.header("Authorization", format!("Bearer {tok}"));
     }
@@ -206,4 +248,25 @@ async fn post_cite(
 ) -> transport::AttemptOutcome {
     let client = transport::http_client();
     transport::post_attempt(&client, &cfg.cite_url(atom_id), cfg.token.as_deref(), env).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::context_query_params;
+
+    #[test]
+    fn with_themes_flag_adds_include_themes_param() {
+        let q = context_query_params("t", Some(5), Some("work"), true);
+        assert!(q.contains(&("include_themes", "true".to_string())));
+        assert!(q.contains(&("topic", "t".to_string())));
+        assert!(q.contains(&("max", "5".to_string())));
+        assert!(q.contains(&("max_sensitivity", "work".to_string())));
+    }
+
+    #[test]
+    fn without_flag_no_include_themes_param() {
+        let q = context_query_params("t", None, None, false);
+        assert!(q.iter().all(|(k, _)| *k != "include_themes"));
+        assert_eq!(q, vec![("topic", "t".to_string())]);
+    }
 }
