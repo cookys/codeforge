@@ -12,6 +12,7 @@ mod db;
 mod dream;
 mod import;
 mod memory;
+mod mnemos;
 mod pet;
 mod power;
 mod projection;

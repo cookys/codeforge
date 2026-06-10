@@ -13,8 +13,10 @@ mod init;
 mod install;
 mod inventory;
 mod learn;
+mod mnemos_cli;
 mod pet;
 mod search;
+mod ship;
 mod snapshot;
 mod statusline;
 mod strategy;
@@ -172,6 +174,61 @@ pub enum Commands {
         /// Item 名稱（大小寫不敏感）
         name: String,
     },
+    /// 把今日 L2 ledger digest 後送進 Mnemos（active-memory source）
+    Ship {
+        /// 指定日期 YYYY-MM-DD（預設今日 UTC）
+        #[arg(long)]
+        date: Option<String>,
+        /// 印出完整 ledger envelope JSON，不送、不寫任何 state
+        #[arg(long)]
+        dry_run: bool,
+        /// SessionEnd hook 模式：單次嘗試，失敗靜默落 ship-failed/，永不阻塞
+        #[arg(long)]
+        no_hook: bool,
+        /// 只補送 ship-failed/ queue，不重新 digest 今日
+        #[arg(long)]
+        resend: bool,
+    },
+    /// Mnemos client：取 context 注入 / 回報 atom 引用（cite write-back）
+    MnemosCli {
+        #[command(subcommand)]
+        action: MnemosCliAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum MnemosCliAction {
+    /// 取相關 atom，格式化成 markdown（供 SessionStart 注入）
+    Context {
+        /// 查詢主題（省略時從 git branch + 近期 commit 推導）
+        #[arg(long)]
+        topic: Option<String>,
+        /// 最多取幾筆（預設由 Mnemos 端決定，通常 5）
+        #[arg(long)]
+        max: Option<usize>,
+        /// 最高敏感度層級（public/work/private，預設 public）
+        #[arg(long)]
+        max_sensitivity: Option<String>,
+    },
+    /// 回報某 atom 被引用（POST cite，bump citation_count）
+    Cite {
+        /// 被引用的 atom id
+        atom_id: String,
+        /// 引用到的字串片段（省略時用 atom_id）
+        #[arg(long)]
+        matched_text: Option<String>,
+    },
+    /// SessionEnd 啟發式：掃 transcript 比對 atom 標題 → 對命中者觸發 cite
+    CiteDetect {
+        /// transcript 檔路徑（Claude session jsonl 或純文字）
+        transcript: std::path::PathBuf,
+        /// 候選 atom 的查詢主題（省略時推導）
+        #[arg(long)]
+        topic: Option<String>,
+        /// 取多少候選 atom 做比對（預設 20）
+        #[arg(long)]
+        max: Option<usize>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -293,5 +350,49 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Inventory => inventory::run(&ctx),
         Commands::Craft { name } => craft::run(&ctx, name),
         Commands::Use { name } => use_item::run(&ctx, name),
+        Commands::Ship {
+            date,
+            dry_run,
+            no_hook,
+            resend,
+        } => ship::run(
+            &ctx,
+            ship::ShipOpts {
+                date,
+                dry_run,
+                no_hook,
+                resend,
+            },
+        ),
+        Commands::MnemosCli { action } => mnemos_cli::run(
+            &ctx,
+            match action {
+                MnemosCliAction::Context {
+                    topic,
+                    max,
+                    max_sensitivity,
+                } => mnemos_cli::MnemosCliCmd::Context {
+                    topic,
+                    max,
+                    max_sensitivity,
+                },
+                MnemosCliAction::Cite {
+                    atom_id,
+                    matched_text,
+                } => mnemos_cli::MnemosCliCmd::Cite {
+                    atom_id,
+                    matched_text,
+                },
+                MnemosCliAction::CiteDetect {
+                    transcript,
+                    topic,
+                    max,
+                } => mnemos_cli::MnemosCliCmd::CiteDetect {
+                    transcript,
+                    topic,
+                    max,
+                },
+            },
+        ),
     }
 }
