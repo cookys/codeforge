@@ -1,8 +1,11 @@
 //! Context fetch (`GET /v1/atoms/context`) + markdown formatting for SessionStart
 //! injection, and topic derivation from git branch + recent commits.
 //!
-//! Response shape (Mnemos api.rs `context` handler): `{ "atoms": [ Atom, ... ] }`.
-//! We deserialize only the fields we render — Mnemos may carry more.
+//! Response shape (Mnemos api.rs `context` handler):
+//! `{ "atoms": [ Atom, ... ], "themes": [ ThemeHit, ... ] }`.
+//! We deserialize only the fields we render — Mnemos may carry more. `themes` is
+//! `#[serde(default)]`: older Mnemos servers without the field parse fine (P-E
+//! backward compat — the themes block is then silently omitted).
 
 use serde::Deserialize;
 
@@ -22,20 +25,38 @@ pub struct ContextAtom {
     pub pinned: bool,
 }
 
+/// Mnemos `ThemeHit` (store.rs, P-E theme summary injection) — coarse context.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ContextTheme {
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default)]
+    pub member_count: i64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ContextResponse {
     #[serde(default)]
     pub atoms: Vec<ContextAtom>,
+    /// Absent on pre-P-E Mnemos servers → empty (themes block silently skipped).
+    #[serde(default)]
+    pub themes: Vec<ContextTheme>,
 }
 
-/// Render fetched atoms as a markdown block suitable for SystemPromptAddition.
+/// Render fetched atoms (and optional theme summaries) as a markdown block
+/// suitable for SystemPromptAddition.
 /// Empty atom list → a short "no relevant memory" note (still valid markdown).
 /// `header` / `empty_note` are localized labels supplied by the CLI layer.
+/// Themes render **before** atoms (coarse-grained context first, P-E); empty
+/// slice → no themes block (old servers / flag off / below cosine threshold).
 pub fn format_markdown_with(
     header: &str,
     empty_note: &str,
     topic: &str,
     atoms: &[ContextAtom],
+    themes: &[ContextTheme],
 ) -> String {
     let mut out = String::new();
     out.push_str(&format!("## {header}\n\n"));
@@ -43,6 +64,17 @@ pub fn format_markdown_with(
         out.push_str("_topic: (derived from session)_\n\n");
     } else {
         out.push_str(&format!("_topic: {topic}_\n\n"));
+    }
+    if !themes.is_empty() {
+        for t in themes {
+            let label = if t.label.trim().is_empty() { "(unlabeled)" } else { t.label.trim() };
+            out.push_str(&format!(
+                "[theme] {label} ({} atoms): {}\n",
+                t.member_count,
+                t.summary.trim()
+            ));
+        }
+        out.push('\n');
     }
     if atoms.is_empty() {
         out.push_str(&format!("_{empty_note}_\n"));
@@ -83,6 +115,7 @@ pub fn format_markdown(topic: &str, atoms: &[ContextAtom]) -> String {
         "No relevant atoms surfaced for this session.",
         topic,
         atoms,
+        &[],
     )
 }
 
@@ -170,6 +203,53 @@ mod tests {
         });
         let resp: ContextResponse = serde_json::from_value(json).unwrap();
         assert_eq!(resp.atoms[0].id, "01A");
+    }
+
+    #[test]
+    fn parses_response_without_themes_field_old_server() {
+        // Pre-P-E Mnemos has no "themes" key → must parse, themes empty (silent skip).
+        let json = serde_json::json!({ "atoms": [], "method": "fts_only" });
+        let resp: ContextResponse = serde_json::from_value(json).unwrap();
+        assert!(resp.themes.is_empty());
+    }
+
+    #[test]
+    fn parses_response_with_themes_field() {
+        let json = serde_json::json!({
+            "atoms": [],
+            "themes": [
+                { "label": "醫療", "summary": "就醫與健康紀錄相關。", "member_count": 30 },
+                { "label": "工作", "summary": "工作流程。", "member_count": 20 }
+            ]
+        });
+        let resp: ContextResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(resp.themes.len(), 2);
+        assert_eq!(resp.themes[0].label, "醫療");
+        assert_eq!(resp.themes[0].member_count, 30);
+    }
+
+    #[test]
+    fn themes_render_before_atoms_in_expected_format() {
+        let atoms = vec![atom("01A", "Notify drops wakeup", "Use mpsc.", 0, false)];
+        let themes = vec![ContextTheme {
+            label: "醫療".to_string(),
+            summary: "就醫與健康紀錄相關。".to_string(),
+            member_count: 30,
+        }];
+        let md = format_markdown_with("H", "E", "t", &atoms, &themes);
+        let theme_line = "[theme] 醫療 (30 atoms): 就醫與健康紀錄相關。";
+        assert!(md.contains(theme_line), "themes line format, got:\n{md}");
+        // coarse-grained first: themes block before the first atom bullet
+        let ti = md.find(theme_line).unwrap();
+        let ai = md.find("**Notify drops wakeup**").unwrap();
+        assert!(ti < ai, "themes must render before atoms");
+    }
+
+    #[test]
+    fn empty_themes_render_no_theme_block() {
+        let md = format_markdown_with("H", "E", "t", &[], &[]);
+        assert!(!md.contains("[theme]"));
+        assert!(md.contains("_E_"), "empty note still renders");
     }
 
     #[test]
