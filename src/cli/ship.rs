@@ -13,6 +13,9 @@ use crate::mnemos::ledger::{LedgerEnvelope, LedgerLesson, LedgerPayload};
 use crate::mnemos::transport::{self, SendResult};
 use crate::mnemos::{digest, evidence::SourceEvidence, new_ulid, state};
 
+/// Haiku model for ship digest（provenance + API 呼叫共用,抽常數避免 drift,review Minor）。
+const HAIKU_MODEL: &str = "claude-haiku-4-5-20251001";
+
 #[derive(Debug, Clone, Default)]
 pub struct ShipOpts {
     pub date: Option<String>,
@@ -197,7 +200,7 @@ fn build_provenance(ctx: &db::Context, lessons: &[LedgerLesson]) -> serde_json::
         "l1_concept_files": l1_files,
         "git_head_sha": head,
         "git_branch": branch,
-        "haiku_model": "claude-haiku-4-5-20251001",
+        "haiku_model": HAIKU_MODEL,
     })
 }
 
@@ -241,22 +244,38 @@ async fn flush_failed_queue(cfg: &MnemosConfig, root: &Path, _single: bool) -> u
     for (path, env) in state::load_failed(root) {
         // each retried with full backoff
         let mut sent_ok = false;
-        for (i, wait) in std::iter::once(None)
-            .chain(transport::BACKOFF_SCHEDULE.iter().map(Some))
-            .enumerate()
-        {
+        let mut rejected = false;
+        for wait in std::iter::once(None).chain(transport::BACKOFF_SCHEDULE.iter().map(Some)) {
             if let Some(w) = wait {
                 tokio::time::sleep(*w).await;
             }
-            let _ = i;
             match transport::post_attempt(&client, &url, token.as_deref(), &env).await {
                 transport::AttemptOutcome::Success => {
                     sent_ok = true;
                     break;
                 }
-                transport::AttemptOutcome::BadRequest(_) => {
-                    // bad payload — drop it, no point retrying
-                    let _ = std::fs::remove_file(&path);
+                transport::AttemptOutcome::BadRequest(msg) => {
+                    // 4xx:payload 被拒,重送無用。但別靜默刪(silent-data-loss 紅線,review Major)
+                    // —— 移到 ship-rejected/ 隔離 + log,供事後追(暫時性 4xx 如版本不一致可救)。
+                    let fname = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    let rejected_dir = root.join("ship-rejected");
+                    let isolated = std::fs::create_dir_all(&rejected_dir).is_ok()
+                        && std::fs::rename(&path, rejected_dir.join(&fname)).is_ok();
+                    if !isolated {
+                        let _ = std::fs::remove_file(&path);
+                    }
+                    eprintln!(
+                        "ship: ledger {fname} 遭 Mnemos 拒絕({msg});{}(未進腦,請查 contract)",
+                        if isolated {
+                            "已隔離至 ship-rejected/"
+                        } else {
+                            "隔離失敗已刪除"
+                        }
+                    );
+                    rejected = true;
                     break;
                 }
                 transport::AttemptOutcome::Retryable(_) => continue,
@@ -265,6 +284,11 @@ async fn flush_failed_queue(cfg: &MnemosConfig, root: &Path, _single: bool) -> u
         if sent_ok {
             let _ = std::fs::remove_file(&path);
             ok += 1;
+        } else if !rejected {
+            // backoff 全耗盡仍非 Success/BadRequest = Mnemos 持續不可達。
+            // 停止 flush 剩餘 queue,避免手動 ship 卡 N×36s(review Minor);留待下次。
+            eprintln!("ship: Mnemos 持續不可達,暫停 flush 剩餘 queue(下次 ship 再試)");
+            break;
         }
     }
     ok
@@ -279,14 +303,18 @@ async fn call_haiku(api_key: &str, prompt: &str) -> Result<String> {
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .json(&serde_json::json!({
-            "model": "claude-haiku-4-5-20251001",
+            "model": HAIKU_MODEL,
             "max_tokens": 2048,
             "messages": [{"role": "user", "content": prompt}]
         }))
         .send()
         .await?;
     if !resp.status().is_success() {
-        anyhow::bail!("Haiku API 錯誤：{}", resp.status());
+        let st = resp.status();
+        if st.as_u16() == 401 || st.as_u16() == 403 {
+            anyhow::bail!("Haiku API 認證失敗（{st}）：ANTHROPIC_API_KEY 無效或無權限");
+        }
+        anyhow::bail!("Haiku API 錯誤：{st}");
     }
     let body: serde_json::Value = resp.json().await?;
     Ok(body["content"][0]["text"].as_str().unwrap_or("{}").to_string())
