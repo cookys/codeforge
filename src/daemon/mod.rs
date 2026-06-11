@@ -28,9 +28,7 @@ pub mod tick;
 use anyhow::Result;
 use rusqlite::Connection;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::sync::Notify;
 use tokio::time::{interval, MissedTickBehavior};
 
 use crate::commentary::budget::OPT_IN_ENV;
@@ -238,11 +236,14 @@ mod tests {
         let mut conn = fresh_conn();
         seed_last_tick_at(&conn, now_unix_secs()).unwrap();
 
-        let shutdown = Arc::new(Notify::new());
-        let trigger = shutdown.clone();
+        // ShutdownGuard 模式(C1):flag 為真相、Notify 只是喚醒提示 —— 觸發要兩者都做。
+        let shutdown = lifecycle::ShutdownGuard::new();
+        let flag = shutdown.should_stop.clone();
+        let notify = shutdown.notify.clone();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_millis(50)).await;
-            trigger.notify_one();
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            notify.notify_one();
         });
 
         run_tick_loop(

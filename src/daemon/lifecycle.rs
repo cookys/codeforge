@@ -137,7 +137,7 @@ pub fn send_sigterm(pid: u32, timeout: Duration) -> Result<()> {
 /// Checks the command line contains "codeforge daemon start".
 /// Only works on Linux; returns true on other platforms (graceful degradation).
 #[cfg(target_os = "linux")]
-fn verify_daemon_identity(pid: u32) -> bool {
+pub(crate) fn verify_daemon_identity(pid: u32) -> bool {
     // Read /proc/<pid>/cmdline (null-separated)
     let cmdline_path = format!("/proc/{}/cmdline", pid);
     match std::fs::read_to_string(&cmdline_path) {
@@ -150,7 +150,7 @@ fn verify_daemon_identity(pid: u32) -> bool {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn verify_daemon_identity(_pid: u32) -> bool {
+pub(crate) fn verify_daemon_identity(_pid: u32) -> bool {
     // On non-Linux platforms, /proc may not be available.
     // We can't verify, so assume it's valid and let send_sigterm
     // check aliveness for true verification.
@@ -197,7 +197,6 @@ impl ShutdownGuard {
         // Wait path: Notify wakes us when signaled
         self.notify.notified().await;
     }
-}
 }
 
 /// Build a shutdown guard and register tokio signal handlers for SIGTERM + SIGINT.
