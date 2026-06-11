@@ -41,8 +41,9 @@ const PROJECT_DIR_ENV_PLACEHOLDER: &str = "${CLAUDE_PROJECT_DIR}";
 /// Flags:
 /// - `--hooks`: install global-safe hooks (`emit-session` + `session-digest`).
 /// - `--all`:   statusLine + global hooks.
-/// - `--project-hooks`: wire all 4 codeforge-clone-only scripts into
-///   `$CWD/.claude/settings.json`. Requires CWD to be a codeforge clone.
+/// - `--project-hooks`: wire the 3 codeforge-clone-only hooks (2 scripts +
+///   1 inline `codeforge dream` command) into `$CWD/.claude/settings.json`.
+///   Requires CWD to be a codeforge clone.
 /// - `--dry-run`: print resulting JSON + extraction plan, no writes.
 /// - `--force`:  clear all hook entries (including non-codeforge) before
 ///   writing. Requires `--yes` (or interactive confirmation).
@@ -330,12 +331,14 @@ const HOOK_SCRIPTS: &[(&str, &str)] = &[
     ("session-digest.js", include_str!("../../.claude/scripts/session-digest.js")),
 ];
 
-/// All 4 scripts (used by `--project-hooks`). These already live in the
-/// codeforge clone at `.claude/scripts/`, so we only need the names —
-/// no embedding required (extraction goes nowhere; the scripts ARE in cwd).
+/// Codeforge-clone-only scripts (used by `--project-hooks`). These already
+/// live in the codeforge clone at `.claude/scripts/`, so we only need the
+/// names — no embedding required.
+///
+/// Note: emit-session.js and session-digest.js are product-wide and live in
+/// the global `--hooks` install path (~/.claude/settings.json) — installing
+/// them into project settings too would cause dual-fire. See commit 2648b34.
 const PROJECT_HOOK_SCRIPT_NAMES: &[&str] = &[
-    "emit-session.js",
-    "session-digest.js",
     "check-improvements.js",
     "check-dev-flow.js",
 ];
@@ -368,27 +371,28 @@ fn patch_hooks(
     let emit_path = scripts_dir.join("emit-session.js");
     let digest_path = scripts_dir.join("session-digest.js");
 
-    // Build the entries we want to insert. Layout differs slightly between
-    // `--hooks` (2 scripts wired across SessionStart/SessionEnd/PreCompact)
-    // and `--project-hooks` (4 scripts; adds check-improvements at
-    // SessionStart and check-dev-flow at PreToolUse).
+    // Build the entries we want to insert. The two install modes carry
+    // strictly disjoint hooks to avoid dual-fire when both are installed
+    // (commit 2648b34):
+    //
+    //   --hooks         (global ~/.claude/settings.json):
+    //       product-wide scripts — emit-session, session-digest
+    //
+    //   --project-hooks (project .claude/settings.json):
+    //       codeforge-clone-only hooks — check-improvements (SessionStart),
+    //       check-dev-flow (PreToolUse), `codeforge dream --quiet` (SessionEnd)
     let entries: Vec<(&str, Option<&str>, Vec<Value>)> = if project {
         let check_improvements = scripts_dir.join("check-improvements.js");
         let check_dev_flow = scripts_dir.join("check-dev-flow.js");
         vec![
             ("SessionStart", None, vec![
                 hook_entry(&format!("node {}", check_improvements.display()), 10000, &marker),
-                hook_entry(&format!("node {} session_start", emit_path.display()), 3000, &marker),
             ]),
             ("PreToolUse", Some("Edit|Write|Bash"), vec![
                 hook_entry(&format!("node {}", check_dev_flow.display()), 5000, &marker),
             ]),
             ("SessionEnd", None, vec![
-                hook_entry(&format!("node {} session_end", emit_path.display()), 3000, &marker),
-                hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
-            ]),
-            ("PreCompact", None, vec![
-                hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
+                hook_entry("codeforge dream --quiet 2>/dev/null || true", 30000, &marker),
             ]),
         ]
     } else {
@@ -496,7 +500,8 @@ fn hook_entry(command: &str, timeout_ms: u64, marker: &str) -> Value {
 }
 
 /// A "hook group" is codeforge-owned when every entry in its `hooks`
-/// array carries our marker.
+/// array carries our marker — OR is a known legacy codeforge-owned entry
+/// from before the marker was introduced (see [`hook_is_codeforge`]).
 fn group_is_codeforge(group: &Value) -> bool {
     let Some(inner) = group.get("hooks").and_then(|h| h.as_array()) else {
         return false;
@@ -504,11 +509,37 @@ fn group_is_codeforge(group: &Value) -> bool {
     if inner.is_empty() {
         return false;
     }
-    inner.iter().all(|h| {
-        h.get(MARKER_KEY)
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| s.starts_with(MARKER_PREFIX))
-    })
+    inner.iter().all(hook_is_codeforge)
+}
+
+/// A single hook entry is recognized as codeforge-owned if either:
+/// - It carries our `_installed_by: codeforge@...` marker (V2.2+ install path), or
+/// - Its `command` matches a known legacy pattern that codeforge shipped
+///   before the marker existed (currently: `codeforge dream`, which was
+///   manually placed in project settings.json since Phase 1 / commit b1634ad).
+///
+/// Migration intent: a fresh `codeforge install --project-hooks` on a repo
+/// with the pre-2.2 un-marker dream entry should REPLACE it (not duplicate).
+fn hook_is_codeforge(h: &Value) -> bool {
+    if h.get(MARKER_KEY)
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| s.starts_with(MARKER_PREFIX))
+    {
+        return true;
+    }
+    h.get("command")
+        .and_then(|c| c.as_str())
+        .is_some_and(is_legacy_codeforge_command)
+}
+
+/// Known codeforge-owned hook commands shipped before the marker was added.
+/// Keep this list tight — broadening it risks clobbering user hooks.
+///
+/// TODO: remove this once all field installs have cycled through a
+/// `--project-hooks` run (which adds the marker). Safe to delete when
+/// no production .claude/settings.json carries an un-marker codeforge entry.
+fn is_legacy_codeforge_command(cmd: &str) -> bool {
+    cmd.starts_with("codeforge dream")
 }
 
 // ─── shared helpers ───────────────────────────────────────────────────────
@@ -658,24 +689,60 @@ mod tests {
     }
 
     #[test]
-    fn patch_hooks_project_layout_includes_pre_tool_use() {
+    fn patch_hooks_project_layout_is_codeforge_clone_only() {
         let mut s = json!({});
         let dir = PathBuf::from("/tmp/cf-test");
         patch_hooks(&mut s, &dir, false, /*project=*/ true).unwrap();
-        // All 4 hook types present
+        // 3 hook types present (no PreCompact — that's global-only)
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["PreToolUse"].is_array());
         assert!(s["hooks"]["SessionEnd"].is_array());
-        assert!(s["hooks"]["PreCompact"].is_array());
+        assert!(s["hooks"].get("PreCompact").is_none(), "PreCompact must be global-only");
         // PreToolUse has the Edit|Write|Bash matcher
         assert_eq!(s["hooks"]["PreToolUse"][0]["matcher"], "Edit|Write|Bash");
-        // SessionStart has 2 hooks (check-improvements + emit-session)
+        // Each hook type has exactly 1 entry (the codeforge-clone-only one)
+        assert_eq!(s["hooks"]["SessionStart"][0]["hooks"].as_array().unwrap().len(), 1);
+        assert_eq!(s["hooks"]["PreToolUse"][0]["hooks"].as_array().unwrap().len(), 1);
+        assert_eq!(s["hooks"]["SessionEnd"][0]["hooks"].as_array().unwrap().len(), 1);
+        // SessionStart is check-improvements
+        let ss_cmd = s["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str().unwrap();
+        assert!(ss_cmd.contains("check-improvements.js"), "got: {}", ss_cmd);
+        // SessionEnd is the dream entry (codeforge-clone-only, not a node script)
+        let se_cmd = s["hooks"]["SessionEnd"][0]["hooks"][0]["command"].as_str().unwrap();
+        assert_eq!(se_cmd, "codeforge dream --quiet 2>/dev/null || true");
+        // No product-wide scripts leaked into project hooks (dual-fire prevention)
+        let all_commands = serde_json::to_string(&s["hooks"]).unwrap();
+        assert!(!all_commands.contains("emit-session"), "emit-session leaked into project hooks");
+        assert!(!all_commands.contains("session-digest"), "session-digest leaked into project hooks");
+    }
+
+    #[test]
+    fn project_mode_replaces_legacy_unmarker_dream_entry() {
+        // Pre-2.2 .claude/settings.json shape: dream entry was hand-written
+        // and never carried the _installed_by marker.
+        let mut s = json!({
+            "hooks": {
+                "SessionEnd": [{
+                    "matcher": "",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "codeforge dream --quiet 2>/dev/null || true",
+                        "timeout": 30000
+                    }]
+                }]
+            }
+        });
+        let action = patch_hooks(&mut s, Path::new("/tmp/cf-test"), false, /*project=*/ true)
+            .unwrap();
+        assert_eq!(action, "更新", "legacy un-marker dream entry should be recognized as ours");
+        // Exactly 1 SessionEnd group after install (not duplicated)
+        let se = s["hooks"]["SessionEnd"].as_array().unwrap();
+        assert_eq!(se.len(), 1, "legacy entry must be replaced, not duplicated");
+        // The remaining entry is marker-tagged
+        assert!(group_is_codeforge(&se[0]));
         assert_eq!(
-            s["hooks"]["SessionStart"][0]["hooks"]
-                .as_array()
-                .unwrap()
-                .len(),
-            2
+            se[0]["hooks"][0]["command"],
+            "codeforge dream --quiet 2>/dev/null || true"
         );
     }
 
@@ -775,6 +842,31 @@ mod tests {
         // SessionEnd/PreCompact entries (only codeforge ones) → removed → arrays collapsed
         assert!(s["hooks"].get("SessionEnd").is_none());
         assert!(s["hooks"].get("PreCompact").is_none());
+    }
+
+    #[test]
+    fn unpatch_hooks_removes_legacy_unmarker_dream_entry() {
+        // Pre-2.2 .claude/settings.json shape: dream entry hand-written, no marker.
+        // unpatch_hooks shares group_is_codeforge with patch_hooks, so the
+        // legacy detection must propagate to uninstall too — otherwise a
+        // user running `codeforge uninstall` before ever cycling through the
+        // new --project-hooks would leave the legacy dream entry behind.
+        let mut s = json!({
+            "hooks": {
+                "SessionEnd": [{
+                    "matcher": "",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "codeforge dream --quiet 2>/dev/null || true",
+                        "timeout": 30000
+                    }]
+                }]
+            }
+        });
+        let action = unpatch_hooks(&mut s).unwrap();
+        assert_eq!(action, "已移除");
+        // Empty SessionEnd array collapsed → entire hooks key removed
+        assert!(s.as_object().unwrap().get("hooks").is_none());
     }
 
     #[test]

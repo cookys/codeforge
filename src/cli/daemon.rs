@@ -76,11 +76,22 @@ fn stop(ctx: &Context) -> Result<()> {
         ));
     }
     let pid = lifecycle::read_pidfile(&pidfile)?;
+
+    // C2 fix: verify process identity before signalling
     if !lifecycle::pid_alive(pid) {
         // Stale pidfile — clean up and report
         lifecycle::release_pidfile(&pidfile);
         return Err(anyhow::anyhow!(
             "pidfile 指向 pid {pid} 但該 process 已不存在。清理並視為已停止。"
+        ));
+    }
+
+    // Additional check: verify it's actually a codeforge daemon
+    if !lifecycle::verify_daemon_identity(pid) {
+        // This could be a recycled PID - warn but don't clean up
+        // (let user decide)
+        return Err(anyhow::anyhow!(
+            "PID {pid} 似乎不是 codeforge daemon（可能已被回收）。請手動確認後重試。"
         ));
     }
 
@@ -99,22 +110,35 @@ fn stop(ctx: &Context) -> Result<()> {
 fn status(ctx: &Context) -> Result<()> {
     let pidfile = lifecycle::pidfile_path(ctx);
 
-    let (running, pid) = if pidfile.exists() {
+    let (running, pid, verified) = if pidfile.exists() {
         match lifecycle::read_pidfile(&pidfile) {
-            Ok(p) => (lifecycle::pid_alive(p), Some(p)),
-            Err(_) => (false, None),
+            Ok(p) => {
+                let alive = lifecycle::pid_alive(p);
+                let verified = if alive {
+                    lifecycle::verify_daemon_identity(p)
+                } else {
+                    false
+                };
+                (alive, Some(p), verified)
+            },
+            Err(_) => (false, None, false),
         }
     } else {
-        (false, None)
+        (false, None, false)
     };
 
     println!("codeforge daemon status");
-    println!("  running:   {}", if running { "yes" } else { "no" });
+    println!("  pidfile:  {}", pidfile.display());
+    println!("  running: {}", if running { "yes" } else { "no" });
     if let Some(p) = pid {
-        println!("  pid:       {p} {}", if running { "" } else { "(stale)" });
+        let state = if running {
+            if verified { "valid" } else { "unknown (possible recycle?)" }
+        } else {
+            "stale"
+        };
+        println!("  pid:     {p} ({state})");
     }
-    println!("  pidfile:   {}", pidfile.display());
-    println!("  db:        {}", ctx.db_path.display());
+    println!("  db:      {}", ctx.db_path.display());
 
     // Query DB for last tick info (works even when daemon is down)
     if ctx.db_path.exists() {
