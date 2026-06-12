@@ -73,6 +73,8 @@ dotenvy = "0.15"
 
 [dev-dependencies]
 tempfile = "3"
+# test-util: tokio 虛擬時鐘(start_paused),讓 backoff retry 測試不真的等 1s/5s/30s。
+tokio = { version = "1", features = ["test-util"] }
 
 # Release distribution — see doc/specs/codeforge-release-pipeline.md
 [package.metadata.binstall]
