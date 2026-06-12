@@ -36,34 +36,29 @@ pub const BACKOFF_SCHEDULE: &[Duration] = &[
     Duration::from_secs(30),
 ];
 
-/// Drive the retry loop given an attempt function and a sleep function.
+/// Drive the §7.2 backoff retry loop around an async attempt.
 ///
-/// `attempt` is called up to `schedule.len() + 1` times. `sleep` is invoked with the
-/// backoff duration between retryable failures (injected so tests don't actually wait).
-///
-/// This is the synchronous reference implementation of the §7.2 backoff contract; the
-/// live ship path inlines the same schedule with async sleeps (so it can await reqwest).
-/// Kept as the testable spec of the policy.
-#[allow(dead_code)]
-pub fn run_with_retry<A, S>(
-    schedule: &[Duration],
-    mut attempt: A,
-    mut sleep: S,
-) -> SendResult
+/// `attempt` is awaited up to `schedule.len() + 1` times; between retryable failures we
+/// `tokio::time::sleep` the next backoff duration. This is the **single source of truth**
+/// for the backoff policy — both the live ship path (`send_envelope`) and the failed-queue
+/// flush (`flush_failed_queue`) drive it, instead of inlining the schedule separately.
+/// Tests pause tokio's clock (`start_paused`) so they exercise the decision logic without
+/// actually waiting 1s/5s/30s.
+pub async fn run_with_retry_async<A, Fut>(schedule: &[Duration], mut attempt: A) -> SendResult
 where
-    A: FnMut(usize) -> AttemptOutcome,
-    S: FnMut(Duration),
+    A: FnMut(usize) -> Fut,
+    Fut: std::future::Future<Output = AttemptOutcome>,
 {
     let max_attempts = schedule.len() + 1;
     let mut last_err = String::new();
     for i in 0..max_attempts {
-        match attempt(i) {
+        match attempt(i).await {
             AttemptOutcome::Success => return SendResult::Ok,
             AttemptOutcome::BadRequest(msg) => return SendResult::BadRequest(msg),
             AttemptOutcome::Retryable(msg) => {
                 last_err = msg;
                 if i < schedule.len() {
-                    sleep(schedule[i]);
+                    tokio::time::sleep(schedule[i]).await;
                 }
             }
         }
@@ -133,7 +128,7 @@ pub fn http_client() -> reqwest::Client {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::cell::Cell;
 
     #[test]
     fn classify_2xx_success() {
@@ -159,73 +154,58 @@ mod tests {
         assert!(matches!(classify(503, None), AttemptOutcome::Retryable(_)));
     }
 
-    #[test]
-    fn retry_succeeds_first_try_no_sleep() {
-        let slept = RefCell::new(vec![]);
-        let res = run_with_retry(
-            BACKOFF_SCHEDULE,
-            |_| AttemptOutcome::Success,
-            |d| slept.borrow_mut().push(d),
-        );
+    #[tokio::test(start_paused = true)]
+    async fn async_retry_succeeds_first_try() {
+        let attempts = Cell::new(0usize);
+        let res = run_with_retry_async(BACKOFF_SCHEDULE, |_| {
+            attempts.set(attempts.get() + 1);
+            async { AttemptOutcome::Success }
+        })
+        .await;
         assert_eq!(res, SendResult::Ok);
-        assert!(slept.borrow().is_empty());
+        assert_eq!(attempts.get(), 1); // success on first try, no retry
     }
 
-    #[test]
-    fn retry_succeeds_on_third_attempt() {
-        let attempts = RefCell::new(0usize);
-        let slept = RefCell::new(vec![]);
-        let res = run_with_retry(
-            BACKOFF_SCHEDULE,
-            |i| {
-                *attempts.borrow_mut() += 1;
+    #[tokio::test(start_paused = true)]
+    async fn async_retry_succeeds_on_third_attempt() {
+        let attempts = Cell::new(0usize);
+        let res = run_with_retry_async(BACKOFF_SCHEDULE, |i| {
+            attempts.set(attempts.get() + 1);
+            async move {
                 if i < 2 {
                     AttemptOutcome::Retryable("5xx".to_string())
                 } else {
                     AttemptOutcome::Success
                 }
-            },
-            |d| slept.borrow_mut().push(d),
-        );
+            }
+        })
+        .await;
         assert_eq!(res, SendResult::Ok);
-        assert_eq!(*attempts.borrow(), 3);
-        // slept after attempt 0 (1s) and attempt 1 (5s)
-        assert_eq!(*slept.borrow(), vec![Duration::from_secs(1), Duration::from_secs(5)]);
+        assert_eq!(attempts.get(), 3); // failed twice (slept 1s, 5s), succeeded on 3rd
     }
 
-    #[test]
-    fn retry_exhausts_after_four_attempts() {
-        let attempts = RefCell::new(0usize);
-        let slept = RefCell::new(vec![]);
-        let res = run_with_retry(
-            BACKOFF_SCHEDULE,
-            |_| {
-                *attempts.borrow_mut() += 1;
-                AttemptOutcome::Retryable("network".to_string())
-            },
-            |d| slept.borrow_mut().push(d),
-        );
+    #[tokio::test(start_paused = true)]
+    async fn async_retry_exhausts_after_four_attempts() {
+        let attempts = Cell::new(0usize);
+        let res = run_with_retry_async(BACKOFF_SCHEDULE, |_| {
+            attempts.set(attempts.get() + 1);
+            async { AttemptOutcome::Retryable("network".to_string()) }
+        })
+        .await;
         assert!(matches!(res, SendResult::Exhausted(_)));
-        assert_eq!(*attempts.borrow(), 4); // schedule.len()=3 → 4 attempts
-        assert_eq!(
-            *slept.borrow(),
-            vec![Duration::from_secs(1), Duration::from_secs(5), Duration::from_secs(30)]
-        );
+        assert_eq!(attempts.get(), 4); // schedule.len()=3 → 4 attempts then exhaust
     }
 
-    #[test]
-    fn retry_4xx_stops_immediately() {
-        let attempts = RefCell::new(0usize);
-        let res = run_with_retry(
-            BACKOFF_SCHEDULE,
-            |_| {
-                *attempts.borrow_mut() += 1;
-                AttemptOutcome::BadRequest("400".to_string())
-            },
-            |_| {},
-        );
+    #[tokio::test(start_paused = true)]
+    async fn async_retry_4xx_stops_immediately() {
+        let attempts = Cell::new(0usize);
+        let res = run_with_retry_async(BACKOFF_SCHEDULE, |_| {
+            attempts.set(attempts.get() + 1);
+            async { AttemptOutcome::BadRequest("400".to_string()) }
+        })
+        .await;
         assert!(matches!(res, SendResult::BadRequest(_)));
-        assert_eq!(*attempts.borrow(), 1); // no retry on 4xx
+        assert_eq!(attempts.get(), 1); // no retry on 4xx
     }
 
     #[test]
