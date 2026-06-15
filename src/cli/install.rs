@@ -602,11 +602,33 @@ fn hook_is_codeforge(h: &Value) -> bool {
 /// Known codeforge-owned hook commands shipped before the marker was added.
 /// Keep this list tight — broadening it risks clobbering user hooks.
 ///
-/// TODO: remove this once all field installs have cycled through a
-/// `--project-hooks` run (which adds the marker). Safe to delete when
-/// no production .claude/settings.json carries an un-marker codeforge entry.
+/// Two families of pre-marker entries exist in the field:
+///   1. the inline `codeforge dream` command (hand-placed since Phase 1), and
+///   2. node hook-script commands written by pre-marker installs — recognized by
+///      the codeforge-owned scripts path (`/codeforge/hooks/` for global,
+///      `/.claude/scripts/` for project) plus a known script basename.
+///
+/// Recognizing (2) lets a re-install SWEEP the old versioned copy (e.g. the
+/// `hooks/0.0.3/…` entries) instead of duplicating it alongside the new version
+/// — the dual-fire that bit the dream→ship relocation upgrade.
+///
+/// TODO: remove this once all field installs have cycled through a marker-aware
+/// install. Safe to delete when no production settings.json carries an un-marker
+/// codeforge entry.
 fn is_legacy_codeforge_command(cmd: &str) -> bool {
-    cmd.starts_with("codeforge dream")
+    if cmd.starts_with("codeforge dream") {
+        return true;
+    }
+    let on_codeforge_path = cmd.contains("/codeforge/hooks/") || cmd.contains("/.claude/scripts/");
+    on_codeforge_path
+        && [
+            "emit-session.js",
+            "session-digest.js",
+            "check-improvements.js",
+            "check-dev-flow.js",
+        ]
+        .iter()
+        .any(|basename| cmd.contains(basename))
 }
 
 // ─── shared helpers ───────────────────────────────────────────────────────
@@ -824,6 +846,54 @@ mod tests {
         // The dev hooks project mode does own are present.
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["PreToolUse"].is_array());
+    }
+
+    #[test]
+    fn legacy_recognizes_unmarkered_node_hook_scripts() {
+        // Global pre-marker install paths.
+        assert!(is_legacy_codeforge_command(
+            "node /home/u/.local/share/codeforge/hooks/0.0.3/emit-session.js session_end"
+        ));
+        assert!(is_legacy_codeforge_command(
+            "node /home/u/.local/share/codeforge/hooks/0.0.3/session-digest.js"
+        ));
+        // Project script path.
+        assert!(is_legacy_codeforge_command(
+            "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/check-dev-flow.js"
+        ));
+        // Not ours — must not clobber.
+        assert!(!is_legacy_codeforge_command("node /home/u/myscript.js"));
+        assert!(!is_legacy_codeforge_command("prettier --write x.ts"));
+    }
+
+    #[test]
+    fn global_install_sweeps_unmarkered_legacy_node_hooks() {
+        // Mirrors the live upgrade case: a global settings.json whose codeforge
+        // node hooks were installed by a pre-marker version (no _installed_by).
+        // Re-installing must sweep the old 0.0.3 entries, not stack 0.0.4 beside
+        // them (which would dual-fire the digest pipeline).
+        let mut s = json!({
+            "hooks": {
+                "SessionStart": [{ "matcher": "", "hooks": [
+                    {"type":"command","command":"node /x/codeforge/hooks/0.0.3/emit-session.js session_start","timeout":3000}
+                ]}],
+                "SessionEnd": [{ "matcher": "", "hooks": [
+                    {"type":"command","command":"node /x/codeforge/hooks/0.0.3/emit-session.js session_end","timeout":3000},
+                    {"type":"command","command":"node /x/codeforge/hooks/0.0.3/session-digest.js","timeout":30000}
+                ]}],
+                "PreCompact": [{ "matcher": "", "hooks": [
+                    {"type":"command","command":"node /x/codeforge/hooks/0.0.3/session-digest.js","timeout":30000}
+                ]}]
+            }
+        });
+        patch_hooks(&mut s, Path::new("/tmp/cf-test"), false, /*project=*/ false).unwrap();
+        // Exactly one SessionEnd group, with the new 4-entry chain — no 0.0.3 dupes.
+        let se = s["hooks"]["SessionEnd"].as_array().unwrap();
+        assert_eq!(se.len(), 1, "old un-markered group must be swept, not kept as sibling");
+        let inner = se[0]["hooks"].as_array().unwrap();
+        assert_eq!(inner.len(), 4, "emit-session + session-digest + dream + ship");
+        let all = serde_json::to_string(&s["hooks"]).unwrap();
+        assert!(!all.contains("0.0.3"), "stale 0.0.3 entries must be gone: {all}");
     }
 
     #[test]
