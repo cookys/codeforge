@@ -382,17 +382,24 @@ codeforge ship --no-hook    # 當日 L1 + git + jsonl → Haiku digest → lesso
 
 驗收（對齊 CLAUDE.md §5 Gen-2 e2e）：codeforge ship → mnemos ingest → atom extract → SessionStart 浮現 atom → cite write-back → citation_count++。
 
+> **e2e 已實證**（2026-06-15,隔離 test DB）:`ship` → POST `/v1/ingest/ledger` → **200**,Mnemos `documents` 存入 ledger（`source=codeforge_ledger`, `source_id=<repo>:<date>:<ship_id>`）+ `atoms` 萃取 1 lesson-atom;`mnemos-cli cite <atom_id>` → **200**,`citation_count` 0→1、`last_cited_at` 寫入。精簡 payload（§4）無 contract mismatch。
+
+### 上線（SessionEnd hook 鏈）
+
+dream→ship 鏈安裝在 **global** `~/.claude/settings.json` SessionEnd（`codeforge install --hooks`/`--all`),跨所有專案 per-project 萃取（hook CWD=專案 root）。`ship --no-hook` 以 `MnemosConfig::opted_in`(`~/.config/mnemos.env` 存在或 `MNEMOS_INGEST_URL` 設定)gate:無 Mnemos 的 codeforge-only 使用者照常 dream 萃取、ship 乾淨 no-op。
+
 ---
 
-## 12. 待實作清單（spec 已定案，以下是 code 工作）
+## 12. 待實作清單（✅ 已完成 — 2026-06-15）
 
-- `src/cli/ship.rs`（或既有 cli 模組）：flag parsing（§3）、endpoint 解析（§8）、retry/queue（§7）。
-- L1 reading（§5）：複用 `l1::scan_all`，加日期過濾 + git log / jsonl 窗口掃描。
-- Haiku digest（§6）：複用 compile.rs 的 API 呼叫 + JSON 抽取，換 §6.1 prompt。
-- ship-failed/ + ship-state IO。
-- `source_evidence` builder（§4.4 結構）。
-- locales/{en,zh-TW}.yaml strings。
-- unit tests：envelope 序列化（驗 §4.1 欄位名與 Mnemos struct 對得上）、source_evidence 結構、retry backoff、dedup ship_id 不換。
-- integration test：dry-run 產出的 envelope 餵進 Mnemos `/v1/ingest/ledger` 能 200 accepted（Sprint 1 e2e 一環）。
+- ✅ `src/cli/ship.rs`：flag parsing（§3）、endpoint 解析（§8）、retry/queue（§7）。
+- ✅ L1 reading（§5）：複用 `l1::scan_all` + 日期過濾 + git log / jsonl 窗口掃描。
+- ✅ Haiku digest（§6）：複用 compile.rs API 呼叫 + JSON 抽取 + §6.1 prompt;無 key 時 rule-based passthrough。
+- ✅ ship-failed/ + ship-state IO。
+- ✅ `source_evidence` builder（§4.4 結構）。
+- ✅ locales/{en,zh-TW}.yaml strings。
+- ✅ unit tests：envelope 序列化、source_evidence 結構、retry backoff、dedup ship_id 不換。
+- ✅ integration（手動 e2e）：真 server `/v1/ingest/ledger` → 200 accepted（見上 e2e 已實證）。
+- ✅ SessionEnd hook 鏈上線（global） + `ship --no-hook` opt-in gate（本次新增,§11「上線」）。
 - CLAUDE.md update（CodeForge 新增 ship 角色 + production critical path 註明）。
 ```

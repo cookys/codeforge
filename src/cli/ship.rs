@@ -31,6 +31,15 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
     }
     ctx.ensure_initialized()?;
 
+    // §3.3 opt-in gate: in hook mode (--no-hook, the SessionEnd path), only ship
+    // when Mnemos is explicitly opted-in. codeforge-only users (no Mnemos) still
+    // get dream distillation; ship becomes a clean no-op — never POSTs, never
+    // queues junk to ship-failed/. Interactive `codeforge ship` (no --no-hook) is
+    // a deliberate user action and always attempts, opt-in or not.
+    if opts.no_hook && !MnemosConfig::opted_in() {
+        return Ok(());
+    }
+
     let cfg = MnemosConfig::load()?;
     let root = state::ship_root();
     let rt = tokio::runtime::Runtime::new()?;

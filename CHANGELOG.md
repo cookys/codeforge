@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **記憶 pipeline 跨專案上線** — `codeforge dream --quiet` → `codeforge ship --no-hook` 的 SessionEnd 鏈從 codeforge-clone-only 的 `--project-hooks` 移到 global `--hooks`/`--all`,在每個專案 session 結束都 per-project 萃取（hook CWD = 專案 root → per-cwd `.codeforge`）。`--project-hooks` 因 `ensure_in_codeforge_repo` 只能在 clone 跑,無法覆蓋其他專案;唯有 global 路徑能跨專案。`--project-hooks` 現只保留 dev scripts（check-improvements / check-dev-flow）。
+- `codeforge install --hooks`/`--all` 現會寫入 `cleanupPeriodDays: 3650`(只填未設值,`--force` 才覆蓋使用者選擇)。Claude Code 預設 30 天回收 session transcript,會在 dream/ship 萃取前刪掉;拉高留存讓 raw material 存活。
+
+### Added
+
+- `codeforge ship --no-hook` opt-in gate（`MnemosConfig::opted_in`):僅當 `~/.config/mnemos.env` 存在或 `MNEMOS_INGEST_URL` 設定才送。沒有 Mnemos 的 codeforge-only 使用者照常用 dream 萃取 L1,ship 變乾淨 no-op — 不再每次 session-end 往 `ship-failed/` 堆 dead-letter。互動式 `codeforge ship` 不受 gate(明示動作)。
+
+### Fixed
+
+- `patch_hooks` 改成「先全面 sweep 所有 hook_type 的 codeforge group → 加入當前 entries → collapse 空 array」,讓 hook entry 可跨 hook_type / scope 搬移而不留孤兒。一併修掉:(1) `--project-hooks` re-run 漏 model 非 script 的 dream SessionEnd 條目而 drop/duplicate;(2) pre-marker 安裝的 node hook scripts(`hooks/0.0.3/…` 等無 `_installed_by` marker)在升級 re-install 時與新版並存導致 dual-fire — `is_legacy_codeforge_command` 現以 codeforge scripts 路徑 + 已知 basename 辨識並 sweep。
+
 ## [0.0.4] - 2026-06-10
 
 ### Added

@@ -188,7 +188,9 @@ When `ship` detects a session referenced any Mnemos atom (Sprint 1: fulltext_mat
 
 ### Retry policy
 
-Per Mnemos source-contract §9.1: 1s → 5s → 30s exponential backoff, 4 attempts. Failure writes `~/.codeforge/ship-failed/<ship_id>.json` for next-ship retry. `--no-hook` mode suppresses the failed/ write to avoid hook startup latency.
+Per Mnemos source-contract §9.1: 1s → 5s → 30s exponential backoff, 4 attempts. Failure writes `~/.codeforge/ship-failed/<ship_id>.json` for next-ship retry. `--no-hook` mode is single-attempt (never blocks SessionEnd).
+
+**Opt-in gate** (`MnemosConfig::opted_in`): `ship --no-hook` only POSTs when Mnemos is explicitly opted-in — `~/.config/mnemos.env` exists OR `MNEMOS_INGEST_URL` is set. With no opt-in it returns early (no POST, no `ship-failed/` write), so codeforge-only users who run the global SessionEnd chain keep distilling via dream without accumulating dead-letter junk. Interactive `codeforge ship` (no `--no-hook`) ignores the gate — it's a deliberate user action. The dream→ship chain lives in the **global** `~/.claude/settings.json` SessionEnd (installed by `codeforge install --hooks`/`--all`), so it runs in every project.
 
 ### Critical path note
 
@@ -210,7 +212,7 @@ CodeForge and CodePower are used together. Understanding the relationship preven
 
 ### Dream (session-end, all projects)
 
-`codeforge dream --quiet` runs at session end in **any** project that has the SessionEnd hook configured. This means memory and pet XP are updated from activity in CodePower, or any other project — not just the CodeForge codebase. The `--quiet` flag is mandatory for hook use (suppresses all stdout).
+`codeforge dream --quiet` runs at session end in **every** project, via the **global** SessionEnd hook (`~/.claude/settings.json`, installed by `codeforge install --hooks`/`--all`). The hook runs with CWD = the project root, so dream distills that project's own `.codeforge` (per-cwd memory). This means memory and pet XP update from activity in CodePower, or any other project — not just the CodeForge codebase. `--quiet` is mandatory for hook use (suppresses all stdout). `codeforge ship --no-hook` chains right after dream in the same SessionEnd group (see Ship above); ship self-gates on Mnemos opt-in, so a codeforge-only user with no Mnemos still distills via dream while ship is a clean no-op.
 
 ### Learn (any project → codeforge memory)
 
@@ -235,13 +237,11 @@ Do NOT import CodePower's codebase into CodeForge tests or vice versa. CodeForge
 
 ### Hook Path Note
 
-Project `.claude/settings.json` carries **codeforge-clone-only** hooks: `check-improvements.js` (SessionStart), `check-dev-flow.js` (PreToolUse), `codeforge dream --quiet` (SessionEnd). The script paths use `${CLAUDE_PROJECT_DIR}/.claude/scripts/...` (Claude Code env var, expanded at hook spawn) — no per-clone hand-editing needed.
+Project `.claude/settings.json` carries **codeforge-clone-only DEV** hooks only: `check-improvements.js` (SessionStart), `check-dev-flow.js` (PreToolUse). The script paths use `${CLAUDE_PROJECT_DIR}/.claude/scripts/...` (Claude Code env var, expanded at hook spawn) — no per-clone hand-editing needed.
 
-The **product-wide** scripts (`emit-session.js`, `session-digest.js`) are no longer in project settings — they're installed globally via `codeforge install --all` to `~/.claude/settings.json`. This avoids dual-fire when working in the codeforge clone (project + global both used to fire the same script). Contributors after fresh clone must run `codeforge install --all` once to get full functionality.
+The **product-wide** hooks — `emit-session.js`, `session-digest.js`, and the `codeforge dream --quiet` → `codeforge ship --no-hook` memory-pipeline SessionEnd chain — live in the **global** install (`codeforge install --hooks`/`--all` → `~/.claude/settings.json`). dream/ship were moved here from `--project-hooks` so they run across **all** projects, not just the codeforge clone (`--project-hooks` is `ensure_in_codeforge_repo`-gated to the clone, so it could never cover other projects). This also avoids dual-fire when working in the codeforge clone. Contributors after fresh clone run `codeforge install --all` once for the global hooks; `--project-hooks` adds the clone-only dev hooks.
 
-Two known V2.2 install bugs tracked in `~/.claude/improvement-queue.json`:
-1. `--project-hooks` doesn't model the non-script `codeforge dream` SessionEnd entry — re-running drops it (manual edit required to restore until fixed)
-2. `--project-hooks` had a naive append-not-replace bug for unmarkered entries; mostly obviated by the V2.2 marker-tagged baseline now committed
+The two former V2.2 install bugs are **fixed** (this repo): `patch_hooks` now sweeps *all* codeforge-owned hook groups across every hook_type before re-adding the current set (and collapses emptied arrays), so entries relocate between hook_types / scopes without orphaning or duplicating. `is_legacy_codeforge_command` also recognizes pre-marker node hook-script commands (by codeforge scripts path + known basename), so upgrading from an un-markered install sweeps the old versioned copy instead of stacking a duplicate.
 
 ## Knowledge Management
 
