@@ -1,7 +1,7 @@
 # Project — ship 上線
 
-> Status: **Active** · Started: 2026-06-15 · Branch: `feature/ship-online` · Size: L
-> Plan: [`doc/plans/2026-06-15-ship-online.md`](../../plans/2026-06-15-ship-online.md)
+> Status: **✅ Done (archived 2026-06-15)** · Branch: `feature/ship-online`（merged `cb88846`）· Size: L
+> Plan: [`doc/plans/2026-06-15-ship-online.md`](../../../plans/2026-06-15-ship-online.md)
 
 ## Project Goal
 
