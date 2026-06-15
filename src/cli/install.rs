@@ -39,10 +39,12 @@ const PROJECT_DIR_ENV_PLACEHOLDER: &str = "${CLAUDE_PROJECT_DIR}";
 /// `statusLine` block pointing to the binary's absolute path.
 ///
 /// Flags:
-/// - `--hooks`: install global-safe hooks (`emit-session` + `session-digest`).
+/// - `--hooks`: install global hooks that run in every project — `emit-session`,
+///   `session-digest`, plus the `codeforge dream → codeforge ship --no-hook`
+///   memory-pipeline SessionEnd chain.
 /// - `--all`:   statusLine + global hooks.
-/// - `--project-hooks`: wire the 3 codeforge-clone-only hooks (2 scripts +
-///   1 inline `codeforge dream` command) into `$CWD/.claude/settings.json`.
+/// - `--project-hooks`: wire the 2 codeforge-clone-only DEV scripts
+///   (check-improvements, check-dev-flow) into `$CWD/.claude/settings.json`.
 ///   Requires CWD to be a codeforge clone.
 /// - `--dry-run`: print resulting JSON + extraction plan, no writes.
 /// - `--force`:  clear all hook entries (including non-codeforge) before
@@ -107,6 +109,14 @@ pub fn run(opts: InstallOpts) -> Result<()> {
         let action = patch_hooks(&mut settings, &hooks_dir, opts.force, /*project=*/ false)?;
         say(opts.quiet, &format!("✓ hooks {}", action));
         say(opts.quiet, &format!("  scripts: {}", hooks_dir.display()));
+
+        // The memory pipeline (dream/ship) can only distill session transcripts
+        // that still exist. Claude Code's default cleanupPeriodDays is 30 — older
+        // sessions are deleted before they're ever digested. Bump retention so
+        // raw material survives. Fills only when unset (respects a user's explicit
+        // value unless --force).
+        let action = patch_cleanup_period(&mut settings, opts.force);
+        say(opts.quiet, &format!("✓ cleanupPeriodDays {}", action));
     }
 
     if opts.dry_run {
@@ -331,13 +341,14 @@ const HOOK_SCRIPTS: &[(&str, &str)] = &[
     ("session-digest.js", include_str!("../../.claude/scripts/session-digest.js")),
 ];
 
-/// Codeforge-clone-only scripts (used by `--project-hooks`). These already
+/// Codeforge-clone-only DEV scripts (used by `--project-hooks`). These already
 /// live in the codeforge clone at `.claude/scripts/`, so we only need the
 /// names — no embedding required.
 ///
-/// Note: emit-session.js and session-digest.js are product-wide and live in
-/// the global `--hooks` install path (~/.claude/settings.json) — installing
-/// them into project settings too would cause dual-fire. See commit 2648b34.
+/// Note: emit-session.js / session-digest.js (and the dream→ship memory
+/// pipeline) are product-wide and live in the global `--hooks` install path
+/// (~/.claude/settings.json) — installing them into project settings too would
+/// cause dual-fire. See commit 2648b34.
 const PROJECT_HOOK_SCRIPT_NAMES: &[&str] = &[
     "check-improvements.js",
     "check-dev-flow.js",
@@ -376,11 +387,18 @@ fn patch_hooks(
     // (commit 2648b34):
     //
     //   --hooks         (global ~/.claude/settings.json):
-    //       product-wide scripts — emit-session, session-digest
+    //       product-wide hooks that should run in EVERY project —
+    //       emit-session, session-digest, and the memory pipeline
+    //       `codeforge dream --quiet` → `codeforge ship --no-hook` SessionEnd chain.
+    //       dream distills L0→L1 per-project (hook CWD = project root); ship then
+    //       forwards the day's L1 to Mnemos. ship --no-hook self-gates on Mnemos
+    //       opt-in (see MnemosConfig::opted_in), so codeforge-only users keep
+    //       distilling with dream while ship is a clean no-op for them.
     //
     //   --project-hooks (project .claude/settings.json):
-    //       codeforge-clone-only hooks — check-improvements (SessionStart),
-    //       check-dev-flow (PreToolUse), `codeforge dream --quiet` (SessionEnd)
+    //       codeforge-clone-only DEV hooks — check-improvements (SessionStart),
+    //       check-dev-flow (PreToolUse). dream/ship moved to the global path so
+    //       they run across all projects, not just the codeforge clone.
     let entries: Vec<(&str, Option<&str>, Vec<Value>)> = if project {
         let check_improvements = scripts_dir.join("check-improvements.js");
         let check_dev_flow = scripts_dir.join("check-dev-flow.js");
@@ -390,9 +408,6 @@ fn patch_hooks(
             ]),
             ("PreToolUse", Some("Edit|Write|Bash"), vec![
                 hook_entry(&format!("node {}", check_dev_flow.display()), 5000, &marker),
-            ]),
-            ("SessionEnd", None, vec![
-                hook_entry("codeforge dream --quiet 2>/dev/null || true", 30000, &marker),
             ]),
         ]
     } else {
@@ -405,6 +420,10 @@ fn patch_hooks(
             ("SessionEnd", None, vec![
                 hook_entry(&format!("node {} session_end", emit_path.display()), 3000, &marker),
                 hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
+                // Memory pipeline: dream distills L0→L1, ship forwards to Mnemos.
+                // Order matters — ship reads the L1 that dream just produced.
+                hook_entry("codeforge dream --quiet 2>/dev/null || true", 30000, &marker),
+                hook_entry("codeforge ship --no-hook 2>/dev/null || true", 30000, &marker),
             ]),
             ("PreCompact", None, vec![hook_entry(
                 &format!("node {}", digest_path.display()),
@@ -427,8 +446,25 @@ fn patch_hooks(
         hooks_root.clear();
     }
 
-    let mut any_change = false;
+    // Sweep ALL existing codeforge-owned groups across every hook_type FIRST,
+    // then add our current entries. Sweeping every type (not just the ones we're
+    // about to write) is what lets an entry relocate between hook_types without
+    // orphaning its old group — e.g. dream/ship moving from the project SessionEnd
+    // to the global SessionEnd. The previous per-type retain left a stale group
+    // behind in any type we no longer model (the known --project-hooks
+    // drop/duplicate bug for the unmarked dream entry).
     let mut had_prior = false;
+    let existing_types: Vec<String> = hooks_root.keys().cloned().collect();
+    for ty in &existing_types {
+        if let Some(arr) = hooks_root.get_mut(ty).and_then(|v| v.as_array_mut()) {
+            let before = arr.len();
+            arr.retain(|group| !group_is_codeforge(group));
+            if arr.len() != before {
+                had_prior = true;
+            }
+        }
+    }
+
     for (hook_type, matcher, our_entries) in entries.iter() {
         let arr = hooks_root
             .entry(hook_type.to_string())
@@ -436,18 +472,20 @@ fn patch_hooks(
         let arr = arr
             .as_array_mut()
             .ok_or_else(|| anyhow!("settings.hooks.{} 不是 array", hook_type))?;
-        let before = arr.len();
-        arr.retain(|group| !group_is_codeforge(group));
-        if arr.len() != before {
-            had_prior = true;
-        }
         arr.push(json!({
             "matcher": matcher.unwrap_or(""),
             "hooks": our_entries,
         }));
-        any_change = true;
     }
 
+    // Collapse any arrays the sweep emptied (a hook_type we no longer write to,
+    // e.g. project SessionEnd after dream relocated to global).
+    hooks_root.retain(|_, v| match v.as_array() {
+        Some(a) => !a.is_empty(),
+        None => true,
+    });
+
+    let any_change = true;
     Ok(match (had_prior, any_change, force) {
         (_, _, true) => "重置（--force）",
         (false, true, _) => "新增",
@@ -488,6 +526,35 @@ fn unpatch_hooks(settings: &mut Value) -> Result<&'static str> {
     } else {
         "無 codeforge entries（無變動）"
     })
+}
+
+/// Transcript retention (days) the global install writes into settings.json.
+/// Far above Claude Code's 30-day default so the dream/ship memory pipeline has
+/// time to digest sessions before they're cleaned up. ~10 years ≈ "keep".
+const DEFAULT_CLEANUP_PERIOD_DAYS: u64 = 3650;
+
+/// Set `cleanupPeriodDays` on global settings unless the user already chose a
+/// value (then leave it, unless `force`). Returns a human action string.
+fn patch_cleanup_period(settings: &mut Value, force: bool) -> &'static str {
+    let Some(obj) = settings.as_object_mut() else {
+        return "跳過（settings 非 object）";
+    };
+    let present = obj
+        .get("cleanupPeriodDays")
+        .map(|v| !v.is_null())
+        .unwrap_or(false);
+    if present && !force {
+        return "已設定（保留現值）";
+    }
+    obj.insert(
+        "cleanupPeriodDays".to_string(),
+        json!(DEFAULT_CLEANUP_PERIOD_DAYS),
+    );
+    if present {
+        "重置（--force）"
+    } else {
+        "新增"
+    }
 }
 
 fn hook_entry(command: &str, timeout_ms: u64, marker: &str) -> Value {
@@ -684,8 +751,19 @@ mod tests {
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["SessionEnd"].is_array());
         assert!(s["hooks"]["PreCompact"].is_array());
+        // Global SessionEnd chain: emit-session, session-digest, dream, ship (4).
         let session_end = &s["hooks"]["SessionEnd"][0]["hooks"];
-        assert_eq!(session_end.as_array().unwrap().len(), 2);
+        assert_eq!(session_end.as_array().unwrap().len(), 4);
+        let cmds = serde_json::to_string(session_end).unwrap();
+        assert!(cmds.contains("emit-session"), "missing emit-session");
+        assert!(cmds.contains("session-digest"), "missing session-digest");
+        assert!(cmds.contains("codeforge dream --quiet"), "missing dream");
+        assert!(cmds.contains("codeforge ship --no-hook"), "missing ship");
+        // dream must come before ship (ship reads the L1 dream produces).
+        let se = session_end.as_array().unwrap();
+        let dream_idx = se.iter().position(|h| h["command"].as_str().unwrap().contains("dream")).unwrap();
+        let ship_idx = se.iter().position(|h| h["command"].as_str().unwrap().contains("ship")).unwrap();
+        assert!(dream_idx < ship_idx, "dream must precede ship");
     }
 
     #[test]
@@ -693,33 +771,35 @@ mod tests {
         let mut s = json!({});
         let dir = PathBuf::from("/tmp/cf-test");
         patch_hooks(&mut s, &dir, false, /*project=*/ true).unwrap();
-        // 3 hook types present (no PreCompact — that's global-only)
+        // 2 hook types present: SessionStart + PreToolUse. dream/ship moved to
+        // the global path, so project mode no longer writes SessionEnd; PreCompact
+        // is global-only too.
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["PreToolUse"].is_array());
-        assert!(s["hooks"]["SessionEnd"].is_array());
+        assert!(s["hooks"].get("SessionEnd").is_none(), "dream/ship are global-only now");
         assert!(s["hooks"].get("PreCompact").is_none(), "PreCompact must be global-only");
         // PreToolUse has the Edit|Write|Bash matcher
         assert_eq!(s["hooks"]["PreToolUse"][0]["matcher"], "Edit|Write|Bash");
-        // Each hook type has exactly 1 entry (the codeforge-clone-only one)
+        // Each present hook type has exactly 1 entry (the codeforge-clone-only one)
         assert_eq!(s["hooks"]["SessionStart"][0]["hooks"].as_array().unwrap().len(), 1);
         assert_eq!(s["hooks"]["PreToolUse"][0]["hooks"].as_array().unwrap().len(), 1);
-        assert_eq!(s["hooks"]["SessionEnd"][0]["hooks"].as_array().unwrap().len(), 1);
         // SessionStart is check-improvements
         let ss_cmd = s["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str().unwrap();
         assert!(ss_cmd.contains("check-improvements.js"), "got: {}", ss_cmd);
-        // SessionEnd is the dream entry (codeforge-clone-only, not a node script)
-        let se_cmd = s["hooks"]["SessionEnd"][0]["hooks"][0]["command"].as_str().unwrap();
-        assert_eq!(se_cmd, "codeforge dream --quiet 2>/dev/null || true");
-        // No product-wide scripts leaked into project hooks (dual-fire prevention)
+        // No product-wide hooks leaked into project hooks (dual-fire prevention)
         let all_commands = serde_json::to_string(&s["hooks"]).unwrap();
         assert!(!all_commands.contains("emit-session"), "emit-session leaked into project hooks");
         assert!(!all_commands.contains("session-digest"), "session-digest leaked into project hooks");
+        assert!(!all_commands.contains("codeforge dream"), "dream leaked into project hooks");
+        assert!(!all_commands.contains("codeforge ship"), "ship leaked into project hooks");
     }
 
     #[test]
-    fn project_mode_replaces_legacy_unmarker_dream_entry() {
-        // Pre-2.2 .claude/settings.json shape: dream entry was hand-written
-        // and never carried the _installed_by marker.
+    fn project_mode_sweeps_legacy_dream_entry() {
+        // Migration: pre-relocation project settings had a hand-written dream
+        // entry in SessionEnd (often un-markered). dream now lives in the global
+        // path, so a `--project-hooks` re-run must SWEEP that stale entry (not
+        // leave it orphaned). The full-sweep + collapse handles this.
         let mut s = json!({
             "hooks": {
                 "SessionEnd": [{
@@ -734,16 +814,70 @@ mod tests {
         });
         let action = patch_hooks(&mut s, Path::new("/tmp/cf-test"), false, /*project=*/ true)
             .unwrap();
-        assert_eq!(action, "更新", "legacy un-marker dream entry should be recognized as ours");
-        // Exactly 1 SessionEnd group after install (not duplicated)
-        let se = s["hooks"]["SessionEnd"].as_array().unwrap();
-        assert_eq!(se.len(), 1, "legacy entry must be replaced, not duplicated");
-        // The remaining entry is marker-tagged
-        assert!(group_is_codeforge(&se[0]));
-        assert_eq!(
-            se[0]["hooks"][0]["command"],
-            "codeforge dream --quiet 2>/dev/null || true"
+        assert_eq!(action, "更新", "legacy dream entry recognized as ours and swept");
+        // SessionEnd collapsed away — project mode no longer writes it, and the
+        // stale dream group was removed rather than orphaned.
+        assert!(
+            s["hooks"].get("SessionEnd").is_none(),
+            "stale project dream must be swept, SessionEnd collapsed"
         );
+        // The dev hooks project mode does own are present.
+        assert!(s["hooks"]["SessionStart"].is_array());
+        assert!(s["hooks"]["PreToolUse"].is_array());
+    }
+
+    #[test]
+    fn global_mode_relocates_legacy_project_dream_into_chain() {
+        // Migration the other direction: a settings.json that still carries a
+        // legacy dream SessionEnd group gets it swept and replaced by the full
+        // global chain (no duplicate dream) when `--hooks` runs.
+        let mut s = json!({
+            "hooks": {
+                "SessionEnd": [{
+                    "matcher": "",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "codeforge dream --quiet 2>/dev/null || true",
+                        "timeout": 30000
+                    }]
+                }]
+            }
+        });
+        patch_hooks(&mut s, Path::new("/tmp/cf-test"), false, /*project=*/ false).unwrap();
+        let se = s["hooks"]["SessionEnd"].as_array().unwrap();
+        assert_eq!(se.len(), 1, "one codeforge group, legacy not left as a sibling");
+        let inner = se[0]["hooks"].as_array().unwrap();
+        // emit-session, session-digest, dream, ship — exactly one dream.
+        let dream_count = inner
+            .iter()
+            .filter(|h| h["command"].as_str().unwrap().contains("codeforge dream"))
+            .count();
+        assert_eq!(dream_count, 1, "no duplicate dream after relocation");
+        assert!(inner.iter().any(|h| h["command"].as_str().unwrap().contains("codeforge ship")));
+    }
+
+    #[test]
+    fn cleanup_period_fills_when_unset() {
+        let mut s = json!({});
+        let action = patch_cleanup_period(&mut s, false);
+        assert_eq!(action, "新增");
+        assert_eq!(s["cleanupPeriodDays"], json!(DEFAULT_CLEANUP_PERIOD_DAYS));
+    }
+
+    #[test]
+    fn cleanup_period_respects_existing_user_value() {
+        let mut s = json!({ "cleanupPeriodDays": 90 });
+        let action = patch_cleanup_period(&mut s, false);
+        assert_eq!(action, "已設定（保留現值）");
+        assert_eq!(s["cleanupPeriodDays"], json!(90), "must not clobber user's value");
+    }
+
+    #[test]
+    fn cleanup_period_force_overwrites() {
+        let mut s = json!({ "cleanupPeriodDays": 90 });
+        let action = patch_cleanup_period(&mut s, true);
+        assert_eq!(action, "重置（--force）");
+        assert_eq!(s["cleanupPeriodDays"], json!(DEFAULT_CLEANUP_PERIOD_DAYS));
     }
 
     #[test]
