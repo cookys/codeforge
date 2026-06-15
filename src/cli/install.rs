@@ -117,6 +117,15 @@ pub fn run(opts: InstallOpts) -> Result<()> {
         // value unless --force).
         let action = patch_cleanup_period(&mut settings, opts.force);
         say(opts.quiet, &format!("✓ cleanupPeriodDays {}", action));
+        if action != "已設定（保留現值）" {
+            say(
+                opts.quiet,
+                &format!(
+                    "  ↳ 保留 session transcript {} 天（供 dream/ship 萃取）；~/.claude/projects/ 會隨之長期累積",
+                    DEFAULT_CLEANUP_PERIOD_DAYS
+                ),
+            );
+        }
     }
 
     if opts.dry_run {
@@ -485,12 +494,13 @@ fn patch_hooks(
         None => true,
     });
 
-    let any_change = true;
-    Ok(match (had_prior, any_change, force) {
-        (_, _, true) => "重置（--force）",
-        (false, true, _) => "新增",
-        (true, _, _) => "更新",
-        (_, false, _) => "已是最新（無變動）",
+    // We always (re)write the current entry set, so there's no "no-op" outcome to
+    // report without a full pre/post diff. `had_prior` distinguishes a first-time
+    // install from a re-install that swept a prior codeforge group.
+    Ok(match (force, had_prior) {
+        (true, _) => "重置（--force）",
+        (false, false) => "新增",
+        (false, true) => "更新",
     })
 }
 
