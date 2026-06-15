@@ -29,7 +29,7 @@
 | P0 | e2e 地基驗證（mnemos serve + ship/cite → 200） | ✅ done — ship POST→200 存 document+atom；cite→200 citation_count 0→1。精簡 payload 無 contract mismatch。隔離 test DB 驗證後清除 |
 | P1 | install SessionEnd hook 鏈 dream → ship | ✅ done — dream+ship 移到 global SessionEnd（跨所有專案）；project-hooks 只剩 dev scripts；ship `--no-hook` opt-in gate（`~/.config/mnemos.env` 或 `MNEMOS_INGEST_URL`，否則乾淨 no-op 不堆 queue）；patch_hooks 改全面 sweep + collapse，順帶修 V2.2 已知 install bug #1/#2。31 install tests 綠 |
 | P2 | cleanupPeriodDays into install | ✅ done — global install 寫 `cleanupPeriodDays: 3650`，只填未設值、--force 才覆蓋。3 新測試綠 |
-| P3 | live hook 驗證 + doc sync（CLAUDE.md / spec / CHANGELOG） | in progress |
+| P3 | live hook 驗證 + doc sync（CLAUDE.md / spec / CHANGELOG） | ✅ done — 新 binary 裝到 ~/.local/bin(0.0.4);global `install --hooks` 上線 dream→ship 鏈(乾淨無 0.0.3 dupes);建 `~/.config/mnemos.env` opt-in;regenerate committed `.claude/settings.json`(移除 dream);部署中抓到並修掉 pre-marker node hooks dual-fire(legacy 辨識);CHANGELOG/CLAUDE.md/ship spec sync |
 
 ## Open Question 定論（P1）
 
