@@ -13,6 +13,7 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 **Trigger**: Pick up when Phase 2 daemon is implemented (daemon will own all write operations, eliminating concurrent CLI calls).
 **Mitigation in place**: `PRAGMA busy_timeout=5000` ensures one waits; risk is low for Phase 1 single-user.
 **Status 2026-04-17**: Phase 2a shipped. Daemon now owns derived-state writes (`pet_snapshot`, `combat_log`, `game_world`), but `signal_cursors` are still CLI-written by `dream compile` — this item remains open with unchanged scope.
+**Status 2026-06-15**: ship-online 把 `codeforge dream` 移到 global SessionEnd（跑遍所有專案）。**預設 per-cwd `.codeforge` 不受影響**（各專案寫各自 store,無 cross race）；只有 `CODEFORGE_DIR` 共享 store 的使用者,多專案 session 同時結束時 concurrent-dream 機率上升 —— 仍由本 item 既有 scope 覆蓋,`busy_timeout` 緩解。
 
 ---
 
@@ -98,4 +99,22 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 **Premise**: `.claude/settings.json` ships with absolute hook paths (e.g. `/home/codepower/projects/codeforge/.claude/scripts/check-improvements.js`). Claude Code does not yet support relative paths in hook configuration, so every cloner must manually edit 6 paths after cloning. README documents this in "First-time Claude Code hook setup" but it's friction. Two solutions discussed: (a) ship `settings.json.template` with `<REPO_ROOT>` placeholder + a `scripts/setup-hooks.sh` (or `codeforge init --hooks`) that rewrites paths on first run; (b) wait for Claude Code to support relative paths and switch.
 **Trigger**: Pick up when (1) a contributor reports broken hooks after clone, OR (2) Claude Code adds relative-path support (then this becomes a sub-task of switching to relative paths), OR (3) > 5 stars on the public repo (signals contributor influx).
 **Status 2026-05-05**: Identified during public-readiness audit (`doc/projects/_archive/2026-05-05-public-readiness/`). Deferred out of scope per that L-task's Design Decision 3 to keep scope focused. S-size if option (a), trivial if option (b).
+
+---
+
+## B13 — 真實 production ship e2e（對 live Mnemos server）
+
+**Area**: runtime（`codeforge ship --no-hook` SessionEnd + `~/.mnemos/data/mnemos.db`）
+**Premise**: ship-online 專案的 e2e 只在隔離 test DB(`/tmp/ship-e2e`)驗過 → 200。真正對使用者 production Mnemos brain 的 session-end ship（global hook 鏈)尚未端到端跑過一次。已 opt-in（`~/.config/mnemos.env`），但驗證當下 Mnemos server 沒跑 → 本機 session-end ship 會 queue 到 `~/.codeforge/ship-failed/`。
+**Trigger**: 下次 Mnemos server 在跑時 —— 確認一次真實 session-end 的 ledger 落進 production brain（查 `documents`/`atoms`），並 `codeforge ship --resend` 清掉累積的 ship-failed/ queue。
+**Status 2026-06-15**: ship-online 上線後立即產生;設計上 ship --no-hook 失敗只 queue 不阻塞,故非 blocker。
+
+---
+
+## B14 — 其他機器部署 ship-online（new binary + install --hooks）
+
+**Area**: 各機器 `~/.local/bin/codeforge` + `~/.claude/settings.json` + `~/.config/mnemos.env`
+**Premise**: ship-online 的跨專案 dream→ship 鏈 + cleanupPeriodDays 只在本機(twgs-revival)部署。settings.json 是 per-machine,使用者有多台機器（cleanupPeriodDays 原始問題就是「每台都要」）。每台需:(1) 裝 0.0.4+ binary 到 `~/.local/bin`;(2) 跑 `codeforge install --hooks`（寫 global dream→ship 鏈 + cleanupPeriodDays);(3) 用 Mnemos 的機器建 `~/.config/mnemos.env` opt-in。
+**Trigger**: 下次在每台其他機器工作時執行上述三步;或做一個 `codeforge bootstrap` 一鍵命令收斂這流程。
+**Status 2026-06-15**: 本機已部署驗證;其他機器待逐台執行。
 
