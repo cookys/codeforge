@@ -118,3 +118,15 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 **Trigger**: 下次在每台其他機器工作時執行上述三步;或做一個 `codeforge bootstrap` 一鍵命令收斂這流程。
 **Status 2026-06-15**: 本機已部署驗證;其他機器待逐台執行。
 
+---
+
+## B15 — improvement-queue surfacing 一般化(project-scoped,非 codeforge-clone-only)
+
+**Area**: `.claude/scripts/check-improvements.js`、`codeforge install`（hook 安裝佈局）
+**Premise**: improvement-queue 已做 project 歸屬(session-digest 寫項標 `project: cwd`,2026-06-15 fix `a0169cc`),但**surface 它的 `check-improvements.js` 仍是 codeforge-clone-only**(只裝在 codeforge clone 的 `--project-hooks`,`PROJECT_ROOT` 由 `__filename` 推導恆為 codeforge 根)。後果:
+- CodeForge 只 surface 自己的項(已修,正確)。
+- **其他專案(CodePower 等)寫進共享 queue 的項,沒有任何地方會在該專案 surface** —— 它們帶了 `project` tag 卻無 surfacing hook 消費。
+參考 dream/ship 的做法:把 surfacing 從 clone-only 改成可跨專案(global 或可裝進任一專案的 SessionStart hook),用 hook CWD/`CLAUDE_PROJECT_DIR` 當 `PROJECT_ROOT`,各專案 SessionStart 只報屬於自己(`project === <該專案根>`)的 pending 項。
+**Trigger**: 當 (1) 想讓 CodePower(或其他專案)session 也能在 SessionStart 看到自己的 pending improvements,或 (2) 把 check-improvements 納入 global hook 安裝鏈(類似 ship-online 把 dream/ship 移 global)時。需處理 `PROJECT_ROOT` 來源從 `__filename` 改成 hook 提供的 project dir。
+**Status 2026-06-15**: project 歸屬(寫端)+ CodeForge 自身 scoping(讀端)已完成;跨專案 surfacing 一般化未做,記為 enhancement。
+
