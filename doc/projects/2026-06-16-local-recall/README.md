@@ -23,7 +23,7 @@
 ## Progress
 | Phase | 內容 | 狀態 |
 |-------|------|------|
-| A0 | `codeforge memory context`(rank + budget + citation + `--hook` JSON) | pending |
-| A1 | install SessionStart 接線 | pending |
-| A2 | projection 退役 + seam 契約 + procedural-atom 標記 | pending |
-| A3 | doc sync + 重部署 + live 驗證 | pending |
+| A0 | `codeforge memory context`(rank + budget + citation + `--hook` JSON) | ✅ done — 5 tests;手動兩模式驗證 |
+| A1 | install SessionStart 接線 | ✅ done — global SessionStart 加 recall 注入器;install test 綠 |
+| A2 | projection 退役 + seam 契約（procedural-atom 文件化為 reserved,struct 欄位 defer Phase B） | ✅ done — 刪 src/projection;新 doc/specs/codeforge-memory-contract.md |
+| A3 | doc sync + 重部署 + live 驗證 | in progress |
