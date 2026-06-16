@@ -11,7 +11,15 @@ use std::io::Read;
 
 pub fn run(ctx: &db::Context, max_tokens: usize, hook: bool) -> Result<()> {
     let store_dir = ctx.project_dir.join("store");
-    let ranked = recall::rank(l1::scan_all(&store_dir).unwrap_or_default());
+    // Hook mode must never break the SessionStart hook → swallow scan errors to a
+    // clean no-op. Interactive mode propagates so a broken store isn't silently
+    // misreported as "no knowledge".
+    let entries = if hook {
+        l1::scan_all(&store_dir).unwrap_or_default()
+    } else {
+        l1::scan_all(&store_dir)?
+    };
+    let ranked = recall::rank(entries);
 
     if hook {
         // Hook mode: Claude Code pipes the SessionStart event JSON on stdin —

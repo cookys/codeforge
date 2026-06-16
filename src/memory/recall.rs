@@ -22,6 +22,10 @@ pub const HARD_CHAR_CAP: usize = 8000;
 /// Per-entry body snippet length (chars). Index, not full body.
 const SNIPPET_CHARS: usize = 140;
 
+/// Char allowance reserved for the trailing "…+N more" overflow note, so
+/// appending it after the budget loop can't push the total past [`HARD_CHAR_CAP`].
+const OVERFLOW_NOTE_RESERVE: usize = 120;
+
 /// Rough token estimate. Approximate by design — `/3` over-counts ASCII a little
 /// and under-counts CJK a little; combined with [`HARD_CHAR_CAP`] it keeps the
 /// injected block lean without pulling in a tokenizer dependency.
@@ -102,7 +106,10 @@ pub fn render_index(ranked: &[L1Entry], topic: &str, max_tokens: usize) -> Strin
     for entry in ranked {
         let bullet = render_entry(entry);
         let projected = out.chars().count() + bullet.chars().count();
-        if projected > HARD_CHAR_CAP || estimate_tokens(&out) + estimate_tokens(&bullet) > max_tokens {
+        // Reserve room for the overflow note appended after the loop.
+        if projected > HARD_CHAR_CAP - OVERFLOW_NOTE_RESERVE
+            || estimate_tokens(&out) + estimate_tokens(&bullet) > max_tokens
+        {
             break;
         }
         out.push_str(&bullet);
@@ -194,6 +201,25 @@ mod tests {
         let md = render_index(&r, "", 300); // tight budget
         assert!(md.chars().count() <= HARD_CHAR_CAP);
         assert!(estimate_tokens(&md) <= 300 + 200, "roughly within budget: {}", estimate_tokens(&md));
+        assert!(md.contains("more — `codeforge memory search"), "overflow note present");
+    }
+
+    #[test]
+    fn render_index_char_cap_binds_with_overflow_note_within_cap() {
+        // Token budget effectively unlimited → the HARD_CHAR_CAP is the binding
+        // constraint. Final string (incl. the appended overflow note) must stay
+        // within HARD_CHAR_CAP.
+        let body = "x".repeat(300);
+        let entries: Vec<L1Entry> = (0..200)
+            .map(|i| entry(&format!("topic{i:03}"), 0.5, "2026-06-01", "active", &body))
+            .collect();
+        let r = rank(entries);
+        let md = render_index(&r, "", 1_000_000); // token budget huge → char cap binds
+        assert!(
+            md.chars().count() <= HARD_CHAR_CAP,
+            "must not exceed HARD_CHAR_CAP even with overflow note: got {}",
+            md.chars().count()
+        );
         assert!(md.contains("more — `codeforge memory search"), "overflow note present");
     }
 
