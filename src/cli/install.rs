@@ -397,12 +397,15 @@ fn patch_hooks(
     //
     //   --hooks         (global ~/.claude/settings.json):
     //       product-wide hooks that should run in EVERY project —
-    //       emit-session, session-digest, and the memory pipeline
+    //       emit-session, session-digest; the SessionStart local-recall injector
+    //       (`codeforge memory context --hook`); and the memory pipeline
     //       `codeforge dream --quiet` → `codeforge ship --no-hook` SessionEnd chain.
     //       dream distills L0→L1 per-project (hook CWD = project root); ship then
     //       forwards the day's L1 to Mnemos. ship --no-hook self-gates on Mnemos
     //       opt-in (see MnemosConfig::opted_in), so codeforge-only users keep
-    //       distilling with dream while ship is a clean no-op for them.
+    //       distilling with dream while ship is a clean no-op for them. The
+    //       SessionStart injector is the no-mnemos READ path: it surfaces a lean
+    //       ranked L1 index as additionalContext (no-op when no active L1).
     //
     //   --project-hooks (project .claude/settings.json):
     //       codeforge-clone-only DEV hooks — check-improvements (SessionStart),
@@ -421,11 +424,17 @@ fn patch_hooks(
         ]
     } else {
         vec![
-            ("SessionStart", None, vec![hook_entry(
-                &format!("node {} session_start", emit_path.display()),
-                3000,
-                &marker,
-            )]),
+            ("SessionStart", None, vec![
+                hook_entry(
+                    &format!("node {} session_start", emit_path.display()),
+                    3000,
+                    &marker,
+                ),
+                // Local recall (no-mnemos READ path): inject a lean ranked L1
+                // index as additionalContext. No-op when the project has no
+                // active L1. Symmetric to the mnemos-cli context central path.
+                hook_entry("codeforge memory context --hook 2>/dev/null || true", 10000, &marker),
+            ]),
             ("SessionEnd", None, vec![
                 hook_entry(&format!("node {} session_end", emit_path.display()), 3000, &marker),
                 hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
@@ -783,6 +792,12 @@ mod tests {
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["SessionEnd"].is_array());
         assert!(s["hooks"]["PreCompact"].is_array());
+        // Global SessionStart: emit-session + local-recall injector (2).
+        let session_start = &s["hooks"]["SessionStart"][0]["hooks"];
+        assert_eq!(session_start.as_array().unwrap().len(), 2);
+        let ss_cmds = serde_json::to_string(session_start).unwrap();
+        assert!(ss_cmds.contains("emit-session"), "missing emit-session");
+        assert!(ss_cmds.contains("codeforge memory context --hook"), "missing local-recall injector");
         // Global SessionEnd chain: emit-session, session-digest, dream, ship (4).
         let session_end = &s["hooks"]["SessionEnd"][0]["hooks"];
         assert_eq!(session_end.as_array().unwrap().len(), 4);

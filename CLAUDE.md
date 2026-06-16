@@ -214,6 +214,17 @@ CodeForge and CodePower are used together. Understanding the relationship preven
 
 `codeforge dream --quiet` runs at session end in **every** project, via the **global** SessionEnd hook (`~/.claude/settings.json`, installed by `codeforge install --hooks`/`--all`). The hook runs with CWD = the project root, so dream distills that project's own `.codeforge` (per-cwd memory). This means memory and pet XP update from activity in CodePower, or any other project — not just the CodeForge codebase. `--quiet` is mandatory for hook use (suppresses all stdout). `codeforge ship --no-hook` chains right after dream in the same SessionEnd group (see Ship above); ship self-gates on Mnemos opt-in, so a codeforge-only user with no Mnemos still distills via dream while ship is a clean no-op.
 
+### Recall (session-start) — READ side, symmetric to the WRITE side
+
+The memory loop is **absorb → distill → store → recall**. READ mirrors WRITE with the same local-always / central-opt-in split:
+
+| | Local (always, no Mnemos) | Central (opt-in, needs Mnemos) |
+|---|---|---|
+| **WRITE** | `dream` (L0→L1) | `ship` (→ Mnemos) |
+| **READ** | `codeforge memory context --hook` (global SessionStart) | `mnemos-cli context` (cross-source) |
+
+`codeforge memory context` ranks active L1 by strength → budgets to a **lean index** (~1.5K tokens, never a dump — context-pollution lesson from claude-mem) → emits `hookSpecificOutput.additionalContext` at SessionStart. No-op when the project has no active L1. Each line cites its `topic`; detail is pulled on demand via `codeforge memory search <topic>` (progressive disclosure). Installed in **global settings.json**, not a plugin (plugin `hooks.json` additionalContext is unreliable — Claude Code issue #16538). Shared-state + atom schema contract: [`doc/specs/codeforge-memory-contract.md`](doc/specs/codeforge-memory-contract.md).
+
 ### Learn (any project → codeforge memory)
 
 `codeforge learn "..."` can be run from any directory. Where the signal lands depends on `CODEFORGE_DIR`:
