@@ -130,3 +130,14 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 **Trigger**: 當 (1) 想讓 CodePower(或其他專案)session 也能在 SessionStart 看到自己的 pending improvements,或 (2) 把 check-improvements 納入 global hook 安裝鏈(類似 ship-online 把 dream/ship 移 global)時。需處理 `PROJECT_ROOT` 來源從 `__filename` 改成 hook 提供的 project dir。
 **Status 2026-06-15**: project 歸屬(寫端)+ CodeForge 自身 scoping(讀端)已完成;跨專案 surfacing 一般化未做,記為 enhancement。
 
+
+---
+
+## B16 — memory-recall Phase B / C(偷好偷滿的下一輪)
+
+**Area**: `src/dream/compile.rs`、`src/memory/recall.rs`、SessionEnd hook、L1 schema
+**Premise**: Phase A(本地 recall 注入器)已上線(2026-06-16,`local-recall` 專案)。design spec `doc/proposals/2026-06-16-memory-recall-and-stolen-patterns.md` 還有兩 tier 沒做:
+- **Phase B(Tier 2)**:async fire-and-forget worker(dream/ship 目前同步跑在 SessionEnd hook,量大卡 session 結束)、mem0 式 ADD/UPDATE/DELETE/NOOP 對賬(dream-compile 防 stale/矛盾累積)、統一 recency×importance×relevance 排序、**procedural-atom `nature` 欄位**(契約已 reserve,dream 具分類能力時填)。
+- **Phase C(Tier 3,評估後選)**:本地語意 recall(FastEmbed+HNSW,取代/增補 FTS5 keyword)、失敗/卡關為一等記憶、typed observation/relation schema、矛盾偵測 + 兩段式信心衰減。
+**Trigger**:Phase B 當 (a) dream/ship 在 SessionEnd 開始覺得卡,或 (b) L1 出現可見的 stale/矛盾累積時。Phase C 當 keyword recall 品質證實不足(語意)、或想捕捉失敗 pattern 時。
+**Status 2026-06-16**:Phase A done + 上線;B/C 記為 enhancement,有 design spec 母本與 credits。
