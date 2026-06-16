@@ -1,6 +1,6 @@
 # Project — 本地 recall 注入器(Phase A)
 
-> Status: **Active** · Started: 2026-06-16 · Branch: `feature/local-recall` · Size: L
+> Status: **✅ Done (archived 2026-06-16)** · merged c2f6dc8 · Branch: `feature/local-recall` · Size: L
 > Plan: [`doc/plans/2026-06-16-local-recall-phase-a.md`](../../plans/2026-06-16-local-recall-phase-a.md)
 > Design spec: [`doc/proposals/2026-06-16-memory-recall-and-stolen-patterns.md`](../../proposals/2026-06-16-memory-recall-and-stolen-patterns.md)
 
