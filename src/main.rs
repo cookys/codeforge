@@ -15,7 +15,6 @@ mod memory;
 mod mnemos;
 mod pet;
 mod power;
-mod projection;
 mod snapshot;
 mod tui;
 mod world;
