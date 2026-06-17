@@ -12,7 +12,10 @@
  *   - PreCompact (primary): fires before context compaction, full transcript available
  *   - SessionEnd (backup): fires on exit/clear/logout (rare — user keeps session open)
  *
- * Output: ~/.claude/session-digests/<YYYY-MM-DD>-<session_id_first8>.json
+ * Output (A′, 2026-06-17): <repoRoot>/.codeforge/digests/<YYYY-MM-DD>-<session_id_first8>.json
+ *   repoRoot is discovered by walking up from cwd to the nearest `.codeforge` dir
+ *   (like git finds `.git`). If cwd is NOT inside a codeforge project, NO digest is
+ *   written — non-init'd dirs never land plaintext on disk (privacy root-cause fix).
  *
  * Pure Node.js, zero external dependencies.
  *
@@ -45,7 +48,10 @@ function log(level, msg) {
 
 const MIN_ASSISTANT_MESSAGES = 10;
 const ERROR_WINDOW = 5; // assistant messages to look ahead for recovery
-const DIGEST_DIR = path.join(os.homedir(), '.claude', 'session-digests');
+// A′ (2026-06-17): digests land per-repo under <repoRoot>/.codeforge/digests/,
+// discovered by walking up from cwd to the nearest .codeforge dir (see
+// findCodeforgeRoot / digestDirFor). Non-init'd dirs never write to disk.
+const DIGEST_SUBDIR = path.join('.codeforge', 'digests');
 const DIGEST_MAX_AGE_DAYS = 30;
 const IMPROVEMENT_QUEUE_PATH = path.join(os.homedir(), '.claude', 'improvement-queue.json');
 const KNOWLEDGE_OVERSIZE_LINES = 300;
@@ -416,19 +422,61 @@ function extractSelfCorrections(messages) {
 }
 
 // ---------------------------------------------------------------------------
-// Cleanup old digests
+// Digest landing (A′): per-repo, privacy-by-default
 // ---------------------------------------------------------------------------
 
-function cleanupOldDigests() {
+/**
+ * Walk up from startDir to the nearest ancestor containing a `.codeforge`
+ * directory (like git discovering `.git`). Returns the canonical repo root, or
+ * null if none found — meaning the session is NOT a codeforge project and no
+ * digest is written (privacy root-cause fix: non-init'd dirs never land plaintext).
+ * Canonical (realpath) resolution keeps symlinked / equivalent paths from
+ * landing under two different roots.
+ * @param {string} startDir
+ * @returns {string|null} canonical repo root, or null
+ */
+function findCodeforgeRoot(startDir) {
+  if (!startDir) return null;
+  let dir;
   try {
-    if (!fs.existsSync(DIGEST_DIR)) return;
+    dir = fs.realpathSync(startDir);
+  } catch (_) {
+    dir = path.resolve(startDir);
+  }
+  for (;;) {
+    let isRepo = false;
+    try {
+      isRepo = fs.statSync(path.join(dir, '.codeforge')).isDirectory();
+    } catch (_) {
+      isRepo = false;
+    }
+    if (isRepo) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null; // reached filesystem root
+    dir = parent;
+  }
+}
+
+/** Per-repo digest dir for a given cwd, or null if cwd is not in a codeforge repo. */
+function digestDirFor(cwd) {
+  const root = findCodeforgeRoot(cwd);
+  return root ? path.join(root, DIGEST_SUBDIR) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup old digests (per-repo)
+// ---------------------------------------------------------------------------
+
+function cleanupOldDigests(digestDir) {
+  try {
+    if (!digestDir || !fs.existsSync(digestDir)) return;
 
     const cutoff = Date.now() - DIGEST_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
-    const files = fs.readdirSync(DIGEST_DIR);
+    const files = fs.readdirSync(digestDir);
 
     for (const file of files) {
       if (!file.endsWith('.json')) continue;
-      const filePath = path.join(DIGEST_DIR, file);
+      const filePath = path.join(digestDir, file);
       try {
         const stat = fs.statSync(filePath);
         if (stat.mtimeMs < cutoff) {
@@ -946,16 +994,27 @@ async function main() {
     processed: false,
   };
 
-  // Write digest
-  fs.mkdirSync(DIGEST_DIR, { recursive: true });
+  // Write digest — A′: land per-repo, skip entirely if cwd is not a codeforge project.
+  const digestDir = digestDirFor(cwd);
+  if (!digestDir) {
+    log('INFO', `cwd not inside a .codeforge repo (${cwd || 'unknown'}), skipping digest write.`);
+    return;
+  }
+  fs.mkdirSync(digestDir, { recursive: true });
   const digestFileName = `${dateStr}-${sessionIdShort}.json`;
-  const digestPath = path.join(DIGEST_DIR, digestFileName);
+  const digestPath = path.join(digestDir, digestFileName);
 
-  fs.writeFileSync(digestPath, JSON.stringify(digest, null, 2), 'utf8');
+  // Atomic write: write a temp file then rename into place, so a concurrent
+  // `dream` ingest never reads a half-written digest (and the ingest's
+  // mtime-guard can reliably detect a fresh rewrite). rename(2) is atomic on
+  // the same filesystem.
+  const tmpPath = `${digestPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(digest, null, 2), 'utf8');
+  fs.renameSync(tmpPath, digestPath);
   log('INFO', `Wrote digest: ${digestPath}`);
 
-  // Cleanup old digests
-  cleanupOldDigests();
+  // Cleanup old digests in this repo's digest dir.
+  cleanupOldDigests(digestDir);
 }
 
 main().catch(err => {

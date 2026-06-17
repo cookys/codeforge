@@ -31,6 +31,14 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
     }
     ctx.ensure_initialized()?;
 
+    // per-repo opt-out (A′): `<repo>/.codeforge/no-ship` present → never POST this repo's
+    // ledger. Hard no-op regardless of mode (even interactive `codeforge ship`): the repo
+    // is explicitly marked private. Checked before any envelope build / state read.
+    if ctx.no_ship() {
+        println!("ℹ {}", rust_i18n::t!("ship.no_ship_optout"));
+        return Ok(());
+    }
+
     // §3.3 opt-in gate: in hook mode (--no-hook, the SessionEnd path), only ship
     // when Mnemos is explicitly opted-in. codeforge-only users (no Mnemos) still
     // get dream distillation; ship becomes a clean no-op — never POSTs, never
