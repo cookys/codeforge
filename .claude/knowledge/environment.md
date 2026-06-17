@@ -81,4 +81,5 @@ git -c user.name=cookys -c user.email=cookys@stranity.com commit -m "..."
 - 任何剛 clone / 剛 rename / 剛 init 的 repo，**第一次 commit 之前**
 - 多 repo 各自不同 identity 的場景（GitHub no-reply email vs personal email vs work email）
 - 若 user 明確要求 "set git config for this repo permanently"，才允許 modify config — 預設一律走 `-c` override
+**⚠ codeforge 必須用 noreply email**（2026-06-17 踩到）：codeforge push 到 `github.com/cookys/codeforge` 時，GitHub 開了 **email privacy**，用 `cookys@gmail.com` commit 會在 `git push` 被擋（`push declined due to email privacy restrictions`）。**commit 當下就要帶** `-c user.email=2537196+cookys@users.noreply.github.com`（origin 既有 commit 全用此 email，`git log origin/main --format=%ae` 可確認）。若已用 gmail commit 了才發現，補救：`FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --env-filter '...gmail→noreply...' origin/main..HEAD` 重寫該範圍 author/committer email 再 push。
 **Related**: `codeforge git repo 需要獨立 git config` 條目歷史紀錄；MEMORY.md HARD RULE「NEVER update the git config」
