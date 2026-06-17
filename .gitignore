@@ -10,6 +10,9 @@
 
 # Runtime data (created by codeforge init / dream / learn)
 .codeforge/
+# session-digest 落盤片段(A′):明文 dev signal,絕不 commit。consumer repo 即使
+# 只 gitignore 自己的 .codeforge 子集,這條 ** 規則仍擋住 digests/。
+**/.codeforge/digests/
 
 # SQLite databases (defense in depth — also covered by .codeforge/)
 *.db
