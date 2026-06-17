@@ -130,13 +130,15 @@ pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result
 
     for entry in entries {
         let path = entry.path();
-        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+        // cursor key 用完整路徑(含 repo),避免跨 repo 同名檔(如各 repo 的 2026-06-17.jsonl)
+        // 在全域 state.db 共用同一 cursor → 互相擋編譯。
+        let cursor_key = path.to_string_lossy().to_string();
 
         // 取得上次編譯到的 offset
         let cursor: i64 = conn
             .query_row(
                 "SELECT last_offset FROM signal_cursors WHERE source_file = ?1",
-                rusqlite::params![&file_name],
+                rusqlite::params![&cursor_key],
                 |row| row.get(0),
             )
             .unwrap_or(0);
@@ -182,9 +184,11 @@ pub fn mark_compiled(
         .map(|m| m.len() as i64)
         .unwrap_or(0);
 
+    // cursor key = 完整路徑(含 repo),與 read_uncompiled 一致,避免跨 repo 共用 cursor。
+    let cursor_key = path.to_string_lossy().to_string();
     conn.execute(
         "INSERT OR REPLACE INTO signal_cursors (source_file, last_offset, updated_at) VALUES (?1, ?2, datetime('now'))",
-        rusqlite::params![&file_name, size],
+        rusqlite::params![&cursor_key, size],
     )?;
     Ok(())
 }
