@@ -64,7 +64,15 @@ async function main() {
   try {
     if (fs.existsSync(queuePath)) {
       const queue = JSON.parse(fs.readFileSync(queuePath, 'utf8'));
-      const pending = queue.items.filter(i => i.status === 'pending');
+      // Scope to THIS project. The improvement-queue is a shared global file that
+      // session-digest.js writes from every project; without scoping, this
+      // codeforge-clone-only hook also nags about other projects' items.
+      // session-digest tags new items with `project` = origin root. Legacy items
+      // predating that tag (no `project`) are unattributed and not surfaced here —
+      // backfill their `project` in the queue if they belong to this project.
+      const pending = queue.items.filter(i =>
+        i.status === 'pending' && i.project === PROJECT_ROOT
+      );
       if (pending.length > 0) {
         output.push(`${pending.length} pending improvement(s)`);
       }

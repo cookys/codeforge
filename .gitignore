@@ -22,6 +22,7 @@
 .claude/session-start-sha
 .claude/scripts/session-digest.log
 .claude/settings.local.json
+.claude/next-state.json
 **/CLAUDE.local.md
 
 # IDE / editor
