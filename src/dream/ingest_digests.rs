@@ -146,7 +146,7 @@ fn format_signal(sig: &serde_json::Value) -> Option<String> {
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
         {
-            parts.push(format!("{key}={val}"));
+            parts.push(format!("{key}={}", mask_secrets(val)));
         }
     }
     if parts.is_empty() {
@@ -159,9 +159,60 @@ fn format_signal(sig: &serde_json::Value) -> Option<String> {
     Some(content)
 }
 
+/// 粗略遮罩常見 credential/token,避免 secret 隨 dev signal 進腦(codeforge 無共用遮罩
+/// 函式;無 regex crate,用 prefix + 高熵長度啟發式,寧可多遮)。逐 token 檢查。
+fn mask_secrets(s: &str) -> String {
+    s.split(' ').map(mask_word).collect::<Vec<_>>().join(" ")
+}
+
+/// 遮一個以空白切出的詞:取 `=`/`:` 之後的值部分當候選(處理 KEY=secret /
+/// Authorization:token / 裸 token),候選像 secret 就替成 ***。
+fn mask_word(word: &str) -> String {
+    let val_start = word.rfind(['=', ':']).map(|i| i + 1).unwrap_or(0);
+    let (prefix, val_raw) = word.split_at(val_start);
+    let candidate =
+        val_raw.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
+    if !candidate.is_empty() && looks_secret(candidate) {
+        format!("{}{}", prefix, val_raw.replace(candidate, "***"))
+    } else {
+        word.to_string()
+    }
+}
+
+/// token 是否像 credential:已知前綴(sk-/ghp_/AKIA/AIza/xox…)或高熵 32+ 字串。
+fn looks_secret(t: &str) -> bool {
+    const PREFIXES: &[&str] = &[
+        "sk-", "ghp_", "gho_", "ghs_", "github_pat_", "xoxb-", "xoxp-", "xoxa-", "AKIA", "ASIA",
+        "AIza",
+    ];
+    if t.len() >= 12 && PREFIXES.iter().any(|p| t.starts_with(p)) {
+        return true;
+    }
+    // 高熵:32+ 連續 alnum/_/-(不含 '/' 以免遮路徑),且字母+數字混合。
+    t.len() >= 32
+        && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        && t.chars().any(|c| c.is_ascii_digit())
+        && t.chars().any(|c| c.is_ascii_alphabetic())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn masks_token_prefixes_and_high_entropy() {
+        // KEY=token(無空格)前綴遮
+        assert_eq!(mask_secrets("export GH=ghp_abcdefABCDEF1234567890"), "export GH=***");
+        // 裸高熵 token 遮
+        assert!(mask_secrets("got abcd1234efgh5678ijkl9012mnop3456").contains("***"));
+        // 一般文字不遮
+        assert_eq!(mask_secrets("修了 crontab 的 sed 問題"), "修了 crontab 的 sed 問題");
+        // 路徑不遮(含 /)
+        assert_eq!(
+            mask_secrets("檔案 /home/cookys/projects/mnemos/src"),
+            "檔案 /home/cookys/projects/mnemos/src"
+        );
+    }
 
     #[test]
     fn format_error_recovery() {
