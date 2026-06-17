@@ -214,7 +214,8 @@ ledger 是中央 Mnemos 腦的 episodic 輸入,**只該收「這個 repo、第�
 - **day-1 backfill**:對既有歷史 transcript 跑 `session-digest.js`(吃 `transcript_path`)產 digest → 下次 `dream` 的 `ingest-digests` 吸入。需先確認 transcript 保留期(見 `mnemos/docs/projects/HANDOFF-conversation-retention.md`)。
 - **防回灌/防重複**:不靠路徑黑名單,靠 Mnemos 端既有離峰 `dedup --scan`(= 睡眠鞏固);相似 atom 合併,mnemos 自身記憶若漏入也在此收斂。
 - **Cutover(收嚴前的舊資料)**:`origin` 欄是收嚴時新加。(a)**在途 signal**:收嚴前 `absorb` 標 `ClaudeCodeSession` 的未編譯 backlog,`origin_for` 已把 `ClaudeCodeSession` 一併判為 `absorbed`(該 variant 現已無其他生產者)→ 一編譯即被擋,免逐 repo 手清。(b)**已編譯舊 concept**(frontmatter 無 `origin` → 反序列化為 `""` → 不被 `!= "absorbed"` 擋)**不回溯**:各機上線前應清 per-machine 的 `<repo>/.codeforge/store/*`(gitignored runtime,重跑 `dream` 即以正確 origin 重建),否則首輪靠 Mnemos `dedup --scan` 收斂。
-- **隱私**:`ingest-digests` 不做 credential/PII 遮罩(codeforge 無共用遮罩函式);session-digest content 屬第一人稱 dev = work-tier,**依賴 Mnemos 端 sensitivity 分層**。若 transcript 夾帶 secret 風險升高,遮罩列 follow-up(對齊 Slack 萃取的 credential 遮罩做法)。
+- **隱私**:`ingest-digests` 對 error/correction 等值套 `mask_secrets`(手刻 prefix + 高熵啟發式,遮 sk-/ghp_/AKIA/AIza/xox… 與 32+ 高熵字串;路徑不遮);session-digest content 屬第一人稱 dev = work-tier,另依賴 Mnemos 端 sensitivity 分層。
+- **LLM backend(2026-06-17)**:digest 與 compile **優先走 `claude -p` headless**(codeforge 是 Claude Code 套件 → 免 API key、用訂閱、零 per-token 成本)。預設 model `opus`(env `CODEFORGE_DIGEST_MODEL`;bake-off 實測 ship digest prompt × haiku/sonnet/opus,**Opus 品質最高** —— title/detail/source_evidence 最正規,Haiku 會丟教訓+編假 evidence)。fallback 鏈:`claude -p` → `ANTHROPIC_API_KEY`(Haiku API)→ rule-based passthrough。`absorbed` 來源走 rule-based(ship 排除,不浪費 LLM)。模組 `src/llm.rs`;§6「Haiku Digest Pipeline」的直接 API 呼叫退為 fallback。
 
 ---
 
