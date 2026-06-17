@@ -123,19 +123,35 @@ fn origin_for(source: &l0::SignalSource) -> String {
 }
 
 async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
-    // 嘗試使用 Claude API（若有設定 ANTHROPIC_API_KEY）
-    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
-        if !api_key.is_empty() {
-            return compile_via_llm(&api_key, signal).await;
-        }
+    // absorbed(跨專案 memory)ship 一定排除(origin=="absorbed"),不值得花 LLM;走 rule-based
+    // 快速路徑,避免 dream 對一堆跨專案 memory 跑昂貴 claude -p。
+    if matches!(signal.source, l0::SignalSource::AbsorbedMemory) {
+        return compile_rule_based(signal);
     }
 
-    // Fallback：rule-based 分類（不需要 LLM）
+    let prompt = build_compile_prompt(signal);
+
+    // backend fallback 鏈:claude -p headless(免 key,品質最高)→ ANTHROPIC_API_KEY(Haiku)→ rule-based。
+    // 注意:parse 出 Ok(None)(quality 太低)是有效「跳過此 signal」,直接回,不降級到 rule-based。
+    if let Ok(text) = crate::llm::claude_p(&prompt, &crate::llm::digest_model()) {
+        if let Ok(opt) = parse_compile_response(&text, signal) {
+            return Ok(opt);
+        }
+    }
+    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
+        if !api_key.is_empty() {
+            if let Ok(text) = call_haiku_compile(&api_key, &prompt).await {
+                if let Ok(opt) = parse_compile_response(&text, signal) {
+                    return Ok(opt);
+                }
+            }
+        }
+    }
     compile_rule_based(signal)
 }
 
-async fn compile_via_llm(api_key: &str, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
-    let prompt = format!(
+fn build_compile_prompt(signal: &l0::Signal) -> String {
+    format!(
         r##"你是一個知識編譯器。將下方的 signal 編譯為結構化的 L1 知識條目。
 
 Signal 內容：
@@ -158,8 +174,11 @@ type 說明：
 
 若 signal 品質太低（無意義、重複、過短），回傳{{"quality": 0.0}}"##,
         signal.content
-    );
+    )
+}
 
+/// Haiku API fallback(僅當 claude -p 不可用且有 ANTHROPIC_API_KEY)。回原始回應文字。
+async fn call_haiku_compile(api_key: &str, prompt: &str) -> Result<String> {
     let client = reqwest::Client::new();
     let resp = client
         .post("https://api.anthropic.com/v1/messages")
@@ -172,15 +191,18 @@ type 說明：
         }))
         .send()
         .await?;
-
     if !resp.status().is_success() {
         anyhow::bail!("LLM API 錯誤：{}", resp.status());
     }
-
     let body: serde_json::Value = resp.json().await?;
-    let text = body["content"][0]["text"].as_str().unwrap_or("{}");
+    Ok(body["content"][0]["text"]
+        .as_str()
+        .unwrap_or("{}")
+        .to_string())
+}
 
-    // 從回應中提取 JSON
+/// 解析 LLM 回應 → L1Entry。quality<0.3 回 Ok(None)(有效跳過);JSON 壞回 Err(呼叫端 fallback)。
+fn parse_compile_response(text: &str, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
     let json_str = extract_json(text)?;
     let v: serde_json::Value = serde_json::from_str(&json_str)?;
 
