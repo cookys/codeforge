@@ -4,7 +4,9 @@
 
 ## Active
 
-_(none)_
+| Project | Description | Started |
+|---------|------------|---------|
+| [memory-recall-phase-b](2026-06-17-memory-recall-phase-b/README.md) | B16 Tier 2 — dream-compile mem0 式 ADD/UPDATE/DELETE/NOOP 對賬(殺 stale/矛盾)+ 統一 recency×importance×relevance ranking(refs/last_ref 進 `recall::rank()`)。T2.1 async worker defer→BACKLOG。P0+P1 + QG | 2026-06-17 🚧 |
 
 ## Archived
 

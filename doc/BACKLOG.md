@@ -136,8 +136,10 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 ## B16 — memory-recall Phase B / C(偷好偷滿的下一輪)
 
 **Area**: `src/dream/compile.rs`、`src/memory/recall.rs`、SessionEnd hook、L1 schema
-**Premise**: Phase A(本地 recall 注入器)已上線(2026-06-16,`local-recall` 專案)。design spec `doc/proposals/2026-06-16-memory-recall-and-stolen-patterns.md` 還有兩 tier 沒做:
-- **Phase B(Tier 2)**:async fire-and-forget worker(dream/ship 目前同步跑在 SessionEnd hook,量大卡 session 結束)、mem0 式 ADD/UPDATE/DELETE/NOOP 對賬(dream-compile 防 stale/矛盾累積)、統一 recency×importance×relevance 排序、**procedural-atom `nature` 欄位**(契約已 reserve,dream 具分類能力時填)。
+**Premise**: Phase A(本地 recall 注入器)已上線(2026-06-16,`local-recall` 專案)。design spec `doc/proposals/2026-06-16-memory-recall-and-stolen-patterns.md` 的後續 tier:
+- **Phase B(Tier 2)**:T2.2 mem0 式 ADD/UPDATE/DELETE/NOOP 對賬 + T2.3 統一 recency×importance×relevance 排序 → **2026-06-17 開做**(plan `doc/plans/2026-06-17-memory-recall-phase-b.md`)。**T2.1 async fire-and-forget worker 留此 backlog**(見下)。**procedural-atom `nature` 欄位**:只在 frontmatter 留位,分類邏輯歸 Phase C。
 - **Phase C(Tier 3,評估後選)**:本地語意 recall(FastEmbed+HNSW,取代/增補 FTS5 keyword)、失敗/卡關為一等記憶、typed observation/relation schema、矛盾偵測 + 兩段式信心衰減。
-**Trigger**:Phase B 當 (a) dream/ship 在 SessionEnd 開始覺得卡,或 (b) L1 出現可見的 stale/矛盾累積時。Phase C 當 keyword recall 品質證實不足(語意)、或想捕捉失敗 pattern 時。
-**Status 2026-06-16**:Phase A done + 上線;B/C 記為 enhancement,有 design spec 母本與 credits。
+**Trigger**:
+- **T2.1(async worker)**:當 dream/ship 在 SessionEnd 開始有感卡頓時開新 L。設計已收斂(留檔在 phase-b plan「OUT OF SCOPE」段):conditional enqueue + 同步 fallback —— 有 live daemon 才 `dream --background` emit `dream_scheduled` event 快速返回,無 daemon inline 同步跑(維持「永遠會 distill」、不回歸 ship-online)。2026-06-17 user decision defer:觸發條件未成立 + 紅利範圍窄(多數專案無 daemon)+ 動剛上線熱路徑風險不划算。
+- **Phase C**:當 keyword recall 品質證實不足(語意)、或想捕捉失敗 pattern 時。
+**Status 2026-06-17**:Phase A done;Phase B 的 T2.2+T2.3 開做;T2.1 + Phase C 記為 enhancement,有 design spec 母本與 credits。
