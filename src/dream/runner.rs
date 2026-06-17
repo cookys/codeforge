@@ -34,8 +34,8 @@ impl<'a> DreamRunner<'a> {
                     l1_updated = r.l1_updated;
                     if !self.quiet {
                         println!(
-                            "  compile  ✓ {} signals → {} 新增 {} 更新",
-                            compiled, l1_created, l1_updated
+                            "  compile  ✓ {} signals → {} 新增 {} 更新 {} 對賬略過",
+                            compiled, l1_created, l1_updated, r.l1_noop
                         );
                     }
                 }
