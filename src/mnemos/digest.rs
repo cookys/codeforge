@@ -17,6 +17,9 @@ pub fn select_l1_for_date(entries: &[L1Entry], ledger_date: &str) -> Vec<L1Entry
     entries
         .iter()
         .filter(|e| e.frontmatter.status == "active")
+        // ledger source 收嚴:只收第一人稱本 repo coding 經驗,排除 `dream absorb`
+        // 吸來的跨專案 ~/.claude/projects memory(origin == "absorbed"),不污染 Mnemos 腦。
+        .filter(|e| e.frontmatter.origin != "absorbed")
         .filter(|e| {
             e.frontmatter.created == ledger_date || e.frontmatter.updated == ledger_date
         })
@@ -212,6 +215,7 @@ mod tests {
                 last_ref: None,
                 strength: 1.0,
                 status: status.to_string(),
+                origin: "dev".to_string(),
             },
             title: topic.to_string(),
             body: body.to_string(),
@@ -230,6 +234,17 @@ mod tests {
         let sel = select_l1_for_date(&entries, "2026-05-15");
         let topics: Vec<&str> = sel.iter().map(|e| e.frontmatter.topic.as_str()).collect();
         assert_eq!(topics, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn excludes_absorbed_origin() {
+        // ledger 收嚴:absorb 吸來的跨專案 memory(origin=="absorbed")不該被 ship。
+        let mut absorbed = entry("x", "2026-05-15", "2026-05-15", "active", "body");
+        absorbed.frontmatter.origin = "absorbed".to_string();
+        let dev = entry("y", "2026-05-15", "2026-05-15", "active", "body");
+        let sel = select_l1_for_date(&[absorbed, dev], "2026-05-15");
+        let topics: Vec<&str> = sel.iter().map(|e| e.frontmatter.topic.as_str()).collect();
+        assert_eq!(topics, vec!["y"]);
     }
 
     #[test]
