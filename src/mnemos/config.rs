@@ -88,6 +88,30 @@ impl MnemosConfig {
         }
     }
 
+    /// Whether the user has explicitly opted into Mnemos shipping.
+    ///
+    /// Opt-in signal = presence of the config file (`~/.config/mnemos.env`) OR a
+    /// non-empty `MNEMOS_INGEST_URL` in the process env. When neither is present,
+    /// `ship --no-hook` (the SessionEnd path) is a clean no-op: dream still
+    /// distills L1 locally, but nothing is POSTed and nothing is queued to
+    /// `ship-failed/`. This is what lets codeforge-only users (no Mnemos) keep
+    /// distilling without accumulating dead-letter junk every session end.
+    ///
+    /// Sending data to a server is treated as an explicit opt-in, never triggered
+    /// implicitly by something happening to listen on the default port.
+    pub fn opted_in() -> bool {
+        let config_file_exists = Self::env_file_path().map(|p| p.exists()).unwrap_or(false);
+        let ingest_url_env = std::env::var("MNEMOS_INGEST_URL")
+            .ok()
+            .filter(|s| !s.is_empty());
+        Self::opted_in_from(config_file_exists, ingest_url_env.as_deref())
+    }
+
+    /// Pure opt-in decision, split out for deterministic testing.
+    fn opted_in_from(config_file_exists: bool, ingest_url_env: Option<&str>) -> bool {
+        config_file_exists || ingest_url_env.is_some()
+    }
+
     /// Ledger ingest endpoint (§8).
     pub fn ledger_url(&self) -> String {
         format!("{}/v1/ingest/ledger", self.base_url)
@@ -177,6 +201,18 @@ mod tests {
     fn token_optional() {
         let cfg = MnemosConfig::from_vars(&vars(&[("MNEMOS_TOKEN", "secret")]));
         assert_eq!(cfg.token.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn opted_in_requires_config_file_or_env() {
+        // No config file, no env → not opted in (clean no-op for codeforge-only users).
+        assert!(!MnemosConfig::opted_in_from(false, None));
+        // Config file present → opted in.
+        assert!(MnemosConfig::opted_in_from(true, None));
+        // Explicit ingest URL env → opted in even without the file.
+        assert!(MnemosConfig::opted_in_from(false, Some("http://127.0.0.1:8845")));
+        // Both present → opted in.
+        assert!(MnemosConfig::opted_in_from(true, Some("http://h:1")));
     }
 
     #[test]

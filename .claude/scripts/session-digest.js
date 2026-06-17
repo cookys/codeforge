@@ -821,6 +821,13 @@ function generateTranscriptImprovements(cwd, messages) {
   }
 
   if (added > 0) {
+    // Tag this run's new/updated items with their origin project root so the
+    // codeforge-clone-only SessionStart hook (check-improvements.js) can scope
+    // surfaced suggestions to the current project, instead of nagging about
+    // other projects' items in the shared global improvement-queue.
+    for (const it of queue.items) {
+      if (it.created === now && it.project === undefined) it.project = cwd;
+    }
     writeQueue(queue);
     log('INFO', `Transcript checks: ${added} new items (${editedFiles.size} files edited, ${invokedSkills.size} skills invoked, ${errorCounts.size} error types)`);
   }

@@ -15,6 +15,7 @@ mod inventory;
 mod learn;
 mod mnemos_cli;
 mod pet;
+mod recall;
 mod search;
 mod ship;
 mod snapshot;
@@ -275,6 +276,15 @@ pub enum MemoryAction {
     },
     /// 顯示記憶系統狀態
     Status,
+    /// 本地知識 recall：ranked lean index（供 SessionStart 注入；對稱於 mnemos-cli context，免 mnemos）
+    Context {
+        /// lean index token 預算（約值，超出截斷）
+        #[arg(long, default_value_t = crate::memory::recall::DEFAULT_MAX_TOKENS)]
+        max_tokens: usize,
+        /// SessionStart hook 模式：輸出 additionalContext JSON（無 active L1 則不輸出）
+        #[arg(long)]
+        hook: bool,
+    },
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -316,6 +326,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Memory { action } => match action {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),
             MemoryAction::Status => search::status(&ctx),
+            MemoryAction::Context { max_tokens, hook } => recall::run(&ctx, max_tokens, hook),
         },
         Commands::Dream { only, quiet } => dream::run(&ctx, only.as_deref(), quiet),
         Commands::Ingest { path, source } => ingest::run(&ctx, &path, &source),
