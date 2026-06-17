@@ -90,6 +90,10 @@ fn ingest_from_dir(
         if path.extension().map(|e| e != "json").unwrap_or(true) {
             continue;
         }
+        // 記讀取時 mtime:ingest 完刪檔前會再比對,避免刪掉「讀後被並行 hook 重寫」
+        // 的新檔(那會丟其未讀 signals)。session-digest.js 採 atomic write(temp+rename)
+        // → 重寫必換 mtime,可靠偵測。
+        let mtime_at_read = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
@@ -128,9 +132,25 @@ fn ingest_from_dir(
             }
         }
 
-        // ingest 完刪 digest 檔(A′:明文不長存)。刪失敗 → 退回標 `processed:true`
-        // 避免下次重收(下次再嘗試刪),不吞錯出聲告警。
-        if let Err(e) = std::fs::remove_file(&path) {
+        // ingest 完刪 digest 檔(A′:明文不長存)。**全 medium(吸 0 顆)也刪**:medium 本
+        // 就不入腦(設計如此),且不刪會讓明文多留到 30 天 cleanup → 與隱私目標相悖,故
+        // 一律刪,不保留(別採「ingested>0 才刪」)。
+        // 競態防護:只在「自讀取後 mtime 未變」時刪。若被並行 hook 重寫(新 mtime),不刪、
+        // 留待下次 ingest 重讀新內容——寧靠 Mnemos dedup --scan 重收,也不靜默丟未讀 signal。
+        let rewritten = match (
+            mtime_at_read,
+            std::fs::metadata(&path).and_then(|m| m.modified()).ok(),
+        ) {
+            (Some(a), Some(b)) => a != b,
+            _ => false, // 取不到 mtime → 當作沒變,維持「吸完即刪」舊行為。
+        };
+        if rewritten {
+            eprintln!(
+                "ℹ ingest-digests: {} 讀取後被改寫,本輪不刪,留待下次重讀(dedup 收斂)",
+                path.display()
+            );
+        } else if let Err(e) = std::fs::remove_file(&path) {
+            // 刪失敗 → 退回標 `processed:true` 避免下次重收(下次再嘗試刪),不吞錯出聲告警。
             eprintln!(
                 "⚠ ingest-digests: 刪 {} 失敗,退回標 processed 避免重收:{e}",
                 path.display()

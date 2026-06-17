@@ -1004,7 +1004,13 @@ async function main() {
   const digestFileName = `${dateStr}-${sessionIdShort}.json`;
   const digestPath = path.join(digestDir, digestFileName);
 
-  fs.writeFileSync(digestPath, JSON.stringify(digest, null, 2), 'utf8');
+  // Atomic write: write a temp file then rename into place, so a concurrent
+  // `dream` ingest never reads a half-written digest (and the ingest's
+  // mtime-guard can reliably detect a fresh rewrite). rename(2) is atomic on
+  // the same filesystem.
+  const tmpPath = `${digestPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(digest, null, 2), 'utf8');
+  fs.renameSync(tmpPath, digestPath);
   log('INFO', `Wrote digest: ${digestPath}`);
 
   // Cleanup old digests in this repo's digest dir.
