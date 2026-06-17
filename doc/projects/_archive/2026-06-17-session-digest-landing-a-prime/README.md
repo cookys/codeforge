@@ -25,11 +25,21 @@
 
 | # | Phase | 檔 | 狀態 |
 |---|-------|----|------|
-| P0 | session-digest.js 落點重設計(walk-up `.codeforge`、per-repo `digests/`、找不到 skip、cleanup per-repo) | `.claude/scripts/session-digest.js` | pending |
-| P1 | ingest_digests.rs per-repo dir + 移 cwd filter + ingest 完刪檔 + 過渡同讀舊路徑 | `src/dream/ingest_digests.rs` | pending |
-| P2 | per-repo no-ship opt-out(ship 端 no-op + ingest 端 skip) | `src/cli/ship.rs`, `src/dream/ingest_digests.rs` | pending |
-| P3 | `.gitignore` + spec §5.2 路徑更新 | `.gitignore`, `doc/specs/codeforge-ship.md` | pending |
-| P4 | §6 獨立 review + staging 驗收 + merge(finish-flow) | — | pending |
+| P0 | session-digest.js 落點重設計(walk-up `.codeforge`、per-repo `digests/`、找不到 skip、cleanup per-repo) | `.claude/scripts/session-digest.js` | ✅ `be6ec26` |
+| P1 | ingest_digests.rs per-repo dir + 移 cwd filter + ingest 完刪檔 + 過渡同讀舊路徑 | `src/dream/ingest_digests.rs` | ✅ `1529e42` |
+| P2 | per-repo no-ship opt-out(ship 端 no-op + ingest 端 skip) | `src/cli/ship.rs`, `src/dream/ingest_digests.rs` | ✅ `8ed4e15` |
+| P3 | `.gitignore` + spec §5.2 路徑更新 | `.gitignore`, `doc/specs/codeforge-ship.md` | ✅ `fd78e8b` |
+| P4 | §6 獨立 review + merge(finish-flow) | — | ✅ review `aac3a7f` / merge `443e31d` |
+
+## 完成(2026-06-17)
+
+merged 到 main `443e31d`(--no-ff)。770 tests 綠。§6 獨立 review:零 Critical,2 Major
+(刪檔競態 → 原子寫+mtime guard;medium 銷毀 → 駁回建議保留+註解)+ Minor 處置完,
+`fix(review): aac3a7f`。success criteria 1-6 e2e/單元實證 PASS,7(review)PASS。
+
+**部署待辦(L Session End / 各機)**:① 主機 `cargo install --path .` 重裝 binary;
+② reinstall global hooks(讓新 session-digest.js 生效;舊 0.0.4 仍寫全域 → 過渡路徑會吸);
+③ 過渡期觀察後砍舊全域 `~/.claude/session-digests/`;④ no-ship opt-out 逐機各自設。
 
 ## 接手鐵律(本專案)
 
