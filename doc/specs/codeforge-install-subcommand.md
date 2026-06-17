@@ -32,7 +32,7 @@ Audit of the 4 scripts under `.claude/scripts/`:
 | Script | Scope | Reason |
 |---|---|---|
 | `emit-session.js` | **global** | Just shells `codeforge emit` with cwd from stdin. Project-agnostic. |
-| `session-digest.js` | **global** | Reads transcript from stdin, writes to `~/.claude/session-digests/`. Project-agnostic. |
+| `session-digest.js` | **global** | Installed for all sessions, but writes **per-repo** to `<repoRoot>/.codeforge/digests/` (walks up cwd to nearest `.codeforge`; skips if none — A′ 2026-06-17). The hook itself is project-agnostic; landing is repo-scoped. |
 | `check-improvements.js` | **codeforge-repo-only** | Reads `<PROJECT_ROOT>/.claude/knowledge/INDEX.md`. Only meaningful inside the codeforge clone. |
 | `check-dev-flow.js` | **codeforge-repo-only** | Hardcodes codeforge's `src/` + Rust file patterns. |
 
