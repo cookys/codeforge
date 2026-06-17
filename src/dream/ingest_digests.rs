@@ -67,6 +67,11 @@ pub fn run(ctx: &db::Context) -> Result<IngestResult> {
         let empty = Vec::new();
         let signals = v.get("signals").and_then(|s| s.as_array()).unwrap_or(&empty);
         for sig in signals {
+            // 只收 high-confidence(對齊海馬 ripple 選擇性 +「high-confidence」承諾;
+            // self-correction 等 medium 略過,寧缺勿濫)。
+            if sig.get("confidence").and_then(|c| c.as_str()) != Some("high") {
+                continue;
+            }
             if let Some(text) = format_signal(sig) {
                 let signal = Signal::new(text, SignalSource::SessionDigest);
                 if writer.append(&signal).is_ok() {
@@ -75,10 +80,19 @@ pub fn run(ctx: &db::Context) -> Result<IngestResult> {
             }
         }
 
-        // 標記 processed 回寫(冪等鍵)。
+        // 標記 processed 回寫(冪等鍵)。回寫失敗不吞錯:出聲告警(下次可能重收,
+        // 靠 Mnemos 端離峰 dedup --scan 收斂)。
         v["processed"] = serde_json::Value::Bool(true);
-        if let Ok(s) = serde_json::to_string_pretty(&v) {
-            let _ = std::fs::write(&path, s);
+        match serde_json::to_string_pretty(&v) {
+            Ok(s) => {
+                if let Err(e) = std::fs::write(&path, &s) {
+                    eprintln!(
+                        "⚠ ingest-digests: 標記 {} processed 失敗(下次可能重收,靠 dedup 收斂):{e}",
+                        path.display()
+                    );
+                }
+            }
+            Err(e) => eprintln!("⚠ ingest-digests: 序列化 digest 失敗 {}:{e}", path.display()),
         }
         digests_processed += 1;
     }
