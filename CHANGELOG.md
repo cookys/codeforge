@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **記憶 recall Phase B(T2.2 + T2.3)** — `doc/plans/2026-06-17-memory-recall-phase-b.md`:
+  - **T2.3 統一 ranking** — `recall::rank` 從「strength 單因子排序」改為複合分數 `importance(strength) × recency × citation(refs)`。recency = `0.5^(age/90 天)`,age 對齊「active 集合裡最新的 effective date」(= `updated` 與 `last_ref` 取較新),純函式無 clock。`refs`/`last_ref` 本地引用訊號首次進入排序;近期被引用的舊筆記會復活到前排。
+  - **T2.2 mem0 式對賬** — `dream::compile` 在把新事實寫成新 slug 前,先 FTS 找既有相關 active 條目;有的話交 Haiku 判 ADD/UPDATE/DELETE/NOOP(JSON-in-text)。UPDATE 併入既有條(保留 created/strength/refs、union sources/links、bump updated);DELETE 把舊條標 `superseded-by:<slug>`(同 `dedup` 慣例)再寫新條;NOOP 不寫。一律偏向 ADD:無 API key / FTS 無命中 / 解析失敗 / target 越界都退回 ADD,絕不遺失知識。`CompileResult` 新增 `l1_noop`,dream 輸出印「N 對賬略過」。
+  - T2.1(async worker)依 2026-06-17 決策 defer 到 BACKLOG B16(觸發條件未成立、且擾動剛上線的 SessionEnd 鏈)。
 - **本地 recall(無 mnemos 的 READ 路徑)** — `codeforge memory context [--max-tokens][--hook]`:讀本地 active L1 → strength 排序 → budget 截斷成 **lean ranked index**(~1500 token,非 dump)→ 印 markdown 或(`--hook`)SessionStart `hookSpecificOutput.additionalContext` JSON;無 active L1 則 no-op。每條帶 citation `topic`,詳情走 `codeforge memory search`(progressive disclosure)。`codeforge install --hooks`/`--all` 把它接進 global SessionStart(非 plugin,因 CC issue #16538)。對稱於中央的 `mnemos-cli context`。完成記憶迴圈 absorb→distill→store→**recall** 的 READ 側。偷自 prior art(claude-mem lean-index/citation、SuperBrain「injection not storage」)。
 - `doc/specs/codeforge-memory-contract.md` — 共享 state(L0/L1/L2/improvement-queue)的 producer/consumer 明文契約 + L1 frontmatter schema(含 reserved `nature` 欄位)+ READ-path 注入契約。
 
@@ -18,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **dream compile 改為對賬式,不再盲目同 slug 覆蓋** — 新事實落在新 slug 時會先和既有相關條目對賬(T2.2);同 slug 仍 in-place 合併,且合併後一律回到 `active`(新訊號落在 superseded slug 視為「重新觀察」而復活,不會把新知識寫進看不到的死檔)。無行為破壞、無需重裝 hook;`memory context` 的浮現順序會因 T2.3 三因子排序而改變(近期被引用的條目排更前)。
 - **記憶 pipeline 跨專案上線** — `codeforge dream --quiet` → `codeforge ship --no-hook` 的 SessionEnd 鏈從 codeforge-clone-only 的 `--project-hooks` 移到 global `--hooks`/`--all`,在每個專案 session 結束都 per-project 萃取（hook CWD = 專案 root → per-cwd `.codeforge`）。`--project-hooks` 因 `ensure_in_codeforge_repo` 只能在 clone 跑,無法覆蓋其他專案;唯有 global 路徑能跨專案。`--project-hooks` 現只保留 dev scripts（check-improvements / check-dev-flow）。
 - `codeforge install --hooks`/`--all` 現會寫入 `cleanupPeriodDays: 3650`(只填未設值,`--force` 才覆蓋使用者選擇)。Claude Code 預設 30 天回收 session transcript,會在 dream/ship 萃取前刪掉;拉高留存讓 raw material 存活。
 
