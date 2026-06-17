@@ -27,6 +27,15 @@ impl<'a> DreamRunner<'a> {
 
         for op in ops {
             match *op {
+                "ingest-digests" => {
+                    let r = super::ingest_digests::run(self.ctx)?;
+                    if !self.quiet {
+                        println!(
+                            "  ingest-digests ✓ {} signals 從 {} 個 session digest 吸入",
+                            r.ingested, r.digests_processed
+                        );
+                    }
+                }
                 "compile" => {
                     let r = super::compile::run(self.ctx, &conn).await?;
                     compiled = r.signals_processed;

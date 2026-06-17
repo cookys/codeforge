@@ -12,6 +12,12 @@ pub enum SignalSource {
     WebChatChatGpt,
     Ingest { path: String },
     Hook { event: String },
+    /// `dream absorb` 收編的跨專案 ~/.claude/projects/*/memory（別人/別專案的記憶）。
+    /// 給專屬 source 以便 ship 排除（不污染 Mnemos 腦)。見 ledger source 收嚴。
+    AbsorbedMemory,
+    /// session-digest hook 從本 repo transcript 萃出的 high-confidence dev signal
+    /// (error-recovery / user-correction / self-correction)。第一人稱本 repo coding 經驗。
+    SessionDigest,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +96,8 @@ impl<'a> SignalWriter<'a> {
             SignalSource::WebChatChatGpt => "chatgpt",
             SignalSource::Ingest { .. } => "ingest",
             SignalSource::Hook { event } => event.as_str(),
+            SignalSource::AbsorbedMemory => "absorbed",
+            SignalSource::SessionDigest => "session-digest",
         };
 
         let preview = truncate_str(&signal.content, 80);

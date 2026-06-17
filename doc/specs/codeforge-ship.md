@@ -205,6 +205,15 @@ Mnemos 端把 `source_evidence` 當不透明 `serde_json::Value` 保留（只 fi
 4. 每個產出 lesson 的 `source_evidence` 至少帶該 L1 檔的 `l1_concept` ref；digest 若能對應到 session jsonl 行或 commit，additional ref 一併帶上。
 5. 去重：同 title 的 lesson 合併 detail（避免多 concept 檔講同件事重複成多 atom）。
 
+### 5.2 來源邊界：ledger 只收第一人稱本 repo coding 經驗（2026-06-17 收嚴）
+
+ledger 是中央 Mnemos 腦的 episodic 輸入,**只該收「這個 repo、第一人稱、真實 coding 經驗」**,不該夾帶別人/別專案的記憶。實作對齊大腦記憶機制(海馬只選擇性編碼第一人稱經驗、不回灌、不無差別倒灌；見 `mnemos/docs/research/2026-06-brain-memory-model/`)。
+
+- **`origin` 純度標記**:L1 concept frontmatter 帶 `origin`(`session`=session-digest 萃取 / `dev`=手動 learn 等本 repo / `absorbed`=`dream absorb` 吸的跨專案 `~/.claude/projects/*/memory`)。`select_l1_for_date` **排除 `origin == "absorbed"`** → absorb 的跨專案 memory 不進 ledger(仍留 codeforge 自己 MUD 用)。
+- **session-digest 接入(真料來源)**:`dream` 的第一個 step `ingest-digests` 讀 `~/.claude/session-digests/<date>-*.json`(SessionEnd/PreCompact hook 從 transcript 萃的 high-confidence error-recovery/user-correction/self-correction),過濾 `cwd == 本 repo` 且未 `processed` → 以 `SignalSource::SessionDigest` 寫進 signals(compile 後 `origin="session"`,ship 收)→ 標記 digest `processed`(冪等)。
+- **day-1 backfill**:對既有歷史 transcript 跑 `session-digest.js`(吃 `transcript_path`)產 digest → 下次 `dream` 的 `ingest-digests` 吸入。需先確認 transcript 保留期(見 `mnemos/docs/projects/HANDOFF-conversation-retention.md`)。
+- **防回灌/防重複**:不靠路徑黑名單,靠 Mnemos 端既有離峰 `dedup --scan`(= 睡眠鞏固);相似 atom 合併,mnemos 自身記憶若漏入也在此收斂。
+
 ---
 
 ## 6. Haiku Digest Pipeline
