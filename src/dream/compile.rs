@@ -123,9 +123,9 @@ fn origin_for(source: &l0::SignalSource) -> String {
 }
 
 async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
-    // absorbed(跨專案 memory)ship 一定排除(origin=="absorbed"),不值得花 LLM;走 rule-based
-    // 快速路徑,避免 dream 對一堆跨專案 memory 跑昂貴 claude -p。
-    if matches!(signal.source, l0::SignalSource::AbsorbedMemory) {
+    // ship 一定排除的來源(origin=="absorbed":AbsorbedMemory + 在途 ClaudeCodeSession backlog)
+    // 不值得花 LLM;走 rule-based 快速路徑。用 origin_for 當單一真相,避免漏掉 ClaudeCodeSession。
+    if origin_for(&signal.source) == "absorbed" {
         return compile_rule_based(signal);
     }
 
@@ -133,17 +133,22 @@ async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Optio
 
     // backend fallback 鏈:claude -p headless(免 key,品質最高)→ ANTHROPIC_API_KEY(Haiku)→ rule-based。
     // 注意:parse 出 Ok(None)(quality 太低)是有效「跳過此 signal」,直接回,不降級到 rule-based。
-    if let Ok(text) = crate::llm::claude_p(&prompt, &crate::llm::digest_model()) {
-        if let Ok(opt) = parse_compile_response(&text, signal) {
-            return Ok(opt);
-        }
+    // 每個 fallback transition 都出聲(對齊 ship.rs;否則 compile 靜默降級無法診斷品質下降)。
+    match crate::llm::claude_p(&prompt, &crate::llm::digest_model()) {
+        Ok(text) => match parse_compile_response(&text, signal) {
+            Ok(opt) => return Ok(opt),
+            Err(e) => eprintln!("  ⚠ compile: claude -p 回應 parse 失敗（{e}）— fallback"),
+        },
+        Err(e) => eprintln!("  ℹ compile: claude -p 不可用（{e}）— fallback API/rule"),
     }
     if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
         if !api_key.is_empty() {
-            if let Ok(text) = call_haiku_compile(&api_key, &prompt).await {
-                if let Ok(opt) = parse_compile_response(&text, signal) {
-                    return Ok(opt);
-                }
+            match call_haiku_compile(&api_key, &prompt).await {
+                Ok(text) => match parse_compile_response(&text, signal) {
+                    Ok(opt) => return Ok(opt),
+                    Err(e) => eprintln!("  ⚠ compile: Haiku 回應 parse 失敗（{e}）— rule-based"),
+                },
+                Err(e) => eprintln!("  ⚠ compile: Haiku 失敗（{e}）— rule-based"),
             }
         }
     }
