@@ -7,7 +7,15 @@ pub fn run(ctx: &db::Context, only: Option<&str>, quiet: bool) -> Result<()> {
 
     let ops: Vec<&str> = match only {
         Some(o) => vec![o],
-        None => vec!["compile", "lint", "dedup", "absorb", "decay", "track"],
+        None => vec![
+            "ingest-digests",
+            "compile",
+            "lint",
+            "dedup",
+            "absorb",
+            "decay",
+            "track",
+        ],
     };
 
     let runner = DreamRunner::new(ctx, quiet);

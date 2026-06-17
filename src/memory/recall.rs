@@ -203,6 +203,7 @@ mod tests {
                 last_ref: None,
                 strength,
                 status: status.to_string(),
+                origin: "dev".to_string(),
             },
             title: format!("title-{topic}"),
             body: body.to_string(),
