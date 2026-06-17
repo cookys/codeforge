@@ -54,6 +54,10 @@ pub async fn run(ctx: &db::Context, conn: &Connection) -> Result<CompileResult> 
                         final_entry.frontmatter.created = existing.frontmatter.created;
                         final_entry.frontmatter.refs = existing.frontmatter.refs;
                         final_entry.frontmatter.strength = existing.frontmatter.strength;
+                        // origin 不降級:既有為 dev/session(乾淨)就保留,別被後到的 absorbed 蓋掉。
+                        if matches!(existing.frontmatter.origin.as_str(), "dev" | "session") {
+                            final_entry.frontmatter.origin = existing.frontmatter.origin.clone();
+                        }
                     }
                     l1_updated += 1;
                 } else {
@@ -102,6 +106,16 @@ pub async fn run(ctx: &db::Context, conn: &Connection) -> Result<CompileResult> 
         l1_created,
         l1_updated,
     })
+}
+
+/// L1 origin 純度標記:absorbed(跨專案 memory,ship 排除)/ session(session-digest 萃取)/ dev(其餘本 repo)。
+fn origin_for(source: &l0::SignalSource) -> String {
+    match source {
+        l0::SignalSource::AbsorbedMemory => "absorbed",
+        l0::SignalSource::SessionDigest => "session",
+        _ => "dev",
+    }
+    .to_string()
 }
 
 async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
@@ -201,6 +215,7 @@ type 說明：
         last_ref: None,
         strength: 1.0,
         status: "active".to_string(),
+        origin: origin_for(&signal.source),
     };
 
     Ok(Some(l1::L1Entry {
@@ -251,6 +266,7 @@ fn compile_rule_based(signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
         last_ref: None,
         strength: 0.7, // rule-based 品質較低
         status: "active".to_string(),
+        origin: origin_for(&signal.source),
     };
 
     Ok(Some(l1::L1Entry {

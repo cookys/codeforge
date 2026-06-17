@@ -35,6 +35,10 @@ pub struct L1Frontmatter {
     pub last_ref: Option<String>, // 最後被引用時間
     pub strength: f32,            // ACT-R activation（0.0–1.0）
     pub status: String,           // active | superseded | archived
+    /// 來源純度：dev（本 repo coding 經驗）| session（session-digest）| absorbed（跨專案 memory）| ""（舊檔/未知）。
+    /// ship 用來排除 absorbed，不讓跨專案 memory 污染 Mnemos 腦。`#[serde(default)]` 讓既有無此欄的檔相容。
+    #[serde(default)]
+    pub origin: String,
 }
 
 impl Default for L1Frontmatter {
@@ -51,6 +55,7 @@ impl Default for L1Frontmatter {
             last_ref: None,
             strength: 1.0,
             status: "active".to_string(),
+            origin: String::new(),
         }
     }
 }

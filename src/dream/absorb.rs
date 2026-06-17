@@ -50,7 +50,7 @@ pub fn run(ctx: &db::Context) -> Result<AbsorbResult> {
                 if let Ok(content) = std::fs::read_to_string(&proj_entry) {
                     let content = content.trim().to_string();
                     if content.len() > 20 {
-                        let signal = Signal::new(content, SignalSource::ClaudeCodeSession);
+                        let signal = Signal::new(content, SignalSource::AbsorbedMemory);
                         if writer.append(&signal).is_ok() {
                             absorbed += 1;
                         }
