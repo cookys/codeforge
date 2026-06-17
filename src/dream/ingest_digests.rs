@@ -34,6 +34,13 @@ struct CwdFilter {
 pub fn run(ctx: &db::Context) -> Result<IngestResult> {
     let mut ingested = 0;
     let mut digests_processed = 0;
+
+    // per-repo opt-out(A′):`<repo>/.codeforge/no-ship` 存在 → 此 repo dev signal 不進腦,
+    // 連 ingest 都跳過(digest 檔留原處,等 session-digest cleanup 30 天過期清)。
+    if ctx.no_ship() {
+        return Ok(IngestResult { ingested, digests_processed });
+    }
+
     let writer = SignalWriter::new(ctx);
 
     // 1) per-repo digests(A′):`<repo>/.codeforge/digests/`。session-digest.js 已只把
@@ -375,6 +382,28 @@ mod tests {
 
         assert_eq!(ingested, 0);
         assert!(other.exists(), "別的 repo 未處理的 legacy digest 不該被刪(留給其 owning repo)");
+    }
+
+    #[test]
+    fn no_ship_marker_skips_ingest() {
+        let temp = TempDir::new().unwrap();
+        let ctx = test_ctx(&temp, "myrepo");
+        let digests = ctx.project_dir.join("digests");
+        let digest = write_digest(
+            &digests,
+            "2026-06-17-33333333.json",
+            serde_json::json!({
+                "processed": false,
+                "signals": [{"type":"user-correction","confidence":"high","correction":"不對這個要改掉重來一次"}]
+            }),
+        );
+        std::fs::write(ctx.project_dir.join("no-ship"), "").unwrap();
+
+        // run() 在 no_ship() 為 true 時提早 return,連舊全域目錄都不掃(故此測不碰真 home)。
+        let r = run(&ctx).unwrap();
+        assert_eq!(r.ingested, 0, "no-ship repo 不該 ingest");
+        assert!(digest.exists(), "no-ship 時 digest 檔保留原處(不刪)");
+        assert!(ctx.no_ship());
     }
 
     #[test]

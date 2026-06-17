@@ -68,6 +68,14 @@ impl Context {
     pub fn is_initialized(&self) -> bool {
         self.project_dir.exists()
     }
+
+    /// per-repo ship opt-out（A′ 2026-06-17）:`<repo>/.codeforge/no-ship` 標記存在 →
+    /// 此 repo 的 dev signal 不進腦(ingest-digests 跳過 + ship no-op)。讓「init 過但
+    /// 私人」的 repo 不外送(A′ 落點只擋沒 init 的;此標記補 init'd-but-private 的洞)。
+    /// gitignored runtime → 逐機各自設。
+    pub fn no_ship(&self) -> bool {
+        self.project_dir.join("no-ship").exists()
+    }
 }
 
 pub mod migrations {
