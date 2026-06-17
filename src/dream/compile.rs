@@ -137,7 +137,11 @@ fn merge_into(new: &l1::L1Entry, target: &l1::L1Entry) -> l1::L1Entry {
     merged.frontmatter.strength = target.frontmatter.strength;
     merged.frontmatter.refs = target.frontmatter.refs;
     merged.frontmatter.last_ref = target.frontmatter.last_ref.clone();
-    merged.frontmatter.status = target.frontmatter.status.clone();
+    // status is NOT copied: a merge yields a live, current entry. Update targets
+    // are already active (no-op); for a same-slug landing on a superseded entry
+    // this revives it to `active` so the new knowledge stays visible to recall
+    // rather than being written into a dead file.
+    merged.frontmatter.status = "active".to_string();
 
     let mut sources = target.frontmatter.sources.clone();
     for s in &new.frontmatter.sources {
@@ -240,7 +244,9 @@ fn apply_decision(
                 superseded.frontmatter.status =
                     format!("superseded-by:{}", l1::L1Entry::slugify(&entry.frontmatter.topic));
                 superseded.save()?;
-                // Drop the superseded entry from FTS so it won't resurface as a candidate.
+                // Re-sync FTS (status isn't an FTS column, so this is content-only).
+                // What actually keeps the superseded entry from resurfacing as a
+                // candidate is `fts_candidates`' read-time `status == "active"` filter.
                 fts_upsert_entry(fts, project_dir, &superseded)?;
             }
             entry.save()?;
@@ -672,5 +678,46 @@ mod tests {
         assert_eq!(merged.file_path, target.file_path);
         assert!(merged.frontmatter.links.contains(&"a".to_string()));
         assert!(merged.frontmatter.links.contains(&"b".to_string()));
+    }
+
+    #[test]
+    fn merge_into_revives_a_superseded_target_to_active() {
+        // A new signal landing on a superseded same-slug entry must revive it —
+        // otherwise the fresh knowledge is written into a dead (recall-invisible) file.
+        let dir = TempDir::new().unwrap();
+        let store = dir.path().join("store");
+        let mut target = entry(&store, "t", "old");
+        target.frontmatter.status = "superseded-by:something".to_string();
+        let new = entry(&store, "t", "new");
+
+        let merged = merge_into(&new, &target);
+        assert_eq!(merged.frontmatter.status, "active", "merge revives to active");
+    }
+
+    #[test]
+    fn apply_update_out_of_range_target_degrades_to_add() {
+        let dir = TempDir::new().unwrap();
+        let store = dir.path().join("store");
+        let conn = fts_conn();
+        let fts = FtsIndex::new(&conn);
+        let new = entry(&store, "fresh fact", "# t\n\nbody");
+
+        // No candidates but Update(0) → must not panic / drop; writes the new fact.
+        let applied = apply_decision(Reconcile::Update(0), new.clone(), &[], &fts, dir.path()).unwrap();
+        assert_eq!(applied, Applied::Added);
+        assert!(new.file_path.exists());
+    }
+
+    #[test]
+    fn apply_delete_out_of_range_target_still_adds_new() {
+        let dir = TempDir::new().unwrap();
+        let store = dir.path().join("store");
+        let conn = fts_conn();
+        let fts = FtsIndex::new(&conn);
+        let new = entry(&store, "fresh fact", "# t\n\nbody");
+
+        let applied = apply_decision(Reconcile::Delete(0), new.clone(), &[], &fts, dir.path()).unwrap();
+        assert_eq!(applied, Applied::Added);
+        assert!(new.file_path.exists());
     }
 }
