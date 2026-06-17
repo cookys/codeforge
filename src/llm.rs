@@ -6,6 +6,12 @@
 //! 最正規),Haiku 會丟教訓 + 編假 evidence。故預設 `opus`,由 `CODEFORGE_DIGEST_MODEL` 可調。
 //!
 //! 呼叫端 fallback 鏈:`claude -p`(本模組)→ `ANTHROPIC_API_KEY`(Haiku API)→ rule-based。
+//!
+//! 運維注意:
+//! - **cron PATH**:`claude` 常在 `~/.local/bin`,須在 cron 的 PATH 內(見 `scripts/codeforge_ship.sh`),
+//!   否則 cron 下 spawn 失敗 → 靜默退回 Haiku/passthrough(失去 Opus 品質)。
+//! - **#7263**:舊版 `claude -p` 大 stdin(>~7KB)可能 exit 0 但空 stdout;本機 claude 2.1.179
+//!   實測不重現,仍以空輸出 → Err 防衛(見 claude-code issue #7263)。
 
 use anyhow::{Context, Result};
 use std::io::Write;
@@ -57,7 +63,9 @@ pub fn claude_p(prompt: &str, model: &str) -> Result<String> {
     }
     let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if text.is_empty() {
-        anyhow::bail!("claude -p 回空輸出");
+        // exit 0 但空 stdout:大 prompt 可能觸發 headless empty-output(claude-code #7263)。
+        // 回 Err 讓呼叫端 fallback,並標明以便診斷「Opus 路徑靜默降級」。
+        anyhow::bail!("claude -p 回空輸出(exit 0、無 stdout;疑大 prompt 觸發 #7263)");
     }
     Ok(text)
 }
