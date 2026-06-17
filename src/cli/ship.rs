@@ -154,31 +154,39 @@ fn build_lessons(
         return Ok(vec![]);
     }
 
-    // Haiku digest when API key present; else passthrough.
-    let api_key = std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty());
-    let lessons = if let Some(key) = api_key {
-        let repo = repo_name(&ctx.project_dir);
-        let (head, branch) = git_head_branch(&ctx.project_dir);
-        let git_log = git_log_oneline(&ctx.project_dir, ledger_date);
-        let l1_block = digest::render_l1_block(&selected, project_parent);
-        let prompt = digest::build_prompt(&repo, ledger_date, &head, &branch, &git_log, &l1_block);
-        match rt.block_on(call_haiku(&key, &prompt)) {
-            Ok(json) => match digest::parse_digest_json(&json) {
-                Ok(ls) => ls,
-                Err(e) => {
-                    // §7.5: digest parse 失敗 → 不送 garbage；fallback 走 passthrough。
-                    eprintln!("⚠ digest JSON parse 失敗（{e}）— fallback passthrough");
-                    digest::passthrough_lessons(&selected, project_parent)
+    // digest prompt(各 backend 共用)。
+    let repo = repo_name(&ctx.project_dir);
+    let (head, branch) = git_head_branch(&ctx.project_dir);
+    let git_log = git_log_oneline(&ctx.project_dir, ledger_date);
+    let l1_block = digest::render_l1_block(&selected, project_parent);
+    let prompt = digest::build_prompt(&repo, ledger_date, &head, &branch, &git_log, &l1_block);
+    let pass = || digest::passthrough_lessons(&selected, project_parent);
+
+    // backend fallback 鏈:claude -p headless(免 key,品質最高)→ ANTHROPIC_API_KEY(Haiku)→ passthrough。
+    let lessons = match crate::llm::claude_p(&prompt, &crate::llm::digest_model()) {
+        Ok(json) => digest::parse_digest_json(&json).unwrap_or_else(|e| {
+            eprintln!("⚠ claude -p digest parse 失敗（{e}）— fallback passthrough");
+            pass()
+        }),
+        Err(e) => {
+            eprintln!("ℹ claude -p 不可用（{e}）— 試 ANTHROPIC_API_KEY / passthrough");
+            match std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty()) {
+                Some(key) => match rt.block_on(call_haiku(&key, &prompt)) {
+                    Ok(json) => digest::parse_digest_json(&json).unwrap_or_else(|e| {
+                        eprintln!("⚠ Haiku digest parse 失敗（{e}）— passthrough");
+                        pass()
+                    }),
+                    Err(e) => {
+                        eprintln!("⚠ Haiku digest 失敗（{e}）— passthrough");
+                        pass()
+                    }
+                },
+                None => {
+                    eprintln!("ℹ {}", rust_i18n::t!("ship.no_api_key"));
+                    pass()
                 }
-            },
-            Err(e) => {
-                eprintln!("⚠ Haiku digest 失敗（{e}）— fallback passthrough");
-                digest::passthrough_lessons(&selected, project_parent)
             }
         }
-    } else {
-        eprintln!("ℹ {}", rust_i18n::t!("ship.no_api_key"));
-        digest::passthrough_lessons(&selected, project_parent)
     };
 
     // Enrich evidence with today's commits (§5.1 rule 4) + merge same-title (rule 5).

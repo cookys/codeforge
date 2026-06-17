@@ -142,6 +142,11 @@ fn merge_into(new: &l1::L1Entry, target: &l1::L1Entry) -> l1::L1Entry {
     // this revives it to `active` so the new knowledge stays visible to recall
     // rather than being written into a dead file.
     merged.frontmatter.status = "active".to_string();
+    // origin 不降級:既有為 dev/session(乾淨來源)就保留,別被後到的 absorbed 蓋掉
+    // (對齊 origin-purity 規則 — ship 用 origin 排除 absorbed 跨專案 memory)。
+    if matches!(target.frontmatter.origin.as_str(), "dev" | "session") {
+        merged.frontmatter.origin = target.frontmatter.origin.clone();
+    }
 
     let mut sources = target.frontmatter.sources.clone();
     for s in &new.frontmatter.sources {
@@ -256,25 +261,32 @@ fn apply_decision(
     }
 }
 
-/// Ask Haiku how the new fact reconciles against the candidate entries (T2.2).
-/// Falls back to `Add` with no API key or on any error — reconciliation must
-/// never drop knowledge it can't confidently place.
+/// Ask the LLM how the new fact reconciles against the candidate entries (T2.2).
+/// Mirrors `compile_signal`'s backend chain: claude -p headless → `ANTHROPIC_API_KEY`
+/// (Haiku) → `Add`. Any unavailable backend, error, or unparseable reply degrades to
+/// `Add` — reconciliation must never drop knowledge it can't confidently place.
 async fn reconcile_decision(new: &l1::L1Entry, candidates: &[l1::L1Entry]) -> Reconcile {
-    let api_key = match std::env::var("ANTHROPIC_API_KEY") {
-        Ok(k) if !k.is_empty() => k,
-        _ => return Reconcile::Add,
-    };
-    match reconcile_via_llm(&api_key, new, candidates).await {
-        Ok(d) => d,
-        Err(_) => Reconcile::Add,
+    let prompt = build_reconcile_prompt(new, candidates);
+    let n = candidates.len();
+
+    // 1) claude -p headless (key-free, preferred — same backend as compile).
+    if let Ok(text) = crate::llm::claude_p(&prompt, &crate::llm::digest_model()) {
+        return parse_reconcile_decision(&text, n);
     }
+    // 2) Haiku API fallback when a key is present.
+    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
+        if !api_key.is_empty() {
+            if let Ok(text) = call_haiku_compile(&api_key, &prompt).await {
+                return parse_reconcile_decision(&text, n);
+            }
+        }
+    }
+    // 3) No backend → safe default.
+    Reconcile::Add
 }
 
-async fn reconcile_via_llm(
-    api_key: &str,
-    new: &l1::L1Entry,
-    candidates: &[l1::L1Entry],
-) -> Result<Reconcile> {
+/// Build the reconciliation prompt: the new fact vs a numbered candidate list.
+fn build_reconcile_prompt(new: &l1::L1Entry, candidates: &[l1::L1Entry]) -> String {
     let body_preview: String = new.body.chars().take(400).collect();
     let mut cand_block = String::new();
     for (i, c) in candidates.iter().enumerate() {
@@ -289,7 +301,7 @@ async fn reconcile_via_llm(
         cand_block.push_str(&format!("{i}. {}: {snip}\n", c.title));
     }
 
-    let prompt = format!(
+    format!(
         r##"你是知識庫的對賬器。有一條「新事實」和若干「既有條目」，判斷新事實該如何併入。
 
 新事實：
@@ -305,28 +317,7 @@ async fn reconcile_via_llm(
 - delete：新事實與某既有條目矛盾、使其過時 → 取代該條目（target = 該編號）
 不確定時一律選 add（絕不可遺失知識）。只輸出 JSON。"##,
         title = new.title,
-    );
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .post("https://api.anthropic.com/v1/messages")
-        .header("x-api-key", api_key)
-        .header("anthropic-version", "2023-06-01")
-        .json(&serde_json::json!({
-            "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 256,
-            "messages": [{"role": "user", "content": prompt}]
-        }))
-        .send()
-        .await?;
-
-    if !resp.status().is_success() {
-        anyhow::bail!("reconcile API 錯誤：{}", resp.status());
-    }
-
-    let v: serde_json::Value = resp.json().await?;
-    let text = v["content"][0]["text"].as_str().unwrap_or("{}");
-    Ok(parse_reconcile_decision(text, candidates.len()))
+    )
 }
 
 /// Parse the reconciliation LLM's JSON into a [`Reconcile`]. Any malformed output,
@@ -351,20 +342,55 @@ fn parse_reconcile_decision(text: &str, n_candidates: usize) -> Reconcile {
     }
 }
 
+/// L1 origin 純度標記:absorbed(跨專案 memory,ship 排除)/ session(session-digest 萃取)/ dev(其餘本 repo)。
+fn origin_for(source: &l0::SignalSource) -> String {
+    match source {
+        // AbsorbedMemory(收嚴後)與 ClaudeCodeSession(收嚴前 absorb 的唯一歷史生產者,
+        // 現已無其他生產者)皆視為跨專案 absorbed → ship 排除。後者確保收嚴前的「在途」
+        // backlog signal(尚未編譯的舊 absorb,仍標 ClaudeCodeSession)一編譯即被擋,
+        // 不需逐 repo 手清 signals(review Major 1)。
+        l0::SignalSource::AbsorbedMemory | l0::SignalSource::ClaudeCodeSession => "absorbed",
+        l0::SignalSource::SessionDigest => "session",
+        _ => "dev",
+    }
+    .to_string()
+}
+
 async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
-    // 嘗試使用 Claude API（若有設定 ANTHROPIC_API_KEY）
-    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
-        if !api_key.is_empty() {
-            return compile_via_llm(&api_key, signal).await;
-        }
+    // ship 一定排除的來源(origin=="absorbed":AbsorbedMemory + 在途 ClaudeCodeSession backlog)
+    // 不值得花 LLM;走 rule-based 快速路徑。用 origin_for 當單一真相,避免漏掉 ClaudeCodeSession。
+    if origin_for(&signal.source) == "absorbed" {
+        return compile_rule_based(signal);
     }
 
-    // Fallback：rule-based 分類（不需要 LLM）
+    let prompt = build_compile_prompt(signal);
+
+    // backend fallback 鏈:claude -p headless(免 key,品質最高)→ ANTHROPIC_API_KEY(Haiku)→ rule-based。
+    // 注意:parse 出 Ok(None)(quality 太低)是有效「跳過此 signal」,直接回,不降級到 rule-based。
+    // 每個 fallback transition 都出聲(對齊 ship.rs;否則 compile 靜默降級無法診斷品質下降)。
+    match crate::llm::claude_p(&prompt, &crate::llm::digest_model()) {
+        Ok(text) => match parse_compile_response(&text, signal) {
+            Ok(opt) => return Ok(opt),
+            Err(e) => eprintln!("  ⚠ compile: claude -p 回應 parse 失敗（{e}）— fallback"),
+        },
+        Err(e) => eprintln!("  ℹ compile: claude -p 不可用（{e}）— fallback API/rule"),
+    }
+    if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
+        if !api_key.is_empty() {
+            match call_haiku_compile(&api_key, &prompt).await {
+                Ok(text) => match parse_compile_response(&text, signal) {
+                    Ok(opt) => return Ok(opt),
+                    Err(e) => eprintln!("  ⚠ compile: Haiku 回應 parse 失敗（{e}）— rule-based"),
+                },
+                Err(e) => eprintln!("  ⚠ compile: Haiku 失敗（{e}）— rule-based"),
+            }
+        }
+    }
     compile_rule_based(signal)
 }
 
-async fn compile_via_llm(api_key: &str, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
-    let prompt = format!(
+fn build_compile_prompt(signal: &l0::Signal) -> String {
+    format!(
         r##"你是一個知識編譯器。將下方的 signal 編譯為結構化的 L1 知識條目。
 
 Signal 內容：
@@ -387,8 +413,11 @@ type 說明：
 
 若 signal 品質太低（無意義、重複、過短），回傳{{"quality": 0.0}}"##,
         signal.content
-    );
+    )
+}
 
+/// Haiku API fallback(僅當 claude -p 不可用且有 ANTHROPIC_API_KEY)。回原始回應文字。
+async fn call_haiku_compile(api_key: &str, prompt: &str) -> Result<String> {
     let client = reqwest::Client::new();
     let resp = client
         .post("https://api.anthropic.com/v1/messages")
@@ -401,15 +430,18 @@ type 說明：
         }))
         .send()
         .await?;
-
     if !resp.status().is_success() {
         anyhow::bail!("LLM API 錯誤：{}", resp.status());
     }
-
     let body: serde_json::Value = resp.json().await?;
-    let text = body["content"][0]["text"].as_str().unwrap_or("{}");
+    Ok(body["content"][0]["text"]
+        .as_str()
+        .unwrap_or("{}")
+        .to_string())
+}
 
-    // 從回應中提取 JSON
+/// 解析 LLM 回應 → L1Entry。quality<0.3 回 Ok(None)(有效跳過);JSON 壞回 Err(呼叫端 fallback)。
+fn parse_compile_response(text: &str, signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
     let json_str = extract_json(text)?;
     let v: serde_json::Value = serde_json::from_str(&json_str)?;
 
@@ -448,6 +480,7 @@ type 說明：
         last_ref: None,
         strength: 1.0,
         status: "active".to_string(),
+        origin: origin_for(&signal.source),
     };
 
     Ok(Some(l1::L1Entry {
@@ -498,6 +531,7 @@ fn compile_rule_based(signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
         last_ref: None,
         strength: 0.7, // rule-based 品質較低
         status: "active".to_string(),
+        origin: origin_for(&signal.source),
     };
 
     Ok(Some(l1::L1Entry {
@@ -543,6 +577,7 @@ mod tests {
                 last_ref: Some("2026-02-01".to_string()),
                 strength: 0.8,
                 status: "active".to_string(),
+                origin: "dev".to_string(),
             },
             title: format!("title for {topic}"),
             body: body.to_string(),
