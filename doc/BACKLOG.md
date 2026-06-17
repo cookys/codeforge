@@ -141,3 +141,15 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 - **Phase C(Tier 3,評估後選)**:本地語意 recall(FastEmbed+HNSW,取代/增補 FTS5 keyword)、失敗/卡關為一等記憶、typed observation/relation schema、矛盾偵測 + 兩段式信心衰減。
 **Trigger**:Phase B 當 (a) dream/ship 在 SessionEnd 開始覺得卡,或 (b) L1 出現可見的 stale/矛盾累積時。Phase C 當 keyword recall 品質證實不足(語意)、或想捕捉失敗 pattern 時。
 **Status 2026-06-16**:Phase A done + 上線;B/C 記為 enhancement,有 design spec 母本與 credits。
+
+---
+
+## B17 — session-digest A′ 落地的 review 殘留(低優先)
+
+**Area**: `.claude/scripts/session-digest.js`、`src/dream/ingest_digests.rs`
+**Premise**: A′ 落地(2026-06-17,`443e31d`)§6 獨立 review 留下幾個低優先項,已判定接受/駁回,記為 enhancement:
+- **mtime-guard 殘留亞秒競態**:ingest 刪檔前比對 mtime,但 coarse-mtime(秒級)FS 上「讀後同一 mtime-tick 內被改寫」仍可能刪到新檔。已配 atomic write 大幅收窄;若要全閉,改 rename-to-staging(`X.json`→`X.json.ingesting` 後處理)+ orphan 回收。實務機率極低(09:00 離峰 cron、session 多不活躍),故未做。
+- **`findCodeforgeRoot` 吞 EACCES**:`statSync` 把權限錯一律當「非 repo」→ skip 不寫,fail-safe 正確但不可診斷。可加「非 ENOENT errno 時 log」便於排查。
+- **improvement-queue 非原子寫**(pre-existing,本次 out of scope):`session-digest.js` 寫 `improvement-queue.json` 用 `writeFileSync` 但 doc-comment 宣稱 atomically。可比照 digest 改 temp+rename。
+**Trigger**: (1) 真的觀察到 worktree/權限情境的靜默 capture gap;或 (2) 多 dream 並行/高頻 PreCompact 環境下出現 digest 競態丟失;或 (3) 順手清 improvement-queue 寫入時。
+**Status 2026-06-17**: review 已處置(接受現狀);記為 enhancement。
