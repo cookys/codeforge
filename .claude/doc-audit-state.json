@@ -1,6 +1,6 @@
 {
   "last_full_audit": "2026-06-18",
-  "last_full_audit_result": "2nd full sweep: 22 confirmed (5 WRONG / 8 STALE / 9 MISSING), 0 refuted — residual after 1st-round remediation; all 22 fixed on fix/full-sweep-drift. (1st sweep was 48; scoped run caught 4 more.)",
+  "last_full_audit_result": "convergence trend across rounds (WRONG count is the meaningful signal): round1=48 (13W/27S/8M), scoped=4, round2=22 (5W/8S/9M), round3=11 (1W/7S/3M). All fixed. WRONG 13→5→1 nearly converged; STALE/MISSING is a long asymptotic tail (mature-repo phrasing/minor-flag drift, non-deterministic finders surface different subsets each round).",
   "workflow": "doc-code-drift-audit",
   "note": "Full 6-domain sweep is expensive (~1-2M tokens). Staleness threshold 30 days — see .claude/dev-flow-config.md → Doc Audit Staleness. Entry point: autopilot:doc-sync."
 }
