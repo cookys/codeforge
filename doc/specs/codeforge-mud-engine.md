@@ -11,6 +11,8 @@
 > - **STALE — MOB 掃描頻率（§2 MOB 生成規則）**：不是「每 tick(60s) 掃」，而是**每 10 tick**掃一次（`mob_scanner.rs: SCAN_EVERY_N_TICKS = 10`，`should_scan_this_tick`）。
 > - **STALE — Elite 門檻（§2）**：scanner 不算 cyclomatic complexity；用 file-level branching keyword 計數，門檻是 **branches ≥ 20**（`ELITE_BRANCH_THRESHOLD = 20`），非「複雜度 >10」。
 > - **NOT YET IMPLEMENTED — Pet Ability 戰鬥效果（§2.5）**：Quick Eye 命中率、Focus Strike Boss 暴擊、Tome Sense 掉率等 ability 效果**未實裝**。`pet/ability.rs` 只是 display-only catalog，用來在 XP bar 旁顯示「下一個解鎖」；`combat.rs` 無 skill/ability 邏輯。§2.5 的 `hit_chance *= 1.3` / `damage *= 2.0` pseudocode 是 ability 設計，不是 live tick 公式（實際 hit_chance 只用 `(atk+ver)/(def+difficulty)` clamp [0.05,0.95]，與 strategy/ability 無關）→ BACKLOG B18。
+> - **STALE — MOB 種類（§2）**：scanner 實際只產 4 種 MOB —— Zombie（TODO/FIXME≥5）、Boss（fn≥100 行）、Elite（branch keyword≥20）、Ghost（dead code）。§2 列的 **Void Creature 🕳️（missing test coverage → drain DEF）未實作**，scanner 無 test-coverage heuristic。
+> - **STALE — 村莊清單（§2.5 Lv50 legendary 表）**：實際村莊就 5 個（rust / python / typescript / go / javascript）。§2.5 列的 **ML 🧠 與 開源基金會 🐙 村莊不存在**；javascript 反而沒有 legendary 條目。整張 Lv50 legendary 表為設計稿，未實裝。
 
 ## Vision
 

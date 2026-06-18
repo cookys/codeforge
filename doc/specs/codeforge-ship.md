@@ -156,6 +156,8 @@ CodeForge 端 POST 的 body 是一個 **envelope**，內含 source-specific **pa
 
 ### 4.3 `provenance` 建議內容（Mnemos 原樣保留，不解讀）
 
+> ⚠️ 部分欄位**未實作**（見頂部 banner (d)）：`build_provenance` 實際只產 `{lesson_count, l1_concept_files, git_head_sha, git_branch, haiku_model}`。`raw_signal_count` / `source_jsonl_paths` / `digest_cost_usd` 未實作；`haiku_model` 永遠硬寫 `HAIKU_MODEL` 常數（不反映實際 backend）→ BACKLOG B18。
+
 `provenance` 整包進 `documents.ref_locator_json.provenance`，是 ledger 級的「這份 digest 是從哪些 raw 來源熬出來的」稽核資料。建議放：
 
 | key | 值 | 用途 |
@@ -201,6 +203,8 @@ Mnemos 端把 `source_evidence` 當不透明 `serde_json::Value` 保留（只 fi
 
 ## 5. Source 讀取（L1 Reading Strategy）
 
+> ⚠️ 本節含**未實作的設計**（見頂部 banner (b)(c)(d)）：ship 實際只讀 **L1 + git log**。Session jsonl 掃描、`.codeforge/codeforge.db` metrics query、次日 00:00 半開窗口（實為同日 23:59 閉區間）皆未實作 → BACKLOG B18。下文表格保留為設計稿。
+
 `codeforge ship` digest 的輸入來自四個本地來源。讀取窗口由 `ledger_date`（預設今日 UTC）決定：`[<date>T00:00:00Z, <date+1>T00:00:00Z)`。
 
 | 來源 | 路徑 | 讀取方式 | 用途 |
@@ -237,6 +241,8 @@ ledger 是中央 Mnemos 腦的 episodic 輸入,**只該收「這個 repo、第�
 ---
 
 ## 6. Haiku Digest Pipeline
+
+> ⚠️ 標題與下文以 Haiku 為主述為**過時用詞**（見頂部 banner (a)）。實際 backend 三層：`claude -p`（預設 Opus，免 key，主力）→ `ANTHROPIC_API_KEY`(Haiku) → rule-based。「Haiku」一詞保留為歷史標題。
 
 把「當日 L1 entries（已 compiled markdown）+ git log 摘要 + session jsonl 線索」reduce 成結構化 `lessons[]`。沿用既有 `src/dream/compile.rs` 的 Anthropic API 呼叫模式（`claude-haiku-4-5-20251001`、`x-api-key`、`anthropic-version: 2023-06-01`、抽 JSON）。
 
@@ -300,6 +306,8 @@ git HEAD: {git_head_sha} ({git_branch})
 
 ### 6.3 No-API fallback
 
+> ⚠️ **過時**（見頂部 banner (a)）：無 `ANTHROPIC_API_KEY` 並非直接 passthrough。若 `claude` CLI 可用，第一層 `claude -p`（Opus）仍會 digest；只有 `claude -p` 與 Haiku API 都不可用才 rule-based passthrough。
+
 `ANTHROPIC_API_KEY` 未設時：不做 LLM digest，直接把當日 active L1 entries **一條一 lesson** passthrough（title=L1 title、detail=body 摘要、source_evidence=該 L1 `l1_concept` ref）。品質較低但仍 citable，且不阻塞 ship。記 warn。
 
 ---
@@ -336,6 +344,8 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 - 預設 `codeforge ship`（非 `--no-hook`、非 `--dry-run`）開頭先掃 `ship-failed/`，依 `ship_at` 升序逐一重送（走 §7.2 retry）；成功則刪檔。再 digest 今日。
 - `--resend`：只做上述補送，不 digest 今日。
 - `--no-hook`：跳過 piggyback（避免拖慢 hook）。靠下次互動式 `codeforge ship` 或排程 `--resend` 清 queue。
+- flush 時遇 **4xx**（payload 被拒）：不刪檔，移到 `~/.codeforge/ship-rejected/` 隔離（silent-data-loss 紅線防護），繼續 flush 其餘。
+- flush 時遇 **持續不可達（Exhausted）**：break 停止 flush 剩餘 queue（留待下次），不刪檔。
 
 ### 7.5 Digest 失敗（POST 之前）
 
@@ -343,6 +353,8 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 - 空 lessons：依 §5.1 rule 2，預設不送。
 
 ### 7.6 ship-state（避免重複 ship 同一日）
+
+> ⚠️ **CODE LAGS DESIGN**（見頂部 banner (e)）：下文「已 ship 過 → skip digest + POST」是設計順序；實作先跑完整 digest 才查 already_shipped，只 skip POST（digest 已浪費）→ BACKLOG B18。
 
 - 成功 ship 後記 `~/.codeforge/ship-state.json`：`{ "<repo>": { "<ledger_date>": "<ship_id>", ... } }`。
 - 預設模式 ship 今日前先查 state：若今日已成功 ship 過 → skip digest + POST（記 info「already shipped today」），但仍跑 ship-failed/ piggyback。`--date` 重跑同樣會被 state 擋（要強制請先手動刪 state entry）。`--dry-run` 不寫也不查 state。
@@ -369,10 +381,13 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 
 `codeforge mnemos-cli context|cite|cite-detect` 是另一個 subcommand。**已實作（v0.0.4）**；未拆出獨立 spec 檔（原規劃的 `codeforge-mnemos-cli.md` 從未建立）—— 行為見 CHANGELOG `[0.0.4]` 與 [`../concepts.md`](../concepts.md) §4。
 
-`ship` 與 `mnemos-cli cite` 的協作：
+> ⚠️ **NOT YET IMPLEMENTED — auto-cite-on-ship**：以下「ship 結束順便偵測 + 回寫」是**設計目標，尚未接線**。`ship` 不呼叫 cite，SessionEnd hook 鏈也不含 cite-detect（見 §10）。目前 citation 回寫只能**手動**跑 `codeforge mnemos-cli cite-detect <transcript>`。→ BACKLOG B18。
+
+`ship` 與 `mnemos-cli cite` 的**設計**協作（待實作）：
 - ship 結束時順便偵測「本 session transcript 是否引用任何 Mnemos atom」。
 - 偵測到 → 對每個 atom 呼叫 `mnemos-cli cite <atom_id>`（write-back → Mnemos `atom.citation_count++`）。
 - Sprint 1 用 fulltext_match heuristic；Sprint 5+ 改 Haiku。
+- **confidence**：cite-detect（自動偵測）用 `0.5`；手動 `mnemos-cli cite <atom_id>` 用 `0.7`。
 
 > 本 spec 只負責 `ship`（L2 ledger 產出）。cite write-back 的精確 contract 見 CHANGELOG `[0.0.4]` 的 `mnemos-cli cite` 條目與 Mnemos `10-source-contract.md` §11。
 

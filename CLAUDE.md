@@ -224,7 +224,7 @@ CodeForge and CodePower are used together. Understanding the relationship preven
 
 ### Statusline (global)
 
-`codeforge statusline` is invoked by **all Claude Code sessions** across all projects — not just the CodeForge repo. The statusline hook in `~/.claude/settings.json` (CodePower) calls `codeforge statusline` to display the 6-line pet panel. Changes to the statusline affect every project's session header.
+`codeforge statusline` is invoked by **all Claude Code sessions** across all projects — not just the CodeForge repo. The statusline hook in `~/.claude/settings.json` (CodePower) calls `codeforge statusline` to display the 5-line pet panel (+ right-column pet art). Changes to the statusline affect every project's session header.
 
 ### Dream (session-end, all projects)
 
