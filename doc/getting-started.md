@@ -12,11 +12,10 @@
 
 ## Prerequisites
 
-- **Rust stable** — `rustup` from <https://rustup.rs> if you don't have
-  it. The `cargo install` route is currently the only supported path;
-  binary releases (cargo-binstall, `curl | sh`) are on the roadmap, see
-  [`doc/plans/release-pipeline.md`](plans/release-pipeline.md) once
-  shipped.
+- **Rust stable** — `rustup` from <https://rustup.rs> (only needed for the
+  `cargo install` route). Pre-built binaries are also available via the
+  `curl | sh` installer and `cargo binstall codeforge` — see the
+  [README Install section](../README.md#install) for all three options.
 - **Claude Code** — <https://claude.com/claude-code> if you don't.
 - **(optional) Node 20+** — only needed for the SessionStart / PreToolUse
   hooks (not the statusline). Skip if you only want the statusline.
@@ -146,10 +145,12 @@ change. Try `/clear` or restart Claude Code.
   card.
 - `codeforge world` — render the world map (codebase as zones).
 
-For the optional SessionStart / PreToolUse / SessionEnd hooks
-(auto-tracking sessions, codebase health checks, dream-on-close), see
-[`doc/specs/codeforge-install-subcommand.md`](specs/codeforge-install-subcommand.md)
-— `codeforge install --hooks` is on the roadmap.
+For the SessionStart / SessionEnd / PreCompact hooks (session tracking,
+local recall, dream-on-close memory pipeline), run `codeforge install --all`
+(statusline + global hooks). See the
+[README "First-time Claude Code hook setup"](../README.md#first-time-claude-code-hook-setup)
+section and [`doc/specs/codeforge-install-subcommand.md`](specs/codeforge-install-subcommand.md).
+These flags are shipped, not roadmap.
 
 ## Troubleshooting
 
