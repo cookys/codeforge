@@ -97,8 +97,8 @@ codeforge init
 # log a learning (L0 raw signal)
 codeforge learn "tokio::select! preserves cancellation across branches"
 
-# compile L0 → L1 (uses Anthropic Haiku)
-export ANTHROPIC_API_KEY=sk-ant-...
+# compile L0 → L1 (uses the LLM backend chain: claude -p → Haiku → rule-based)
+# no API key needed if the `claude` CLI is on your PATH; see Data & Privacy
 codeforge dream
 
 # search compiled knowledge
@@ -113,6 +113,8 @@ codeforge statusline
 
 For the global memory store pattern (one shared store across projects), see [`.env.example`](.env.example) — set `CODEFORGE_DIR=~/.codeforge/global`.
 
+**New here?** [`doc/concepts.md`](doc/concepts.md) explains how CodeForge actually works — solo vs. brain-connected operation, the `dream`/`ship` memory pipeline, and the pet system — in plain terms.
+
 ## First-time Claude Code hook setup
 
 CodeForge hooks come in two layers, each scoped to a different responsibility:
@@ -121,7 +123,6 @@ CodeForge hooks come in two layers, each scoped to a different responsibility:
 
 - `check-improvements.js` (SessionStart) — surfaces unprocessed digests + improvement queue
 - `check-dev-flow.js` (PreToolUse) — enforces dev-flow before code touches
-- `codeforge dream --quiet` (SessionEnd) — compiles L0 → L1 via Haiku
 
 These use `${CLAUDE_PROJECT_DIR}` (Claude Code's documented env var for the project root, expanded before each hook spawn), so the committed file works in every clone without modification.
 
@@ -131,12 +132,11 @@ If you need to regenerate it (e.g., after a settings.json corruption), run:
 codeforge install --project-hooks --force --yes
 ```
 
-(This currently rewrites the script-based entries but does not yet model the `codeforge dream` SessionEnd entry — until that's tracked, manual edit is required for that line. See improvement-queue.)
-
 **Layer 2 — Product-wide hooks** (installed globally to `~/.claude/settings.json`):
 
 - `emit-session.js` (SessionStart + SessionEnd) — session boundary signals
-- `session-digest.js` (PreCompact + SessionEnd) — captures errors/corrections to `~/.claude/session-digests/`
+- `session-digest.js` (PreCompact + SessionEnd) — captures errors/corrections to per-repo `.codeforge/digests/`
+- `codeforge dream --quiet` → `codeforge ship --no-hook` (SessionEnd) — the memory pipeline: distill L0 → L1 in every project, then ship to Mnemos if opted in (clean no-op otherwise). See [`doc/concepts.md`](doc/concepts.md).
 
 These fire in **every** Claude Code session (any project), not just inside the codeforge clone. Install once after first build:
 
@@ -189,7 +189,7 @@ This makes CodeForge the **coding source** for Mnemos's multi-source brain (alon
 ## Data & Privacy
 
 - All data stays on your machine in `.codeforge/` (per-project) or `$CODEFORGE_DIR` (global).
-- When `ANTHROPIC_API_KEY` is set, your raw signals (the text you pass to `codeforge learn`) are sent to Anthropic's `claude-haiku-4-5` model for L0 → L1 compilation. This is subject to [Anthropic's privacy policy](https://www.anthropic.com/privacy).
+- `dream`/`ship` compile your signals via an LLM. The backend is a fallback chain: `claude -p` (the Claude Code CLI, default, no key) → `ANTHROPIC_API_KEY` (direct Haiku API, only if set) → a local rule-based pass (no LLM). The first two routes send the text to Anthropic's models and are subject to [Anthropic's privacy policy](https://www.anthropic.com/privacy); the rule-based fallback sends nothing off-machine. See [`doc/concepts.md`](doc/concepts.md) for the full flow.
 - When `codeforge ship` runs (Mnemos Sprint 1+), the L2 ledger is POSTed to your **local** Mnemos daemon at `127.0.0.1:8845` — same machine, no external upload. Mnemos itself stores data locally in `~/.mnemos/data/`.
 - The project author collects no telemetry and runs no servers.
 - `.codeforge/codeforge.db` (SQLite) and `.codeforge/signals/*.jsonl` contain your raw inputs and compiled knowledge — both are gitignored by default.
