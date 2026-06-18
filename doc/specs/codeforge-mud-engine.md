@@ -157,15 +157,20 @@ codeforge statusline  # ← 已完成
 
 ### MOB 生成規則
 
+**As-shipped**（`src/daemon/mob_scanner.rs`）—— 每 **10 個 tick**（tick 間隔 60s，故 ≈10 分鐘）掃描一次 current Zone，產 **4 種** MOB：
+
 ```
-每個 tick（60s）掃描 current Zone：
-  
-  高 cyclomatic complexity (>10)  → Elite Mob ⚔️  (高 HP，多 EXP)
-  TODO / FIXME count > 5         → Zombie Horde 🧟 (弱，數量多)
-  Function > 100 lines           → Boss Mob 🐉    (需要多 tick 才打完)
-  Dead code (unused imports)     → Ghost 👻       (容易一擊必殺)
-  Duplicate code block           → Doppelganger 🪞 (分裂，清不完)
-  Missing test coverage          → Void Creature 🕳️ (drain DEF)
+TODO / FIXME count >= 5          → Zombie Horde 🧟 (弱，數量多)
+Function length > 100 lines      → Boss Mob 🐉    (需要多 tick 才打完)
+branching-keyword count >= 20    → Elite Mob ⚔️  (高 HP，多 EXP；branch-count proxy，非真 cyclomatic)
+Dead code (unused)               → Ghost 👻       (容易一擊必殺)
+```
+
+**Planned（Phase 3，未實作；`MobKind` enum 已留位但 scanner 無 heuristic）**：
+
+```
+Duplicate code block             → Doppelganger 🪞 (分裂，清不完)
+Missing test coverage            → Void Creature 🕳️ (drain DEF)
 ```
 
 ### 戰鬥計算
@@ -214,6 +219,10 @@ codeforge strategy scholar
 ---
 
 ## 2.5 Pet Ability 系統
+
+> ⚠️ **整節為設計稿 — 戰鬥效果全部未實作。** 唯一 as-shipped 的是 `src/pet/ability.rs` 的 **display-only catalog**（在 XP bar 旁顯示「下一個解鎖」名稱）。`combat.rs` 無任何 ability/skill 邏輯；下列「通用 Ability 解鎖表」「Village 專屬 Ability」「戰鬥計算更新」的效果（Quick Eye 命中率、Focus Strike 暴擊、Iron Skin 反傷…）皆**尚未生效**。以下表格描述的是**規劃中**的能力，不是現行行為 → BACKLOG B18。
+>
+> 另注：village 實際只有 **5 個**（rust / python / typescript / go / javascript）；下方 Lv50 表列的 **ML 🧠 / 開源基金會 🐙 村莊不存在**，且 javascript 無 legendary 條目 —— 整張 Lv50 表為設計稿。
 
 ### 設計原則
 
