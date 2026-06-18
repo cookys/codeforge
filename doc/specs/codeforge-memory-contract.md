@@ -31,7 +31,7 @@ sources: [<L0 signal id>...]
 links: ['[[topic]]'...]              # wikilink 關聯（≥2）
 refs: <int>                          # 被引用次數
 last_ref: <ts|null>
-strength: <0.0..1.0>                 # ACT-R activation（recall ranking 主鍵）
+strength: <0.0..1.0>                 # ACT-R activation；recall ranking 的 importance 因子（score = importance × recency × citation，見 src/memory/recall.rs::score）
 status: active | superseded | archived
 # --- RESERVED（Phase B 由 dream 填,consumer 現在不可依賴) ---
 # nature: procedural | declarative   # 是否「可複用 how-to/規則」→ skill 萃取候選
@@ -45,8 +45,9 @@ body:第一個 `# ` 行為 title;其後為內文。
 
 ## 3. READ-path 契約(本地 recall 注入)
 
-- `codeforge memory context [--max-tokens N] [--hook]` 讀本地 active L1 → strength
-  排序 → budget 截斷 → **lean ranked index**(非 dump)。
+- `codeforge memory context [--max-tokens N] [--hook]` 讀本地 active L1 → 統一 recall
+  score 排序(importance × recency × citation,T2.3;importance = ACT-R strength)→
+  budget 截斷 → **lean ranked index**(非 dump)。
 - `--hook`:輸出 Claude Code SessionStart `hookSpecificOutput.additionalContext` JSON;
   無 active L1 → 不輸出(no-op)。裝在 **global settings.json** SessionStart(非 plugin
   hooks.json — GitHub #16538 後者注入不可靠)。
