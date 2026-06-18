@@ -125,18 +125,24 @@ If `Last audited:` in `doc/BACKLOG.md` is >14 days ago: flag to user for full au
 
 ## Doc-Code Drift Audit
 
-Docs drift from code over time. Two reusable workflows live in `.claude/workflows/`
-(report-only — they never edit; you triage + fix per the policy below).
+Docs drift from code over time. **Entry point: `autopilot:doc-sync`** — the generic,
+portable drift-audit skill. It reads `.claude/doc-drift-config.md` (this repo's 6
+domains) + `.claude/dispatch-config.md` (`## Doc Drift Audit` chain) and runs in
+**scoped** (cheap, per-diff, the L-size default) or **full** (whole-repo, periodic /
+big-change) mode. Report-only — you triage + fix per the policy below.
 
-| Workflow | Cost | When |
+CodeForge ships the Claude-Code `Workflow` implementations as the fast path
+(`dispatch-config.md` points the chain at them); `native` is the portable fallback:
+
+| Workflow (CC fast-path) | Cost | Maps to doc-sync mode |
 |----------|------|------|
-| `doc-drift-scoped` | cheap (~1-3 agents) | **Default** at L-size doc-sync. Pass `args` = base ref (e.g. `"main"`). Audits only the docs describing the modules this diff touched. |
-| `doc-code-drift-audit` | EXPENSIVE (~2M tokens, ~56 agents) | Full 6-domain sweep. OFFER (don't auto-run) when an L-size change touches **user-facing behavior OR 3+ modules**; or periodically (see staleness below). |
+| `.claude/workflows/doc-drift-scoped.js` | cheap (~1-3 agents) | **scoped** — pass `args` = base ref (e.g. `"main"`). Default at L-size doc-sync. |
+| `.claude/workflows/doc-code-drift-audit.js` | EXPENSIVE (~2M tokens, ~56 agents) | **full** — 6-domain sweep. OFFER when an L-size change touches **user-facing behavior OR 3+ modules**; or periodically (staleness below). |
 
-Invoke by name: `Workflow({ name: "doc-drift-scoped", args: "main" })` /
-`Workflow({ name: "doc-code-drift-audit" })`. Both require the user to have
-opted into workflows (see Workflow tool rules). Never run either as a blocking
-per-commit gate — they are doc-sync aids, not quality gates.
+Invoke `autopilot:doc-sync` (preferred — picks the right implementation via dispatch
+chain), or call a workflow directly: `Workflow({ name: "doc-drift-scoped", args: "main" })`.
+Workflow runs require workflow opt-in (see Workflow tool rules). Never run as a blocking
+per-commit gate — doc-sync is an aid, not a quality gate.
 
 **Fix policy (per-item triage on confirmed findings):**
 - User-facing docs (README / CLAUDE.md / concepts / getting-started / .env.example / CHANGELOG) → always correct to current code reality.
