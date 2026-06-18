@@ -36,7 +36,7 @@ cd ~/projects/codeforge
 cargo install --path .
 ```
 
-Output ends with `Installed package codeforge v0.0.1`. The binary lands
+Output ends with `Installed package codeforge v0.0.5` (or the current crate version). The binary lands
 at `~/.cargo/bin/codeforge`.
 
 Quick check:

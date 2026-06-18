@@ -71,6 +71,8 @@ dream（與 ship、AI commentary）呼叫 LLM 時，走的是**三層 fallback**
 
 **所以 `ANTHROPIC_API_KEY` 是 optional，不是必要的** —— 只要你機器上有 `claude` CLI，第一層就夠用了。每一層降級都會印 warning 讓品質下降可見。
 
+> 例外：`origin == "absorbed"` 的 signal（跨專案吸收的 `AbsorbedMemory`、過渡期 `ClaudeCodeSession` backlog）**跳過整條 LLM 鏈、直接走 rule-based** —— 它們是二手知識、不值得花 LLM，且不會被 ship。
+
 > 設計理由：2026-06-17 的 bake-off 顯示 `claude -p`（Opus）品質明顯優於 Haiku（Haiku 會漏教訓、捏造 evidence），且免 per-token 費用，故列為主力。
 
 ### 寫什麼
@@ -89,7 +91,7 @@ L1 store 的 `.md` 檔（frontmatter 帶 `origin` 欄位：`session` / `absorbed
 
 ### 讀什麼
 
-當天的 active L1 concepts（`origin != "absorbed"`，只送本 repo 第一手 coding 經驗）+ git log（當天 commit，當作 commit evidence）+ db metrics（provenance）。
+當天的 active L1 concepts（`origin != "absorbed"`，只送本 repo 第一手 coding 經驗）+ git log（當天 commit，當作 commit evidence）。provenance 僅由 lessons + git head/branch 組成（`lesson_count` / `l1_concept_files` / `git_head_sha` / `git_branch` / `haiku_model`）—— 不 query SQLite db metrics。
 
 > 註：spec `codeforge-ship.md` 另有「掃 session jsonl 取 source_evidence locator」的設計，但**目前實作尚未做**（`SourceEvidence::session_jsonl` 是 dead_code、digest prompt 無 session 線索 block）。ship 實際只吃 L1 + git。
 
@@ -172,7 +174,7 @@ CodePower（鬥技場，公開競技）與 CodeForge（鍛造間，私人累積�
 
 - **跨專案共用 statusline**：`codeforge statusline` 被所有 Claude Code session 呼叫（全域 hook），同一隻寵物面板在每個專案都看得到。
 - **XP 來自任一專案**：上面 §5 的事件來自任何 repo 的活動，寵物在你所有工作中持續成長。
-- **Clan content skeleton**：`src/clan/`（`ClanContentProvider` trait、`HttpClanContentProvider` 讀 `~/.codeforge/config.toml` 的 `[codepower]` 設定）已有骨架，但標 `#[allow(dead_code)]`，**尚未接線**到 `src/pet/village.rs`（仍是 5 個 hardcoded village）。
+- **Clan content skeleton**：`src/clan/`（`ClanContentProvider` trait、`HttpClanContentProvider` 讀 `~/.codeforge/config.toml` 的 `[codepower]` 設定）已有骨架（`mod.rs` 的 re-export 用 `#[allow(unused_imports)]` 抑制），**尚未接線**到 `src/pet/village.rs`（仍是 5 個 hardcoded village）。
 
 ### 📋 Phase 5 roadmap（尚未實作）
 

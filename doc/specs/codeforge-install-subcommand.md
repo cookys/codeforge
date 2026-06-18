@@ -34,6 +34,16 @@ a few ways — see ⚠️ below. Audited: 2026-06-18.
 > - **Uninstall is a top-level `codeforge uninstall` subcommand**
 >   (`--statusline` / `--hooks` / `--settings-path` / `--quiet`), not an
 >   `install --uninstall` flag.
+>
+> **Blanket note on the implementation-shape sections (§0 module layout, §1
+> script delivery, §4 test plan, §5 success message):** these describe the
+> *proposed* build, not as-shipped. Reality: install is a **single
+> `src/cli/install.rs` file** (no `src/cli/install/` dir); only **two**
+> scripts are embedded via `include_str!` and extracted (`HOOK_SCRIPTS` =
+> emit-session.js + session-digest.js — check-improvements/check-dev-flow are
+> run in-place, never extracted); there is **no `tests/install.rs`** (no
+> repo-root `tests/` dir); and the success message has no `(N types)` count
+> or node-probe line. Treat §0/§1/§4/§5 as historical design sketch.
 
 ## 0. Module layout
 
