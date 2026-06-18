@@ -166,5 +166,7 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 - **provenance 擴充欄位**：`codeforge-ship.md` §4.3 設計 `raw_signal_count`(從 db 算)/`source_jsonl_paths`/`digest_cost_usd`。`build_provenance` 只產 5 個基本欄位。
 - **ship-state 省 digest**：§7.6 設計「已 ship 過 → skip digest + POST」，code 先 digest 才查 already_shipped，只 skip POST（浪費一次 LLM 呼叫）。
 - **Pet Ability 戰鬥效果**：`codeforge-mud-engine.md` §2.5 的 Quick Eye/Focus Strike/Tome Sense 效果未實裝；`ability.rs` 只是 display-only catalog，`combat.rs` 無 ability 邏輯。
-**Trigger**: 各子項獨立 —— 想讓 ledger 帶 session 證據 / 想要 cost telemetry / 想省重複 digest / 想做 ability 戰鬥深度時，分別開 S~L 實作並清掉對應 spec 的 ⚠️ 標記。
-**Status 2026-06-18**: audit 已把 doc 側全部更新成現實 + 標記設計目標;code 側未動,記為 enhancement。其餘 40+ 條 drift（純 stale/missing）已於 `feature/doc-drift-remediation` 一次修正。
+- **auto-cite-on-ship**（full sweep 2026-06-18 補）：`codeforge-ship.md` §9 設計 ship 結束自動偵測 transcript 引用的 atom → 回寫 cite。實作沒接線；cite-detect 只是手動子命令、不在 SessionEnd hook 鏈。citation 正常 session 不會自動累加。
+- **Void Creature MOB + Lv50 legendary 村莊**（full sweep 2026-06-18 補）：`codeforge-mud-engine.md` §2 的 Void（missing test coverage→drain DEF）MOB 未實作（scanner 只產 Zombie/Boss/Elite/Ghost 4 種）；§2.5 Lv50 legendary 表列的 ML / 開源基金會 村莊不存在（實際 5 村莊，且 javascript 無 legendary 條目）。
+**Trigger**: 各子項獨立 —— 想讓 ledger 帶 session 證據 / 想要 cost telemetry / 想省重複 digest / 想做 ability 戰鬥深度 / 想自動 cite / 想加 MOB 種類或村莊時，分別開 S~L 實作並清掉對應 spec 的 ⚠️ 標記。
+**Status 2026-06-18**: audit 已把 doc 側全部更新成現實 + 標記設計目標;code 側未動,記為 enhancement。純 stale/missing 的 drift（首輪 48 條 + scoped 4 條 + full sweep 22 條）已分別修正落 doc。
