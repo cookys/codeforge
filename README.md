@@ -118,7 +118,7 @@ codeforge pet
 codeforge statusline
 ```
 
-More commands: `codeforge memory search|status|context`, `tui` / `attach [--size PCT]` (full TUI + Local Map; `--size` sets companion-pane width %), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world [--refresh]` (zone map; `--refresh` rescans L1), `ingest <path> [--source claude|chatgpt|markdown|auto]` (import external history), `craft` / `inventory` / `use` (loot), `snapshot [--days N]` (ASCII activity card; `--days` sets the lookback window), `commentary on|off|list [-n N]|test [kind]` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event>` (push an event into the daemon inbox; used by hooks), `ship [--date YYYY-MM-DD] [--dry-run] [--no-hook] [--resend]` / `mnemos-cli cite [--matched-text]|cite-detect|context [--topic|--max|--max-sensitivity|--with-themes]` (Mnemos integration). Run `codeforge --help` for the full tree.
+More commands: `codeforge memory search|status|context`, `tui` / `attach [--size PCT]` (full TUI + Local Map; `--size` sets companion-pane width %), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world [--refresh]` (zone map; `--refresh` rescans L1), `ingest <path> [--source claude|chatgpt|markdown|auto]` (import external history), `craft` / `inventory` / `use` (loot), `snapshot [--days N]` (ASCII activity card; `--days` sets the lookback window), `commentary on|off|list [-n N]|test [kind]` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event> [-f KEY=VALUE]... [--json <JSON>]` (push an event into the daemon inbox; used by hooks), `ship [--date YYYY-MM-DD] [--dry-run] [--no-hook] [--resend]` / `mnemos-cli cite [--matched-text]|cite-detect <transcript> [--topic|--max]|context [--topic|--max|--max-sensitivity|--with-themes]` (Mnemos integration). Run `codeforge --help` for the full tree.
 
 For the global memory store pattern (one shared store across projects), see [`.env.example`](.env.example) — set `CODEFORGE_DIR=~/.codeforge/global`.
 
@@ -148,7 +148,7 @@ codeforge install --project-hooks --force --yes
 - `codeforge memory context --hook` (SessionStart) — injects a lean ranked L1 index as additionalContext (local recall; no-op when the project has no active L1)
 - `codeforge dream --quiet` → `codeforge ship --no-hook` (SessionEnd) — the memory pipeline: distill L0 → L1 in every project, then ship to Mnemos if opted in (clean no-op otherwise). See [`doc/concepts.md`](doc/concepts.md).
 
-Across SessionStart / SessionEnd / PreCompact (3 hook types).
+Across SessionStart / SessionEnd / PreCompact (3 hook types). `--hooks`/`--all` also set the top-level `cleanupPeriodDays = 3650` in settings.json (unless you already set a non-null value) so Claude Code doesn't reclaim session transcripts before dream/ship distil them.
 
 These fire in **every** Claude Code session (any project), not just inside the codeforge clone. Install once after first build:
 
@@ -208,7 +208,7 @@ This makes CodeForge the **coding source** for Mnemos's multi-source brain (alon
 
 ## Tech Stack
 
-Rust 2021, clap 4, rusqlite (bundled SQLite, WAL), tokio, hecs ECS, crossterm TUI, rust-i18n, reqwest. LLM for `dream compile` / AI commentary via the backend chain `claude -p` (Claude Code CLI, default) → Anthropic Haiku API (fallback) → rule-based.
+Rust 2021, clap 4, rusqlite (bundled SQLite, WAL), tokio, hecs ECS, crossterm TUI, rust-i18n, reqwest. `dream compile` / `ship` use the 3-layer LLM chain `claude -p` (Claude Code CLI, default) → Anthropic Haiku API (fallback) → rule-based. AI commentary uses a 2-layer path only — Anthropic Haiku API when `ANTHROPIC_API_KEY` is set, else rule-based (it never calls `claude -p`).
 
 ## Disclaimer
 

@@ -125,7 +125,7 @@ The statusline panel should now show:
 - Your model name + workspace + git branch (line 1)
 - Token usage bars: 5h / 7d / context (line 2)
 - Your pet's location, level, HP, XP, stats (lines 3-4)
-- Memory status + codeforge version (line 5)
+- Memory status + Claude Code session version (line 5; the version chip is CC's session version, not codeforge's)
 - ASCII pet portrait on the right
 
 If you see only the minimal no-pet statusline (a 2-line panel: identity
