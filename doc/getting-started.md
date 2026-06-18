@@ -20,8 +20,8 @@
 - **(optional) Node 20+** — needed by the JS hook scripts (not the
   statusline): global Layer-2 hooks `emit-session.js` (SessionStart +
   SessionEnd) + `session-digest.js` (SessionEnd + PreCompact), and the
-  clone-only PreToolUse `check-dev-flow.js`. Skip if you only want the
-  statusline.
+  two clone-only dev hooks `check-improvements.js` (SessionStart) +
+  `check-dev-flow.js` (PreToolUse). Skip if you only want the statusline.
 - **(optional) `ANTHROPIC_API_KEY`** — NOT required. `codeforge dream`
   (memory compilation, L0 → L1) uses a fallback chain: `claude -p` (the
   Claude Code CLI, no key) → this key (Haiku API) → rule-based. Set it only

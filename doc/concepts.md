@@ -156,7 +156,7 @@ codebase 是世界地圖、技術債是怪物、pet 是你的角色。
 | `session_start` | +3 |
 | `file_saved` | +1 |
 
-升級時 `xp_to_next` 約 ×1.5、四維 stats 各 +1。（兩條路徑算法略異：daemon 權威 leveling 用 `xp_to_next.saturating_add(xp_to_next/2).max(100)`；CLI live-overlay 用 `*1.5` 並夾 `.min(10M)` 防 u32 overflow。）
+升級時四維 stats 各 +1、`xp_to_next` 約 ×1.5。**daemon 權威 leveling**（`check_levelup`）每升一級另外 `hp_max += 10`、`hp` 補滿到 `hp_max`，`xp_to_next = xp_to_next + xp_to_next/2`（`.max(100)`）。**CLI live-overlay**（`PetState::add_xp`）只算 `*1.5`（夾 `.min(10M)` 防 u32 overflow），不動 hp。
 
 ### daemon 寫 / CLI 讀（write ownership）
 
