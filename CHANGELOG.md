@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> Cargo.toml is already at `0.0.5`; this section is the pending **0.0.5** release (not yet git-tagged). Rename to `## [0.0.5] - <date>` and tag `v0.0.5` at release time.
+
 ### Added
 
 - **記憶 recall Phase B(T2.2 + T2.3)** — `doc/plans/2026-06-17-memory-recall-phase-b.md`:
