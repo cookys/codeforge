@@ -444,4 +444,3 @@ dream→ship 鏈安裝在 **global** `~/.claude/settings.json` SessionEnd（`cod
 - ✅ integration（手動 e2e）：真 server `/v1/ingest/ledger` → 200 accepted（見上 e2e 已實證）。
 - ✅ SessionEnd hook 鏈上線（global） + `ship --no-hook` opt-in gate（本次新增,§11「上線」）。
 - CLAUDE.md update（CodeForge 新增 ship 角色 + production critical path 註明）。
-```
