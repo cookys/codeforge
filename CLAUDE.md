@@ -238,9 +238,12 @@ The CodePower repo is the primary test environment for Phase 2 features:
 - Phase 2 TUI will render in the CodePower terminal context
 - This allows testing with real workload before generalizing
 
-### Shared API Key
+### LLM Backend (Shared, key-optional)
 
-Both projects use the same `ANTHROPIC_API_KEY`. The key is set in `~/.claude/` environment or shell profile — not per-project `.env`. The `.env.example` in CodeForge documents this pattern.
+dream/ship/commentary resolve their LLM via a **fallback chain**, not a single key:
+`claude -p` headless (Claude Code CLI, no key, Opus default, highest quality) → `ANTHROPIC_API_KEY` (direct Haiku API, per-token billing) → rule-based passthrough (no LLM). See `src/llm.rs` + `src/dream/compile.rs` + `src/cli/ship.rs` for the exact chain, and `doc/concepts.md` for the user-facing explanation.
+
+`ANTHROPIC_API_KEY` is therefore **optional** — only the second fallback. When set, it's read from the `~/.claude/` environment or shell profile (shared with CodePower), not a per-project `.env` (though `dotenvy` will also pick up a local `.env`). `.env.example` lists it under Optional.
 
 ### Dev Rule: Keep projects independent
 

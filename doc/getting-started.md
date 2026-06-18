@@ -20,9 +20,11 @@
 - **Claude Code** — <https://claude.com/claude-code> if you don't.
 - **(optional) Node 20+** — only needed for the SessionStart / PreToolUse
   hooks (not the statusline). Skip if you only want the statusline.
-- **(optional) `ANTHROPIC_API_KEY`** — needed for `codeforge dream`
-  (memory compilation, L0 → L1 via Haiku). Skip if you only want the
-  pet + statusline.
+- **(optional) `ANTHROPIC_API_KEY`** — NOT required. `codeforge dream`
+  (memory compilation, L0 → L1) uses a fallback chain: `claude -p` (the
+  Claude Code CLI, no key) → this key (Haiku API) → rule-based. Set it only
+  as a fallback when the `claude` CLI is unavailable. See
+  [`concepts.md`](concepts.md).
 
 ## Step 1 — Build and install the binary
 
@@ -135,8 +137,8 @@ change. Try `/clear` or restart Claude Code.
 
 - `codeforge learn "tokio::select! preserves cancellation across branches"`
   — log a learning into the L0 raw-signal store.
-- `export ANTHROPIC_API_KEY=sk-ant-... && codeforge dream` — compile L0
-  signals into structured L1 knowledge via Haiku.
+- `codeforge dream` — compile L0 signals into structured L1 knowledge
+  (via `claude -p`; no API key needed).
 - `codeforge memory search "tokio cancellation"` — search the compiled
   knowledge base.
 - `codeforge pet` — full pet status panel (longer than statusline).
@@ -157,6 +159,6 @@ For the optional SessionStart / PreToolUse / SessionEnd hooks
 | Statusline shows minimal `CodeForge / model / dir / branch` only | No pet adopted | `codeforge adopt` then `codeforge pet` to verify |
 | Statusline shows nothing | Claude Code didn't reload settings.json | `/clear` or restart Claude Code |
 | `codeforge install` rejected with `settings.json 根節點不是 object` | Existing settings.json is a JSON array or non-object | Open `~/.claude/settings.json` and wrap content in `{}` or back it up and start fresh |
-| `codeforge dream` fails with API error | `ANTHROPIC_API_KEY` missing or invalid | `export ANTHROPIC_API_KEY=sk-ant-...` from <https://console.anthropic.com/> |
+| `codeforge dream` produces low-quality / rule-based output | `claude` CLI not on PATH and no `ANTHROPIC_API_KEY` set (fell through to rule-based pass) | Ensure the `claude` CLI is installed/on PATH, or set `ANTHROPIC_API_KEY=sk-ant-...` from <https://console.anthropic.com/> as a fallback |
 
 For deeper issues, file at <https://github.com/cookys/codeforge/issues>.
