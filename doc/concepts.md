@@ -126,7 +126,9 @@ L1 store 的 `.md` 檔（frontmatter 帶 `origin` 欄位：`session` / `absorbed
 
 ### `cite` — 自然引用回寫
 
-當 session 引用過某個 Mnemos atom，`codeforge mnemos-cli` 偵測到後 POST 到 `/v1/atoms/<atom_id>/cite`，讓 Mnemos 累加 citation、驅動 active-memory ranking。（Sprint 1 用 fulltext_match 啟發式、confidence 0.5；Sprint 5+ 換 Haiku 偵測。）
+`codeforge mnemos-cli cite-detect <transcript>` 會掃 transcript、對命中的 Mnemos atom title POST 到 `/v1/atoms/<atom_id>/cite`，讓 Mnemos 累加 citation、驅動 active-memory ranking。confidence：自動偵測（cite-detect）用 0.5、手動 `mnemos-cli cite <atom_id>` 用 0.7；Sprint 5+ 換 Haiku 偵測。
+
+> ⚠️ **目前 cite-detect 是手動子命令，尚未接入自動流程**：`ship` 不呼叫 cite，SessionEnd hook 鏈（emit-session / session-digest / dream / ship）也不含 cite-detect。所以正常 session 結束**不會**自動回寫 citation —— 需手動跑 `cite-detect`。自動化是 roadmap（見 `codeforge-ship.md` §9）。
 
 ---
 

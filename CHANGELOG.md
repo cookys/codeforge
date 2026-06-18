@@ -33,9 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `codeforge ship --no-hook` opt-in gate（`MnemosConfig::opted_in`):僅當 `~/.config/mnemos.env` 存在或 `MNEMOS_INGEST_URL` 設定才送。沒有 Mnemos 的 codeforge-only 使用者照常用 dream 萃取 L1,ship 變乾淨 no-op — 不再每次 session-end 往 `ship-failed/` 堆 dead-letter。互動式 `codeforge ship` 不受 gate(明示動作)。
 
+- `codeforge mnemos-cli context --with-themes` flag — 送 `include_themes=true` 給 Mnemos,在 atoms 前注入一段 theme-summary 區塊。
+
+### Changed
+
+- **收嚴 ledger source** — ship 的 L2 ledger 來源斷開 `absorb`(跨專案吸收的二手知識)、改接 `session-digest`(本 repo 第一手),加上 origin-purity 過濾(只送 `origin != absorbed`)+ idempotency / confidence gating。確保送進 Mnemos 的是本 repo 第一手 coding 經驗。
+
 ### Fixed
 
 - `patch_hooks` 改成「先全面 sweep 所有 hook_type 的 codeforge group → 加入當前 entries → collapse 空 array」,讓 hook entry 可跨 hook_type / scope 搬移而不留孤兒。一併修掉:(1) `--project-hooks` re-run 漏 model 非 script 的 dream SessionEnd 條目而 drop/duplicate;(2) pre-marker 安裝的 node hook scripts(`hooks/0.0.3/…` 等無 `_installed_by` marker)在升級 re-install 時與新版並存導致 dual-fire — `is_legacy_codeforge_command` 現以 codeforge scripts 路徑 + 已知 basename 辨識並 sweep。
+
+- **signal_cursors 跨 repo key 碰撞**(上線 blocker) — 全域 `state.db` 的 `signal_cursors` 原以 filename 為 key,多專案共用 `CODEFORGE_DIR` 時不同 repo 的同名日期檔會互相覆蓋 cursor → 漏編譯或重複。改為以 repo-qualified key 區隔。
 
 ## [0.0.4] - 2026-06-10
 
