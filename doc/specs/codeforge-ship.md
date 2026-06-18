@@ -92,21 +92,19 @@ CodeForge 端 POST 的 body 是一個 **envelope**，內含 source-specific **pa
       }
     ],
     "provenance": {
-      "raw_signal_count": 142,
-      "source_jsonl_paths": [
-        "~/.claude/projects/-home-cookys-projects-codeforge/4e7c....jsonl"
-      ],
+      "lesson_count": 3,
       "l1_concept_files": [
         ".codeforge/store/concepts/ipc-shutdown.md"
       ],
       "git_head_sha": "64a0f2c1d...",
       "git_branch": "main",
-      "haiku_model": "claude-haiku-4-5-20251001",
-      "digest_cost_usd": 0.013
+      "haiku_model": "claude-haiku-4-5-20251001"
     }
   }
 }
 ```
+
+> ⚠️ As-shipped: `build_provenance` 只產出上述 5 欄（`lesson_count` / `l1_concept_files` / `git_head_sha` / `git_branch` / `haiku_model`）。`raw_signal_count` / `source_jsonl_paths` / `digest_cost_usd` 為設計目標、未實作（見 banner (d)）；`haiku_model` 永遠硬寫 `HAIKU_MODEL` 常數、不反映實際 backend。
 
 ### 4.1 欄位對照：CodeForge 產出 ⇄ Mnemos 實際解析（contract truth）
 

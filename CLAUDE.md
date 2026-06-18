@@ -9,7 +9,7 @@ CodeForge 是 **CodePower 生態系裡的私人鍛造間**（personal smithy）�
 **三支柱**：
 - **Memory pipeline** — L0 raw signals → L1 compiled knowledge（透過 Anthropic Haiku），本機累積
 - **MUD 引擎** — codebase 是世界地圖、技術債是怪物、pet 是玩家角色
-- **Mnemos source role** — `codeforge ship` 把 L1 + git log + session jsonl 再 digest 成 L2 daily ledger、POST 到 Mnemos（中央 brain）；`codeforge mnemos-cli cite` 在 session 結尾回填用過的 atom。**Production critical path**（不是 nice-to-have）— SessionEnd hook 觸發、失敗有 retry policy、結果影響 Mnemos 資料完整性。詳見 [`doc/specs/codeforge-ship.md`](doc/specs/codeforge-ship.md)。
+- **Mnemos source role** — `codeforge ship` 把 L1 + git log 再 digest 成 L2 daily ledger、POST 到 Mnemos（中央 brain）。（讀 session jsonl 為設計目標、code 未實作，見 ship spec 修正 (c)；`codeforge mnemos-cli cite-detect` 可回填用過的 atom，但目前是手動子命令、未接入 SessionEnd hook。）**Production critical path**（不是 nice-to-have）— SessionEnd hook 觸發、失敗有 retry policy、結果影響 Mnemos 資料完整性。詳見 [`doc/specs/codeforge-ship.md`](doc/specs/codeforge-ship.md)。
 
 **生態系定位**：
 - **CodePower**（鬥技場）— 公開、聯邦、競技；Nation 團戰、scoring 排行、federated 賽事
@@ -200,7 +200,7 @@ Then digests via Haiku and POSTs the L2 ledger payload to Mnemos at `http://127.
 
 ### Cite (natural citation, client-side write-back)
 
-When `ship` detects a session referenced any Mnemos atom (Sprint 1: fulltext_match heuristic; Sprint 5+: Haiku-based), it calls `codeforge mnemos-cli cite <atom_id>` per atom. Mnemos increments `citation_count`, updates `last_cited_at`, drives the active-memory ranking signal. Mnemos contract: `cookys/mnemos:docs/specs/10-source-contract.md` §11.
+⚠️ **NOT YET IMPLEMENTED (auto-cite-on-ship)** — `ship` does NOT call cite; the SessionEnd hook chain does not run cite-detect. Citation write-back currently only happens via the **manual** `codeforge mnemos-cli cite-detect <transcript>` subcommand. *Designed* behavior (BACKLOG B18): when a session references a Mnemos atom (Sprint 1: fulltext_match; Sprint 5+: Haiku), cite-back via `mnemos-cli cite <atom_id>` per atom → Mnemos increments `citation_count` / `last_cited_at` / ranking signal. Mnemos contract: `cookys/mnemos:docs/specs/10-source-contract.md` §11.
 
 ### Retry policy
 
