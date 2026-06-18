@@ -1,0 +1,6 @@
+{
+  "last_full_audit": "2026-06-18",
+  "last_full_audit_result": "50 raw → 48 confirmed (13 WRONG / 27 STALE / 8 MISSING), 0 refuted; all remediated on feature/doc-drift-remediation",
+  "workflow": "doc-code-drift-audit",
+  "note": "Full 6-domain sweep is expensive (~2M tokens). Staleness threshold 30 days — see .claude/dev-flow-config.md → Doc Audit Staleness."
+}

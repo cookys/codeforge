@@ -53,6 +53,14 @@ These patterns are intentional, not bugs:
 - `unwrap_or_else(|_| PathBuf::from("."))` in Context::load — safe fallback
 - `u64 as u32` in XP overflow fix — guarded by `.min(10_000_000)` cap
 
+## Doc-Code Drift (NOT a gate)
+
+Doc accuracy is **not** part of the per-commit quality gate — too expensive and
+orthogonal to build/test correctness. The `doc-drift-scoped` /
+`doc-code-drift-audit` workflows (see `.claude/dev-flow-config.md` → Doc-Code
+Drift Audit) are doc-sync aids run at L-size doc-sync / periodically, never as a
+blocking commit gate.
+
 ## Exit Codes
 
 | Code | Meaning | Action |
