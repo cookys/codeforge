@@ -38,13 +38,13 @@ pub enum Commands {
     Init,
     /// 將 codeforge 寫進 ~/.claude/settings.json（statusLine + 可選 hooks）
     Install {
-        /// 安裝 global-safe hooks（emit-session, session-digest）
+        /// 安裝 global hooks：emit-session、session-digest、SessionStart recall 注入（memory context）、SessionEnd 記憶 pipeline（dream → ship）
         #[arg(long)]
         hooks: bool,
         /// 同時安裝 statusLine 與 hooks（等同 --hooks 加 statusLine 預設）
         #[arg(long)]
         all: bool,
-        /// 安裝 codeforge-clone-only hooks（4 個 scripts）到 $CWD/.claude/settings.json；只能在 codeforge clone 內執行
+        /// 安裝 codeforge-clone-only dev hooks（2 個：check-improvements SessionStart、check-dev-flow PreToolUse）到 $CWD/.claude/settings.json；只能在 codeforge clone 內執行
         #[arg(long)]
         project_hooks: bool,
         /// 印出將要套用的 settings.json 內容與 extraction 計畫，不做任何寫入
