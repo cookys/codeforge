@@ -32,6 +32,7 @@ links: ['[[topic]]'...]              # wikilink 關聯（≥2）
 refs: <int>                          # 被引用次數
 last_ref: <ts|null>
 strength: <0.0..1.0>                 # ACT-R activation；recall ranking 的 importance 因子（score = importance × recency × citation，見 src/memory/recall.rs::score）
+origin: dev | session | absorbed     # 來源；ship 的 origin-purity 過濾賴此（只送 != absorbed 的本 repo 第一手知識，見 src/cli/ship.rs select_l1_for_date）
 status: active | superseded | archived
 # --- RESERVED（Phase B 由 dream 填,consumer 現在不可依賴) ---
 # nature: procedural | declarative   # 是否「可複用 how-to/規則」→ skill 萃取候選

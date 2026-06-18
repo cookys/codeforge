@@ -118,7 +118,7 @@ codeforge pet
 codeforge statusline
 ```
 
-More commands: `codeforge memory search|status|context`, `tui` / `attach` (full TUI + Local Map), `daemon start|stop|status` (background MUD engine), `strategy` (combat mode), `world` (zone map), `craft` / `inventory` / `use` (loot), `snapshot` (monthly card), `dream --only <op>` (single dream op), `ship` / `mnemos-cli cite|cite-detect|context` (Mnemos integration). Run `codeforge --help` for the full tree.
+More commands: `codeforge memory search|status|context`, `tui` / `attach` (full TUI + Local Map), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world` (zone map), `craft` / `inventory` / `use` (loot), `snapshot` (monthly card), `commentary on|off|list|test` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event>` (push an event into the daemon inbox; used by hooks), `ship` / `mnemos-cli cite|cite-detect|context` (Mnemos integration). Run `codeforge --help` for the full tree.
 
 For the global memory store pattern (one shared store across projects), see [`.env.example`](.env.example) — set `CODEFORGE_DIR=~/.codeforge/global`.
 
@@ -195,7 +195,7 @@ This makes CodeForge the **coding source** for Mnemos's multi-source brain (alon
 | Sprint | CodeForge deliverable | Status |
 |--------|------------------------|--------|
 | Mnemos Sprint 1 | `ship` + `mnemos-cli cite` end-to-end | spec stub; expand at sprint launch |
-| Mnemos Sprint 2 | `mnemos-cli context` for SessionStart hook | planned |
+| Mnemos Sprint 2 | `mnemos-cli context` for SessionStart hook | shipped (`mnemos-cli context`, v0.0.4) |
 | Mnemos Sprint 5+ | Replace fulltext_match cite heuristic with Haiku detection | backlog |
 
 ## Data & Privacy
