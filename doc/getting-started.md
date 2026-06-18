@@ -17,8 +17,11 @@
   `curl | sh` installer and `cargo binstall codeforge` — see the
   [README Install section](../README.md#install) for all three options.
 - **Claude Code** — <https://claude.com/claude-code> if you don't.
-- **(optional) Node 20+** — only needed for the SessionStart / PreToolUse
-  hooks (not the statusline). Skip if you only want the statusline.
+- **(optional) Node 20+** — needed by the JS hook scripts (not the
+  statusline): global Layer-2 hooks `emit-session.js` (SessionStart +
+  SessionEnd) + `session-digest.js` (SessionEnd + PreCompact), and the
+  clone-only PreToolUse `check-dev-flow.js`. Skip if you only want the
+  statusline.
 - **(optional) `ANTHROPIC_API_KEY`** — NOT required. `codeforge dream`
   (memory compilation, L0 → L1) uses a fallback chain: `claude -p` (the
   Claude Code CLI, no key) → this key (Haiku API) → rule-based. Set it only
@@ -125,8 +128,9 @@ The statusline panel should now show:
 - Memory status + codeforge version (line 5)
 - ASCII pet portrait on the right
 
-If you see only a minimal one-line statusline (just `CodeForge / model /
-dir / branch`), your pet record isn't loaded — re-run `codeforge adopt`
+If you see only the minimal no-pet statusline (a 2-line panel: identity
+strip with model/cwd/branch/version, then usage bars with a `→ codeforge
+adopt` hint), your pet record isn't loaded — re-run `codeforge adopt`
 and confirm `codeforge pet` shows stats.
 
 If you see nothing at all, Claude Code didn't pick up the settings.json
@@ -157,7 +161,7 @@ These flags are shipped, not roadmap.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `codeforge: command not found` after `cargo install` | `~/.cargo/bin` not on PATH | `. ~/.cargo/env` for this shell; add to `~/.zshrc` / `~/.bashrc` permanently. **Or** just run `codeforge install` — it writes the absolute path so Claude Code finds it. |
-| Statusline shows minimal `CodeForge / model / dir / branch` only | No pet adopted | `codeforge adopt` then `codeforge pet` to verify |
+| Statusline shows the minimal 2-line no-pet panel (identity + usage bars + `→ codeforge adopt` hint) | No pet adopted | `codeforge adopt` then `codeforge pet` to verify |
 | Statusline shows nothing | Claude Code didn't reload settings.json | `/clear` or restart Claude Code |
 | `codeforge install` rejected with `settings.json 根節點不是 object` | Existing settings.json is a JSON array or non-object | Open `~/.claude/settings.json` and wrap content in `{}` or back it up and start fresh |
 | `codeforge dream` produces low-quality / rule-based output | `claude` CLI not on PATH and no `ANTHROPIC_API_KEY` set (fell through to rule-based pass) | Ensure the `claude` CLI is installed/on PATH, or set `ANTHROPIC_API_KEY=sk-ant-...` from <https://console.anthropic.com/> as a fallback |
