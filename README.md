@@ -118,7 +118,7 @@ codeforge pet
 codeforge statusline
 ```
 
-More commands: `codeforge memory search|status|context`, `tui` / `attach` (full TUI + Local Map), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world` (zone map), `craft` / `inventory` / `use` (loot), `snapshot` (monthly card), `commentary on|off|list|test` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event>` (push an event into the daemon inbox; used by hooks), `ship` / `mnemos-cli cite|cite-detect|context` (Mnemos integration). Run `codeforge --help` for the full tree.
+More commands: `codeforge memory search|status|context`, `tui` / `attach` (full TUI + Local Map), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world` (zone map), `craft` / `inventory` / `use` (loot), `snapshot` (monthly card), `commentary on|off|list|test` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event>` (push an event into the daemon inbox; used by hooks), `ship` / `mnemos-cli cite [--matched-text]|cite-detect|context [--topic|--max|--max-sensitivity|--with-themes]` (Mnemos integration). Run `codeforge --help` for the full tree.
 
 For the global memory store pattern (one shared store across projects), see [`.env.example`](.env.example) — set `CODEFORGE_DIR=~/.codeforge/global`.
 
@@ -194,7 +194,7 @@ This makes CodeForge the **coding source** for Mnemos's multi-source brain (alon
 
 | Sprint | CodeForge deliverable | Status |
 |--------|------------------------|--------|
-| Mnemos Sprint 1 | `ship` + `mnemos-cli cite` end-to-end | spec stub; expand at sprint launch |
+| Mnemos Sprint 1 | `ship` + `mnemos-cli cite` end-to-end | shipped (v0.0.4) |
 | Mnemos Sprint 2 | `mnemos-cli context` for SessionStart hook | shipped (`mnemos-cli context`, v0.0.4) |
 | Mnemos Sprint 5+ | Replace fulltext_match cite heuristic with Haiku detection | backlog |
 
@@ -208,7 +208,7 @@ This makes CodeForge the **coding source** for Mnemos's multi-source brain (alon
 
 ## Tech Stack
 
-Rust 2021, clap 4, rusqlite (bundled SQLite, WAL), tokio, hecs ECS, crossterm TUI, rust-i18n, reqwest. Anthropic API for `dream compile` and AI commentary.
+Rust 2021, clap 4, rusqlite (bundled SQLite, WAL), tokio, hecs ECS, crossterm TUI, rust-i18n, reqwest. LLM for `dream compile` / AI commentary via the backend chain `claude -p` (Claude Code CLI, default) → Anthropic Haiku API (fallback) → rule-based.
 
 ## Disclaimer
 

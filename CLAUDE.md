@@ -180,8 +180,8 @@ Orthogonal to MUD Phase Roadmap above; aligned with Mnemos sprint cadence (`cook
 | Sprint | Deliverable | Status |
 |--------|-------------|--------|
 | Mnemos Sprint 0 | Mnemos Rust foundation (no codeforge work) | blocked on Mnemos |
-| Mnemos Sprint 1 | `codeforge ship` + `codeforge mnemos-cli cite` end-to-end; SessionEnd hook chain `dream → ship` | spec stub at `doc/specs/codeforge-ship.md`; expand at sprint launch |
-| Mnemos Sprint 2 | `mnemos-cli context` for SessionStart hook (cross-source atom recall) | planned |
+| Mnemos Sprint 1 | `codeforge ship` + `codeforge mnemos-cli cite` end-to-end; SessionEnd hook chain `dream → ship` | ✅ shipped (v0.0.4) — see `doc/specs/codeforge-ship.md` |
+| Mnemos Sprint 2 | `mnemos-cli context` for SessionStart hook (cross-source atom recall) | ✅ shipped (v0.0.4, `mnemos-cli context`) |
 | Mnemos Sprint 5+ | Replace fulltext_match cite heuristic with Haiku-based detection | backlog |
 
 ## CodeForge ↔ Mnemos Interaction

@@ -54,7 +54,7 @@ L0 是人類可讀、git 友善的純文字 append log；L1 是結構化、可�
 
 ### 讀什麼
 
-L0 signals（含 `learn` 寫入的、session digest ingest 進來的）+ 既有 L1（做去重對賬）+ SQLite metrics。
+L0 signals（含 `learn` 寫入的、session digest ingest 進來的）+ 既有 L1（FTS 去重對賬）。`compile` 本身不讀 SQLite metrics；signal cursor（已編譯標記）寫回 DB。
 
 ### LLM backend fallback 鏈（重要）
 
@@ -154,7 +154,7 @@ codebase 是世界地圖、技術債是怪物、pet 是你的角色。
 | `session_start` | +3 |
 | `file_saved` | +1 |
 
-升級時 `xp_to_next *= 1.5`（上限 10M 防 u32 overflow），四維 stats 各 +1。
+升級時 `xp_to_next` 約 ×1.5、四維 stats 各 +1。（兩條路徑算法略異：daemon 權威 leveling 用 `xp_to_next.saturating_add(xp_to_next/2).max(100)`；CLI live-overlay 用 `*1.5` 並夾 `.min(10M)` 防 u32 overflow。）
 
 ### daemon 寫 / CLI 讀（write ownership）
 
