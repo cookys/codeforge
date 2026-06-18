@@ -239,7 +239,7 @@ The memory loop is **absorb → distill → store → recall**. READ mirrors WRI
 | **WRITE** | `dream` (L0→L1) | `ship` (→ Mnemos) |
 | **READ** | `codeforge memory context --hook` (global SessionStart) | `mnemos-cli context` (cross-source) |
 
-`codeforge memory context` ranks active L1 by strength → budgets to a **lean index** (~1.5K tokens, never a dump — context-pollution lesson from claude-mem) → emits `hookSpecificOutput.additionalContext` at SessionStart. No-op when the project has no active L1. Each line cites its `topic`; detail is pulled on demand via `codeforge memory search <topic>` (progressive disclosure). Installed in **global settings.json**, not a plugin (plugin `hooks.json` additionalContext is unreliable — Claude Code issue #16538). Shared-state + atom schema contract: [`doc/specs/codeforge-memory-contract.md`](doc/specs/codeforge-memory-contract.md).
+`codeforge memory context` ranks active L1 by a unified recall score (importance × recency × citation — strength weighted by a recency half-life and log-damped citation count) → budgets to a **lean index** (~1.5K tokens, never a dump — context-pollution lesson from claude-mem) → emits `hookSpecificOutput.additionalContext` at SessionStart. No-op when the project has no active L1. Each line cites its `topic`; detail is pulled on demand via `codeforge memory search <topic>` (progressive disclosure). Installed in **global settings.json**, not a plugin (plugin `hooks.json` additionalContext is unreliable — Claude Code issue #16538). Shared-state + atom schema contract: [`doc/specs/codeforge-memory-contract.md`](doc/specs/codeforge-memory-contract.md).
 
 ### Learn (any project → codeforge memory)
 
