@@ -1,6 +1,7 @@
 {
   "last_full_audit": "2026-06-18",
-  "last_full_audit_result": "convergence trend across rounds (WRONG count is the meaningful signal): round1=48 (13W/27S/8M), scoped=4, round2=22 (5W/8S/9M), round3=11 (1W/7S/3M). All fixed. WRONG 13→5→1 nearly converged; STALE/MISSING is a long asymptotic tail (mature-repo phrasing/minor-flag drift, non-deterministic finders surface different subsets each round).",
+  "last_full_audit_result": "4 rounds: r1=48(13W/27S/8M), scoped=4, r2=22(5W/8S/9M), r3=11(1W/7S/3M), r4=13(1W/11S/1M). All fixed. CONCLUSION: total=0 is NOT a fixed point of (sweep→doc-fix→sweep) — count plateaus ~10-13 (non-deterministic finders mine a different ~10-deep slice of a bottomless minor-phrasing tail each round). The meaningful metric WRONG converged 13→5→1→1≈0. Stopping rule adopted: '0 WRONG + recurring sources cleared', NOT literal 0 total. Recurring sources fixed in r4: clap help strings (src/cli/mod.rs, code — was re-surfacing every round since doc-fixes can't touch it). Version/tag drift disclosed via CHANGELOG [Unreleased] pending-0.0.5 note (tag deliberately NOT created — would trigger release.yml publish pipeline). STALE/MISSING tail = managed backlog; future scoped runs (per-diff) catch new drift cheaply.",
+  "stopping_rule": "0 WRONG sustained + recurring non-doc sources cleared. Literal total=0 is asymptotic and not pursued.",
   "workflow": "doc-code-drift-audit",
   "note": "Full 6-domain sweep is expensive (~1-2M tokens). Staleness threshold 30 days — see .claude/dev-flow-config.md → Doc Audit Staleness. Entry point: autopilot:doc-sync."
 }
