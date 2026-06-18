@@ -25,8 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **dream compile 改為對賬式,不再盲目同 slug 覆蓋** — 新事實落在新 slug 時會先和既有相關條目對賬(T2.2);同 slug 仍 in-place 合併,且合併後一律回到 `active`(新訊號落在 superseded slug 視為「重新觀察」而復活,不會把新知識寫進看不到的死檔)。無行為破壞、無需重裝 hook;`memory context` 的浮現順序會因 T2.3 三因子排序而改變(近期被引用的條目排更前)。
 - **記憶 pipeline 跨專案上線** — `codeforge dream --quiet` → `codeforge ship --no-hook` 的 SessionEnd 鏈從 codeforge-clone-only 的 `--project-hooks` 移到 global `--hooks`/`--all`,在每個專案 session 結束都 per-project 萃取（hook CWD = 專案 root → per-cwd `.codeforge`）。`--project-hooks` 因 `ensure_in_codeforge_repo` 只能在 clone 跑,無法覆蓋其他專案;唯有 global 路徑能跨專案。`--project-hooks` 現只保留 dev scripts（check-improvements / check-dev-flow）。
 - `codeforge install --hooks`/`--all` 現會寫入 `cleanupPeriodDays: 3650`(只填未設值,`--force` 才覆蓋使用者選擇)。Claude Code 預設 30 天回收 session transcript,會在 dream/ship 萃取前刪掉;拉高留存讓 raw material 存活。
+- **LLM backend 改為 fallback 鏈(新增 `src/llm.rs`)** — dream/ship/commentary 的 digest 不再「Haiku-or-passthrough」。新鏈:`claude -p` headless(Claude Code CLI,免 API key,預設 Opus,品質最高;`CODEFORGE_DIGEST_MODEL` 可改)→ `ANTHROPIC_API_KEY`(直連 Haiku API)→ rule-based passthrough。`ANTHROPIC_API_KEY` 因此為 optional,只是第二層 fallback。每層降級印 warning。
 
 ### Added
+
+- **session-digest 落地重設計(A′)+ per-repo opt-out** — `session-digest.js` 不再倒進全域 `~/.claude/session-digests/`(明文、歸屬錯),改從 cwd 往上找 `.codeforge` 落 per-repo `<repo>/.codeforge/digests/`,找不到即 skip 不寫(非 codeforge 專案零明文落盤)。`dream ingest-digests` 改讀 per-repo dir + 吸完刪檔(明文不長存),過渡期同讀舊全域路徑。新增 `<repo>/.codeforge/no-ship` per-repo opt-out 檔(`ingest` skip + `ship` 硬 no-op)。
 
 - `codeforge ship --no-hook` opt-in gate（`MnemosConfig::opted_in`):僅當 `~/.config/mnemos.env` 存在或 `MNEMOS_INGEST_URL` 設定才送。沒有 Mnemos 的 codeforge-only 使用者照常用 dream 萃取 L1,ship 變乾淨 no-op — 不再每次 session-end 往 `ship-failed/` 堆 dead-letter。互動式 `codeforge ship` 不受 gate(明示動作)。
 

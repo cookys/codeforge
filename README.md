@@ -65,8 +65,14 @@ when `rustup` was installed with `--no-modify-path`). Re-run after
 upgrading codeforge to refresh the path. Other keys in settings.json are
 preserved.
 
-`codeforge install --hooks` (SessionStart / PreToolUse / etc) is on the
-roadmap — see [`doc/specs/codeforge-install-subcommand.md`](doc/specs/codeforge-install-subcommand.md).
+`codeforge install` has more granular flags too (all shipped) — see
+[`doc/specs/codeforge-install-subcommand.md`](doc/specs/codeforge-install-subcommand.md)
+and the "First-time Claude Code hook setup" section below:
+
+- `codeforge install --hooks` — global product-wide hooks only (SessionStart recall + SessionEnd memory pipeline + PreCompact digest)
+- `codeforge install --all` — statusline + global hooks
+- `codeforge install --project-hooks` — codeforge-clone-only dev hooks (SessionStart + PreToolUse)
+- `--dry-run` previews the settings.json changes without writing.
 
 **macOS first-run note:** if Gatekeeper blocks the binary, run once:
 
@@ -78,11 +84,12 @@ xattr -d com.apple.quarantine "$(command -v codeforge)"
 
 ## Uninstall
 
-`codeforge install --uninstall` (covered by [`codeforge-install-subcommand.md`](doc/specs/codeforge-install-subcommand.md)
-once shipped) will reverse the settings.json patch. For now:
+`codeforge uninstall` reverses the settings.json patches (both the
+statusLine and the hooks blocks; `--statusline` / `--hooks` to scope it,
+`--quiet` for hook use). Then remove the binary and data:
 
 ```bash
-# Remove statusLine block from ~/.claude/settings.json (manual edit), then:
+codeforge uninstall          # un-patches ~/.claude/settings.json
 rm "$(command -v codeforge)"
 rm -rf ~/.codeforge ~/.local/share/codeforge
 ```
@@ -107,9 +114,11 @@ codeforge memory search "tokio cancellation"
 # pet status
 codeforge pet
 
-# 6-line statusline panel (designed for Claude Code statusline hook)
+# 5-line statusline panel + right-column pet art (for the Claude Code statusline hook)
 codeforge statusline
 ```
+
+More commands: `codeforge memory search|status|context`, `tui` / `attach` (full TUI + Local Map), `daemon start|stop|status` (background MUD engine), `strategy` (combat mode), `world` (zone map), `craft` / `inventory` / `use` (loot), `snapshot` (monthly card), `dream --only <op>` (single dream op), `ship` / `mnemos-cli cite|cite-detect|context` (Mnemos integration). Run `codeforge --help` for the full tree.
 
 For the global memory store pattern (one shared store across projects), see [`.env.example`](.env.example) — set `CODEFORGE_DIR=~/.codeforge/global`.
 
@@ -136,7 +145,10 @@ codeforge install --project-hooks --force --yes
 
 - `emit-session.js` (SessionStart + SessionEnd) — session boundary signals
 - `session-digest.js` (PreCompact + SessionEnd) — captures errors/corrections to per-repo `.codeforge/digests/`
+- `codeforge memory context --hook` (SessionStart) — injects a lean ranked L1 index as additionalContext (local recall; no-op when the project has no active L1)
 - `codeforge dream --quiet` → `codeforge ship --no-hook` (SessionEnd) — the memory pipeline: distill L0 → L1 in every project, then ship to Mnemos if opted in (clean no-op otherwise). See [`doc/concepts.md`](doc/concepts.md).
+
+Across SessionStart / SessionEnd / PreCompact (3 hook types).
 
 These fire in **every** Claude Code session (any project), not just inside the codeforge clone. Install once after first build:
 
@@ -173,7 +185,7 @@ Beyond the local Memory pipeline + MUD engine, CodeForge is also a **Mnemos sour
 
 Two subcommands handle the integration (Sprint 1 deliverable, see [`doc/specs/codeforge-ship.md`](doc/specs/codeforge-ship.md)):
 
-- `codeforge ship` — at SessionEnd, digest the day's L1 + git log + session jsonl into an L2 ledger and POST to Mnemos. Retry policy + failure queue built in.
+- `codeforge ship` — at SessionEnd, digest the day's L1 + git log into an L2 ledger and POST to Mnemos. Retry policy + failure queue built in.
 - `codeforge mnemos-cli cite <atom_id>` — when a session referenced a Mnemos atom, write back the citation so Mnemos can rank by usage.
 
 Endpoint defaults to `http://127.0.0.1:8845/v1/ingest/ledger` (configurable via `~/.config/mnemos.env`). The ledger payload schema is the joint contract — defined in `cookys/mnemos:docs/specs/10-source-contract.md` §5.1.

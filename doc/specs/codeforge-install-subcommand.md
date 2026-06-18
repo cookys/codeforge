@@ -1,7 +1,39 @@
 # `codeforge install` — Full Feature Spec (post-MVP)
 
-**Status:** MVP merged (statusline-only). This spec covers the
-`--hooks` + uninstall path. Audience: the next implementer.
+**Status:** **SHIPPED** — `--hooks` / `--all` / `--project-hooks` and the
+separate `uninstall` subcommand are all implemented. This spec was written
+forward-looking ("next implementer"); the as-shipped behaviour diverges in
+a few ways — see ⚠️ below. Audited: 2026-06-18.
+
+> ### ⚠️ As-shipped corrections (audit 2026-06-18)
+>
+> canonical = `src/cli/install.rs`. Divergences from this spec's design:
+>
+> - **Hook types: 3, not 4.** Global `--hooks` writes across **SessionStart**
+>   (emit-session + `codeforge memory context --hook` local-recall injector),
+>   **SessionEnd** (emit-session + session-digest + `codeforge dream --quiet`
+>   → `codeforge ship --no-hook`), and **PreCompact** (session-digest). There
+>   is no PreToolUse in the global set (that's `--project-hooks` only).
+> - **No `CODEFORGE_PROJECT_ROOT` patching.** §1 proposed string-replacing
+>   scripts to read that env var; the shipped approach uses
+>   `${CLAUDE_PROJECT_DIR}` in project hooks and `__filename`-derived
+>   PROJECT_ROOT in `check-improvements.js`. `check-improvements.js` is
+>   `--project-hooks`-only and run in-place from the clone (never extracted).
+> - **No node probe / "node detected" message** and no yellow node-missing
+>   warning in the success output.
+> - **Global `--hooks` writes more than emit-session + session-digest** — it
+>   also adds the SessionStart recall injector and the SessionEnd dream→ship
+>   memory pipeline (see §CLAUDE.md "Hook Path Note").
+> - **Idempotency sweep also recognises pre-marker legacy commands** (inline
+>   `codeforge dream`, node hook-script commands on the codeforge scripts
+>   path) as codeforge-owned, so it sweeps un-markered installs instead of
+>   stacking duplicates.
+> - **`--project-hooks` flag exists** (codeforge-clone-only dev hooks:
+>   check-improvements SessionStart + check-dev-flow PreToolUse) — not listed
+>   in §3's CLI surface.
+> - **Uninstall is a top-level `codeforge uninstall` subcommand**
+>   (`--statusline` / `--hooks` / `--settings-path` / `--quiet`), not an
+>   `install --uninstall` flag.
 
 ## 0. Module layout
 

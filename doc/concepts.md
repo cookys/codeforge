@@ -89,13 +89,15 @@ L1 store 的 `.md` 檔（frontmatter 帶 `origin` 欄位：`session` / `absorbed
 
 ### 讀什麼
 
-當天的 active L1 concepts（`origin != "absorbed"`，只送本 repo 第一手 coding 經驗）+ git log（當天 commit）+ session jsonl（取 source evidence locator）+ db metrics（provenance）。
+當天的 active L1 concepts（`origin != "absorbed"`，只送本 repo 第一手 coding 經驗）+ git log（當天 commit，當作 commit evidence）+ db metrics（provenance）。
+
+> 註：spec `codeforge-ship.md` 另有「掃 session jsonl 取 source_evidence locator」的設計，但**目前實作尚未做**（`SourceEvidence::session_jsonl` 是 dead_code、digest prompt 無 session 線索 block）。ship 實際只吃 L1 + git。
 
 ### 流程
 
 ```
-當天 L1 + git log + session jsonl
-        ↓  Haiku digest（同 §3 的 fallback 鏈）
+當天 L1 + git log
+        ↓  LLM digest（同 §3 的 fallback 鏈：claude -p → Haiku → rule-based）
   lessons[]（每條需 ≥1 source_evidence，無 evidence 者丟棄）
         ↓  POST
   <base>/v1/ingest/ledger     （base 預設 http://127.0.0.1:8845，本機 Mnemos）

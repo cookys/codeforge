@@ -55,34 +55,50 @@ cargo run -- pet
 
 ```
 src/
-  main.rs           ← clap CLI dispatch
+  main.rs           ← clap CLI dispatch (locale: CODEFORGE_LOCALE → system locale → "en")
+  llm.rs            ← LLM backend chain: claude -p headless → ANTHROPIC_API_KEY (Haiku) → rule-based
   cli/              ← command handlers (one file per command)
     init.rs         ← codeforge init
     learn.rs        ← codeforge learn
-    dream.rs        ← codeforge dream
+    dream.rs        ← codeforge dream (--quiet / --only <op>)
     search.rs       ← codeforge memory search
     ingest.rs       ← codeforge ingest
     pet.rs          ← codeforge pet
-    statusline.rs   ← codeforge statusline (ANSI 6-line panel)
+    statusline.rs   ← codeforge statusline (ANSI 5-line panel + right-column pet art)
+    install.rs      ← codeforge install (--hooks / --all / --project-hooks) + uninstall
+    ship.rs         ← codeforge ship (Mnemos L2 ledger)
+    mnemos_cli.rs   ← codeforge mnemos-cli (cite / cite-detect / context)
   memory/
     l0.rs           ← raw signals (JSONL file-based)
     l1.rs           ← compiled knowledge (SQLite FTS5)
     fts.rs          ← FTS5 search
   dream/
-    compile.rs      ← L0 → L1 via Haiku API
+    compile.rs      ← L0 → L1 via the LLM backend chain (src/llm.rs)
     absorb.rs       ← aggregate recent signals
+    ingest_digests.rs ← pull per-repo session digests into L0
   brain/
     episode.rs      ← session episode records
   pet/
     state.rs        ← PetState: level, HP, XP, stats
     xp.rs           ← XP award logic
-    badges.rs       ← badge system (Phase 2+)
+    badges.rs       ← badge system (skeleton, not yet wired)
+    live_state.rs   ← live-overlay read path (pet_snapshot + unseen event_inbox)
+    village.rs      ← 5 hardcoded villages (rust/python/typescript/go/javascript)
+    ability.rs      ← ability unlock catalog (display-only; combat effects not yet wired)
+  daemon/           ← Phase 2 MUD engine: tick loop, ECS, event_inbox, combat, mob_scanner, loot, strategy, mood, lifecycle
+  combat (in daemon/) ← auto-combat resolution
+  mnemos/           ← ship transport/digest/config/state/cite/evidence (Mnemos source role)
+  clan/             ← CodePower clan content provider skeleton (not yet wired to village.rs)
+  craft/            ← loot crafting + active items (Phase 3e)
+  tui/              ← alt-screen TUI + Local Map (Phase 2c)
+  world/            ← World Map + Zone unlock (Phase 3a)
+  commentary/       ← AI commentary (Haiku, ≤1/hour, Phase 3c)
+  snapshot/         ← codeforge snapshot ASCII monthly card (Phase 3f)
   db/
     mod.rs          ← Context, Connection, PRAGMA setup
     migrations.rs   ← schema migrations (inline SQL)
   import/           ← claude.ai export parser
   power/            ← CharacterStats (ATK/DEF/SUP/VER)
-  projection/       ← memory projection to AGENTS.md
 ```
 
 ### Data Layout (`.codeforge/`)
@@ -143,15 +159,15 @@ src/
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Memory CLI + Common Pet | ✅ done |
-| 2a | Daemon framework + IPC socket + tick loop | planned |
-| 2b | MOB generation + auto-combat + loot | planned |
-| 2c | TUI rendering + Local Map | planned |
-| 3a | World Map + Zone unlock | planned |
-| 3b | Strategy Mode | planned |
-| 3c | AI Commentary (Haiku, 1/hour max, opt-in) | planned |
-| 3d | Stickiness: welcome-back, mood decay, zone mastery, milestones | planned |
-| 3e | Loot crafting + active item use | planned |
-| 3f | `codeforge snapshot` (shareable ASCII monthly report) | planned |
+| 2a | Daemon framework + IPC socket + tick loop | ✅ done |
+| 2b | MOB generation + auto-combat + loot | ✅ done |
+| 2c | TUI rendering + Local Map | ✅ done |
+| 3a | World Map + Zone unlock | ✅ done |
+| 3b | Strategy Mode | ✅ done |
+| 3c | AI Commentary (Haiku, 1/hour max, opt-in) | ✅ done |
+| 3d | Stickiness: welcome-back, mood decay, zone mastery, milestones | ✅ done |
+| 3e | Loot crafting + active item use | ✅ done |
+| 3f | `codeforge snapshot` (shareable ASCII monthly report) | ✅ done |
 | 4 | Zoa 3D pet animation | planned |
 | 5a | Nation Plugin + credential verify (ed25519) | planned |
 | 5b | Organizer cross-Nation events | planned |
