@@ -416,7 +416,7 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 
 ```
 codeforge dream             # L0 → L1（既有）
-codeforge ship --no-hook    # 當日 L1 + git + jsonl → Haiku digest → lessons[] → envelope
+codeforge ship --no-hook    # 當日 L1 + git → LLM digest（claude -p→Haiku→rule-based）→ lessons[] → envelope
   → POST /v1/ingest/ledger (127.0.0.1:8845)
   → Mnemos：1 Document（source_id=<repo>:<date>:<ship_id>, ref_locator_json 帶 provenance + lessons_source_evidence）
             + 每 lesson 1 lesson-atom（evidence_refs = doc 三元組）

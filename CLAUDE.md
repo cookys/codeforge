@@ -98,7 +98,7 @@ src/
     mod.rs          ← Context, Connection, PRAGMA setup
     migrations.rs   ← schema migrations (inline SQL)
   import/           ← claude.ai export parser
-  power/            ← CharacterStats (ATK/DEF/SUP/VER)
+  power/            ← CharacterStats (5 fields: ATK/DEF/SUP/VER + HP/Activity)
 ```
 
 ### Data Layout (`.codeforge/`)

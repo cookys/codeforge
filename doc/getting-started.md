@@ -139,7 +139,10 @@ change. Try `/clear` or restart Claude Code.
 ## What's next
 
 - `codeforge learn "tokio::select! preserves cancellation across branches"`
-  — log a learning into the L0 raw-signal store.
+  — log a learning into the L0 raw-signal store. Also accepts `--paste`
+  (clipboard), `--file <FILE>`, or piped stdin instead of positional text.
+- `codeforge ingest <path> [--source claude|chatgpt|markdown|auto]` — import
+  an external chat/history export into L0 (default `--source auto`).
 - `codeforge dream` — compile L0 signals into structured L1 knowledge
   (via `claude -p`; no API key needed).
 - `codeforge memory search "tokio cancellation"` — search the compiled

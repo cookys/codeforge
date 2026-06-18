@@ -12,7 +12,7 @@ improvement-queue / digest / L1 atoms 是被多個獨立血緣的工具(codeforg
 
 | Surface | 路徑 | 格式 | 誰寫 | 誰讀 |
 |---------|------|------|------|------|
-| **L0 signals** | `.codeforge/signals/YYYY-MM-DD.jsonl` | JSONL append | `learn` / session hooks | `dream` |
+| **L0 signals** | `.codeforge/signals/YYYY-MM-DD.jsonl` | JSONL append | `learn` / session hooks / `dream`（ingest-digests 以 `SessionDigest`、absorb 以 `AbsorbedMemory` append） | `dream` |
 | **L1 atoms** | `.codeforge/store/{concepts,connections,qa}/*.md` | markdown + YAML frontmatter | `dream`(L0→L1) | `memory context`(本地 recall)、`ship`(→mnemos)、consumer(見 §4) |
 | **L2 ledger** | POST `/v1/ingest/ledger` | envelope JSON | `ship` | Mnemos |
 | **improvement-queue** | `~/.claude/improvement-queue.json`(global 共享) | JSON;item 帶 `project`(origin root)、`source` | `session-digest.js` | `check-improvements.js`(各專案以 `project===PROJECT_ROOT` scope) |

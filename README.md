@@ -101,7 +101,7 @@ rm -rf ~/.codeforge ~/.local/share/codeforge
 cd ~/projects/<your-repo>
 codeforge init
 
-# log a learning (L0 raw signal)
+# log a learning (L0 raw signal) — also: --paste (clipboard), --file <FILE>, or stdin
 codeforge learn "tokio::select! preserves cancellation across branches"
 
 # compile L0 → L1 (uses the LLM backend chain: claude -p → Haiku → rule-based)
@@ -118,7 +118,7 @@ codeforge pet
 codeforge statusline
 ```
 
-More commands: `codeforge memory search|status|context`, `tui` / `attach` (full TUI + Local Map), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world` (zone map), `craft` / `inventory` / `use` (loot), `snapshot` (monthly card), `commentary on|off|list|test` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event>` (push an event into the daemon inbox; used by hooks), `ship` / `mnemos-cli cite [--matched-text]|cite-detect|context [--topic|--max|--max-sensitivity|--with-themes]` (Mnemos integration). Run `codeforge --help` for the full tree.
+More commands: `codeforge memory search|status|context`, `tui` / `attach` (full TUI + Local Map), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world [--refresh]` (zone map; `--refresh` rescans L1), `ingest <path> [--source claude|chatgpt|markdown|auto]` (import external history), `craft` / `inventory` / `use` (loot), `snapshot [--days N]` (ASCII activity card; `--days` sets the lookback window), `commentary on|off|list|test` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event>` (push an event into the daemon inbox; used by hooks), `ship` / `mnemos-cli cite [--matched-text]|cite-detect|context [--topic|--max|--max-sensitivity|--with-themes]` (Mnemos integration). Run `codeforge --help` for the full tree.
 
 For the global memory store pattern (one shared store across projects), see [`.env.example`](.env.example) — set `CODEFORGE_DIR=~/.codeforge/global`.
 

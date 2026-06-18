@@ -212,8 +212,9 @@ codeforge install [OPTIONS]
 codeforge uninstall [OPTIONS]
   (no flags)         → remove everything codeforge-tagged + extracted
                         scripts
-  --statusline       → remove only statusLine (if it points to
-                        current_exe)
+  --statusline       → remove only statusLine (any codeforge-marked
+                        block, by `_installed_by` marker — no current_exe
+                        path check)
   --hooks            → remove only hooks
   --settings-path P  → as above
   --quiet
