@@ -121,7 +121,7 @@ src/
 - **L0**: JSONL files (human-readable, git-friendly, no lock needed for append)
 - **L1**: SQLite FTS5 (full-text search, structured)
 - **Daemon-free** (Phase 1): statusline is a one-shot command, not a daemon
-- **Phase 2**: daemon owns all game state writes; CLI is read-only from `pet_snapshot` table
+- **Phase 2**: daemon owns the authoritative `pet_snapshot` (CLI never writes it). The CLI still appends XP events (`xp_events` + `event_inbox`) and computes a level-up cascade in-memory on read (live-overlay) — so "daemon-owned" means `pet_snapshot` specifically, not all game rows
 - **CJK strings**: ALWAYS use `.chars().take(N).collect::<String>()`, NEVER `&s[..N]`
 
 ## Conventions
