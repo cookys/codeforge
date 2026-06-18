@@ -91,6 +91,7 @@ Before starting Phase 2+ work, confirm you have read:
 - [ ] Review loop: invoke code-review skill (max 3 rounds)   [blockedBy: quality-gate]
 - [ ] Fix review findings: CRITICAL + IMPORTANT              [blockedBy: review-loop]
 - [ ] Review round 2: verify fixes pass                      [blockedBy: fix-findings]
+- [ ] Doc-sync: if user-facing behavior changed → run `doc-drift-scoped` workflow (args=base); OFFER full `doc-code-drift-audit` if 3+ modules / user-facing
 - [ ] Merge to main                                          [blockedBy: review-round-2]
 - [ ] Post-merge verify: git diff main~1..main
 - [ ] Archive project + BACKLOG reconciliation
@@ -121,6 +122,30 @@ Check if any BACKLOG items have their trigger condition met by these changes.
 
 ### BACKLOG Staleness (periodic)
 If `Last audited:` in `doc/BACKLOG.md` is >14 days ago: flag to user for full audit.
+
+## Doc-Code Drift Audit
+
+Docs drift from code over time. Two reusable workflows live in `.claude/workflows/`
+(report-only — they never edit; you triage + fix per the policy below).
+
+| Workflow | Cost | When |
+|----------|------|------|
+| `doc-drift-scoped` | cheap (~1-3 agents) | **Default** at L-size doc-sync. Pass `args` = base ref (e.g. `"main"`). Audits only the docs describing the modules this diff touched. |
+| `doc-code-drift-audit` | EXPENSIVE (~2M tokens, ~56 agents) | Full 6-domain sweep. OFFER (don't auto-run) when an L-size change touches **user-facing behavior OR 3+ modules**; or periodically (see staleness below). |
+
+Invoke by name: `Workflow({ name: "doc-drift-scoped", args: "main" })` /
+`Workflow({ name: "doc-code-drift-audit" })`. Both require the user to have
+opted into workflows (see Workflow tool rules). Never run either as a blocking
+per-commit gate — they are doc-sync aids, not quality gates.
+
+**Fix policy (per-item triage on confirmed findings):**
+- User-facing docs (README / CLAUDE.md / concepts / getting-started / .env.example / CHANGELOG) → always correct to current code reality.
+- Specs (single source of truth): pure STALE (code is the desired state) → fix spec text. Genuine design-target-not-yet-built → KEEP the design, mark `⚠️ NOT YET IMPLEMENTED`, and open a BACKLOG item so code can catch up.
+
+### Doc Audit Staleness (periodic)
+Track the last full sweep in `.claude/doc-audit-state.json` (`last_full_audit`).
+If >30 days ago (or missing): flag to user — offer to run `doc-code-drift-audit`.
+After a full sweep, update `last_full_audit` to today.
 
 ## Proposals Hygiene
 
