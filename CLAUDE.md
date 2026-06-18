@@ -26,7 +26,7 @@ CodeForge 是 **CodePower 生態系裡的私人鍛造間**（personal smithy）�
 - **Storage**: rusqlite (bundled SQLite), WAL mode
 - **Terminal**: crossterm + termcolor
 - **I18n**: rust-i18n v3 (compile-time), `locales/` YAML
-- **LLM**: Anthropic API (claude-haiku-4-5 for dream compile + AI commentary)
+- **LLM**: dream/ship via `claude -p` → Haiku API → rule-based (3-layer); AI commentary via Haiku API → rule-based (2-layer, no `claude -p`)
 - **HTTP**: reqwest (async, TLS)
 - **Async**: tokio (for daemon, Phase 2+)
 
@@ -256,8 +256,8 @@ The CodePower repo is the primary test environment for Phase 2 features:
 
 ### LLM Backend (Shared, key-optional)
 
-dream/ship/commentary resolve their LLM via a **fallback chain**, not a single key:
-`claude -p` headless (Claude Code CLI, no key, Opus default, highest quality) → `ANTHROPIC_API_KEY` (direct Haiku API, per-token billing) → rule-based passthrough (no LLM). See `src/llm.rs` + `src/dream/compile.rs` + `src/cli/ship.rs` for the exact chain, and `doc/concepts.md` for the user-facing explanation.
+**dream/ship** resolve their LLM via a 3-layer **fallback chain**, not a single key:
+`claude -p` headless (Claude Code CLI, no key, Opus default, highest quality) → `ANTHROPIC_API_KEY` (direct Haiku API, per-token billing) → rule-based passthrough (no LLM). See `src/llm.rs` + `src/dream/compile.rs` + `src/cli/ship.rs`. **AI commentary is NOT on this chain** — it's 2-layer only (Haiku API if `ANTHROPIC_API_KEY` set, else rule-based; never `claude -p` — `src/commentary/` doesn't import `crate::llm`). See `doc/concepts.md` for the user-facing explanation.
 
 `ANTHROPIC_API_KEY` is therefore **optional** — only the second fallback. When set, it's read from the `~/.claude/` environment or shell profile (shared with CodePower), not a per-project `.env` (though `dotenvy` will also pick up a local `.env`). `.env.example` lists it under Optional.
 
@@ -269,7 +269,7 @@ Do NOT import CodePower's codebase into CodeForge tests or vice versa. CodeForge
 
 Project `.claude/settings.json` carries **codeforge-clone-only DEV** hooks only: `check-improvements.js` (SessionStart), `check-dev-flow.js` (PreToolUse). The script paths use `${CLAUDE_PROJECT_DIR}/.claude/scripts/...` (Claude Code env var, expanded at hook spawn) — no per-clone hand-editing needed.
 
-The **product-wide** hooks — `emit-session.js`, `session-digest.js`, and the `codeforge dream --quiet` → `codeforge ship --no-hook` memory-pipeline SessionEnd chain — live in the **global** install (`codeforge install --hooks`/`--all` → `~/.claude/settings.json`). dream/ship were moved here from `--project-hooks` so they run across **all** projects, not just the codeforge clone (`--project-hooks` is `ensure_in_codeforge_repo`-gated to the clone, so it could never cover other projects). This also avoids dual-fire when working in the codeforge clone. Contributors after fresh clone run `codeforge install --all` once for the global hooks; `--project-hooks` adds the clone-only dev hooks.
+The **product-wide** hooks — `emit-session.js`, `session-digest.js`, the SessionStart local-recall injector `codeforge memory context --hook`, and the `codeforge dream --quiet` → `codeforge ship --no-hook` memory-pipeline SessionEnd chain (plus a top-level `cleanupPeriodDays = 3650`) — live in the **global** install (`codeforge install --hooks`/`--all` → `~/.claude/settings.json`). dream/ship were moved here from `--project-hooks` so they run across **all** projects, not just the codeforge clone (`--project-hooks` is `ensure_in_codeforge_repo`-gated to the clone, so it could never cover other projects). This also avoids dual-fire when working in the codeforge clone. Contributors after fresh clone run `codeforge install --all` once for the global hooks; `--project-hooks` adds the clone-only dev hooks.
 
 The two former V2.2 install bugs are **fixed** (this repo): `patch_hooks` now sweeps *all* codeforge-owned hook groups across every hook_type before re-adding the current set (and collapses emptied arrays), so entries relocate between hook_types / scopes without orphaning or duplicating. `is_legacy_codeforge_command` also recognizes pre-marker node hook-script commands (by codeforge scripts path + known basename), so upgrading from an un-markered install sweeps the old versioned copy instead of stacking a duplicate.
 

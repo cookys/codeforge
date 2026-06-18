@@ -58,7 +58,7 @@ L0 signals（含 `learn` 寫入的、session digest ingest 進來的）+ 既有 
 
 ### LLM backend fallback 鏈（重要）
 
-dream（與 ship、AI commentary）呼叫 LLM 時，走的是**三層 fallback**，不是單一把 key：
+dream（與 ship）呼叫 LLM 時，走的是**三層 fallback**，不是單一把 key（AI commentary 是例外 —— 只有 2 層：有 `ANTHROPIC_API_KEY` 走 Haiku API、否則 rule-based，**不呼叫 claude -p**）：
 
 ```
 1. claude -p headless     ← 主力。借用 Claude Code CLI 登入，免 API key，
@@ -101,6 +101,7 @@ L1 store 的 `.md` 檔（frontmatter 帶 `origin` 欄位：`session` / `absorbed
 當天 L1 + git log
         ↓  LLM digest（同 §3 的 fallback 鏈：claude -p → Haiku → rule-based）
   lessons[]（每條需 ≥1 source_evidence，無 evidence 者丟棄）
+        ↓  provenance.haiku_model 永遠硬寫 HAIKU_MODEL 常數（不反映實際 backend，即使走 claude -p/Opus）
         ↓  POST
   <base>/v1/ingest/ledger     （base 預設 http://127.0.0.1:8845，本機 Mnemos）
 ```

@@ -34,6 +34,9 @@ a few ways — see ⚠️ below. Audited: 2026-06-18.
 > - **Uninstall is a top-level `codeforge uninstall` subcommand**
 >   (`--statusline` / `--hooks` / `--settings-path` / `--quiet`), not an
 >   `install --uninstall` flag.
+> - **`--hooks`/`--all` also write top-level `cleanupPeriodDays = 3650`**
+>   (via `patch_cleanup_period`, only when unset/null; `--force` overrides),
+>   with its own success line — not mentioned in §5.
 >
 > **Blanket note on the implementation-shape sections (§0 module layout, §1
 > script delivery, §4 test plan, §5 success message):** these describe the
