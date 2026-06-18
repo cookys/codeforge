@@ -1,6 +1,6 @@
 # CodeForge Backlog
 
-Last audited: 2026-05-05
+Last audited: 2026-06-18
 
 Items confirmed low-priority or blocked by external dependencies. Each item has a trigger condition for when to pick it up.
 
@@ -155,3 +155,16 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 - **improvement-queue 非原子寫**(pre-existing,本次 out of scope):`session-digest.js` 寫 `improvement-queue.json` 用 `writeFileSync` 但 doc-comment 宣稱 atomically。可比照 digest 改 temp+rename。
 **Trigger**: (1) 真的觀察到 worktree/權限情境的靜默 capture gap;或 (2) 多 dream 並行/高頻 PreCompact 環境下出現 digest 競態丟失;或 (3) 順手清 improvement-queue 寫入時。
 **Status 2026-06-17**: review 已處置(接受現狀);記為 enhancement。
+
+---
+
+## B18 — spec 設計目標 code 未跟上（doc-code-drift audit 2026-06-18）
+
+**Area**: `src/cli/ship.rs`、`src/mnemos/*`、`src/daemon/combat.rs`、`src/pet/ability.rs`
+**Premise**: 2026-06-18 的 doc↔code drift audit（6 領域 + 對抗驗證，48 confirmed findings）發現幾處是「spec 寫了設計、code 尚未實作」（非 doc 寫錯）。已在各 spec 頂部標 `⚠️ NOT YET IMPLEMENTED / CODE LAGS DESIGN`，code 補上時清這些標記：
+- **ship 掃 session jsonl**：`codeforge-ship.md` §5/§6.1 設計 ship 讀 `~/.claude/projects/<repo>/*.jsonl` 取 source_evidence locator（uuid/ts/line）+ prompt [session 線索] block。實作只讀 L1 + git；`SourceEvidence::session_jsonl` 是 dead_code。
+- **provenance 擴充欄位**：`codeforge-ship.md` §4.3 設計 `raw_signal_count`(從 db 算)/`source_jsonl_paths`/`digest_cost_usd`。`build_provenance` 只產 5 個基本欄位。
+- **ship-state 省 digest**：§7.6 設計「已 ship 過 → skip digest + POST」，code 先 digest 才查 already_shipped，只 skip POST（浪費一次 LLM 呼叫）。
+- **Pet Ability 戰鬥效果**：`codeforge-mud-engine.md` §2.5 的 Quick Eye/Focus Strike/Tome Sense 效果未實裝；`ability.rs` 只是 display-only catalog，`combat.rs` 無 ability 邏輯。
+**Trigger**: 各子項獨立 —— 想讓 ledger 帶 session 證據 / 想要 cost telemetry / 想省重複 digest / 想做 ability 戰鬥深度時，分別開 S~L 實作並清掉對應 spec 的 ⚠️ 標記。
+**Status 2026-06-18**: audit 已把 doc 側全部更新成現實 + 標記設計目標;code 側未動,記為 enhancement。其餘 40+ 條 drift（純 stale/missing）已於 `feature/doc-drift-remediation` 一次修正。
