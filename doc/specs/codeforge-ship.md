@@ -1,10 +1,24 @@
 # CodeForge Ship — L2 Ledger Producer
 
-> Status: **定案待實作（FINAL, pending implementation）** · Owner: cookys · Created: 2026-05-15 · Expanded: 2026-06-10
+> Status: **SHIPPED (v0.0.4)**，部分段落與實作有出入 — 見下方 ⚠️ · Owner: cookys · Created: 2026-05-15 · Expanded: 2026-06-10 · Audited: 2026-06-18
 >
 > 此 spec 是 `codeforge ship` subcommand 的實作依據。Payload schema 以 **Mnemos 端 `crates/mnemos/src/api.rs` ledger handler 實際解析的欄位為準**（contract truth，見 §4.1 對照表），不是憑空想像。
 >
 > Mnemos 對應 spec：[`cookys/mnemos/docs/specs/10-source-contract.md`](#) §5.1（`source: codeforge_ledger`）。
+
+> ### ⚠️ As-shipped corrections (audit 2026-06-18)
+>
+> 此 spec 寫於實作前，部分段落與 `src/cli/ship.rs` / `src/mnemos/*` 實際行為有出入。canonical = code。逐項：
+>
+> **(a) STALE — LLM backend（§6 / §6.3）**：digest 主力已是 `claude -p` headless（預設 Opus，免 key），鏈為 `claude -p` → `ANTHROPIC_API_KEY`(Haiku) → rule-based。§6/§6.3 把 Haiku 當主、「無 key 即 passthrough」的描述已過時（§5.2 已自我修正）。`provenance.haiku_model` 永遠硬寫 `HAIKU_MODEL` 常數，不反映實際 backend/model。
+>
+> **(b) STALE — date window（§5 / §3.1）**：git log 實際用 `--since=<date> 00:00 --until=<date> 23:59`（同日 23:59 截止），非到次日 00:00 的半開區間。
+>
+> **(c) NOT YET IMPLEMENTED — session jsonl 輸入（§5 表格 + §6.1 [session 線索] block）**：ship **目前不掃 session jsonl**。`build_lessons` 只讀 L1 + git；`build_prompt` 無 session-hints 區塊；`SourceEvidence::session_jsonl` 是 `#[allow(dead_code)]`。設計目標、code 未跟上 → BACKLOG B18。
+>
+> **(d) NOT YET IMPLEMENTED — provenance 擴充欄位（§4 範例 + §4.3 表）**：`build_provenance` 實際只產 `{lesson_count, l1_concept_files, git_head_sha, git_branch, haiku_model}`。`raw_signal_count` / `source_jsonl_paths` / `digest_cost_usd` 皆未實作（`ctx` 未用於 query db metrics）→ BACKLOG B18。
+>
+> **(e) CODE LAGS DESIGN — ship-state（§7.6）**：spec 要「已 ship 過 → skip digest + POST」，但 code 先跑完整 `build_lessons`(digest) 才查 `already_shipped`，只 skip POST（浪費一次 LLM 呼叫）。設計較佳 → BACKLOG B18 修 code。
 
 ---
 
@@ -353,14 +367,14 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 
 ## 9. Cite Subcommand（協作關係）
 
-`codeforge mnemos-cli context|cite` 是另一個 subcommand，spec 在 [`codeforge-mnemos-cli.md`](codeforge-mnemos-cli.md)（仍是 stub）。
+`codeforge mnemos-cli context|cite|cite-detect` 是另一個 subcommand。**已實作（v0.0.4）**；未拆出獨立 spec 檔（原規劃的 `codeforge-mnemos-cli.md` 從未建立）—— 行為見 CHANGELOG `[0.0.4]` 與 [`../concepts.md`](../concepts.md) §4。
 
 `ship` 與 `mnemos-cli cite` 的協作：
 - ship 結束時順便偵測「本 session transcript 是否引用任何 Mnemos atom」。
 - 偵測到 → 對每個 atom 呼叫 `mnemos-cli cite <atom_id>`（write-back → Mnemos `atom.citation_count++`）。
 - Sprint 1 用 fulltext_match heuristic；Sprint 5+ 改 Haiku。
 
-> 本 spec 只負責 `ship`（L2 ledger 產出）。cite write-back 的精確 contract 在 `codeforge-mnemos-cli.md`。
+> 本 spec 只負責 `ship`（L2 ledger 產出）。cite write-back 的精確 contract 見 CHANGELOG `[0.0.4]` 的 `mnemos-cli cite` 條目與 Mnemos `10-source-contract.md` §11。
 
 ---
 
