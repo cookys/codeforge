@@ -1,6 +1,6 @@
 # Environment — CodeForge
 
-<!-- last-verified: 2026-05-15 -->
+<!-- last-verified: 2026-06-22 -->
 
 ## `~/.cargo/bin` not on PATH for Claude Code spawned shells
 
@@ -17,18 +17,23 @@ Works regardless of PATH.
 
 ## Hook scripts under `.claude/scripts/` have different scopes
 
-**Date**: 2026-05-15
-**Problem**: All 4 scripts (`emit-session`, `session-digest`,
+**Date**: 2026-05-15 | **Re-verified/updated**: 2026-06-22
+**Problem**: 4 scripts (`emit-session`, `session-digest`,
 `check-improvements`, `check-dev-flow`) sit in the same dir but only 2
 are project-agnostic. `check-improvements.js` and `check-dev-flow.js`
-hardcode codeforge's repo layout and would noise-fail or produce false
-data when fired in any non-codeforge Claude Code session.
-**Solution**: `codeforge install --hooks` only installs the 2
-project-agnostic scripts (`emit-session` + `session-digest`) to
-`~/.claude/settings.json` (global). The repo-specific ones stay in
-`<codeforge>/.claude/settings.json` (project-scoped). V2.2 plan
-in `doc/specs/codeforge-install-subcommand.md` adds `--project-hooks`
-flag for installing all 4 to a target repo.
+hardcode codeforge's repo layout and would noise-fail in any
+non-codeforge session.
+**Solution (as-shipped, verified 2026-06-22 against `src/cli/install.rs`)**:
+- `codeforge install --hooks`/`--all` → **global** `~/.claude/settings.json`,
+  across **3 hook types**: SessionStart (`emit-session` + `codeforge memory
+  context --hook` local-recall injector), SessionEnd (`emit-session` +
+  `session-digest` + `codeforge dream --quiet` → `codeforge ship --no-hook`
+  memory pipeline), PreCompact (`session-digest`). Also writes top-level
+  `cleanupPeriodDays = 3650`.
+- `codeforge install --project-hooks` (**shipped**, not "planned") → the 2
+  clone-only dev hooks: `check-improvements` (SessionStart) +
+  `check-dev-flow` (PreToolUse), to `$CWD/.claude/settings.json`.
+- `codeforge uninstall` reverses both (top-level subcommand, not a flag).
 
 ## codeforge init 目錄
 
@@ -36,17 +41,12 @@ flag for installing all 4 to a target repo.
 **Problem**: 在 sibling repo（例如 `~/projects/<other-repo>/`）執行 `codeforge init` 會把 `.codeforge/` 建在那個 repo，不是目標專案。
 **Solution**: 先 `cd ~/projects/<target-repo>/` 再執行 `codeforge init`，或用 `CODEFORGE_DIR` env var 指定。
 
-## codeforge git repo 需要獨立 git config
+## codeforge git repo 需要獨立 git config（⚠️ SUPERSEDED 2026-06-22）
 
-**Date**: 2026-04-14
-**Problem**: 第一次 clone 後，repo 沒有繼承 global git config 的 `user.email` / `user.name`，執行 `git commit` 會報 `Author identity unknown`。
-**Solution**:
-```bash
-cd ~/projects/codeforge
-git config user.email "<your-email>"
-git config user.name "<Your Name>"
-```
-或設定 global：`git config --global user.email "..."` + `git config --global user.name "..."`
+**Date**: 2026-04-14 | **Superseded**: 2026-06-22
+**Problem**: 第一次 clone 後 repo 無 `user.email`/`user.name`，`git commit` 報 `Author identity unknown`。
+**❌ 舊解（不要用）**: `git config user.email "..."` 改 repo config —— 會跨 session 持續、且 codeforge 需要 noreply email（非個人 email）。
+**✅ 現行解**: 用 per-command `-c` override，見下方「Per-command git identity override」條目。codeforge commit 一律 `git -c user.email=2537196+cookys@users.noreply.github.com -c user.name=cookys commit ...`（GitHub email privacy 會擋 gmail）。**不改 config。**
 
 ## `gh repo create --push` 含 GitHub Actions workflow 需要 `workflow` scope
 
