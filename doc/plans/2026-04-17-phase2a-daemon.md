@@ -1,7 +1,7 @@
 # Plan — Phase 2a Daemon Framework
 
 > 建立：2026-04-17
-> 專案：[phase2a-daemon](../projects/2026-04-17-phase2a-daemon/README.md)
+> 專案：[phase2a-daemon](../projects/_archive/2026-04-17-phase2a-daemon/README.md)
 > Branch：`feature/phase2a-daemon`
 > Size：**L**（multiple escalation triggers：schema migration + new module + IPC protocol + Phase 2 daemon architecture）
 
