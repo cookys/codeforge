@@ -123,13 +123,26 @@ Check if any BACKLOG items have their trigger condition met by these changes.
 ### BACKLOG Staleness (periodic)
 If `Last audited:` in `doc/BACKLOG.md` is >14 days ago: flag to user for full audit.
 
-## Doc-Code Drift Audit
+## Doc-Code Drift — two layers (reliable gate + discovery)
 
-Docs drift from code over time. **Entry point: `autopilot:doc-sync`** — the generic,
-portable drift-audit skill. It reads `.claude/doc-drift-config.md` (this repo's 6
-domains) + `.claude/dispatch-config.md` (`## Doc Drift Audit` chain) and runs in
-**scoped** (cheap, per-diff, the L-size default) or **full** (whole-repo, periodic /
-big-change) mode. Report-only — you triage + fix per the policy below.
+Docs drift from code over time. Two complementary layers:
+
+**Layer 1 — deterministic gate (reliable; the actual stopping condition):**
+```bash
+python3 scripts/check-doc-drift.py    # links · fences · version-sync · cli-surface · roadmap-consistency
+```
+Zero-variance — always catches its classes. Runs in CI (`doc-drift` job) + before
+doc-touching merges. **Green = those classes genuinely clean.** This is what makes
+"are the docs in sync?" answerable reliably (a single LLM sweep cannot — see below).
+
+**Layer 2 — LLM full sweep (discovery, NOT a gate): `autopilot:doc-sync`** — the
+generic, portable drift-audit skill. Reads `.claude/doc-drift-config.md` (this repo's
+6 domains) + `.claude/dispatch-config.md` (`## Doc Drift Audit` chain); runs **scoped**
+(cheap, per-diff, the L-size default) or **full** (whole-repo, periodic / big-change).
+Report-only. **Do NOT loop it to zero** — 7-round trajectory in `.claude/doc-audit-state.json`
+proves non-convergence (non-deterministic finders + fixes-introduce-errors). Its job is
+to find NEW drift classes; when a class is mechanizable, **demote it into Layer 1**
+(`scripts/check-doc-drift.py`).
 
 CodeForge ships the Claude-Code `Workflow` implementations as the fast path
 (`dispatch-config.md` points the chain at them); `native` is the portable fallback:
