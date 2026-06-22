@@ -4,5 +4,12 @@
   "stopping_rule": "Full sweep is a periodic/on-big-change audit, NOT a loop-to-zero gate. Empirically (7 rounds) neither total=0 nor WRONG=0 is a provable fixed point — non-deterministic finders + fixes-introduce-errors mean a clean round is unprovable. Fix each round's findings; stop after one pass. Routine guard = per-diff scoped runs.",
   "rounds": {"r1":"48 (13W/27S/8M)","scoped":"4","r2":"22 (5W/8S/9M)","r3":"11 (1W/7S/3M)","r4":"13 (1W/11S/1M)","r5":"14 (4W/6S/4M)","r6":"8 (1W/4S/3M)","r7":"10 (3W/1S/6M)"},
   "workflow": "doc-code-drift-audit",
-  "note": "Full 6-domain sweep is expensive (~1-2M tokens). Staleness threshold 30 days — see .claude/dev-flow-config.md → Doc Audit Staleness. Entry point: autopilot:doc-sync."
+  "note": "Full 6-domain sweep is expensive (~1-2M tokens). Staleness threshold 30 days — see .claude/dev-flow-config.md → Doc Audit Staleness. Entry point: autopilot:doc-sync.",
+  "cross_repo_self_audit": {
+    "date": "2026-06-22",
+    "target": "autopilot repo (doc-sync subsystem, v2.20.0)",
+    "method": "Layer-2 LLM scoped, native dispatch (autopilot ships no Workflow scripts)",
+    "result": "2 WRONG confirmed + 9 claims verified accurate. Both WRONG were a baseline-vs-full conflation: README doc-sync row + CHANGELOG v2.20.0 headline described autopilot's baseline gate (doc-drift-gate.py = links+fences only) as if it ran codeforge's 5-check set (version/cli-surface/roadmap). Fixed in autopilot 689dbea.",
+    "lesson": "VALIDATES the two-layer division of labor: Layer 1 (deterministic gate) could NOT catch this — it only checks links/fences, not semantic 'baseline vs full' conflation. Layer 2 (LLM discovery) is exactly for semantic drift. Also: doc-sync caught drift in the docs DESCRIBING doc-sync itself (dogfood closes the loop)."
+  }
 }
