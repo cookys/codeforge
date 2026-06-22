@@ -4,6 +4,7 @@
 
 | Date | Category | Title | File |
 |------|----------|-------|------|
+| 2026-06-22 | env | `git tag v*.*.*` 觸發 release.yml 發布 pipeline — 別為文件一致性打 tag（codeforge + autopilot 皆 release-on-tag） | `environment.md` |
 | 2026-05-15 | env | Per-command git identity override（`-c user.email=...` 不寫 config）— HARD RULE 合規且支援多 repo 多 identity | `environment.md` |
 | 2026-05-15 | env | `~/.cargo/bin` not on PATH for Claude Code spawned shells — silent statusline failure → `codeforge install` writes abs path | `environment.md` |
 | 2026-05-15 | env | Hook scripts under `.claude/scripts/` split into global-safe (emit-session, session-digest) vs codeforge-repo-only (check-improvements, check-dev-flow) | `environment.md` |

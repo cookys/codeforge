@@ -83,3 +83,11 @@ git -c user.name=cookys -c user.email=cookys@stranity.com commit -m "..."
 - 若 user 明確要求 "set git config for this repo permanently"，才允許 modify config — 預設一律走 `-c` override
 **⚠ codeforge 必須用 noreply email**（2026-06-17 踩到）：codeforge push 到 `github.com/cookys/codeforge` 時，GitHub 開了 **email privacy**，用 `cookys@gmail.com` commit 會在 `git push` 被擋（`push declined due to email privacy restrictions`）。**commit 當下就要帶** `-c user.email=2537196+cookys@users.noreply.github.com`（origin 既有 commit 全用此 email，`git log origin/main --format=%ae` 可確認）。若已用 gmail commit 了才發現，補救：`FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --env-filter '...gmail→noreply...' origin/main..HEAD` 重寫該範圍 author/committer email 再 push。
 **Related**: `codeforge git repo 需要獨立 git config` 條目歷史紀錄；MEMORY.md HARD RULE「NEVER update the git config」
+
+## `git tag v*.*.*` 會觸發 release.yml 發布 pipeline（不可逆對外動作）
+
+**Date**: 2026-06-22 | **Context**: doc-drift audit 抓到 version-sync drift（Cargo.toml 0.0.5 但無對應 git tag / CHANGELOG section），一度想打 `v0.0.5` tag「對齊」
+**Problem**: `.github/workflows/release.yml` 觸發是 `on: push: tags: 'v*.*.*'` —— 推一個 `vX.Y.Z` tag 會**啟動全平台 build + 發 GitHub release**（對外、不可逆）。為了清 doc-audit 的「無 tag」findings 而打 tag，會誤觸發真正的 release。
+**Solution**: **不要為了文件一致性打 release tag**。改用 doc 揭露 pending 狀態（CHANGELOG `[Unreleased]` 註明「Cargo.toml 已 bump 到 X.Y.Z、未 tag」）。tag 留給真正發版的刻意動作。autopilot 同理（也 release-on-tag）。
+**When this fires**: 任何「想打 tag 對齊版號 / 補歷史 tag」的念頭 —— 先 `grep -A3 "^on:" .github/workflows/release.yml` 確認觸發條件。
+**Related**: doc-drift system（auto-memory `reference_doc_drift_system.md`）；`version-sync` 是 `scripts/check-doc-drift.py` 的檢查項
