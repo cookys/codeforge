@@ -1,15 +1,16 @@
 {
   "date": "2026-06-22",
-  "window": "session (doc-drift-system, 2026-06-18 → 2026-06-22)",
+  "window": "full session (doc-drift-system, 2026-06-18 → 2026-06-22)",
   "scope": "codeforge + autopilot",
-  "codeforge": { "commits_nonmerge": 17, "merges": 10, "insertions": 1192, "deletions": 162, "net_loc": 1030 },
-  "autopilot": { "doc_sync_commits": 3, "insertions": 512, "deletions": 35, "net_loc": 477 },
-  "combined": { "commits_total": 30, "net_loc": 1507 },
-  "commit_types": { "docs": 11, "chore": 4, "fix": 2, "feat": 3 },
-  "test_ratio_filename": 0.0,
-  "verification_artifacts": ["scripts/check-doc-drift.py", "autopilot/scripts/doc-drift-gate.py", "7 LLM audit rounds"],
-  "focus": "documentation/tooling ~94%",
+  "final": true,
+  "codeforge": { "commits_nonmerge": 21, "merges": 10, "insertions": 1245, "deletions": 184, "net_loc": 1061 },
+  "autopilot": { "commits_nonmerge": 4, "merges": 2, "insertions": 514, "deletions": 37, "net_loc": 477, "releases": ["v2.19.0", "v2.20.0"] },
+  "combined": { "commits_total": 37, "insertions": 1759, "deletions": 221, "net_loc": 1538 },
+  "commit_types": { "docs": 13, "chore": 6, "fix": 1, "feat": 1 },
+  "focus": "documentation/tooling ~95%",
   "projects_completed": 1,
-  "ship": "doc-drift-system: ~120 drift fixed + two-layer doc-sync (LLM discovery + deterministic gate) across 2 repos",
-  "key_finding": "LLM drift sweep is discovery not gate; loop-to-zero non-convergent (7 rounds); reliability via deterministic checks"
+  "drift_fixed": "~120 (audit) + 2 (autopilot self-audit) + 8 (autopilot links) + 4 (env re-verify/knowledge)",
+  "full_sweeps": 7,
+  "gates_shipped": ["codeforge scripts/check-doc-drift.py (5-check, CI)", "autopilot scripts/doc-drift-gate.py (2-check baseline, preflight #16)"],
+  "key_finding": "LLM drift sweep is discovery not gate; loop-to-zero non-convergent (7 rounds); reliability via deterministic checks; Layer1/Layer2 division validated by cross-repo self-audit"
 }
