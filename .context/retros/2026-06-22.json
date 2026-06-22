@@ -1,0 +1,15 @@
+{
+  "date": "2026-06-22",
+  "window": "session (doc-drift-system, 2026-06-18 → 2026-06-22)",
+  "scope": "codeforge + autopilot",
+  "codeforge": { "commits_nonmerge": 17, "merges": 10, "insertions": 1192, "deletions": 162, "net_loc": 1030 },
+  "autopilot": { "doc_sync_commits": 3, "insertions": 512, "deletions": 35, "net_loc": 477 },
+  "combined": { "commits_total": 30, "net_loc": 1507 },
+  "commit_types": { "docs": 11, "chore": 4, "fix": 2, "feat": 3 },
+  "test_ratio_filename": 0.0,
+  "verification_artifacts": ["scripts/check-doc-drift.py", "autopilot/scripts/doc-drift-gate.py", "7 LLM audit rounds"],
+  "focus": "documentation/tooling ~94%",
+  "projects_completed": 1,
+  "ship": "doc-drift-system: ~120 drift fixed + two-layer doc-sync (LLM discovery + deterministic gate) across 2 repos",
+  "key_finding": "LLM drift sweep is discovery not gate; loop-to-zero non-convergent (7 rounds); reliability via deterministic checks"
+}
