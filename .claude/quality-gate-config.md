@@ -53,13 +53,25 @@ These patterns are intentional, not bugs:
 - `unwrap_or_else(|_| PathBuf::from("."))` in Context::load — safe fallback
 - `u64 as u32` in XP overflow fix — guarded by `.min(10_000_000)` cap
 
-## Doc-Code Drift (NOT a gate)
+## Doc-Code Drift — two layers
 
-Doc accuracy is **not** part of the per-commit quality gate — too expensive and
-orthogonal to build/test correctness. The `doc-drift-scoped` /
-`doc-code-drift-audit` workflows (see `.claude/dev-flow-config.md` → Doc-Code
-Drift Audit) are doc-sync aids run at L-size doc-sync / periodically, never as a
-blocking commit gate.
+**Layer 1 — deterministic gate (reliable, IS a gate for doc-touching changes):**
+```bash
+python3 scripts/check-doc-drift.py    # links · fences · version-sync · cli-surface · roadmap-consistency
+```
+Zero-variance checks that always catch their class. Exit 0 = green. Runs in CI
+(`.github/workflows/ci.yml` → `doc-drift` job) on every push/PR to main, and
+should be run before any doc-touching merge. **This is the reliable stopping
+condition** — a green run means those classes are genuinely clean (unlike the
+LLM sweep, whose "clean" is just an unproven sample).
+
+**Layer 2 — LLM full sweep (discovery, NOT a gate):**
+The `doc-drift-scoped` / `doc-code-drift-audit` workflows (see
+`.claude/dev-flow-config.md` → Doc-Code Drift Audit) are non-deterministic
+DISCOVERY tools — run periodically / on big changes to find NEW drift classes.
+Do not loop them to zero (proven non-convergent — see `.claude/doc-audit-state.json`).
+When a sweep finds a recurring/mechanizable class, **demote it into Layer 1**
+(add a check to `scripts/check-doc-drift.py`) so it becomes reliably caught.
 
 ## Exit Codes
 

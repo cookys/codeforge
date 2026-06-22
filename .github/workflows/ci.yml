@@ -67,3 +67,22 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check licenses
+
+  doc-drift:
+    name: doc-drift gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-docdrift-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build (for CLI-surface check)
+        run: cargo build
+      - name: Deterministic doc-drift gate
+        run: python3 scripts/check-doc-drift.py
