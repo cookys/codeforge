@@ -45,7 +45,10 @@ pub fn save_state(root: &Path, state: &ShipState) -> Result<()> {
 
 /// Has this repo+date already been shipped successfully?
 pub fn already_shipped(state: &ShipState, repo: &str, date: &str) -> bool {
-    state.get(repo).map(|m| m.contains_key(date)).unwrap_or(false)
+    state
+        .get(repo)
+        .map(|m| m.contains_key(date))
+        .unwrap_or(false)
 }
 
 /// Record a successful ship.

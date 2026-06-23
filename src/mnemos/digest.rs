@@ -20,9 +20,7 @@ pub fn select_l1_for_date(entries: &[L1Entry], ledger_date: &str) -> Vec<L1Entry
         // ledger source 收嚴:只收第一人稱本 repo coding 經驗,排除 `dream absorb`
         // 吸來的跨專案 ~/.claude/projects memory(origin == "absorbed"),不污染 Mnemos 腦。
         .filter(|e| e.frontmatter.origin != "absorbed")
-        .filter(|e| {
-            e.frontmatter.created == ledger_date || e.frontmatter.updated == ledger_date
-        })
+        .filter(|e| e.frontmatter.created == ledger_date || e.frontmatter.updated == ledger_date)
         .cloned()
         .collect()
 }
@@ -62,7 +60,9 @@ pub fn passthrough_lessons(entries: &[L1Entry], project_parent: &Path) -> Vec<Le
 pub fn merge_lessons(lessons: Vec<LedgerLesson>) -> Vec<LedgerLesson> {
     let mut out: Vec<LedgerLesson> = Vec::new();
     for l in lessons {
-        if let Some(existing) = out.iter_mut().find(|e| e.title == l.title && !l.title.is_empty())
+        if let Some(existing) = out
+            .iter_mut()
+            .find(|e| e.title == l.title && !l.title.is_empty())
         {
             if !l.detail.is_empty() && !existing.detail.contains(&l.detail) {
                 existing.detail.push_str("\n\n");
@@ -249,7 +249,13 @@ mod tests {
 
     #[test]
     fn passthrough_one_lesson_per_entry_with_evidence() {
-        let entries = vec![entry("ipc", "2026-05-15", "2026-05-15", "active", "long body text")];
+        let entries = vec![entry(
+            "ipc",
+            "2026-05-15",
+            "2026-05-15",
+            "active",
+            "long body text",
+        )];
         let lessons = passthrough_lessons(&entries, Path::new(""));
         assert_eq!(lessons.len(), 1);
         assert_eq!(lessons[0].title, "ipc");
@@ -326,7 +332,14 @@ mod tests {
 
     #[test]
     fn prompt_includes_inputs() {
-        let p = build_prompt("codeforge", "2026-05-15", "abc", "main", "log here", "l1 here");
+        let p = build_prompt(
+            "codeforge",
+            "2026-05-15",
+            "abc",
+            "main",
+            "log here",
+            "l1 here",
+        );
         assert!(p.contains("codeforge"));
         assert!(p.contains("2026-05-15"));
         assert!(p.contains("log here"));

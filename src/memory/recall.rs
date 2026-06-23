@@ -118,7 +118,11 @@ fn snippet(entry: &L1Entry) -> String {
 fn render_entry(entry: &L1Entry) -> String {
     let title = {
         let t = entry.title.trim();
-        if t.is_empty() { "(untitled)" } else { t }
+        if t.is_empty() {
+            "(untitled)"
+        } else {
+            t
+        }
     };
     let topic = &entry.frontmatter.topic;
     let mut s = format!(
@@ -279,14 +283,25 @@ mod tests {
 
     #[test]
     fn render_index_includes_citation_and_snippet() {
-        let r = rank(vec![entry("notify-shutdown", 0.9, "2026-06-01", "active",
-            "# Notify drops wakeup\n\n用 mpsc::channel(1) 而非 Notify::notify_waiters")]);
+        let r = rank(vec![entry(
+            "notify-shutdown",
+            0.9,
+            "2026-06-01",
+            "active",
+            "# Notify drops wakeup\n\n用 mpsc::channel(1) 而非 Notify::notify_waiters",
+        )]);
         let md = render_index(&r, "shutdown", DEFAULT_MAX_TOKENS);
         assert!(md.contains("_topic: shutdown_"));
-        assert!(md.contains("notify-shutdown"), "citation topic present: {md}");
+        assert!(
+            md.contains("notify-shutdown"),
+            "citation topic present: {md}"
+        );
         assert!(md.contains("mpsc::channel(1)"), "snippet present: {md}");
         // snippet skips the `# title` line
-        assert!(!md.contains("> # Notify"), "must skip the markdown title line");
+        assert!(
+            !md.contains("> # Notify"),
+            "must skip the markdown title line"
+        );
     }
 
     #[test]
@@ -299,8 +314,15 @@ mod tests {
         let r = rank(entries);
         let md = render_index(&r, "", 300); // tight budget
         assert!(md.chars().count() <= HARD_CHAR_CAP);
-        assert!(estimate_tokens(&md) <= 300 + 200, "roughly within budget: {}", estimate_tokens(&md));
-        assert!(md.contains("more — `codeforge memory search"), "overflow note present");
+        assert!(
+            estimate_tokens(&md) <= 300 + 200,
+            "roughly within budget: {}",
+            estimate_tokens(&md)
+        );
+        assert!(
+            md.contains("more — `codeforge memory search"),
+            "overflow note present"
+        );
     }
 
     #[test]
@@ -319,7 +341,10 @@ mod tests {
             "must not exceed HARD_CHAR_CAP even with overflow note: got {}",
             md.chars().count()
         );
-        assert!(md.contains("more — `codeforge memory search"), "overflow note present");
+        assert!(
+            md.contains("more — `codeforge memory search"),
+            "overflow note present"
+        );
     }
 
     #[test]

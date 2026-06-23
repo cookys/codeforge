@@ -12,15 +12,20 @@ LLM API calls / SQLite schema / game state model / IPC protocol / Phase 2 daemon
 
 ## Quality Gate
 
-- **S**: `cargo check` (pass = green)
-- **L**: `cargo check` + `cargo test` + `superpowers:requesting-code-review`
-- **H**: `cargo check` + `cargo test` — Critical findings only
+- **S**: `./scripts/fmt.sh --check` + `cargo check` (pass = green)
+- **L**: `./scripts/fmt.sh --check` + `cargo check` + `cargo test` + `superpowers:requesting-code-review`
+- **H**: `./scripts/fmt.sh --check` + `cargo check` + `cargo test` — Critical findings only
+
+> Formatting goes through the pinned wrapper, NEVER bare `cargo fmt` — see
+> `.claude/quality-gate-config.md` → Formatting. Fix drift with `./scripts/fmt.sh`.
 
 ## Build
 
 ```bash
 cargo build --release
 cargo install --path .    # install to ~/.cargo/bin/codeforge
+./scripts/fmt.sh          # format (pinned rustfmt — never bare `cargo fmt`)
+./scripts/fmt.sh --check  # verify formatting (CI gate)
 ```
 
 ## Auto Push
