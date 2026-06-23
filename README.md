@@ -222,7 +222,7 @@ This makes CodeForge the **coding source** for Mnemos's multi-source brain (alon
 |--------|------------------------|--------|
 | Mnemos Sprint 1 | `ship` + `mnemos-cli cite` end-to-end | shipped (v0.0.4) |
 | Mnemos Sprint 2 | `mnemos-cli context` for SessionStart hook | shipped (`mnemos-cli context`, v0.0.4) |
-| Brain indicators | Statusline dual brain lights + `doctor` + `mnemos-cli probe` | shipped (v0.0.6) |
+| Brain indicators | Statusline dual brain lights + `doctor` + `mnemos-cli probe` | shipped (unreleased) |
 | Mnemos Sprint 5+ | Replace fulltext_match cite heuristic with Haiku detection | backlog |
 
 ### Brain Connection Indicators
