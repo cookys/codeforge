@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> Cargo.toml is already at `0.0.5`; this section is the pending **0.0.5** release (not yet git-tagged). Rename to `## [0.0.5] - <date>` and tag `v0.0.5` at release time.
+## [0.0.5] - 2026-06-23
 
 ### Added
 
+- **`codeforge self-update`** (B20) — 從最新 GitHub release 原地替換 `current_exe` 的二進位更新器（`self_update` crate,GitHub 後端,ureq+rustls）。`--check` 只報新版。不管 binary 在 `~/.local/bin` 或 `~/.cargo/bin` 都更新對,繞開「哪個在 PATH」問題。搭配既有 `install.sh`（首裝）。⚠️ 需 publish 為 full release（非 draft/prerelease）才會動。
+- **`codeforge bootstrap`** (B14) — 一鍵多機部署:`install --all`（statusLine 衝突自動 fallback hooks-only,non-destructive）+ fmt pin toolchain 對齊（在 clone 內）+ Mnemos opt-in 狀態（report-only）。best-effort、idempotent、`--dry-run`。
+- **CJK-safe 確定性 gate** (B9) — `scripts/check-cjk-safe.sh` + CI `cjk-safe` job,偵測 `src/**/*.rs` 對字串的 `&s[..N]` byte-slice（CJK panic 形）。把 HARD RULE 沉澱成自動檢查,精準優先於召回。
+- **pinned rustfmt wrapper** (B19) — `scripts/fmt.sh`（單一版本來源,self-install pinned toolchain,只 pin fmt 不動 build）。CI `fmt` job + S/L/H quality gate 都走 `--check`。消除 rolling-stable rustfmt drift。
 - **記憶 recall Phase B(T2.2 + T2.3)** — `doc/plans/2026-06-17-memory-recall-phase-b.md`:
   - **T2.3 統一 ranking** — `recall::rank` 從「strength 單因子排序」改為複合分數 `importance(strength) × recency × citation(refs)`。recency = `0.5^(age/90 天)`,age 對齊「active 集合裡最新的 effective date」(= `updated` 與 `last_ref` 取較新),純函式無 clock。`refs`/`last_ref` 本地引用訊號首次進入排序;近期被引用的舊筆記會復活到前排。
   - **T2.2 mem0 式對賬** — `dream::compile` 在把新事實寫成新 slug 前,先 FTS 找既有相關 active 條目;有的話交 Haiku 判 ADD/UPDATE/DELETE/NOOP(JSON-in-text)。UPDATE 併入既有條(保留 created/strength/refs、union sources/links、bump updated);DELETE 把舊條標 `superseded-by:<slug>`(同 `dedup` 慣例)再寫新條;NOOP 不寫。一律偏向 ADD:無 API key / FTS 無命中 / 解析失敗 / target 越界都退回 ADD,絕不遺失知識。`CompileResult` 新增 `l1_noop`,dream 輸出印「N 對賬略過」。
@@ -24,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **MSRV 1.85 → 1.88** — `self_update` 依賴鏈拉進 `time 0.3.51`（需 Rust 1.88）。誠實 bump `rust-version` + release workflows 的 toolchain pin（`@1.85`→`@1.88`）。連帶 `is_multiple_of` 因 MSRV 跨過 1.87 而從 `% n == 0` 改回慣用法（clippy `manual_is_multiple_of`）。
+- **reqwest 改 rustls-tls**（drop native-tls/openssl-sys） — `default-features = false` + `json` + `rustls-tls`。移除 openssl-sys → aarch64-linux 交叉編譯不再卡在 openssl C build,且與 self_update 統一成單一 rustls/ring TLS stack。5 處 reqwest 用法只用 `.timeout()`/`.build()`,無行為破壞。
+- **clippy rolling-stable drift 清理** — 修 `nonminimal_bool`（install.rs 布林提取 `neither`）、`trim_split_whitespace`（statusline 移除多餘 `.trim()`）。CI clippy job 轉綠。
 - **dream compile 改為對賬式,不再盲目同 slug 覆蓋** — 新事實落在新 slug 時會先和既有相關條目對賬(T2.2);同 slug 仍 in-place 合併,且合併後一律回到 `active`(新訊號落在 superseded slug 視為「重新觀察」而復活,不會把新知識寫進看不到的死檔)。無行為破壞、無需重裝 hook;`memory context` 的浮現順序會因 T2.3 三因子排序而改變(近期被引用的條目排更前)。
 - **記憶 pipeline 跨專案上線** — `codeforge dream --quiet` → `codeforge ship --no-hook` 的 SessionEnd 鏈從 codeforge-clone-only 的 `--project-hooks` 移到 global `--hooks`/`--all`,在每個專案 session 結束都 per-project 萃取（hook CWD = 專案 root → per-cwd `.codeforge`）。`--project-hooks` 因 `ensure_in_codeforge_repo` 只能在 clone 跑,無法覆蓋其他專案;唯有 global 路徑能跨專案。`--project-hooks` 現只保留 dev scripts（check-improvements / check-dev-flow）。
 - `codeforge install --hooks`/`--all` 現會寫入 `cleanupPeriodDays: 3650`(只填未設值,`--force` 才覆蓋使用者選擇)。Claude Code 預設 30 天回收 session transcript,會在 dream/ship 萃取前刪掉;拉高留存讓 raw material 存活。
