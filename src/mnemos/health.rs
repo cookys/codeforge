@@ -12,6 +12,9 @@ pub const NEVER_RETIRE_DAYS: u64 = 7;
 pub const CACHE_MAX_AGE: u64 = 3_600;
 pub const INFLIGHT_GRACE: u64 = 10;
 pub const PROBE_CONNECT_TIMEOUT: u64 = 2;
+/// probe 總 timeout = connect timeout × 2（4s）。避免慢但活著的 server 被誤判為 Unreachable。
+/// connect timeout 仍為 PROBE_CONNECT_TIMEOUT（2s）。
+pub const PROBE_TOTAL_TIMEOUT: u64 = PROBE_CONNECT_TIMEOUT * 2;
 pub const QUEUE_WARN_THRESHOLD: usize = 3;
 
 /// per-machine runtime dir，絕不放會 dotfile-sync 的 home。
@@ -335,7 +338,7 @@ fn http_probe(url: &str) -> (Option<u16>, Option<u32>) {
     rt.block_on(async {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(PROBE_CONNECT_TIMEOUT))
-            .timeout(Duration::from_secs(PROBE_CONNECT_TIMEOUT + 1))
+            .timeout(Duration::from_secs(PROBE_TOTAL_TIMEOUT))
             .build()
             .unwrap_or_default();
         let t0 = std::time::Instant::now();
@@ -439,6 +442,9 @@ pub fn should_refresh(liveness: Option<&LivenessCache>, now: i64) -> bool {
         Some(l) => {
             let elapsed = now - l.last_probe_at;
             let ttl_expired = elapsed > ttl_for(l.last_outcome, l.consecutive_failures) as i64;
+            // belt-and-suspenders：READ-side fresh_enough 已在 statusline/doctor 落實；
+            // 此 OR 在 TTL_MAX(600) < CACHE_MAX_AGE(3600) 時為 dead path（TTL 先短路）。
+            // 保留以防未來 TTL_MAX 調高於 CACHE_MAX_AGE 時仍有 macOS per-boot 安全網。
             let cache_stale = !fresh_enough(l, now);
             ttl_expired || cache_stale
         }

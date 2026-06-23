@@ -58,7 +58,7 @@ probe 與 ship 是兩個**不同事實**，不可 OR 成一軸（否則「/healt
 - 灰 `◌`：曾有 `store/` 歷史但 active=0（「記憶怎麼不見了」是有用訊號，不靜默）。
 - 不渲染：`signals/` 也空、從未 dream 的全新專案。
 - **拿掉數字**（語意薄弱、跟鄰近 version/stat/bar 數字打架）。L1 count 留 `codeforge doctor`。
-- 來源：statusline 已開的 conn 即算（per-render，不快取，零額外成本）。
+- 來源：掃 `.codeforge/store/concepts/` 的 frontmatter（`l1::count_active`）— per-render parse、未快取；概念數通常 <100，成本可忽略（大量概念時見 BACKLOG B24）。
 
 ## 4. 渲染（彩色/無色雙路徑 + 窄窗降級）
 
@@ -111,7 +111,7 @@ mnemos-ship.json      (ship 寫)
   { last_ship_at: i64, last_ship_ok: bool }
 ```
 
-- **queue_depth 不快取** → statusline 直接 `read_dir` 數 `ship-failed/`（stat 級即時，繞過 v2 黏黃；`count==0` 短路、不讀 mtime；閾值「≥3 或最舊 > 24h」才在 count≥1 時掃 mtime）。
+- **queue_depth 不快取** → statusline 直接 `read_dir` 數 `ship-failed/`（stat 級即時，繞過 v2 黏黃）。⚠️ 實作（`queue_degraded()`）對每個 JSON entry 均讀 mtime（迭代中累積 oldest_age），`queue_degraded_from` 在 count==0 時短路回 false；queue 正常為空故迭代次數為 0，實際成本可忽略，但並無「count==0 先短路再迭代」的最佳化。閾值「≥3 或最舊 > 24h」在 `queue_degraded_from` 的純邏輯層判定。
 - 讀失敗 → 該軸視為未知（§2.1 表，不觸發 spawn）。
 - 時鐘：全 wall-clock Unix 秒。`last_probe_at` = probe 完成時刻；lock mtime = spawn 時刻（probe 執行中不刷新）。未來戳（clock skew）→ 視為立即過期但配合 backoff 不放大 herd。
 
@@ -157,7 +157,7 @@ should_spawn =
   - fresh-digest POST：`ship.rs:117` 後的 `Ok`(:119) / `Exhausted`(:129) / `BadRequest`(:142)。
   - **flush 成功**（`flush_failed_queue`，`ship.rs:100`/`:113` 呼叫）也回寫 `last_ship_ok=true`（同證 readiness）。
 - **早 return 路徑不寫**（無 :117 往返）：`no-ship opt-out`(:37)、`未 opt-in no-hook`(:47)、`--resend`(:56)、`--dry-run`(:86)、`already_shipped` 純早退(:94)、`empty lessons`(:106)。
-- **寫快取受 `opted_in()` gate 約束**（與**渲染** gate 同源，**非** POST 是否發生）—— 互動 `codeforge ship` 雖忽略 gate POST，但不寫健康快取（避免「先手動 ship → 後 opt-in」讀到古老假綠）。
+- **寫快取受 `opted_in()` gate 約束**（與**渲染** gate 同源，**非** POST 是否發生）—— `record_ship_health` 內部先查 `opted_in()`：**opted-in 時才寫快取**（互動 ship 亦然；opted-in 使用者的手動 ship 是真實 readiness 訊號，寫快取正確）。未 opt-in 時不寫（避免「pre-opt-in 假綠」，opt-in gate 已達成此保護）。
 - `--no-hook` 失敗分支全回 `Ok(())`，不拖垮 SessionEnd。
 
 ## 9. 模組邊界
