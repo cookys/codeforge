@@ -174,10 +174,13 @@ esac
 cat >&2 <<EOF
 
 Next steps:
-  codeforge install                    # wire ~/.claude/settings.json
+  codeforge bootstrap                  # one-command setup (statusLine + global hooks + fmt + Mnemos)
   cd ~/projects/<your-repo>
   codeforge init                       # initialize the project store
   codeforge adopt                      # pick a starter pet
+
+Later, update in place (no need to re-run this script):
+  codeforge self-update                # pull the latest release, replace this binary
 
 See: https://github.com/${REPO}/blob/main/doc/getting-started.md
 EOF
