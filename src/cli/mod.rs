@@ -253,6 +253,12 @@ pub enum MnemosCliAction {
         #[arg(long)]
         max: Option<usize>,
     },
+    /// 前景探測 Mnemos /health（spec §7.4）
+    Probe {
+        /// 印 stderr 詳情、不寫 liveness 快取（供手動 debug）
+        #[arg(long)]
+        verbose: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -434,6 +440,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     topic,
                     max,
                 },
+                MnemosCliAction::Probe { verbose } => mnemos_cli::MnemosCliCmd::Probe { verbose },
             },
         ),
     }
