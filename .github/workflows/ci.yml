@@ -86,3 +86,11 @@ jobs:
         run: cargo build
       - name: Deterministic doc-drift gate
         run: python3 scripts/check-doc-drift.py
+
+  cjk-safe:
+    name: cjk-safe gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: CJK-safe string-slice gate
+        run: ./scripts/check-cjk-safe.sh
