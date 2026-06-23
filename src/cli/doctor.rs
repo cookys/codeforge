@@ -39,6 +39,8 @@ pub struct DoctorInput {
     pub queue_count: usize,
     /// queue 最舊一筆 age（秒）
     pub queue_oldest_age: Option<u64>,
+    /// 央腦燈號（已由 run() 計算，render_doctor 不再讀磁碟）
+    pub central: CentralLight,
     /// Mnemos base_url
     pub base_url: String,
     /// 目前 unix 時間（供相對時間計算）
@@ -81,7 +83,14 @@ pub fn render_doctor(input: &DoctorInput) -> String {
                 .to_string(),
         );
     } else {
-        lines.push("  Opt-in：是".to_string());
+        let central_label = match input.central {
+            CentralLight::Ok => "● OK",
+            CentralLight::Degraded => "◐ 降級",
+            CentralLight::Offline => "○ 離線",
+            CentralLight::Pending => "◌ 待定",
+            CentralLight::Hidden => "—",
+        };
+        lines.push(format!("  Opt-in：是  央腦狀態：{}", central_label));
 
         // 即時 probe（標「即時量測」）
         let (outcome, latency, http_status) = &input.live_probe;
@@ -103,7 +112,7 @@ pub fn render_doctor(input: &DoctorInput) -> String {
         };
         lines.push(format!("  即時 probe（~2s）：{}", probe_str));
 
-        // next-step for offline/error
+        // next-step for offline/error/never
         match outcome {
             ProbeOutcome::Unreachable => {
                 lines.push(
@@ -117,7 +126,13 @@ pub fn render_doctor(input: &DoctorInput) -> String {
                         .to_string(),
                 );
             }
-            _ => {}
+            ProbeOutcome::Never => {
+                lines.push(
+                    "  建議：從未成功連線 Mnemos，請確認 base_url 設定，再執行 `codeforge mnemos-cli probe --verbose` 診斷。"
+                        .to_string(),
+                );
+            }
+            ProbeOutcome::Ok => {}
         }
 
         // 上次 probe 快取（顯示相對時間）
@@ -166,14 +181,10 @@ pub fn render_doctor(input: &DoctorInput) -> String {
         lines.push(format!("  待重送 queue：{} 筆{}", queue_count, oldest_str));
 
         if queue_count > 0 {
-            // Compute central light to check degraded state
-            let central = compute_central(input);
-            if matches!(central, CentralLight::Degraded) {
-                lines.push(
-                    "  建議：有未送達的 ledger，可執行 `codeforge ship --resend` 補送。"
-                        .to_string(),
-                );
-            }
+            // 有待重送就提示（不依賴 central light 合成）
+            lines.push(
+                "  建議：有未送達的 ledger，可執行 `codeforge ship --resend` 補送。".to_string(),
+            );
         }
     }
 
@@ -184,22 +195,6 @@ pub fn render_doctor(input: &DoctorInput) -> String {
     lines.push(format!("  base_url：{}", input.base_url));
 
     lines.join("\n")
-}
-
-/// 計算 central light（用於 degraded 判斷）。
-fn compute_central(input: &DoctorInput) -> CentralLight {
-    // 從 live_probe 結果合成一個臨時的 LivenessCache 概念，
-    // 實際上我們直接用快取的值做判斷
-    let liveness = read_liveness();
-    let ship = read_ship();
-    let qd = queue_degraded();
-    central_light(
-        input.opted_in,
-        liveness.as_ref().filter(|l| fresh_enough(l, input.now)),
-        ship.as_ref(),
-        qd,
-        input.now,
-    )
 }
 
 /// 格式化秒數為人話（中文）。
@@ -220,9 +215,10 @@ fn fmt_age(secs: u64) -> String {
 /// 流程：
 /// 1. 讀本地維度（L1 count、store 歷史）
 /// 2. 讀 Mnemos config（opted_in、base_url）
-/// 3. 前景 probe（~2s，即時量測）
+/// 3. 前景 probe（僅 opted-in 時，~2s，即時量測）
 /// 4. 讀快取維度（last_probe_at、last_ship、queue 深度）
-/// 5. 組 DoctorInput → render_doctor → 印出
+/// 5. 算 CentralLight（pure，不讀磁碟）
+/// 6. 組 DoctorInput → render_doctor → 印出
 pub fn run(ctx: &db::Context) -> Result<()> {
     let store_dir = ctx.project_dir.join("store");
     let l1_active = l1::count_active(&store_dir);
@@ -233,8 +229,12 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         .map(|c| c.base_url)
         .unwrap_or_else(|_| "（讀取失敗）".to_string());
 
-    // 前景即時 probe（永遠跑，結果標「即時量測」）
-    let live_probe = probe_now();
+    // 前景即時 probe（未 opt-in 不打網路）
+    let live_probe = if opted_in {
+        probe_now()
+    } else {
+        (ProbeOutcome::Never, None, None)
+    };
 
     // 快取維度
     let last_liveness = read_liveness();
@@ -249,6 +249,11 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
+    // 算 CentralLight（用快取，不依賴 live_probe）
+    let qd = queue_degraded();
+    let lv_fresh = last_liveness.as_ref().filter(|l| fresh_enough(l, now));
+    let central = central_light(opted_in, lv_fresh, last_ship.as_ref(), qd, now);
+
     let input = DoctorInput {
         l1_active,
         has_store_history,
@@ -259,6 +264,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         last_ship_ok,
         queue_count,
         queue_oldest_age,
+        central,
         base_url,
         now,
     };
@@ -298,6 +304,7 @@ mod tests {
             last_ship_ok,
             queue_count,
             queue_oldest_age: if queue_count > 0 { Some(90_000) } else { None },
+            central: CentralLight::Ok,
             base_url: "http://127.0.0.1:8845".to_string(),
             now: 1_000_000,
         }
@@ -316,25 +323,22 @@ mod tests {
             0,
         );
         let out = render_doctor(&input);
+        let preview: String = out.chars().take(200).collect();
         assert!(
-            out.contains("local") || out.contains("本地"),
+            out.contains("本地腦"),
             "應含本地腦 label，got: {:?}",
-            &out[..out.len().min(200)]
+            preview
+        );
+        assert!(out.contains("央腦"), "應含央腦 label，got: {:?}", preview);
+        assert!(
+            out.contains("待重送"),
+            "應含待重送 label，got: {:?}",
+            preview
         );
         assert!(
-            out.contains("mnemos") || out.contains("央腦"),
-            "應含 mnemos/央腦 label，got: {:?}",
-            &out[..out.len().min(200)]
-        );
-        assert!(
-            out.contains("queue") || out.contains("待重送"),
-            "應含 queue label，got: {:?}",
-            &out[..out.len().min(200)]
-        );
-        assert!(
-            out.contains("base_url") || out.contains("127.0.0.1"),
-            "應含 base_url，got: {:?}",
-            &out[..out.len().min(200)]
+            out.contains("127.0.0.1"),
+            "應含 base_url 地址，got: {:?}",
+            preview
         );
     }
 
@@ -351,10 +355,28 @@ mod tests {
             0,
         );
         let out = render_doctor(&input);
+        let preview: String = out.chars().take(400).collect();
         assert!(
-            out.contains("serve") || out.contains("mnemos") || out.contains("建議"),
-            "Offline 態應含 next-step 建議（serve/mnemos/建議），got: {:?}",
-            &out[..out.len().min(400)]
+            out.contains("cargo run -p mnemos -- serve"),
+            "Offline 態應含 serve 指令建議，got: {:?}",
+            preview
+        );
+    }
+
+    #[test]
+    fn pending_state_contains_next_step() {
+        let input = make_input(5, true, true, ProbeOutcome::Never, None, None, None, 0);
+        let out = render_doctor(&input);
+        let preview: String = out.chars().take(400).collect();
+        assert!(
+            out.contains("mnemos-cli probe --verbose"),
+            "Never 態應含 probe --verbose 建議，got: {:?}",
+            preview
+        );
+        assert!(
+            out.contains("base_url") || out.contains("確認"),
+            "Never 態應含 base_url 或確認字樣，got: {:?}",
+            preview
         );
     }
 
@@ -371,11 +393,12 @@ mod tests {
             0,
         );
         let out = render_doctor(&input);
+        let preview: String = out.chars().take(400).collect();
         // OK 態不應出現 "serve" 建議（重啟 server 的指令）
         assert!(
             !out.contains("cargo run -p mnemos -- serve"),
             "Ok 態不應含 serve 建議，got: {:?}",
-            &out[..out.len().min(400)]
+            preview
         );
     }
 
@@ -392,10 +415,16 @@ mod tests {
             0,
         );
         let out = render_doctor(&input);
+        let preview: String = out.chars().take(400).collect();
         assert!(
-            out.contains("Opt-in：否") || out.contains("mnemos.env"),
-            "未 opt-in 應顯示提示，got: {:?}",
-            &out[..out.len().min(400)]
+            out.contains("Opt-in：否"),
+            "未 opt-in 應顯示 Opt-in：否，got: {:?}",
+            preview
+        );
+        assert!(
+            out.contains("mnemos.env"),
+            "未 opt-in 應提示 mnemos.env，got: {:?}",
+            preview
         );
     }
 
@@ -412,10 +441,16 @@ mod tests {
             5,
         );
         let out = render_doctor(&input);
+        let preview: String = out.chars().take(400).collect();
         assert!(
-            out.contains("5") && (out.contains("queue") || out.contains("待重送")),
-            "應顯示 queue 深度，got: {:?}",
-            &out[..out.len().min(400)]
+            out.contains("5") && out.contains("待重送"),
+            "應顯示 queue 深度（5 + 待重送），got: {:?}",
+            preview
+        );
+        assert!(
+            out.contains("ship --resend"),
+            "有 queue 應提示 --resend，got: {:?}",
+            preview
         );
     }
 }

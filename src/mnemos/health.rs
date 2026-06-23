@@ -321,35 +321,43 @@ pub fn classify_probe(status: Option<u16>) -> ProbeOutcome {
     }
 }
 
-/// Execute a single probe against Mnemos `/health`.
-///
-/// Non-verbose path: writes `mnemos-liveness.json` and releases the lock.
-/// Verbose path (manual debug): prints to stderr, does NOT write cache.
-pub fn run_probe(verbose: bool) -> anyhow::Result<()> {
+/// 共用 HTTP probe 核心：建 2s timeout client、block_on GET、回 (status, latency_ms)。
+/// 由 `run_probe` 與 `probe_now` 共用，避免重複。
+fn http_probe(url: &str) -> (Option<u16>, Option<u32>) {
     use std::time::Duration;
-    let cfg = crate::mnemos::config::MnemosConfig::load()?;
-    let url = format!("{}/health", cfg.base_url);
-
-    // Minimal single-thread runtime — probe is a one-shot ≤2 s request.
-    let rt = tokio::runtime::Builder::new_current_thread()
+    let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
-        .build()?;
-    let (status, latency_ms) = rt.block_on(async {
+        .build()
+    {
+        Ok(r) => r,
+        Err(_) => return (None, None),
+    };
+    rt.block_on(async {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(PROBE_CONNECT_TIMEOUT))
             .timeout(Duration::from_secs(PROBE_CONNECT_TIMEOUT + 1))
             .build()
             .unwrap_or_default();
         let t0 = std::time::Instant::now();
-        match client.get(&url).send().await {
+        match client.get(url).send().await {
             Ok(r) => (
                 Some(r.status().as_u16()),
                 Some(t0.elapsed().as_millis() as u32),
             ),
             Err(_) => (None, None),
         }
-    });
+    })
+}
 
+/// Execute a single probe against Mnemos `/health`.
+///
+/// Non-verbose path: writes `mnemos-liveness.json` and releases the lock.
+/// Verbose path (manual debug): prints to stderr, does NOT write cache.
+pub fn run_probe(verbose: bool) -> anyhow::Result<()> {
+    let cfg = crate::mnemos::config::MnemosConfig::load()?;
+    let url = format!("{}/health", cfg.base_url);
+
+    let (status, latency_ms) = http_probe(&url);
     let outcome = classify_probe(status);
 
     if verbose {
@@ -382,39 +390,14 @@ pub fn run_probe(verbose: bool) -> anyhow::Result<()> {
 ///
 /// 回傳 `(ProbeOutcome, Option<u32> latency_ms, Option<u16> http_status)`。
 /// 使用 2s timeout（與 run_probe 相同）。base_url 取自 MnemosConfig。
-/// 任何設定載入 / 運行時錯誤皆退 `(ProbeOutcome::Unreachable, None, None)`。
+/// 任何設定載入錯誤皆退 `(ProbeOutcome::Unreachable, None, None)`。
 pub fn probe_now() -> (ProbeOutcome, Option<u32>, Option<u16>) {
-    use std::time::Duration;
     let cfg = match crate::mnemos::config::MnemosConfig::load() {
         Ok(c) => c,
         Err(_) => return (ProbeOutcome::Unreachable, None, None),
     };
     let url = format!("{}/health", cfg.base_url);
-
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(r) => r,
-        Err(_) => return (ProbeOutcome::Unreachable, None, None),
-    };
-
-    let (status, latency_ms) = rt.block_on(async {
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(PROBE_CONNECT_TIMEOUT))
-            .timeout(Duration::from_secs(PROBE_CONNECT_TIMEOUT + 1))
-            .build()
-            .unwrap_or_default();
-        let t0 = std::time::Instant::now();
-        match client.get(&url).send().await {
-            Ok(r) => (
-                Some(r.status().as_u16()),
-                Some(t0.elapsed().as_millis() as u32),
-            ),
-            Err(_) => (None, None),
-        }
-    });
-
+    let (status, latency_ms) = http_probe(&url);
     (classify_probe(status), latency_ms, status)
 }
 
