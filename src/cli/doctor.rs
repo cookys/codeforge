@@ -280,6 +280,8 @@ mod tests {
     use super::*;
     use crate::mnemos::health::ProbeOutcome;
 
+    // Test constructor mirrors DoctorInput's many fields; grouping adds no clarity.
+    #[allow(clippy::too_many_arguments)]
     fn make_input(
         l1_active: usize,
         has_store: bool,
