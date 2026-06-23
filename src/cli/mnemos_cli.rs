@@ -31,9 +31,17 @@ pub enum MnemosCliCmd {
         topic: Option<String>,
         max: Option<usize>,
     },
+    /// 前景探測 Mnemos /health（詳見 spec §7.4）。
+    /// 非 verbose：寫 liveness 快取、釋鎖；verbose：只印 stderr 不寫快取。
+    Probe { verbose: bool },
 }
 
 pub fn run(ctx: &db::Context, cmd: MnemosCliCmd) -> Result<()> {
+    if let MnemosCliCmd::Probe { verbose } = cmd {
+        // Probe has its own minimal runtime — skip the shared rt setup.
+        return crate::mnemos::health::run_probe(verbose);
+    }
+
     let cfg = MnemosConfig::load()?;
     let rt = tokio::runtime::Runtime::new()?;
     match cmd {
@@ -52,6 +60,7 @@ pub fn run(ctx: &db::Context, cmd: MnemosCliCmd) -> Result<()> {
             topic,
             max,
         } => run_cite_detect(ctx, &cfg, &rt, &transcript, topic, max),
+        MnemosCliCmd::Probe { .. } => unreachable!("handled above"),
     }
 }
 

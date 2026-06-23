@@ -46,3 +46,13 @@ mnemos.cited: "cited atom"
 mnemos.cite_failed: "cite failed"
 mnemos.cite_detect_none: "cite-detect: no citations detected"
 mnemos.cite_detect_done: "cite-detect: citations written back"
+
+# Brain indicator labels (Task 10)
+ui.brain.local_label: "memory"
+ui.brain.central_label: "mnemos"
+ui.brain.status.active: "active"
+ui.brain.status.empty: "empty"
+ui.brain.status.ok: "ok"
+ui.brain.status.degraded: "degraded"
+ui.brain.status.offline: "offline"
+ui.brain.status.pending: "pending"
