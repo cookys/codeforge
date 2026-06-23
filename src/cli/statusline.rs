@@ -206,17 +206,34 @@ const MEM_ACT: Rgb = (0x5F, 0xAF, 0x5F); // 71  — memory active
 const UPDATE_C: Rgb = (0xFF, 0xAF, 0x00); // 214 — amber update banner
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
+// Route through owo_colors `if_supports_color` so NO_COLOR env var and
+// non-tty pipes automatically strip ANSI escape codes (spec §4.1).
 
 fn tc(s: &str, (r, g, b): Rgb) -> String {
-    format!("{}", s.truecolor(r, g, b))
+    format!(
+        "{}",
+        s.if_supports_color(owo_colors::Stream::Stdout, |t| t.truecolor(r, g, b))
+    )
 }
 
 fn tc_bold(s: &str, (r, g, b): Rgb) -> String {
-    format!("{}", s.truecolor(r, g, b).bold())
+    use owo_colors::Stream::Stdout;
+    // Two-step: truecolor first, then bold (avoids returning ref to temporary).
+    let colored = format!(
+        "{}",
+        s.if_supports_color(Stdout, |t| t.truecolor(r, g, b))
+    );
+    format!(
+        "{}",
+        colored.if_supports_color(Stdout, |t| t.bold())
+    )
 }
 
 fn tcs(s: String, (r, g, b): Rgb) -> String {
-    format!("{}", s.truecolor(r, g, b))
+    format!(
+        "{}",
+        s.if_supports_color(owo_colors::Stream::Stdout, |t| t.truecolor(r, g, b))
+    )
 }
 
 fn bar_rgb(pct: f64) -> Rgb {
@@ -1046,6 +1063,45 @@ fn render_full<W: Write>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Serialize env mutations across tests to avoid race conditions.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Verify that NO_COLOR env var causes tc/tc_bold/tcs to emit plain text
+    /// with no ANSI escape sequences. (owo_colors if_supports_color honours it.)
+    #[test]
+    fn no_color_strips_ansi() {
+        let _g = ENV_LOCK.lock().unwrap();
+        // Force override: NO_COLOR=1 must suppress all color output.
+        owo_colors::set_override(false);
+        let s = tc("hi", (0xFF, 0x00, 0x00));
+        assert!(
+            !s.contains('\x1b'),
+            "NO_COLOR 下不該有 ANSI escape，got: {:?}",
+            s
+        );
+        let sb = tc_bold("bold", (0x00, 0xFF, 0x00));
+        assert!(
+            !sb.contains('\x1b'),
+            "tc_bold NO_COLOR 下不該有 ANSI escape，got: {:?}",
+            sb
+        );
+        // Restore default detection.
+        owo_colors::unset_override();
+    }
+
+    #[test]
+    fn ansi_vis_strips_escapes() {
+        // Even with colors on, ansi_vis should return visible width only.
+        let colored = tc("hello", (0xFF, 0xFF, 0xFF));
+        // visible width = 5 regardless of ANSI wrapping
+        assert_eq!(ansi_vis(&colored), 5);
+    }
 }
 
 /// Render the bottom border `╰─ memory ● active ─── fill ─── v2.1.142 ──╯`.
