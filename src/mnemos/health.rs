@@ -679,6 +679,32 @@ mod tests {
         let _ = cache_stale_by_age; // verified above conceptually
     }
 
+    // ── Task 9: ship cache roundtrip ──────────────────────────────────────
+
+    #[test]
+    fn ship_health_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("mnemos-ship.json");
+        let v = ShipCache {
+            last_ship_at: 42,
+            last_ship_ok: true,
+        };
+        write_atomic(&p, &v).unwrap();
+        let back: ShipCache = read_json(&p).unwrap();
+        assert_eq!(back.last_ship_at, 42);
+        assert!(back.last_ship_ok);
+
+        // false 也能正確 roundtrip
+        let v2 = ShipCache {
+            last_ship_at: 99,
+            last_ship_ok: false,
+        };
+        write_atomic(&p, &v2).unwrap();
+        let back2: ShipCache = read_json(&p).unwrap();
+        assert_eq!(back2.last_ship_at, 99);
+        assert!(!back2.last_ship_ok);
+    }
+
     #[test]
     fn ttl_and_backoff() {
         assert_eq!(ttl_for(ProbeOutcome::Ok, 0), PROBE_TTL_OK);

@@ -5,10 +5,11 @@
 
 use anyhow::Result;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::db;
 use crate::mnemos::config::MnemosConfig;
+use crate::mnemos::health;
 use crate::mnemos::ledger::{LedgerEnvelope, LedgerLesson, LedgerPayload};
 use crate::mnemos::transport::{self, SendResult};
 use crate::mnemos::{digest, evidence::SourceEvidence, new_ulid, state};
@@ -97,7 +98,10 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
             rust_i18n::t!("ship.already_shipped")
         );
         if !opts.no_hook {
-            rt.block_on(flush_failed_queue(&cfg, &root, false));
+            let flushed = rt.block_on(flush_failed_queue(&cfg, &root, false));
+            if flushed > 0 {
+                record_ship_health(true);
+            }
         }
         return Ok(());
     }
@@ -110,13 +114,17 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
 
     // Default mode (not --no-hook): piggyback-flush failed queue first (§7.4).
     if !opts.no_hook {
-        rt.block_on(flush_failed_queue(&cfg, &root, false));
+        let flushed = rt.block_on(flush_failed_queue(&cfg, &root, false));
+        if flushed > 0 {
+            record_ship_health(true);
+        }
     }
 
     // POST with the appropriate retry profile.
     let result = rt.block_on(send_envelope(&cfg, &envelope, opts.no_hook));
     match result {
         SendResult::Ok => {
+            record_ship_health(true);
             state::mark_shipped(&mut sstate, &repo, &ledger_date, &ship_id);
             state::save_state(&root, &sstate)?;
             let n = envelope.payload.lessons.len();
@@ -127,6 +135,7 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
             Ok(())
         }
         SendResult::Exhausted(msg) => {
+            record_ship_health(false);
             let path = state::write_failed(&root, &envelope)?;
             eprintln!(
                 "⚠ {} ({msg}) — {}",
@@ -141,6 +150,7 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
         }
         SendResult::BadRequest(msg) => {
             // 4xx：壞 payload，不 queue（§7.2）。
+            record_ship_health(false);
             eprintln!("✗ {} ({msg})", rust_i18n::t!("ship.rejected"));
             if opts.no_hook {
                 Ok(())
@@ -334,6 +344,28 @@ async fn call_haiku(api_key: &str, prompt: &str) -> Result<String> {
         .as_str()
         .unwrap_or("{}")
         .to_string())
+}
+
+/// 把真實 ingest 成敗寫進 per-machine 快取 `mnemos-ship.json`（spec §8）。
+/// 受 `MnemosConfig::opted_in()` gate — 未 opt-in 不寫。
+/// 失敗 silently log，絕不 propagate（保持 SessionEnd 不中斷）。
+fn record_ship_health(ok: bool) {
+    if !MnemosConfig::opted_in() {
+        return;
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    if let Err(e) = health::write_atomic(
+        &health::ship_path(),
+        &health::ShipCache {
+            last_ship_at: now,
+            last_ship_ok: ok,
+        },
+    ) {
+        eprintln!("ship: 無法寫 mnemos-ship.json（{e}）");
+    }
 }
 
 fn repo_name(project_dir: &Path) -> String {
