@@ -70,6 +70,7 @@ sha1 = "0.10"
 
 # Environment
 dotenvy = "0.15"
+self_update = { version = "0.44.0", default-features = false, features = ["archive-tar", "compression-flate2", "rustls", "ureq"] }
 
 [dev-dependencies]
 tempfile = "3"
