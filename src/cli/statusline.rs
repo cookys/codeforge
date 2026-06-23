@@ -97,6 +97,11 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     }
 
     out.flush()?;
+
+    // Task 8: fire-and-forget detached probe spawn (after render, non-blocking).
+    // Conditions: opted_in && should_refresh && lock acquired → spawn child.
+    crate::mnemos::health::maybe_spawn_probe();
+
     Ok(())
 }
 
