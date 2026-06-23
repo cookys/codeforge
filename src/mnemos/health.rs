@@ -378,6 +378,72 @@ pub fn run_probe(verbose: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// 前景同步 probe 核心（供 `codeforge doctor` 直接呼叫，不寫快取、不釋鎖）。
+///
+/// 回傳 `(ProbeOutcome, Option<u32> latency_ms, Option<u16> http_status)`。
+/// 使用 2s timeout（與 run_probe 相同）。base_url 取自 MnemosConfig。
+/// 任何設定載入 / 運行時錯誤皆退 `(ProbeOutcome::Unreachable, None, None)`。
+pub fn probe_now() -> (ProbeOutcome, Option<u32>, Option<u16>) {
+    use std::time::Duration;
+    let cfg = match crate::mnemos::config::MnemosConfig::load() {
+        Ok(c) => c,
+        Err(_) => return (ProbeOutcome::Unreachable, None, None),
+    };
+    let url = format!("{}/health", cfg.base_url);
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(r) => r,
+        Err(_) => return (ProbeOutcome::Unreachable, None, None),
+    };
+
+    let (status, latency_ms) = rt.block_on(async {
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(PROBE_CONNECT_TIMEOUT))
+            .timeout(Duration::from_secs(PROBE_CONNECT_TIMEOUT + 1))
+            .build()
+            .unwrap_or_default();
+        let t0 = std::time::Instant::now();
+        match client.get(&url).send().await {
+            Ok(r) => (
+                Some(r.status().as_u16()),
+                Some(t0.elapsed().as_millis() as u32),
+            ),
+            Err(_) => (None, None),
+        }
+    });
+
+    (classify_probe(status), latency_ms, status)
+}
+
+/// 即時讀 ship-failed/ dir，回傳 (count, oldest_age_secs)。
+/// doctor 用：顯示 queue 深度與最舊一筆 age。
+pub fn queue_info() -> (usize, Option<u64>) {
+    let dir = crate::mnemos::state::ship_failed_dir(&crate::mnemos::state::ship_root());
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return (0, None);
+    };
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut count = 0usize;
+    let mut oldest_age: Option<u64> = None;
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.extension().map(|x| x == "json").unwrap_or(false) {
+            count += 1;
+            if let Some(mtime) = file_mtime_secs(&path) {
+                let age = now_secs.saturating_sub(mtime as u64);
+                oldest_age = Some(oldest_age.map(|o| o.max(age)).unwrap_or(age));
+            }
+        }
+    }
+    (count, oldest_age)
+}
+
 // ─── Task 8: should_refresh + maybe_spawn_probe ────────────────────────────
 
 /// Returns true if the liveness cache needs to be refreshed:
