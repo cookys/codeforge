@@ -457,7 +457,7 @@ fn git_ahead_behind() -> Option<(u32, u32)> {
         return None;
     }
     let s = String::from_utf8_lossy(&out.stdout);
-    let mut parts = s.trim().split_whitespace();
+    let mut parts = s.split_whitespace();
     let behind: u32 = parts.next()?.parse().ok()?;
     let ahead: u32 = parts.next()?.parse().ok()?;
     Some((ahead, behind))
@@ -570,9 +570,7 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
     let branch_budget = width.saturating_sub(fixed + cwd_vis).max(4);
     let branch_display = shorten_str(&branch_full, branch_budget);
     let branch_vis = vis(&branch_display);
-    let fill = width
-        .saturating_sub(fixed + cwd_vis + branch_vis)
-        .max(2);
+    let fill = width.saturating_sub(fixed + cwd_vis + branch_vis).max(2);
 
     let row0 = format!(
         " {}{}{}{} {} {} {}",
@@ -619,8 +617,7 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
     let hint_long = "→ codeforge adopt";
     let hint_short = "→ adopt";
     let min_gap = 3; // breathing room between usage and hint
-    let avail_for_hint = width
-        .saturating_sub(1 + usage_left_vis + min_gap + 1); // leading space + content + gap + trailing
+    let avail_for_hint = width.saturating_sub(1 + usage_left_vis + min_gap + 1); // leading space + content + gap + trailing
     let hint_render = if avail_for_hint >= vis(hint_long) {
         Some((hint_long, vis(hint_long)))
     } else if avail_for_hint >= vis(hint_short) {
@@ -775,7 +772,11 @@ fn render_full<W: Write>(
     } else {
         format!(" {}", tc(&ab_str, AHEAD_BEHIND))
     };
-    let ab_vis = if ab_str.is_empty() { 0 } else { 1 + vis(&ab_str) };
+    let ab_vis = if ab_str.is_empty() {
+        0
+    } else {
+        1 + vis(&ab_str)
+    };
     let fixed0 = 3 + model_inner_vis + 4 + ab_vis + 1 + 6 + vname_vis + 4;
     // cwd budget: leave ≥ 4 for branch
     let cwd_budget = panel_w.saturating_sub(fixed0 + 4).max(8);
@@ -848,7 +849,13 @@ fn render_full<W: Write>(
         })
     };
     let art_s = |i: usize| -> String {
-        art(i).unwrap_or_else(|| if art_visible { " ".repeat(ART_W) } else { String::new() })
+        art(i).unwrap_or_else(|| {
+            if art_visible {
+                " ".repeat(ART_W)
+            } else {
+                String::new()
+            }
+        })
     };
 
     // ── Rows 2-4: pet stats or speech bubble (V2: was rows 3-5) ──────────────
@@ -893,7 +900,13 @@ fn render_full<W: Write>(
             tc("╮", vrgb),
         );
         if art_visible {
-            writeln!(out, "{}{} {}", pad_to_vis(&r2, panel_w), tc("\\", vrgb), art_s(2))?;
+            writeln!(
+                out,
+                "{}{} {}",
+                pad_to_vis(&r2, panel_w),
+                tc("\\", vrgb),
+                art_s(2)
+            )?;
         } else {
             writeln!(out, "{}", r2)?;
         }
@@ -910,7 +923,13 @@ fn render_full<W: Write>(
             tc("│", vrgb),
         );
         if art_visible {
-            writeln!(out, "{} {}{}", pad_to_vis(&r3, panel_w), tc(">", vrgb), art_s(3))?;
+            writeln!(
+                out,
+                "{} {}{}",
+                pad_to_vis(&r3, panel_w),
+                tc(">", vrgb),
+                art_s(3)
+            )?;
         } else {
             writeln!(out, "{}", r3)?;
         }
@@ -918,7 +937,13 @@ fn render_full<W: Write>(
         // Row 4 (was 5): bottom border with memory status + version
         let r4 = bottom_border(panel_w, delim_c, ver_str.clone(), ver_vis);
         if art_visible {
-            writeln!(out, "{}{} {}", pad_to_vis(&r4, panel_w), tc("/", vrgb), art_s(4))?;
+            writeln!(
+                out,
+                "{}{} {}",
+                pad_to_vis(&r4, panel_w),
+                tc("/", vrgb),
+                art_s(4)
+            )?;
         } else {
             writeln!(out, "{}", r4)?;
         }
@@ -991,11 +1016,26 @@ fn render_full<W: Write>(
         let row4_info = bottom_border(panel_w, delim_c, ver_str, ver_vis);
 
         let rows = vec![
-            Row { art: art(0), info: row0_info },
-            Row { art: art(1), info: row1_info },
-            Row { art: art(2), info: row2_info },
-            Row { art: art(3), info: row3_info },
-            Row { art: art(4), info: row4_info },
+            Row {
+                art: art(0),
+                info: row0_info,
+            },
+            Row {
+                art: art(1),
+                info: row1_info,
+            },
+            Row {
+                art: art(2),
+                info: row2_info,
+            },
+            Row {
+                art: art(3),
+                info: row3_info,
+            },
+            Row {
+                art: art(4),
+                info: row4_info,
+            },
         ];
         render_rows(out, &rows, panel_w)?;
     }
@@ -1010,7 +1050,7 @@ fn render_full<W: Write>(
 fn bottom_border(panel_w: usize, delim_c: Rgb, ver_str: String, ver_vis: usize) -> String {
     let mem_label = t!("ui.memory_label").to_string(); // "memory"
     let mem_status = t!("ui.status_active").to_string(); // "active"
-    // ╰─ (3) + label + " ● " (3) + status + " " (1) + fill + " " (1) + version + " ──╯" (4)
+                                                         // ╰─ (3) + label + " ● " (3) + status + " " (1) + fill + " " (1) + version + " ──╯" (4)
     let mem_label_vis = vis(&mem_label);
     let mem_status_vis = vis(&mem_status);
     let fixed = 3 + mem_label_vis + 3 + mem_status_vis + 2 + ver_vis + 4;
@@ -1028,4 +1068,3 @@ fn bottom_border(panel_w: usize, delim_c: Rgb, ver_str: String, ver_vis: usize) 
         tc(" ──╯", delim_c),
     )
 }
-

@@ -10,8 +10,12 @@ pub enum SignalSource {
     ClaudeCodeSession,
     WebChatClaude,
     WebChatChatGpt,
-    Ingest { path: String },
-    Hook { event: String },
+    Ingest {
+        path: String,
+    },
+    Hook {
+        event: String,
+    },
     /// `dream absorb` 收編的跨專案 ~/.claude/projects/*/memory（別人/別專案的記憶）。
     /// 給專屬 source 以便 ship 排除（不污染 Mnemos 腦)。見 ledger source 收嚴。
     AbsorbedMemory,

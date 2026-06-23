@@ -200,7 +200,12 @@ async fn fetch_context_opts(
 ) -> Result<ContextResponse> {
     let client = transport::http_client();
     let mut req = client.get(cfg.context_url());
-    req = req.query(&context_query_params(topic, max, max_sensitivity, with_themes));
+    req = req.query(&context_query_params(
+        topic,
+        max,
+        max_sensitivity,
+        with_themes,
+    ));
     if let Some(tok) = &cfg.token {
         req = req.header("Authorization", format!("Bearer {tok}"));
     }

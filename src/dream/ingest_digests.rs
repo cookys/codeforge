@@ -38,7 +38,10 @@ pub fn run(ctx: &db::Context) -> Result<IngestResult> {
     // per-repo opt-out(A′):`<repo>/.codeforge/no-ship` 存在 → 此 repo dev signal 不進腦,
     // 連 ingest 都跳過(digest 檔留原處,等 session-digest cleanup 30 天過期清)。
     if ctx.no_ship() {
-        return Ok(IngestResult { ingested, digests_processed });
+        return Ok(IngestResult {
+            ingested,
+            digests_processed,
+        });
     }
 
     let writer = SignalWriter::new(ctx);
@@ -46,7 +49,13 @@ pub fn run(ctx: &db::Context) -> Result<IngestResult> {
     // 1) per-repo digests(A′):`<repo>/.codeforge/digests/`。session-digest.js 已只把
     //    本 repo 的 session 落在這裡 → 天然隔離,無 cwd filter。
     let repo_digest_dir = ctx.project_dir.join("digests");
-    ingest_from_dir(&repo_digest_dir, None, &writer, &mut ingested, &mut digests_processed);
+    ingest_from_dir(
+        &repo_digest_dir,
+        None,
+        &writer,
+        &mut ingested,
+        &mut digests_processed,
+    );
 
     // 2) 過渡:舊全域 `~/.claude/session-digests/`(收嚴前 hook 寫的,全機共用 → 帶 cwd,
     //    仍套 cwd filter)。讀完即刪;30 天舊 digest 自然過期後可移除此段。
@@ -54,8 +63,13 @@ pub fn run(ctx: &db::Context) -> Result<IngestResult> {
         let legacy_dir = home.join(".claude").join("session-digests");
         // ctx.project_dir = <repo>/.codeforge → repo root = parent;舊 digest 的 cwd 是 repo root。
         let repo_root = ctx.project_dir.parent().map(|p| p.to_path_buf());
-        let repo_root_canon = repo_root.as_ref().and_then(|p| std::fs::canonicalize(p).ok());
-        let filter = CwdFilter { repo_root, repo_root_canon };
+        let repo_root_canon = repo_root
+            .as_ref()
+            .and_then(|p| std::fs::canonicalize(p).ok());
+        let filter = CwdFilter {
+            repo_root,
+            repo_root_canon,
+        };
         ingest_from_dir(
             &legacy_dir,
             Some(&filter),
@@ -65,7 +79,10 @@ pub fn run(ctx: &db::Context) -> Result<IngestResult> {
         );
     }
 
-    Ok(IngestResult { ingested, digests_processed })
+    Ok(IngestResult {
+        ingested,
+        digests_processed,
+    })
 }
 
 /// 掃一個 digest 目錄:吸 high-confidence signals → ingest 完刪檔。
@@ -103,7 +120,10 @@ fn ingest_from_dir(
 
         // 既有殘留 `processed:true`(收嚴前舊行為標記後留檔的)→ 已吸過,直接刪掉收尾,不重收。
         // 與 cwd 無關(旗標只在成功吸入後設),故先於 cwd filter。
-        if v.get("processed").and_then(|p| p.as_bool()).unwrap_or(false) {
+        if v.get("processed")
+            .and_then(|p| p.as_bool())
+            .unwrap_or(false)
+        {
             let _ = std::fs::remove_file(&path);
             continue;
         }
@@ -117,7 +137,10 @@ fn ingest_from_dir(
         }
 
         let empty = Vec::new();
-        let signals = v.get("signals").and_then(|s| s.as_array()).unwrap_or(&empty);
+        let signals = v
+            .get("signals")
+            .and_then(|s| s.as_array())
+            .unwrap_or(&empty);
         for sig in signals {
             // 只收 high-confidence(對齊海馬 ripple 選擇性 +「high-confidence」承諾;
             // self-correction 等 medium 略過,寧缺勿濫)。
@@ -247,7 +270,16 @@ fn mask_word(word: &str) -> String {
 /// token 是否像 credential:已知前綴(sk-/ghp_/AKIA/AIza/xox…)或高熵 32+ 字串。
 fn looks_secret(t: &str) -> bool {
     const PREFIXES: &[&str] = &[
-        "sk-", "ghp_", "gho_", "ghs_", "github_pat_", "xoxb-", "xoxp-", "xoxa-", "AKIA", "ASIA",
+        "sk-",
+        "ghp_",
+        "gho_",
+        "ghs_",
+        "github_pat_",
+        "xoxb-",
+        "xoxp-",
+        "xoxa-",
+        "AKIA",
+        "ASIA",
         "AIza",
     ];
     if t.len() >= 12 && PREFIXES.iter().any(|p| t.starts_with(p)) {
@@ -255,7 +287,8 @@ fn looks_secret(t: &str) -> bool {
     }
     // 高熵:32+ 連續 alnum/_/-(不含 '/' 以免遮路徑),且字母+數字混合。
     t.len() >= 32
-        && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        && t.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
         && t.chars().any(|c| c.is_ascii_digit())
         && t.chars().any(|c| c.is_ascii_alphabetic())
 }
@@ -267,11 +300,17 @@ mod tests {
     #[test]
     fn masks_token_prefixes_and_high_entropy() {
         // KEY=token(無空格)前綴遮
-        assert_eq!(mask_secrets("export GH=ghp_abcdefABCDEF1234567890"), "export GH=***");
+        assert_eq!(
+            mask_secrets("export GH=ghp_abcdefABCDEF1234567890"),
+            "export GH=***"
+        );
         // 裸高熵 token 遮
         assert!(mask_secrets("got abcd1234efgh5678ijkl9012mnop3456").contains("***"));
         // 一般文字不遮
-        assert_eq!(mask_secrets("修了 crontab 的 sed 問題"), "修了 crontab 的 sed 問題");
+        assert_eq!(
+            mask_secrets("修了 crontab 的 sed 問題"),
+            "修了 crontab 的 sed 問題"
+        );
         // 路徑不遮(含 /)
         assert_eq!(
             mask_secrets("檔案 /home/cookys/projects/mnemos/src"),
@@ -311,8 +350,16 @@ mod tests {
     #[test]
     fn cwd_match_raw() {
         let root = Path::new("/home/cookys/projects/mnemos");
-        assert!(cwd_matches_repo("/home/cookys/projects/mnemos", Some(root), None));
-        assert!(!cwd_matches_repo("/home/cookys/projects/hangar", Some(root), None));
+        assert!(cwd_matches_repo(
+            "/home/cookys/projects/mnemos",
+            Some(root),
+            None
+        ));
+        assert!(!cwd_matches_repo(
+            "/home/cookys/projects/hangar",
+            Some(root),
+            None
+        ));
         assert!(!cwd_matches_repo("", Some(root), None));
     }
 
@@ -396,12 +443,24 @@ mod tests {
         );
         let writer = SignalWriter::new(&ctx);
         let repo_root = ctx.project_dir.parent().map(|p| p.to_path_buf());
-        let filter = CwdFilter { repo_root, repo_root_canon: None };
+        let filter = CwdFilter {
+            repo_root,
+            repo_root_canon: None,
+        };
         let (mut ingested, mut processed) = (0, 0);
-        ingest_from_dir(&legacy, Some(&filter), &writer, &mut ingested, &mut processed);
+        ingest_from_dir(
+            &legacy,
+            Some(&filter),
+            &writer,
+            &mut ingested,
+            &mut processed,
+        );
 
         assert_eq!(ingested, 0);
-        assert!(other.exists(), "別的 repo 未處理的 legacy digest 不該被刪(留給其 owning repo)");
+        assert!(
+            other.exists(),
+            "別的 repo 未處理的 legacy digest 不該被刪(留給其 owning repo)"
+        );
     }
 
     #[test]
@@ -441,9 +500,18 @@ mod tests {
             }),
         );
         let writer = SignalWriter::new(&ctx);
-        let filter = CwdFilter { repo_root: Some(repo), repo_root_canon: None };
+        let filter = CwdFilter {
+            repo_root: Some(repo),
+            repo_root_canon: None,
+        };
         let (mut ingested, mut processed) = (0, 0);
-        ingest_from_dir(&legacy, Some(&filter), &writer, &mut ingested, &mut processed);
+        ingest_from_dir(
+            &legacy,
+            Some(&filter),
+            &writer,
+            &mut ingested,
+            &mut processed,
+        );
 
         assert_eq!(ingested, 1, "cwd 對應本 repo 的 legacy digest 應吸入");
         assert!(!f.exists(), "matching legacy digest 吸完應刪");
