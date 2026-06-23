@@ -109,7 +109,7 @@ pub async fn run(ctx: &db::Context, conn: &Connection) -> Result<CompileResult> 
     for signal in &signals {
         // timestamp 格式：2006-01-02T15:04:05Z，前 10 字元為日期
         if signal.timestamp.len() >= 10 {
-            processed_dates.insert(signal.timestamp[..10].to_string());
+            processed_dates.insert(signal.timestamp[..10].to_string()); // cjk-ok: ASCII RFC3339 date prefix
         }
     }
     for date in processed_dates {
