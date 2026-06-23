@@ -39,6 +39,10 @@ cargo check                    # fast type-check (no binary)
 cargo test                     # run tests
 cargo clippy                   # lint
 
+# Formatting — ALWAYS via the pinned wrapper, NEVER bare `cargo fmt`
+./scripts/fmt.sh               # format in place (pinned rustfmt, self-installs)
+./scripts/fmt.sh --check       # verify (CI fmt gate; exit 1 on drift)
+
 # Install locally
 cargo install --path .
 
@@ -48,6 +52,15 @@ cargo run -- dream
 cargo run -- statusline
 cargo run -- pet
 ```
+
+> **Formatting is pinned** (`scripts/fmt.sh`, single source of the rustfmt
+> toolchain version). A bare `cargo fmt` uses whatever rustfmt your default
+> toolchain is, which drifts between `stable` versions (RFC 2437 — no
+> cross-version stability) and re-wraps lines. The wrapper pins ONLY formatting
+> via a `+toolchain` override (build/clippy/test stay on rolling stable; MSRV
+> stays in `Cargo.toml`, no `rust-toolchain.toml`). Every machine, the CI `fmt`
+> job, and every agent session format identically by going through it. Details:
+> `.claude/quality-gate-config.md` → Formatting.
 
 ## Architecture
 

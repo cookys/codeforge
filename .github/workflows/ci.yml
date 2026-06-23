@@ -11,15 +11,16 @@ env:
 
 jobs:
   fmt:
-    name: cargo fmt
+    name: cargo fmt (pinned)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      # Format via the pinned wrapper — NOT a bare `cargo fmt`. The script is the
+      # single source of the rustfmt toolchain version and self-installs it, so
+      # CI formats byte-identically to every machine + agent. ubuntu runners
+      # ship rustup, which the script uses to install the pinned toolchain.
+      - name: Check formatting (pinned via scripts/fmt.sh)
+        run: ./scripts/fmt.sh --check
 
   clippy:
     name: cargo clippy

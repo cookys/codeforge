@@ -2,6 +2,37 @@
 
 <!-- last-verified: 2026-06-22 -->
 
+## rustfmt drift — format via pinned `scripts/fmt.sh`, never bare `cargo fmt`
+
+**Date**: 2026-06-23
+**Problem**: 14 files silently drifted out of fmt-compliance. Root cause: both
+local default and CI used a *rolling* `stable` rustfmt; code committed under an
+older stable was re-wrapped (`format!`/`say()`/`assert_eq!` long-line wrapping)
+by a newer stable. RFC 2437 explicitly refuses formatting stability *across*
+toolchain versions — only *within* one version. So unpinned stable + "nobody
+re-ran fmt" = accumulating drift; CI `fmt` job goes red on the next stable bump.
+**Solution**: `scripts/fmt.sh` — single source of the rustfmt toolchain version
+(`PIN`), self-installs it, formats via `cargo +$PIN fmt` (`+toolchain` override =
+highest rustup precedence → pins ONLY formatting). Build/test/clippy stay on
+rolling stable; MSRV stays in `Cargo.toml` `rust-version` (NO `rust-toolchain.toml`
+— a `channel` pin there would drag the whole build onto the fixed version, the
+thing this repo avoids; and dtolnay/rust-toolchain doesn't read the toml anyway).
+CI `fmt` job runs `./scripts/fmt.sh --check` (non-bypassable backstop); S/L/H
+quality gates run it too. **Never run a bare `cargo fmt`** — it uses your default
+toolchain's rustfmt and re-introduces drift. Bump `PIN` deliberately in a
+dedicated commit that re-runs `./scripts/fmt.sh` repo-wide.
+**Sibling drift — clippy (handle differently: fix-forward, do NOT pin)**: the same
+rolling-stable bump that drifted fmt also surfaced 5 new `cargo clippy -D warnings`
+errors on previously-clean code (2× `nonminimal_bool`, 1× `trim_split_whitespace`,
+2× `incompatible_msrv`). Unlike fmt, lints must be **fixed forward**, never pinned to
+an old clippy — new lints are valuable. Note the MSRV ones were a *real* latent bug:
+`u64::is_multiple_of` is stable only since 1.87 but Cargo.toml declares MSRV 1.85, so
+the code wouldn't compile on 1.85/1.86; fixed with `% n == 0` (keeps the 1.85 claim
+true). clippy reads `rust-version` from Cargo.toml, so the CI `clippy` job IS the MSRV
+guard. Build/clippy stay on rolling stable on purpose — only fmt is pinned.
+**Related**: deterministic-gate family — see `gate-patterns.md` (确定性 > 記憶);
+fmt is now a script-driven deterministic gate like `check-doc-drift.py` / `check-cjk-safe.sh`.
+
 ## `~/.cargo/bin` not on PATH for Claude Code spawned shells
 
 **Date**: 2026-05-15
