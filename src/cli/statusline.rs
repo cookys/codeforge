@@ -235,6 +235,16 @@ fn tcs(s: String, (r, g, b): Rgb) -> String {
     )
 }
 
+/// Probe whether stdout will receive ANSI color codes by asking tc() directly.
+///
+/// Uses a zero-width-space (U+200B) so no visible character appears in output.
+/// This is the ground-truth gate: it mirrors tc()'s own if_supports_color check
+/// (which respects NO_COLOR, FORCE_COLOR, non-tty, and owo set_override() all at
+/// once), so the plain/color branches never diverge.
+fn stdout_is_plain() -> bool {
+    !tc("\u{200b}", (0, 0, 0)).contains('\x1b')
+}
+
 fn bar_rgb(pct: f64) -> Rgb {
     if pct < 0.5 {
         BAR_LOW
@@ -881,10 +891,8 @@ fn render_full<W: Write>(
             now,
         );
 
-        // no_color: probe whether tc() actually emits ANSI codes for this output.
-        // This is the ground truth — it matches the if_supports_color path exactly,
-        // handling NO_COLOR, FORCE_COLOR, non-tty, and set_override() all at once.
-        let no_color = !tc("x", (0, 0, 0)).contains('\x1b');
+        // Probe tc() to decide plain vs. color path — see stdout_is_plain() for rationale.
+        let no_color = stdout_is_plain();
 
         (BrainHealth { local, central }, no_color)
     };
@@ -1254,6 +1262,30 @@ mod tests {
         assert!(ansi_vis(&s) <= 80, "不可溢出 panel_w=80");
         owo_colors::unset_override();
     }
+
+    #[test]
+    fn bottom_border_local_empty_word() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        // LocalLight::Empty means store exists but active=0 — must show "empty", NOT "offline"
+        let s = bottom_border(
+            80,
+            DELIM,
+            String::new(),
+            0,
+            &bh(LocalLight::Empty, CentralLight::Hidden),
+            true, // no_color=true for deterministic plain output
+        );
+        assert!(
+            s.contains("empty"),
+            "LocalLight::Empty 應輸出 'empty'，got: {:?}",
+            s
+        );
+        assert!(
+            !s.contains("offline"),
+            "LocalLight::Empty 不應輸出 'offline'，got: {:?}",
+            s
+        );
+    }
 }
 
 /// Render the bottom border with dual brain lights + 6-level degradation ladder.
@@ -1285,8 +1317,8 @@ fn bottom_border(
     let local_label = t!("ui.brain.local_label").to_string();
     let local_status = match brain.local {
         LocalLight::Active => t!("ui.brain.status.active").to_string(),
-        LocalLight::Empty => t!("ui.brain.status.offline").to_string(), // gray "offline"-like
-        LocalLight::Hidden => String::new(),                            // not rendered
+        LocalLight::Empty => t!("ui.brain.status.empty").to_string(), // gray: store exists but active=0
+        LocalLight::Hidden => String::new(),                          // not rendered
     };
     let local_glyph = match brain.local {
         LocalLight::Active => "●",
@@ -1415,7 +1447,7 @@ fn bottom_border(
     // The caller passes `no_color` so we can vary layout.
     // The border itself is: ╰─ <content> ──╯
     // ╰─ (3) + content + ──╯ (4) = 7 overhead
-    let overhead = 7usize; // "╰─ " (3) + " ──╯" (4)
+    let overhead = vis("╰─ ") + vis(" ──╯"); // 3 + 4 = 7
 
     // Helper: assemble the full border from measured components.
     // segments_vis = total visible width of the segments content area
