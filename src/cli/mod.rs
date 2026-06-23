@@ -7,6 +7,7 @@ mod bootstrap;
 mod commentary;
 mod craft;
 mod daemon;
+pub mod doctor;
 mod dream;
 mod emit;
 mod ingest;
@@ -215,6 +216,8 @@ pub enum Commands {
         #[command(subcommand)]
         action: MnemosCliAction,
     },
+    /// 腦部健康診斷：即時 probe + 本地/央腦全維度報告 + next-step 建議
+    Doctor,
 }
 
 #[derive(Subcommand)]
@@ -410,6 +413,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 resend,
             },
         ),
+        Commands::Doctor => doctor::run(&ctx),
         Commands::MnemosCli { action } => mnemos_cli::run(
             &ctx,
             match action {
