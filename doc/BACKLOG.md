@@ -173,9 +173,13 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 
 ---
 
-## B19 — 全 repo rustfmt drift（工具鏈版本不一致，CI fmt job 疑似紅燈）
+## ~~B19 — 全 repo rustfmt drift（工具鏈版本不一致，CI fmt job 疑似紅燈）~~ ✅ Done 2026-06-23
 
 **Area**: `src/cli/*.rs`、`src/dream/*.rs`、`src/memory/*.rs`、`src/mnemos/*.rs`（14 檔）
 **Premise**: 2026-06-23 B9 開發時 `cargo fmt --all -- --check` 報 14 個檔有 fmt diff（`daemon.rs` `install.rs` `mnemos_cli.rs` `ship.rs` `statusline.rs` `compile.rs` `ingest_digests.rs` `l0.rs` `recall.rs` `cite_detect.rs` `config.rs` `context.rs` `digest.rs` `state.rs`）。全是長行被 rustfmt 1.8.0-stable（2026-03-25）重排（`format!` / 長 `assert_eq!` / 長 `say()` 呼叫被拆多行），**非 B9 改動引入**（B9 的 `compile.rs:112` trailing comment 不在 diff 內）。根因疑似 committed code 是在較舊 rustfmt 下 fmt-clean，本機/CI 升到 1.8.0 後規則改變。CI 的 `fmt` job 用 `dtolnay/rust-toolchain@stable`（不 pin 版本），故下次 CI run 的 fmt job 很可能紅燈。
-**Trigger**: (1) 確認 CI fmt job 是否真的紅燈（看最近一次 Actions run）；若紅 → 跑一次 `cargo fmt --all` 單獨 commit 收乾（whitespace-only、無邏輯變更，但涉及 `src/mnemos/*` production critical path，需 `cargo test` 綠 + 看 diff 確認純格式）。(2) 或考慮在 CI pin rustfmt 版本避免日後再漂移。
-**Status 2026-06-23**: B9 session 順手發現,未處理(out of B9 scope)。B9 commit 本身 fmt-neutral,不影響此既有狀態。S-size。
+**Shipped** (`feature/rustfmt-pin`, L-size): 治本 —— 不只收乾，還消除漂移源。
+- **`scripts/fmt.sh`**：單一 pin 來源（`PIN=1.94`），self-install 該 toolchain，`cargo +$PIN fmt`（`+toolchain` 只 pin fmt、build/test/clippy 維持 rolling stable、MSRV 仍在 Cargo.toml，**不引入 `rust-toolchain.toml`**）。
+- **收乾 baseline**：14 檔 618+/191-（whitespace-only），784 tests 綠。
+- **三層 enforcement（確定性 > 記憶）**：CI fmt job → `./scripts/fmt.sh --check`（不可繞過守門）；`.claude/quality-gate-config.md` + `dev-flow-config.md` S/L/H gate 都加 `--check`；CLAUDE.md Development Commands 規範一律走 wrapper、禁裸 `cargo fmt`。
+- knowledge `environment.md` 記決策（cross-link `gate-patterns.md` 確定性 gate 家族）。
+**Status 2026-06-23**: 由「研究怎樣處理最好 + 讓所有 session agent 自動 follow」需求展開。研究背書（RFC 2437 跨版本不保證 fmt 穩定；decouple fmt/build toolchain）。

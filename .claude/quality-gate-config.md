@@ -4,12 +4,15 @@
 
 ### S-size gate
 ```bash
-cd /path/to/codeforge && cargo check 2>&1
+cd /path/to/codeforge
+./scripts/fmt.sh --check 2>&1   # pinned rustfmt (see Formatting below) — NEVER bare `cargo fmt`
+cargo check 2>&1
 ```
 
 ### L-size gate
 ```bash
 cd /path/to/codeforge
+./scripts/fmt.sh --check 2>&1
 cargo check 2>&1
 cargo clippy -- -D warnings 2>&1
 cargo test 2>&1
@@ -18,9 +21,12 @@ cargo test 2>&1
 ### H-size gate (hotfix)
 ```bash
 cd /path/to/codeforge
+./scripts/fmt.sh --check 2>&1
 cargo check 2>&1
 cargo test 2>&1
 ```
+
+> If `./scripts/fmt.sh --check` fails, run `./scripts/fmt.sh` to auto-fix, then re-stage. Do **not** run a bare `cargo fmt` to fix it — see Formatting below.
 
 ## Completeness Scan (run before every commit)
 
@@ -52,6 +58,27 @@ These patterns are intentional, not bugs:
 - `unwrap_or(0)` in DB count queries — always returns 0 on error, safe
 - `unwrap_or_else(|_| PathBuf::from("."))` in Context::load — safe fallback
 - `u64 as u32` in XP overflow fix — guarded by `.min(10_000_000)` cap
+
+## Formatting — pinned (deterministic, IS a gate)
+
+**Always format through the pinned wrapper, never a bare `cargo fmt`:**
+```bash
+./scripts/fmt.sh           # format in place
+./scripts/fmt.sh --check   # verify (CI gate; exit 1 on drift)
+```
+`scripts/fmt.sh` is the single source of the rustfmt toolchain version (`PIN`
+inside it) and self-installs that toolchain, so every actor — your machines,
+CI's `fmt` job, and AI agents in any session — produces byte-identical output.
+
+Why this exists: rustfmt only guarantees stable output *within* one toolchain
+version (RFC 2437); a rolling `stable` re-wraps long lines between versions,
+which silently drifted 14 files in 2026-06. A bare `cargo fmt` uses whatever
+rustfmt your default toolchain happens to be → re-introduces that drift. The
+wrapper pins ONLY formatting via a `+toolchain` override (build/test/clippy stay
+on rolling stable; MSRV stays in Cargo.toml — no `rust-toolchain.toml`). Bump
+`PIN` deliberately in a dedicated commit that re-runs `./scripts/fmt.sh`
+repo-wide. CI's `fmt` job runs `./scripts/fmt.sh --check` as the non-bypassable
+backstop.
 
 ## Doc-Code Drift — two layers
 
