@@ -49,7 +49,7 @@ cargo install --git https://github.com/cookys/codeforge
 git clone https://github.com/cookys/codeforge && cd codeforge && cargo install --path .
 ```
 
-Requires Rust stable (MSRV 1.85). The built binary lands in
+Requires Rust stable (MSRV 1.88). The built binary lands in
 `~/.cargo/bin/codeforge`.
 
 **Updating** — once installed (by any option above), update in place from the

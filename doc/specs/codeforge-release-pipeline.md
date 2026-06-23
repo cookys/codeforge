@@ -91,14 +91,14 @@ Bump `version = "0.0.2"` as part of the release PR.
 
 ### MSRV declaration — `Cargo.toml` `rust-version`
 
-Use `rust-version = "1.85"` in `[package]` instead of `rust-toolchain.toml`.
-Cargo.lock v4 (current) requires Cargo 1.78+; 1.85 gives a comfortable
+Use `rust-version = "1.88"` in `[package]` instead of `rust-toolchain.toml`.
+Cargo.lock v4 (current) requires Cargo 1.78+; 1.88 gives a comfortable
 margin against deps. `rust-toolchain.toml` was rejected because it forces
 every contributor + CI runner to download that exact version, slowing
 everything down for no benefit over the declarative `rust-version`.
 
 CI uses `dtolnay/rust-toolchain@stable` (existing in `ci.yml`); release
-matrix uses `@1.85` for reproducibility.
+matrix uses `@1.88` for reproducibility.
 
 ### `CHANGELOG.md` — new
 
