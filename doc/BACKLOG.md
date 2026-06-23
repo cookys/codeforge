@@ -76,11 +76,11 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 
 ---
 
-## B9 — Clippy Lint: Forbid `&s[..N]` on User Strings
+## ~~B9 — Clippy Lint: Forbid `&s[..N]` on User Strings~~ ✅ Done 2026-06-23
 
 **Area**: Build tooling / `src/` conventions
 **Premise**: CJK truncation bug hit 4 files in Phase 1. A custom clippy lint or grep CI check would prevent recurrence.
-**Trigger**: Pick up when Phase 2 code volume increases (more new files = more risk). S-size: add to a `scripts/check-cjk-safe.sh`.
+**Shipped** (`615562b`→`bfa349e`, S-size): `scripts/check-cjk-safe.sh` deterministic gate + CI `cjk-safe` job (sibling of `check-doc-drift.py`). Chose a bash/awk grep-style gate over a custom clippy lint (no `dylint` toolchain dependency; matches the existing deterministic-gate pattern). Flags start-anchored integer-literal byte slices `[..N]` / `[..=N]` (the documented `&s[..N]` form) — precision-over-recall, zero current false positives. Escape hatch `// cjk-ok:`. **Known gap** (by design, would need type info to disambiguate from safe Vec idioms): open-end `[N..]`, range `[N..M]`, and variable-bound `[..n]` forms are NOT flagged — string slicing with those still relies on the `.chars().take(N)` convention + review.
 
 ---
 
@@ -170,3 +170,12 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 - **Void Creature MOB + Lv50 legendary 村莊**（full sweep 2026-06-18 補）：`codeforge-mud-engine.md` §2 的 Void（missing test coverage→drain DEF）MOB 未實作（scanner 只產 Zombie/Boss/Elite/Ghost 4 種）；§2.5 Lv50 legendary 表列的 ML / 開源基金會 村莊不存在（實際 5 村莊，且 javascript 無 legendary 條目）。
 **Trigger**: 各子項獨立 —— 想讓 ledger 帶 session 證據 / 想要 cost telemetry / 想省重複 digest / 想做 ability 戰鬥深度 / 想自動 cite / 想加 MOB 種類或村莊時，分別開 S~L 實作並清掉對應 spec 的 ⚠️ 標記。
 **Status 2026-06-18**: audit 已把 doc 側全部更新成現實 + 標記設計目標;code 側未動,記為 enhancement。純 stale/missing 的 drift（首輪 48 條 + scoped 4 條 + full sweep 22 條）已分別修正落 doc。
+
+---
+
+## B19 — 全 repo rustfmt drift（工具鏈版本不一致，CI fmt job 疑似紅燈）
+
+**Area**: `src/cli/*.rs`、`src/dream/*.rs`、`src/memory/*.rs`、`src/mnemos/*.rs`（14 檔）
+**Premise**: 2026-06-23 B9 開發時 `cargo fmt --all -- --check` 報 14 個檔有 fmt diff（`daemon.rs` `install.rs` `mnemos_cli.rs` `ship.rs` `statusline.rs` `compile.rs` `ingest_digests.rs` `l0.rs` `recall.rs` `cite_detect.rs` `config.rs` `context.rs` `digest.rs` `state.rs`）。全是長行被 rustfmt 1.8.0-stable（2026-03-25）重排（`format!` / 長 `assert_eq!` / 長 `say()` 呼叫被拆多行），**非 B9 改動引入**（B9 的 `compile.rs:112` trailing comment 不在 diff 內）。根因疑似 committed code 是在較舊 rustfmt 下 fmt-clean，本機/CI 升到 1.8.0 後規則改變。CI 的 `fmt` job 用 `dtolnay/rust-toolchain@stable`（不 pin 版本），故下次 CI run 的 fmt job 很可能紅燈。
+**Trigger**: (1) 確認 CI fmt job 是否真的紅燈（看最近一次 Actions run）；若紅 → 跑一次 `cargo fmt --all` 單獨 commit 收乾（whitespace-only、無邏輯變更，但涉及 `src/mnemos/*` production critical path，需 `cargo test` 綠 + 看 diff 確認純格式）。(2) 或考慮在 CI pin rustfmt 版本避免日後再漂移。
+**Status 2026-06-23**: B9 session 順手發現,未處理(out of B9 scope)。B9 commit 本身 fmt-neutral,不影響此既有狀態。S-size。
