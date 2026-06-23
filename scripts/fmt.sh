@@ -27,6 +27,11 @@ set -euo pipefail
 # The one place the formatting toolchain version is defined.
 PIN="1.94"
 
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "fmt.sh: needs rustup to pin the formatting toolchain — install from https://rustup.rs" >&2
+  exit 1
+fi
+
 # Ensure the pinned toolchain + rustfmt component exist (idempotent, quiet).
 if ! rustup run "$PIN" rustfmt --version >/dev/null 2>&1; then
   echo "fmt.sh: installing pinned toolchain ${PIN} + rustfmt ..." >&2
