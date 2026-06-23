@@ -115,6 +115,56 @@ pub fn next_failure_count(prev: u32, outcome: ProbeOutcome) -> u32 {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CentralLight {
+    Hidden,
+    Ok,
+    Degraded,
+    Offline,
+    Pending,
+}
+
+pub fn central_light(
+    opted_in: bool,
+    liveness: Option<&LivenessCache>,
+    ship: Option<&ShipCache>,
+    queue_depth: usize,
+    now: i64,
+) -> CentralLight {
+    if !opted_in {
+        return CentralLight::Hidden;
+    }
+    let Some(lv) = liveness else {
+        return CentralLight::Offline; // 未知視同 offline
+    };
+    match lv.last_outcome {
+        ProbeOutcome::Never => {
+            if now - lv.last_probe_at > (NEVER_RETIRE_DAYS * 86_400) as i64 {
+                CentralLight::Hidden
+            } else {
+                CentralLight::Pending
+            }
+        }
+        ProbeOutcome::Unreachable | ProbeOutcome::HttpError => CentralLight::Offline,
+        ProbeOutcome::Ok => {
+            let fresh_ship_fail = ship
+                .filter(|s| now - s.last_ship_at <= SHIP_FRESH_WINDOW as i64)
+                .map(|s| !s.last_ship_ok)
+                .unwrap_or(false);
+            if fresh_ship_fail || queue_depth >= QUEUE_WARN_THRESHOLD {
+                CentralLight::Degraded
+            } else {
+                CentralLight::Ok
+            }
+        }
+    }
+}
+
+/// 判斷快取是否足夠新鮮（macOS per-boot 退路：超過 CACHE_MAX_AGE 視同過期）。
+pub fn fresh_enough(l: &LivenessCache, now: i64) -> bool {
+    now - l.last_probe_at <= CACHE_MAX_AGE as i64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +203,117 @@ mod tests {
         assert!(read_json::<LivenessCache>(&p).is_none());
         // 不存在 → None
         assert!(read_json::<LivenessCache>(&dir.path().join("nope.json")).is_none());
+    }
+
+    fn lv(o: ProbeOutcome, at: i64) -> LivenessCache {
+        LivenessCache {
+            last_probe_at: at,
+            last_outcome: o,
+            consecutive_failures: 0,
+            latency_ms: None,
+            http_status: None,
+        }
+    }
+
+    fn sh(ok: bool, at: i64) -> ShipCache {
+        ShipCache {
+            last_ship_at: at,
+            last_ship_ok: ok,
+        }
+    }
+
+    #[test]
+    fn central_light_table() {
+        let now = 1_000_000;
+        // 未 opt-in
+        assert_eq!(
+            central_light(false, Some(&lv(ProbeOutcome::Ok, now)), None, 0, now),
+            CentralLight::Hidden
+        );
+        // probe ok, 無 ship → 綠
+        assert_eq!(
+            central_light(true, Some(&lv(ProbeOutcome::Ok, now)), None, 0, now),
+            CentralLight::Ok
+        );
+        // probe ok + 新鮮 ship 失敗 → 黃
+        assert_eq!(
+            central_light(
+                true,
+                Some(&lv(ProbeOutcome::Ok, now)),
+                Some(&sh(false, now)),
+                0,
+                now
+            ),
+            CentralLight::Degraded
+        );
+        // probe ok + 陳(>24h) ship 失敗 → 綠（不參與）
+        assert_eq!(
+            central_light(
+                true,
+                Some(&lv(ProbeOutcome::Ok, now)),
+                Some(&sh(false, now - 90_000)),
+                0,
+                now
+            ),
+            CentralLight::Ok
+        );
+        // probe ok + queue 積壓 → 黃
+        assert_eq!(
+            central_light(true, Some(&lv(ProbeOutcome::Ok, now)), None, 3, now),
+            CentralLight::Degraded
+        );
+        // unreachable → 中性 offline
+        assert_eq!(
+            central_light(
+                true,
+                Some(&lv(ProbeOutcome::Unreachable, now)),
+                None,
+                0,
+                now
+            ),
+            CentralLight::Offline
+        );
+        // never <7d → pending
+        assert_eq!(
+            central_light(
+                true,
+                Some(&lv(ProbeOutcome::Never, now - 100)),
+                None,
+                0,
+                now
+            ),
+            CentralLight::Pending
+        );
+        // never >7d → 退場 hidden
+        assert_eq!(
+            central_light(
+                true,
+                Some(&lv(ProbeOutcome::Never, now - 8 * 86_400)),
+                None,
+                0,
+                now
+            ),
+            CentralLight::Hidden
+        );
+        // liveness 讀失敗（未知）→ offline
+        assert_eq!(
+            central_light(true, None, None, 0, now),
+            CentralLight::Offline
+        );
+    }
+
+    #[test]
+    fn fresh_enough_check() {
+        let now = 1_000_000i64;
+        // 剛 probe → 新鮮
+        let recent = lv(ProbeOutcome::Ok, now - 10);
+        assert!(fresh_enough(&recent, now));
+        // 恰好在邊界
+        let at_boundary = lv(ProbeOutcome::Ok, now - CACHE_MAX_AGE as i64);
+        assert!(fresh_enough(&at_boundary, now));
+        // 超過 CACHE_MAX_AGE → 過期
+        let stale = lv(ProbeOutcome::Ok, now - CACHE_MAX_AGE as i64 - 1);
+        assert!(!fresh_enough(&stale, now));
     }
 
     #[test]
