@@ -56,6 +56,12 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
     // --resend: only flush the failed queue, no fresh digest.
     if opts.resend {
         let n = rt.block_on(flush_failed_queue(&cfg, &root, false));
+        if n > 0 {
+            // spec §8: any real flush success proves readiness; update the cache
+            // so statusline reflects current state. record_ship_health is gated on
+            // opted_in() internally, so codeforge-only users are unaffected.
+            record_ship_health(true);
+        }
         println!("✓ {} ({n})", rust_i18n::t!("ship.resend_done"));
         return Ok(());
     }
@@ -348,7 +354,7 @@ async fn call_haiku(api_key: &str, prompt: &str) -> Result<String> {
 
 /// 把真實 ingest 成敗寫進 per-machine 快取 `mnemos-ship.json`（spec §8）。
 /// 受 `MnemosConfig::opted_in()` gate — 未 opt-in 不寫。
-/// 失敗 silently log，絕不 propagate（保持 SessionEnd 不中斷）。
+/// 寫入失敗時以 `eprintln!` 輸出到 stderr，絕不 propagate（保持 SessionEnd 的 Ok(()) 不中斷）。
 fn record_ship_health(ok: bool) {
     if !MnemosConfig::opted_in() {
         return;
