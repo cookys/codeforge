@@ -271,6 +271,15 @@ pub fn release_probe_lock() {
     let _ = std::fs::remove_file(lock_path());
 }
 
+// ─── BrainHealth 聚合 ─────────────────────────────────────────────────────
+
+/// 雙燈聚合：local（L1 memory）+ central（Mnemos）。
+/// statusline bottom_border 的唯一輸入。
+pub struct BrainHealth {
+    pub local: LocalLight,
+    pub central: CentralLight,
+}
+
 // ─── Task 11: local 燈 ────────────────────────────────────────────────────
 
 /// 本地腦（L1 memory）連線狀態。
