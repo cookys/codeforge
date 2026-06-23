@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 
 mod adopt;
 mod attach;
+mod bootstrap;
 mod commentary;
 mod craft;
 mod daemon;
@@ -59,6 +60,15 @@ pub enum Commands {
         /// 覆蓋 settings.json 路徑（預設 ~/.claude/settings.json 或 $CWD/.claude/settings.json for --project-hooks）
         #[arg(long, value_name = "PATH")]
         settings_path: Option<std::path::PathBuf>,
+        /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// 一鍵多機部署：install --all + fmt pin toolchain + Mnemos opt-in 狀態（B14）
+    Bootstrap {
+        /// 預覽三步計畫，不做任何寫入
+        #[arg(long)]
+        dry_run: bool,
         /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
         #[arg(long)]
         quiet: bool,
@@ -322,6 +332,9 @@ pub fn run(cli: Cli) -> Result<()> {
             settings_path,
             quiet,
         }),
+        Commands::Bootstrap { dry_run, quiet } => {
+            bootstrap::run(bootstrap::BootstrapOpts { dry_run, quiet })
+        }
         Commands::Learn { text, paste, file } => learn::run(&ctx, text, paste, file),
         Commands::Memory { action } => match action {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),
