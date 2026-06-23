@@ -11,9 +11,9 @@ was found, but this version of Cargo does not understand this lock
 file`. Cargo.lock v4 was introduced in Cargo 1.78.
 **Solution**: Don't use `rust-toolchain.toml` for MSRV declaration;
 it forces every contributor + CI to download that exact version.
-Declare MSRV via `rust-version = "1.85"` in `[package]` of Cargo.toml
+Declare MSRV via `rust-version = "1.88"` in `[package]` of Cargo.toml
 — this is the standard MSRV mechanism. CI matrix uses
-`dtolnay/rust-toolchain@1.85` for release builds; `ci.yml` keeps
+`dtolnay/rust-toolchain@1.88` for release builds; `ci.yml` keeps
 `@stable` for regular checks.
 
 ## CJK 字串截斷必須用 .chars().take(N)
