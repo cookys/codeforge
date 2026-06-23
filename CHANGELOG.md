@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Brain connection indicators** — statusline bottom border 升級為兩顆真實狀態燈：
+  - **`memory ●/◌`**（本地腦，永遠顯示）：`●` 綠＝active L1 > 0；`◌` 灰＝store 存在但 active = 0；不顯示＝全新專案。
+  - **`mnemos ●/◐/○/◌`**（央腦，僅 opt-in 顯示）：`●` ok / `◐` degraded / `○` offline / `◌` pending。server 沒跑為中性灰 `offline`，不是告警。
+  - liveness 由 detached 背景 probe（`process_group` 隔離，O_EXCL rename-steal 防 herd）寫 per-machine 快取；statusline 熱路徑只讀快取，零阻塞。readiness 由 `ship` 真實 POST 成敗順風車寫入。兩軸獨立防 OR 假綠。
+  - NO_COLOR / 無色終端：退 `memory:active`、`mnemos:offline` 等完整詞，無縮寫。
+  - 窄窗降級階梯：砍 `→ doctor` hint → short code → 砍 version → 降純 glyph → 極窄只留 local 燈。
+- **`codeforge doctor`** — 全腦健康診斷命令，列出：本地 L1 active count + store 歷史、Mnemos opt-in 狀態、**即時** probe 結果（~2s 前景 `GET /health`）、上次快取 probe 時間/結果、上次 ship 時間/成敗、queue 深度與最舊 age、base_url 設定、黃/灰態 next-step 操作建議。
+- **`codeforge mnemos-cli probe [--verbose]`** — 手動探 Mnemos `/health`，分類 `ok / unreachable / http_error`，寫 liveness 快取；`--verbose` 印 stderr 詳情、不寫快取，供 debug。
+- **`ship` 順風車快取寫入** — `codeforge ship` 真實 POST ledger 成功（或 flush 成功）後寫 `mnemos-ship.json`，作為 central 燈的 readiness 訊號（dry-run / resend / already-shipped 等早 return 路徑不寫，防假綠）。
+
 ## [0.0.5] - 2026-06-23
 
 ### Added

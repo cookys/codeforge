@@ -15,6 +15,7 @@ pub mod config;
 pub mod context;
 pub mod digest;
 pub mod evidence;
+pub mod health;
 pub mod ledger;
 pub mod state;
 pub mod transport;

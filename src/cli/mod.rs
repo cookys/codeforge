@@ -7,6 +7,7 @@ mod bootstrap;
 mod commentary;
 mod craft;
 mod daemon;
+pub mod doctor;
 mod dream;
 mod emit;
 mod ingest;
@@ -215,6 +216,8 @@ pub enum Commands {
         #[command(subcommand)]
         action: MnemosCliAction,
     },
+    /// 腦部健康診斷：即時 probe + 本地/央腦全維度報告 + next-step 建議
+    Doctor,
 }
 
 #[derive(Subcommand)]
@@ -252,6 +255,12 @@ pub enum MnemosCliAction {
         /// 取多少候選 atom 做比對（預設 20）
         #[arg(long)]
         max: Option<usize>,
+    },
+    /// 前景探測 Mnemos /health（spec §7.4）
+    Probe {
+        /// 印 stderr 詳情、不寫 liveness 快取（供手動 debug）
+        #[arg(long)]
+        verbose: bool,
     },
 }
 
@@ -404,6 +413,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 resend,
             },
         ),
+        Commands::Doctor => doctor::run(&ctx),
         Commands::MnemosCli { action } => mnemos_cli::run(
             &ctx,
             match action {
@@ -434,6 +444,7 @@ pub fn run(cli: Cli) -> Result<()> {
                     topic,
                     max,
                 },
+                MnemosCliAction::Probe { verbose } => mnemos_cli::MnemosCliCmd::Probe { verbose },
             },
         ),
     }

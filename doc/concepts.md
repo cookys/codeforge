@@ -135,7 +135,57 @@ L1 store 的 `.md` 檔（frontmatter 帶 `origin` 欄位：`session` / `absorbed
 
 ---
 
-## 5. 養寵系統
+## 5. 兩顆腦的連線燈號
+
+`codeforge statusline` 的底框右側現在有兩顆燈，讓你一眼看出記憶系統的健康狀態：
+
+### 本地腦（local memory）— 永遠本機
+
+只要這個專案有 `.codeforge/` 歷史，左邊的 **`memory`** 燈就會出現：
+- `●` 綠：active L1 概念 > 0，記憶正常運作
+- `◌` 灰：store 目錄存在但 active = 0（「記憶怎麼不見了」是值得知道的訊號，不靜默）
+- 不顯示：全新專案，從未 dream 過
+
+這顆燈每次 render 即算（讀已開的 DB conn），成本為零。
+
+### 央腦（central brain, Mnemos）— opt-in 選配
+
+只有啟用 Mnemos opt-in（`~/.config/mnemos.env` 或 `MNEMOS_INGEST_URL`）時，右邊的 **`mnemos`** 燈才出現：
+- `●` 綠 `ok`：liveness probe 通、ingest 健康
+- `◐` 黃 `degraded`：server 活著，但最近 ingest 失敗或 queue 積壓
+- `○` 灰 `offline`：server 沒在跑（**中性，不是告警**，去把 server 開起來就好）
+- `◌` 灰 `pending`：opt-in 但從未成功連線
+
+黃/灰態底框會出現 `→ doctor` 提示，引導你去執行 `codeforge doctor` 查詳情。
+
+### 燈號的資料來源
+
+- **liveness** (`mnemos-liveness.json`)：由 `statusline` 排程的 detached 背景進程（`codeforge mnemos-cli probe`）每隔 30 秒–10 分鐘（指數 backoff）探一次 `GET /health`，結果寫到 **per-machine** 暫存目錄（`$XDG_RUNTIME_DIR/codeforge/`）。statusline 熱路徑**只讀快取**，從不阻塞網路。
+- **readiness** (`mnemos-ship.json`)：每次 `codeforge ship` 真正 POST ledger 之後（或 flush 成功後）寫入，反映 Mnemos 的真實 ingest 能力。
+
+兩軸**獨立**、不 OR 合一（避免「server 活著但 ingest 500」或「probe 死但 ship 三天前綠」被洗成假綠）。
+
+### 無色終端 / 色盲
+
+設定 `NO_COLOR=1` 時，燈退化為文字形式：`memory:active`、`mnemos:offline` 等完整詞（無縮寫），保持可讀性。
+
+### 深度診斷
+
+`codeforge doctor` 提供全維度：
+- 本地 L1 active count 與 store 歷史
+- Mnemos opt-in 狀態
+- **即時** probe 結果（一次前景 `GET /health`，~2s）
+- 上次快取 probe 時間與結果
+- 上次 ship 時間與成敗
+- 待重送 queue 深度（筆數 + 最舊 age）
+- base_url 設定
+- 黃/灰態的 next-step 操作建議
+
+`codeforge mnemos-cli probe [--verbose]` 可以手動探 `/health`（`--verbose` 印 stderr 詳情、不寫快取，適合 debug）。
+
+---
+
+## 6. 養寵系統
 
 codebase 是世界地圖、技術債是怪物、pet 是你的角色。
 
@@ -192,6 +242,7 @@ CodePower（鬥技場，公開競技）與 CodeForge（鍛造間，私人累積�
 - [`README.md`](../README.md) — 安裝與快速上手
 - [`doc/specs/codeforge-mud-engine.md`](specs/codeforge-mud-engine.md) — MUD 引擎技術規格（daemon / combat / TUI）
 - [`doc/specs/codeforge-ship.md`](specs/codeforge-ship.md) — ship 的 Mnemos source 規格
+- [`doc/specs/codeforge-brain-indicators.md`](specs/codeforge-brain-indicators.md) — 雙燈健康模型規格（local + central，probe/ship 雙軸，liveness 快取，doctor）
 - [`doc/specs/codeforge-memory-contract.md`](specs/codeforge-memory-contract.md) — 記憶共享狀態與 atom schema 契約
 - [`doc/specs/nation-p2p-design.md`](specs/nation-p2p-design.md) — Phase 5 Nation P2P 設計
 - [`CLAUDE.md`](../CLAUDE.md) — Claude Code 工作指南（含生態系互動規則）

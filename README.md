@@ -144,7 +144,7 @@ codeforge pet
 codeforge statusline
 ```
 
-More commands: `codeforge memory search|status|context`, `tui` / `attach [--size PCT]` (full TUI + Local Map; `--size` sets companion-pane width %), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world [--refresh]` (zone map; `--refresh` rescans L1), `ingest <path> [--source claude|chatgpt|markdown|auto]` (import external history), `craft` / `inventory` / `use` (loot), `snapshot [--days N]` (ASCII activity card; `--days` sets the lookback window), `commentary on|off|list [-n N]|test [kind]` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event> [-f KEY=VALUE]... [--json <JSON>]` (push an event into the daemon inbox; used by hooks), `ship [--date YYYY-MM-DD] [--dry-run] [--no-hook] [--resend]` / `mnemos-cli cite [--matched-text]|cite-detect <transcript> [--topic|--max]|context [--topic|--max|--max-sensitivity|--with-themes]` (Mnemos integration). Run `codeforge --help` for the full tree.
+More commands: `codeforge memory search|status|context`, `tui` / `attach [--size PCT]` (full TUI + Local Map; `--size` sets companion-pane width %), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world [--refresh]` (zone map; `--refresh` rescans L1), `ingest <path> [--source claude|chatgpt|markdown|auto]` (import external history), `craft` / `inventory` / `use` (loot), `snapshot [--days N]` (ASCII activity card; `--days` sets the lookback window), `commentary on|off|list [-n N]|test [kind]` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event> [-f KEY=VALUE]... [--json <JSON>]` (push an event into the daemon inbox; used by hooks), `ship [--date YYYY-MM-DD] [--dry-run] [--no-hook] [--resend]` / `mnemos-cli cite [--matched-text]|cite-detect <transcript> [--topic|--max]|context [--topic|--max|--max-sensitivity|--with-themes]|probe [--verbose]` (Mnemos integration), `doctor` (brain health diagnostics). Run `codeforge --help` for the full tree.
 
 For the global memory store pattern (one shared store across projects), see [`.env.example`](.env.example) — set `CODEFORGE_DIR=~/.codeforge/global`.
 
@@ -222,7 +222,29 @@ This makes CodeForge the **coding source** for Mnemos's multi-source brain (alon
 |--------|------------------------|--------|
 | Mnemos Sprint 1 | `ship` + `mnemos-cli cite` end-to-end | shipped (v0.0.4) |
 | Mnemos Sprint 2 | `mnemos-cli context` for SessionStart hook | shipped (`mnemos-cli context`, v0.0.4) |
+| Brain indicators | Statusline dual brain lights + `doctor` + `mnemos-cli probe` | shipped (v0.0.6) |
 | Mnemos Sprint 5+ | Replace fulltext_match cite heuristic with Haiku detection | backlog |
+
+### Brain Connection Indicators
+
+The `codeforge statusline` bottom border carries two connection lights:
+
+- **`memory ●/◌`** (local brain, always shown when the project has history):
+  - `●` green — active L1 concepts > 0
+  - `◌` grey — store directory exists but active count is 0 ("where did my memory go?" is a useful signal)
+  - not shown — brand-new project, never dreamed
+
+- **`mnemos ●/◐/○/◌`** (central brain, only shown when opted-in):
+  - `●` green — liveness probe ok, ingest healthy
+  - `◐` yellow `degraded` — server is up but last ingest failed or queue depth is high
+  - `○` grey `offline` — server not reachable (neutral, not an alarm — just go start the server)
+  - `◌` grey `pending` — opted-in but never connected yet
+
+The liveness probe runs as a detached background process (`process_group` isolated), writing to a per-machine cache (`$XDG_RUNTIME_DIR/codeforge/`). The hot path (every ~5 s in statusline) only reads the cache — it never blocks on network I/O. The second signal (`mnemos-ship.json`) comes from real ingest outcomes piggybacked on `codeforge ship`.
+
+**NO_COLOR / colour-blind terminals:** glyphs fall back to `memory:active`, `mnemos:ok`, etc. (full words, no abbreviated codes).
+
+**Diagnostics:** `codeforge doctor` shows all dimensions — local L1 count, opt-in status, live probe result, last ship time/outcome, queue depth, and next-step recommendations. `codeforge mnemos-cli probe [--verbose]` probes `GET /health` directly.
 
 ## Data & Privacy
 
