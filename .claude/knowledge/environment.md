@@ -33,6 +33,19 @@ guard. Build/clippy stay on rolling stable on purpose — only fmt is pinned.
 **Related**: deterministic-gate family — see `gate-patterns.md` (确定性 > 記憶);
 fmt is now a script-driven deterministic gate like `check-doc-drift.py` / `check-cjk-safe.sh`.
 
+## `install --all` 在 statusLine 衝突時會整個 bail（hooks 沒裝）
+
+**Date**: 2026-06-23
+**Problem**: `install::run` 先 patch statusLine、再 patch hooks，settings 最後才原子寫入。
+若使用者已有非-codeforge 的 statusLine 且沒帶 `--force`，`patch_statusline` 會在 hooks
+區塊**之前** `bail!` → 整個 `install --all` 中止，**global hooks（dream→ship / recall /
+cleanupPeriodDays）一個都沒裝**。`codeforge bootstrap` 第一版直接用 `install --all`，在
+這個常見情況下等於沒裝 pipeline，卻只報一個軟 warning（review 抓到的 MAJOR）。
+**Solution**: 在 install 上組合時，若要 hooks 一定要落地、又不想 clobber 既有 statusLine：
+`install --all` 失敗就 fallback `install --hooks`（hooks-only 不碰 statusLine）。bootstrap
+step 1 即如此（`src/cli/bootstrap.rs` step1_lines）。warning + `--force` 只針對 statusLine。
+**Related**: best-effort orchestrator 設計 —— 每步錯誤隔離、報告後續跑、最後彙整 needing-attention。
+
 ## `~/.cargo/bin` not on PATH for Claude Code spawned shells
 
 **Date**: 2026-05-15
