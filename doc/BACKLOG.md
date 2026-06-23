@@ -204,6 +204,7 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 **Area**: `src/cli/selfupdate.rs`、`Cargo.toml`（self_update dep）、`install.sh`、release pipeline
 **Premise**: 安裝/更新機制現狀 —— `install.sh`（curl|sh 首裝，public-readiness 時做的）存在但更新得手動重跑 / `cargo install` / 手動 cp；且 `~/.local/bin` vs `~/.cargo/bin` 雙位置會 stale（本機實際撞到：PATH 上 0.0.4、cargo bin 0.0.5）。
 **Shipped** (`feature/self-update`, L-size 2026-06-23): `codeforge self-update [--check]`（self_update crate，GitHub release 後端，ureq+rustls 不重複拉 reqwest）。原地替換 `current_exe` → 不管 binary 在哪都更新對、繞開「哪個在 PATH」問題。`bin_path_in_archive` 對應 release.yml 的 `codeforge-<v>-<target>/codeforge` 結構。install.sh「Next steps」改指向 `bootstrap` + `self-update`。README Updating 一節。
-**未竟（需 user 確認後做）**: **尚未發布任何 release** —— `gh release list` 為空，release.yml 只產 draft 從沒 publish。self-update / install.sh 要能運作，必須先 `git tag v0.0.5` → CI build → publish draft。user 2026-06-23 決定「先做 code，release 等確認」。
-**Trigger**: 確認後 cut v0.0.5（首發），之後每次發版 self-update 即可跨機更新。可選：release.yml `draft:true`→自動 publish，或保留 draft 手動 publish。
-**Status 2026-06-23**: code + docs done；release 待 user 確認發布。
+**⚠️ Activation gate（review 抓到的 Major，發版前必處理）**: self-update **無法對 draft 或 prerelease 運作**。`update()` 走未帶 token 的 `GET /releases`，GitHub 對匿名請求**不回傳 draft** → release array 空 → 永遠回報「已是最新版」（靜默 no-op）。`--check` 走 `/releases/latest` 又**排除 prerelease**，與 `update()` 的 prerelease-inclusive 行為分歧。**結論：release 必須 publish 成 full release（非 draft、非 prerelease）self-update 才會動。**
+**未竟（需 user 確認後做）**: 尚未發布任何 release（`gh release list` 空；release.yml `draft:true` 從沒 publish）。
+**Trigger**: 確認後 cut v0.0.5 首發 —— `git tag v0.0.5` → CI build draft → **手動 publish draft 成 full release**（或把 release.yml 改 `draft:false` 自動 publish）。之後每次發版 self-update 即可跨機更新。policy：一律發 full release，不用 prerelease（避免 `--check`/`update` 分歧）。
+**Status 2026-06-23**: code + docs done（review 0 critical/code-major、Minor 已修：TLS 說法精確化 + unwrap_or 註解 + 本 activation-gate 文件化）；release 待 user 確認發布。
