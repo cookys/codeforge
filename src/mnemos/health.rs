@@ -96,6 +96,25 @@ pub fn read_ship() -> Option<ShipCache> {
     read_json(&ship_path())
 }
 
+pub fn ttl_for(outcome: ProbeOutcome, consecutive_failures: u32) -> u64 {
+    match outcome {
+        ProbeOutcome::Ok | ProbeOutcome::Never => PROBE_TTL_OK,
+        ProbeOutcome::Unreachable | ProbeOutcome::HttpError => {
+            let n = consecutive_failures.max(1);
+            PROBE_TTL_OK
+                .saturating_mul(1u64 << (n - 1).min(20))
+                .min(PROBE_TTL_MAX)
+        }
+    }
+}
+
+pub fn next_failure_count(prev: u32, outcome: ProbeOutcome) -> u32 {
+    match outcome {
+        ProbeOutcome::Ok => 0,
+        _ => prev.saturating_add(1),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -134,5 +153,20 @@ mod tests {
         assert!(read_json::<LivenessCache>(&p).is_none());
         // 不存在 → None
         assert!(read_json::<LivenessCache>(&dir.path().join("nope.json")).is_none());
+    }
+
+    #[test]
+    fn ttl_and_backoff() {
+        assert_eq!(ttl_for(ProbeOutcome::Ok, 0), PROBE_TTL_OK);
+        assert_eq!(ttl_for(ProbeOutcome::Never, 0), PROBE_TTL_OK);
+        // 失敗指數退避：30·2^(n-1)，封頂 600
+        assert_eq!(ttl_for(ProbeOutcome::Unreachable, 1), 30);
+        assert_eq!(ttl_for(ProbeOutcome::Unreachable, 2), 60);
+        assert_eq!(ttl_for(ProbeOutcome::HttpError, 5), 480);
+        assert_eq!(ttl_for(ProbeOutcome::Unreachable, 99), PROBE_TTL_MAX);
+        // recovery：ok 立刻 reset
+        assert_eq!(next_failure_count(7, ProbeOutcome::Ok), 0);
+        assert_eq!(next_failure_count(7, ProbeOutcome::Unreachable), 8);
+        assert_eq!(next_failure_count(0, ProbeOutcome::HttpError), 1);
     }
 }
