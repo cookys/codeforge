@@ -91,7 +91,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             // DEFAULT_STRATEGY when the snapshot predates v6 — wait-for-tick
             // window is one daemon cycle).
             let strategy = live.strategy.unwrap_or(DEFAULT_STRATEGY);
-            render_full(&mut out, &data, &live.state, village, strategy, width)?;
+            render_full(&mut out, &data, &live.state, village, strategy, width, ctx)?;
         }
         None => render_no_pet(&mut out, &data, width)?,
     }
@@ -202,8 +202,13 @@ const PET_NAME: Rgb = (0xEE, 0xEE, 0xEE); // 255 — pet name
 const PET_LV: Rgb = (0xFF, 0xD7, 0x87); // 222 — "Lv.N"
 const STAT_LBL: Rgb = (0x58, 0x58, 0x58); // 240 — "ATK:"
 const STAT_VAL: Rgb = (0x94, 0x94, 0x94); // 246 — stat numbers
-const MEM_ACT: Rgb = (0x5F, 0xAF, 0x5F); // 71  — memory active
 const UPDATE_C: Rgb = (0xFF, 0xAF, 0x00); // 214 — amber update banner
+                                          // Brain indicator palette (Task 13)
+const BRAIN_GREEN: Rgb = (0x5F, 0xAF, 0x5F); // 71  — ● active / ok
+const BRAIN_YELLOW: Rgb = (0xD7, 0xAF, 0x5F); // 179 — ◐ degraded
+const BRAIN_GRAY: Rgb = (0x5F, 0x5F, 0x5F); // 240 — ○ offline / ◌ pending / empty
+const BRAIN_LBL: Rgb = (0x5F, 0x5F, 0x5F); // 240 — "memory"/"mnemos" labels
+const BRAIN_HINT: Rgb = (0x5F, 0x5F, 0x5F); // 240 — "→ doctor" hint
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 // Route through owo_colors `if_supports_color` so NO_COLOR env var and
@@ -219,14 +224,8 @@ fn tc(s: &str, (r, g, b): Rgb) -> String {
 fn tc_bold(s: &str, (r, g, b): Rgb) -> String {
     use owo_colors::Stream::Stdout;
     // Two-step: truecolor first, then bold (avoids returning ref to temporary).
-    let colored = format!(
-        "{}",
-        s.if_supports_color(Stdout, |t| t.truecolor(r, g, b))
-    );
-    format!(
-        "{}",
-        colored.if_supports_color(Stdout, |t| t.bold())
-    )
+    let colored = format!("{}", s.if_supports_color(Stdout, |t| t.truecolor(r, g, b)));
+    format!("{}", colored.if_supports_color(Stdout, |t| t.bold()))
 }
 
 fn tcs(s: String, (r, g, b): Rgb) -> String {
@@ -712,6 +711,7 @@ fn render_full<W: Write>(
     village: &crate::pet::village::Village,
     strategy: Strategy,
     width: usize,
+    ctx: &db::Context,
 ) -> Result<()> {
     const ART_W: usize = 10;
     const ART_THRESHOLD: usize = 90; // drop art column below this width
@@ -852,6 +852,44 @@ fn render_full<W: Write>(
 
     let (ver_str, ver_vis) = render_version(data, delim_c);
 
+    // ── Brain health (Task 13): local + central lights for bottom border ──────
+
+    let brain = {
+        use crate::memory::l1;
+        use crate::mnemos::config::MnemosConfig;
+        use crate::mnemos::health::{
+            central_light, fresh_enough, local_light, queue_degraded, read_liveness, read_ship,
+            BrainHealth,
+        };
+
+        let store_dir = ctx.project_dir.join("store");
+        let active_l1 = l1::count_active(&store_dir);
+        let has_store_history = store_dir.join("concepts").exists();
+        let local = local_light(active_l1, has_store_history);
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let lv = read_liveness();
+        let lv_fresh = lv.as_ref().filter(|l| fresh_enough(l, now));
+        let central = central_light(
+            MnemosConfig::opted_in(),
+            lv_fresh,
+            read_ship().as_ref(),
+            queue_degraded(),
+            now,
+        );
+
+        // no_color: probe whether tc() actually emits ANSI codes for this output.
+        // This is the ground truth — it matches the if_supports_color path exactly,
+        // handling NO_COLOR, FORCE_COLOR, non-tty, and set_override() all at once.
+        let no_color = !tc("x", (0, 0, 0)).contains('\x1b');
+
+        (BrainHealth { local, central }, no_color)
+    };
+    let (brain_health, no_color) = brain;
+
     // ── Art helper: pad art line to ART_W, colored with village rgb ──────────
     // When art_visible is false, every helper returns None so render_rows
     // omits the trailing "  art" entirely (info_w = panel_w).
@@ -957,7 +995,14 @@ fn render_full<W: Write>(
         }
 
         // Row 4 (was 5): bottom border with memory status + version
-        let r4 = bottom_border(panel_w, delim_c, ver_str.clone(), ver_vis);
+        let r4 = bottom_border(
+            panel_w,
+            delim_c,
+            ver_str.clone(),
+            ver_vis,
+            &brain_health,
+            no_color,
+        );
         if art_visible {
             writeln!(
                 out,
@@ -1035,7 +1080,7 @@ fn render_full<W: Write>(
 
         // ── Row 4 (was 5): bottom border with memory ● active + version ─────
 
-        let row4_info = bottom_border(panel_w, delim_c, ver_str, ver_vis);
+        let row4_info = bottom_border(panel_w, delim_c, ver_str, ver_vis, &brain_health, no_color);
 
         let rows = vec![
             Row {
@@ -1102,30 +1147,516 @@ mod tests {
         // visible width = 5 regardless of ANSI wrapping
         assert_eq!(ansi_vis(&colored), 5);
     }
+
+    // ── Task 13: bottom_border tests ─────────────────────────────────────────
+
+    fn bh(
+        l: crate::mnemos::health::LocalLight,
+        c: crate::mnemos::health::CentralLight,
+    ) -> crate::mnemos::health::BrainHealth {
+        crate::mnemos::health::BrainHealth {
+            local: l,
+            central: c,
+        }
+    }
+
+    #[test]
+    fn bottom_border_wide_shows_both() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        // Use no_color=true so output is predictable regardless of terminal
+        let s = bottom_border(
+            80,
+            DELIM,
+            String::new(),
+            0,
+            &bh(LocalLight::Active, CentralLight::Ok),
+            true,
+        );
+        assert!(
+            s.contains("memory"),
+            "should contain 'memory', got: {:?}",
+            s
+        );
+        assert!(
+            s.contains("mnemos"),
+            "should contain 'mnemos', got: {:?}",
+            s
+        );
+        assert!(
+            ansi_vis(&s) <= 80,
+            "不可溢出 panel_w=80，actual={}",
+            ansi_vis(&s)
+        );
+    }
+
+    #[test]
+    fn bottom_border_hidden_central_omits_mnemos() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        let s = bottom_border(
+            80,
+            DELIM,
+            String::new(),
+            0,
+            &bh(LocalLight::Active, CentralLight::Hidden),
+            true,
+        );
+        assert!(s.contains("memory"), "should contain 'memory'");
+        assert!(
+            !s.contains("mnemos"),
+            "Hidden central should not show 'mnemos', got: {:?}",
+            s
+        );
+    }
+
+    #[test]
+    fn bottom_border_narrow_no_overflow() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        for w in [20usize, 30, 40, 60] {
+            let s = bottom_border(
+                w,
+                DELIM,
+                "v0.0.5".into(),
+                6,
+                &bh(LocalLight::Active, CentralLight::Degraded),
+                true,
+            );
+            let actual = ansi_vis(&s);
+            assert!(actual <= w, "w={w} 溢出：actual={actual}, content={:?}", s);
+        }
+    }
+
+    #[test]
+    fn bottom_border_colored_wide_shows_both() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        // Test with colors forced on
+        let _g = ENV_LOCK.lock().unwrap();
+        owo_colors::set_override(true);
+        let s = bottom_border(
+            80,
+            DELIM,
+            String::new(),
+            0,
+            &bh(LocalLight::Active, CentralLight::Ok),
+            false, // colored path
+        );
+        // strip ANSI to check content
+        let plain = strip_ansi(&s);
+        assert!(
+            plain.contains("memory"),
+            "colored path should contain 'memory', plain={:?}",
+            plain
+        );
+        assert!(
+            plain.contains("mnemos"),
+            "colored path should contain 'mnemos', plain={:?}",
+            plain
+        );
+        assert!(ansi_vis(&s) <= 80, "不可溢出 panel_w=80");
+        owo_colors::unset_override();
+    }
 }
 
-/// Render the bottom border `╰─ memory ● active ─── fill ─── v2.1.142 ──╯`.
-/// V2 style: k9s status-dot pattern (`memory ● active`) replaces the colon-
-/// separated `Memory: active` form. Caller passes the version chip + its
-/// visible width pre-computed (shared with bubble path).
-fn bottom_border(panel_w: usize, delim_c: Rgb, ver_str: String, ver_vis: usize) -> String {
-    let mem_label = t!("ui.memory_label").to_string(); // "memory"
-    let mem_status = t!("ui.status_active").to_string(); // "active"
-                                                         // ╰─ (3) + label + " ● " (3) + status + " " (1) + fill + " " (1) + version + " ──╯" (4)
-    let mem_label_vis = vis(&mem_label);
-    let mem_status_vis = vis(&mem_status);
-    let fixed = 3 + mem_label_vis + 3 + mem_status_vis + 2 + ver_vis + 4;
-    let fill = panel_w.saturating_sub(fixed);
-    format!(
-        "{}{}{}{}{}{}{}{}{}",
-        tc("╰─ ", delim_c),
-        tc(&mem_label, STAT_LBL),
-        tc(" ", delim_c),
-        tc("●", MEM_ACT),
-        tc(&format!(" {}", mem_status), STAT_VAL),
-        tc(" ", delim_c),
-        tcs("─".repeat(fill), delim_c),
-        tc(&format!(" {}", ver_str), delim_c),
-        tc(" ──╯", delim_c),
-    )
+/// Render the bottom border with dual brain lights + 6-level degradation ladder.
+///
+/// Format (colored): `╰─ memory ● active   mnemos ● ok ─── v0.0.5 ──╯`
+/// Format (no-color): `╰─ memory:active   mnemos:ok ─── v0.0.5 ──╯`
+///
+/// Degradation ladder (wide → narrow):
+///   1. Full: both segments + hint (only in yellow/gray states) + version
+///   2. Drop `→ doctor` hint
+///   3. central word → short code (skipped when no_color=true)
+///   4. Drop version chip (keep `⬆` update banner when present)
+///   5. Central pure glyph, no word
+///   6. Only local segment
+///
+/// Each level ensures `ansi_vis(output) <= panel_w`.
+fn bottom_border(
+    panel_w: usize,
+    delim_c: Rgb,
+    ver_str: String,
+    ver_vis: usize,
+    brain: &crate::mnemos::health::BrainHealth,
+    no_color: bool,
+) -> String {
+    use crate::mnemos::health::{CentralLight, LocalLight};
+
+    // ─── Segment builders ────────────────────────────────────────────────
+    // local segment: "memory ● active" (colored) or "memory:active" (no-color)
+    let local_label = t!("ui.brain.local_label").to_string();
+    let local_status = match brain.local {
+        LocalLight::Active => t!("ui.brain.status.active").to_string(),
+        LocalLight::Empty => t!("ui.brain.status.offline").to_string(), // gray "offline"-like
+        LocalLight::Hidden => String::new(),                            // not rendered
+    };
+    let local_glyph = match brain.local {
+        LocalLight::Active => "●",
+        LocalLight::Empty => "◌",
+        LocalLight::Hidden => "",
+    };
+    let local_glyph_color = match brain.local {
+        LocalLight::Active => BRAIN_GREEN,
+        _ => BRAIN_GRAY,
+    };
+
+    let central_label = t!("ui.brain.central_label").to_string();
+    let central_status_full = match brain.central {
+        CentralLight::Ok => t!("ui.brain.status.ok").to_string(),
+        CentralLight::Degraded => t!("ui.brain.status.degraded").to_string(),
+        CentralLight::Offline => t!("ui.brain.status.offline").to_string(),
+        CentralLight::Pending => t!("ui.brain.status.pending").to_string(),
+        CentralLight::Hidden => String::new(),
+    };
+    let central_status_short = match brain.central {
+        CentralLight::Ok => "ok",
+        CentralLight::Degraded => "deg",
+        CentralLight::Offline => "off",
+        CentralLight::Pending => "pend",
+        CentralLight::Hidden => "",
+    };
+    let central_glyph = match brain.central {
+        CentralLight::Ok => "●",
+        CentralLight::Degraded => "◐",
+        CentralLight::Offline => "○",
+        CentralLight::Pending => "◌",
+        CentralLight::Hidden => "",
+    };
+    let central_glyph_color = match brain.central {
+        CentralLight::Ok => BRAIN_GREEN,
+        CentralLight::Degraded => BRAIN_YELLOW,
+        _ => BRAIN_GRAY,
+    };
+
+    // hint only appears for yellow/gray central states
+    let show_hint = matches!(
+        brain.central,
+        CentralLight::Degraded | CentralLight::Offline | CentralLight::Pending
+    );
+    let hint_text = "→ doctor";
+
+    // Whether the version chip includes an update banner (preserve `⬆` across lvl 4)
+    let has_update_banner = ver_str.contains('⬆');
+
+    // ─── Segment rendering helpers ──────────────────────────────────────
+    // Build colored/no-color segment strings and measure their visible widths.
+
+    let make_local_seg_colored = |_glyph_only: bool| -> (String, usize) {
+        if matches!(brain.local, LocalLight::Hidden) {
+            return (String::new(), 0);
+        }
+        let s = format!(
+            "{} {} {}",
+            tc(&local_label, BRAIN_LBL),
+            tc(local_glyph, local_glyph_color),
+            tc(&local_status, STAT_VAL),
+        );
+        let w = vis(&local_label) + 1 + 1 + 1 + vis(&local_status);
+        (s, w)
+    };
+
+    let make_local_seg_glyph_only_colored = || -> (String, usize) {
+        if matches!(brain.local, LocalLight::Hidden) {
+            return (String::new(), 0);
+        }
+        let s = format!(
+            "{} {}",
+            tc(&local_label, BRAIN_LBL),
+            tc(local_glyph, local_glyph_color),
+        );
+        let w = vis(&local_label) + 1 + 1; // label + space + glyph(1col)
+        (s, w)
+    };
+
+    let make_local_seg_nocolor = || -> (String, usize) {
+        if matches!(brain.local, LocalLight::Hidden) {
+            return (String::new(), 0);
+        }
+        let s = format!("{}:{}", local_label, local_status);
+        let w = vis(&local_label) + 1 + vis(&local_status);
+        (s, w)
+    };
+
+    let make_central_seg_colored = |word: &str| -> (String, usize) {
+        if matches!(brain.central, CentralLight::Hidden) {
+            return (String::new(), 0);
+        }
+        let s = format!(
+            "{} {} {}",
+            tc(&central_label, BRAIN_LBL),
+            tc(central_glyph, central_glyph_color),
+            tc(word, STAT_VAL),
+        );
+        let w = vis(&central_label) + 1 + 1 + 1 + vis(word);
+        (s, w)
+    };
+
+    let make_central_seg_glyph_only_colored = || -> (String, usize) {
+        if matches!(brain.central, CentralLight::Hidden) {
+            return (String::new(), 0);
+        }
+        let s = format!(
+            "{} {}",
+            tc(&central_label, BRAIN_LBL),
+            tc(central_glyph, central_glyph_color),
+        );
+        let w = vis(&central_label) + 1 + 1;
+        (s, w)
+    };
+
+    let make_central_seg_nocolor = |word: &str| -> (String, usize) {
+        if matches!(brain.central, CentralLight::Hidden) {
+            return (String::new(), 0);
+        }
+        let s = format!("{}:{}", central_label, word);
+        let w = vis(&central_label) + 1 + vis(word);
+        (s, w)
+    };
+
+    // ─── Assemble final string from chosen components ───────────────────
+    // The caller passes `no_color` so we can vary layout.
+    // The border itself is: ╰─ <content> ──╯
+    // ╰─ (3) + content + ──╯ (4) = 7 overhead
+    let overhead = 7usize; // "╰─ " (3) + " ──╯" (4)
+
+    // Helper: assemble the full border from measured components.
+    // segments_vis = total visible width of the segments content area
+    // content = ANSI string for the content area
+    let assemble = |content: String, content_vis: usize| -> String {
+        let fill = panel_w.saturating_sub(overhead + content_vis);
+        format!(
+            "{}{}{}{}",
+            tc("╰─ ", delim_c),
+            content,
+            tcs("─".repeat(fill), delim_c),
+            tc(" ──╯", delim_c),
+        )
+    };
+
+    // ─── Degradation ladder ─────────────────────────────────────────────
+    // Each level assembles a candidate and checks if it fits.
+    // Returns early with the first level that fits.
+
+    if no_color {
+        // No-color path: simpler candidates (no glyphs, label:word form)
+        let (local_seg, local_vis) = make_local_seg_nocolor();
+        let (central_seg, central_vis) = make_central_seg_nocolor(&central_status_full);
+        let has_central = !matches!(brain.central, CentralLight::Hidden) && !central_seg.is_empty();
+
+        // Level 1/2 (merged for no-color — no hint, no short code)
+        // both segments + version
+        {
+            let seg_gap = if has_central { 3 } else { 0 }; // "   " gap
+            let ver_part_vis = if ver_vis > 0 { 1 + ver_vis } else { 0 }; // " v..."
+            let total_content_vis = local_vis + seg_gap + central_vis + ver_part_vis;
+            if overhead + total_content_vis <= panel_w {
+                let mut content = local_seg.clone();
+                if has_central {
+                    content.push_str("   ");
+                    content.push_str(&central_seg);
+                }
+                if ver_vis > 0 {
+                    content.push(' ');
+                    content.push_str(&ver_str);
+                }
+                let result = assemble(content, total_content_vis);
+                if ansi_vis(&result) <= panel_w {
+                    return result;
+                }
+            }
+        }
+
+        // Level 4: drop version chip (keep ⬆ if present)
+        {
+            let (eff_ver_str, eff_ver_vis) = if has_update_banner {
+                (ver_str.clone(), ver_vis)
+            } else {
+                (String::new(), 0)
+            };
+            let ver_part_vis = if eff_ver_vis > 0 { 1 + eff_ver_vis } else { 0 };
+            let seg_gap = if has_central { 3 } else { 0 };
+            let total_content_vis = local_vis + seg_gap + central_vis + ver_part_vis;
+            if overhead + total_content_vis <= panel_w {
+                let mut content = local_seg.clone();
+                if has_central {
+                    content.push_str("   ");
+                    content.push_str(&central_seg);
+                }
+                if eff_ver_vis > 0 {
+                    content.push(' ');
+                    content.push_str(&eff_ver_str);
+                }
+                let result = assemble(content, total_content_vis);
+                if ansi_vis(&result) <= panel_w {
+                    return result;
+                }
+            }
+        }
+
+        // Level 6: only local
+        {
+            let total_content_vis = local_vis;
+            let mut content = local_seg.clone();
+            // If even this overflows, truncate label
+            if overhead + total_content_vis > panel_w {
+                let avail = panel_w.saturating_sub(overhead);
+                content = content.chars().take(avail).collect::<String>();
+            }
+            return assemble(
+                content,
+                total_content_vis.min(panel_w.saturating_sub(overhead)),
+            );
+        }
+    }
+
+    // Colored path:
+    let (local_seg_full, local_vis_full) = make_local_seg_colored(false);
+    let (central_seg_full, central_vis_full) = make_central_seg_colored(&central_status_full);
+    let (central_seg_short, central_vis_short) = make_central_seg_colored(central_status_short);
+    let (central_seg_glyph, central_vis_glyph) = make_central_seg_glyph_only_colored();
+    let (local_seg_glyph, local_vis_glyph) = make_local_seg_glyph_only_colored();
+    let has_central =
+        !matches!(brain.central, CentralLight::Hidden) && !central_seg_full.is_empty();
+    let hint_colored = tc(hint_text, BRAIN_HINT);
+    let hint_vis = vis(hint_text);
+
+    // Level 1: full (both segments + hint + version)
+    {
+        let seg_gap = if has_central { 3 } else { 0 };
+        let hint_part_vis = if show_hint { 3 + hint_vis } else { 0 }; // "   → doctor"
+        let ver_part_vis = if ver_vis > 0 { 1 + ver_vis } else { 0 };
+        let total = local_vis_full + seg_gap + central_vis_full + hint_part_vis + ver_part_vis;
+        if overhead + total <= panel_w {
+            let mut content = local_seg_full.clone();
+            if has_central {
+                content.push_str("   ");
+                content.push_str(&central_seg_full);
+            }
+            if show_hint {
+                content.push_str("   ");
+                content.push_str(&hint_colored);
+            }
+            if ver_vis > 0 {
+                content.push(' ');
+                content.push_str(&ver_str);
+            }
+            let result = assemble(content, total);
+            if ansi_vis(&result) <= panel_w {
+                return result;
+            }
+        }
+    }
+
+    // Level 2: drop hint
+    {
+        let seg_gap = if has_central { 3 } else { 0 };
+        let ver_part_vis = if ver_vis > 0 { 1 + ver_vis } else { 0 };
+        let total = local_vis_full + seg_gap + central_vis_full + ver_part_vis;
+        if overhead + total <= panel_w {
+            let mut content = local_seg_full.clone();
+            if has_central {
+                content.push_str("   ");
+                content.push_str(&central_seg_full);
+            }
+            if ver_vis > 0 {
+                content.push(' ');
+                content.push_str(&ver_str);
+            }
+            let result = assemble(content, total);
+            if ansi_vis(&result) <= panel_w {
+                return result;
+            }
+        }
+    }
+
+    // Level 3: central word → short code (colored only)
+    {
+        let seg_gap = if has_central { 3 } else { 0 };
+        let ver_part_vis = if ver_vis > 0 { 1 + ver_vis } else { 0 };
+        let total = local_vis_full + seg_gap + central_vis_short + ver_part_vis;
+        if overhead + total <= panel_w {
+            let mut content = local_seg_full.clone();
+            if has_central {
+                content.push_str("   ");
+                content.push_str(&central_seg_short);
+            }
+            if ver_vis > 0 {
+                content.push(' ');
+                content.push_str(&ver_str);
+            }
+            let result = assemble(content, total);
+            if ansi_vis(&result) <= panel_w {
+                return result;
+            }
+        }
+    }
+
+    // Level 4: drop version chip (keep ⬆ if present)
+    {
+        let (eff_ver_str, eff_ver_vis) = if has_update_banner {
+            (ver_str.clone(), ver_vis)
+        } else {
+            (String::new(), 0)
+        };
+        let seg_gap = if has_central { 3 } else { 0 };
+        let ver_part_vis = if eff_ver_vis > 0 { 1 + eff_ver_vis } else { 0 };
+        let total = local_vis_full + seg_gap + central_vis_short + ver_part_vis;
+        if overhead + total <= panel_w {
+            let mut content = local_seg_full.clone();
+            if has_central {
+                content.push_str("   ");
+                content.push_str(&central_seg_short);
+            }
+            if eff_ver_vis > 0 {
+                content.push(' ');
+                content.push_str(&eff_ver_str);
+            }
+            let result = assemble(content, total);
+            if ansi_vis(&result) <= panel_w {
+                return result;
+            }
+        }
+    }
+
+    // Level 5: central pure glyph, no word
+    {
+        let seg_gap = if has_central { 3 } else { 0 };
+        let (eff_ver_str, eff_ver_vis) = if has_update_banner {
+            (ver_str.clone(), ver_vis)
+        } else {
+            (String::new(), 0)
+        };
+        let ver_part_vis = if eff_ver_vis > 0 { 1 + eff_ver_vis } else { 0 };
+        let total = local_vis_full + seg_gap + central_vis_glyph + ver_part_vis;
+        if overhead + total <= panel_w {
+            let mut content = local_seg_full.clone();
+            if has_central {
+                content.push_str("   ");
+                content.push_str(&central_seg_glyph);
+            }
+            if eff_ver_vis > 0 {
+                content.push(' ');
+                content.push_str(&eff_ver_str);
+            }
+            let result = assemble(content, total);
+            if ansi_vis(&result) <= panel_w {
+                return result;
+            }
+        }
+    }
+
+    // Level 6: local segment only (glyph-only variant if still too wide)
+    {
+        let total = local_vis_full;
+        if overhead + total <= panel_w {
+            return assemble(local_seg_full, total);
+        }
+    }
+    {
+        let total = local_vis_glyph;
+        if overhead + total <= panel_w {
+            return assemble(local_seg_glyph, total);
+        }
+    }
+
+    // Ultimate fallback: just the border frame
+    assemble(String::new(), 0)
 }
