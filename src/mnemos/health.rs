@@ -165,6 +165,22 @@ pub fn fresh_enough(l: &LivenessCache, now: i64) -> bool {
     now - l.last_probe_at <= CACHE_MAX_AGE as i64
 }
 
+fn count_json_in(dir: &Path) -> usize {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    rd.flatten()
+        .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
+        .count()
+}
+
+/// 即時 queue 深度（statusline 熱路徑，stat 級）。
+pub fn queue_depth() -> usize {
+    count_json_in(&crate::mnemos::state::ship_failed_dir(
+        &crate::mnemos::state::ship_root(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,6 +316,16 @@ mod tests {
             central_light(true, None, None, 0, now),
             CentralLight::Offline
         );
+    }
+
+    #[test]
+    fn queue_depth_counts_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("b.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("note.txt"), "x").unwrap();
+        assert_eq!(count_json_in(dir.path()), 2);
+        assert_eq!(count_json_in(&dir.path().join("missing")), 0);
     }
 
     #[test]
