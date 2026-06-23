@@ -208,3 +208,35 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 **未竟（需 user 確認後做）**: 尚未發布任何 release（`gh release list` 空；release.yml `draft:true` 從沒 publish）。
 **Trigger**: 確認後 cut v0.0.5 首發 —— `git tag v0.0.5` → CI build draft → **手動 publish draft 成 full release**（或把 release.yml 改 `draft:false` 自動 publish）。之後每次發版 self-update 即可跨機更新。policy：一律發 full release，不用 prerelease（避免 `--check`/`update` 分歧）。
 **Status 2026-06-23**: code + docs done（review 0 critical/code-major、Minor 已修：TLS 說法精確化 + unwrap_or 註解 + 本 activation-gate 文件化）；release 待 user 確認發布。
+
+---
+
+## B21 — `should_refresh` 的 `!fresh_enough` dead path revisit
+
+**Area**: `src/mnemos/health.rs:should_refresh`
+**Premise**: `should_refresh` 的 `cache_stale = !fresh_enough(l, now)` 分支在 `PROBE_TTL_MAX(600s) < CACHE_MAX_AGE(3600s)` 的當前常數下永遠被 `ttl_expired` 先短路（dead path，保留作 belt-and-suspenders）。代碼已加 comment 說明。若未來 `PROBE_TTL_MAX` 調高至 > `CACHE_MAX_AGE`，此 OR 分支將重新生效，語意正確性需 revisit（或可移除）。
+**Trigger**: 調整 `PROBE_TTL_MAX` 常數（往 >3600s 方向）時，或決定清理 belt-and-suspenders 時。
+
+---
+
+## B22 — `bottom_border` 在 `panel_w < 7` 的 ultimate fallback 可能溢出
+
+**Area**: `src/cli/statusline.rs:bottom_border`（降級階梯最後一級）
+**Premise**: 降級至最極窄（panel_w 遠低於正常終端 80+）的 ultimate fallback 段可能未對字串做 clamp/截斷，在超極窄假想終端寬度下有溢出邊框的風險。真實終端（80+ col）不觸發，故非現役 bug。
+**Trigger**: 為降級階梯補參數化測試（見 B23），或需在嵌入式/腳本窄輸出場景保證不破版時。修法：在 ultimate fallback 加 `.chars().take(panel_w).collect::<String>()` clamp。
+
+---
+
+## B23 — 降級階梯缺「剛好等於邊界寬度」的參數化測試
+
+**Area**: `src/cli/statusline.rs` 測試模組、`bottom_border` 降級邏輯
+**Premise**: 現有降級階梯測試驗 wide/narrow 兩端，但缺乏「panel_w 剛好等於每個降級斷點」的邊界值參數化測試（off-by-one 盲區）。
+**Trigger**: 補測試時，或降級斷點數值有調整時。可用 proptest 或 table-driven #[test] 覆蓋每個斷點 ±1。
+
+---
+
+## B24 — `l1::count_active` 熱路徑逐檔 parse frontmatter 潛在成本
+
+**Area**: `src/memory/l1.rs:count_active`、`src/cli/statusline.rs`（呼叫點）
+**Premise**: `count_active` 對 `store/concepts/` 下每個 `.md` 逐一 parse frontmatter，per-render 呼叫、未快取。概念數通常 <100 故成本可忽略，但 concepts 目錄成長至數百筆後，每次 statusline render 均有 O(n) 讀檔+解析開銷。
+**Trigger**: concepts 目錄 >200 筆，或 statusline render 延遲有感變慢時。改法選一：(a) 在 SQLite DB 加 `l1_count` 欄位、dream 寫入後更新，statusline 走 DB 查詢；(b) 快取到 runtime_dir（與 liveness cache 同源）並由 dream 觸碰失效。
