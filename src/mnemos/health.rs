@@ -181,6 +181,57 @@ pub fn queue_depth() -> usize {
     ))
 }
 
+use std::fs::OpenOptions;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn file_mtime_secs(path: &Path) -> Option<i64> {
+    let m = std::fs::metadata(path).ok()?.modified().ok()?;
+    Some(m.duration_since(UNIX_EPOCH).ok()?.as_secs() as i64)
+}
+
+/// 可測核心：now 注入。回 true=本進程拿到鎖、應 spawn。
+fn acquire_at(lock: &Path, now: i64) -> bool {
+    if let Some(parent) = lock.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    // 1) 無鎖 → O_EXCL 原子建檔
+    match OpenOptions::new().write(true).create_new(true).open(lock) {
+        Ok(_) => return true,
+        Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => return false,
+        _ => {}
+    }
+    // 2) 有鎖 → 只有 stale 才認領
+    match file_mtime_secs(lock) {
+        Some(m) if now - m > INFLIGHT_GRACE as i64 => {
+            // rename-steal：只一個 statusline 能把 stale 鎖 rename 走（其餘 ENOENT）
+            let owned = lock.with_extension(format!("steal.{}", std::process::id()));
+            if std::fs::rename(lock, &owned).is_ok() {
+                let _ = std::fs::remove_file(&owned);
+                OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(lock)
+                    .is_ok()
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+pub fn try_acquire_probe_lock() -> bool {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    acquire_at(&lock_path(), now)
+}
+
+pub fn release_probe_lock() {
+    let _ = std::fs::remove_file(lock_path());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,6 +367,23 @@ mod tests {
             central_light(true, None, None, 0, now),
             CentralLight::Offline
         );
+    }
+
+    #[test]
+    fn lock_excl_then_busy_then_stale_reclaim() {
+        let dir = tempfile::tempdir().unwrap();
+        let lock = dir.path().join("x.lock");
+        // 取得「現在」的合理近似，用於第一次搶鎖
+        let t0 = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        // 首搶成功
+        assert!(acquire_at(&lock, t0));
+        // 同時間再搶 → 失敗（鎖在、未 stale）
+        assert!(!acquire_at(&lock, t0 + 1));
+        // 超過 GRACE 後 → stale 認領成功
+        assert!(acquire_at(&lock, t0 + INFLIGHT_GRACE as i64 + 1));
     }
 
     #[test]
