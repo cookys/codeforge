@@ -146,6 +146,23 @@ impl L1Entry {
     }
 }
 
+/// 計算 store/concepts/ 目錄中 status="active" 的 L1 條目數量。
+/// 失敗（目錄不存在、解析錯誤）回 0，不傳播錯誤（statusline 熱路徑）。
+pub fn count_active(store_dir: &Path) -> usize {
+    let dir = store_dir.join("concepts");
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return 0;
+    };
+    rd.flatten()
+        .filter(|e| e.path().extension().map(|x| x == "md").unwrap_or(false))
+        .filter(|e| {
+            L1Entry::from_file(&e.path())
+                .map(|entry| entry.frontmatter.status == "active")
+                .unwrap_or(false)
+        })
+        .count()
+}
+
 /// 掃描 store/ 目錄，回傳所有 L1 entries
 pub fn scan_all(store_dir: &Path) -> Result<Vec<L1Entry>> {
     let mut entries = Vec::new();

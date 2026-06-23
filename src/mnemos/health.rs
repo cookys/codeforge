@@ -271,6 +271,33 @@ pub fn release_probe_lock() {
     let _ = std::fs::remove_file(lock_path());
 }
 
+// ─── Task 11: local 燈 ────────────────────────────────────────────────────
+
+/// 本地腦（L1 memory）連線狀態。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalLight {
+    /// 未 dream / 全新專案，無任何 store 記錄 → 不渲染
+    Hidden,
+    /// active L1 concept > 0 → 綠燈
+    Active,
+    /// 曾有 store 歷史但 active = 0 → 灰燈（「記憶怎麼不見了」有用訊號）
+    Empty,
+}
+
+/// 計算本地腦狀態。
+/// - `active_l1 > 0` → Active
+/// - `active_l1 == 0` 但 `has_store_history` → Empty
+/// - 否則 → Hidden（全新、無歷史）
+pub fn local_light(active_l1: usize, has_store_history: bool) -> LocalLight {
+    if active_l1 > 0 {
+        LocalLight::Active
+    } else if has_store_history {
+        LocalLight::Empty
+    } else {
+        LocalLight::Hidden
+    }
+}
+
 // ─── Task 7: classify_probe + run_probe ────────────────────────────────────
 
 /// Map an HTTP status code (or None for network error) to a ProbeOutcome.
@@ -703,6 +730,16 @@ mod tests {
         let back2: ShipCache = read_json(&p).unwrap();
         assert_eq!(back2.last_ship_at, 99);
         assert!(!back2.last_ship_ok);
+    }
+
+    // ── Task 11: local_light ─────────────────────────────────────────────
+
+    #[test]
+    fn local_light_states() {
+        assert_eq!(local_light(5, true), LocalLight::Active);
+        assert_eq!(local_light(1, false), LocalLight::Active);
+        assert_eq!(local_light(0, true), LocalLight::Empty);
+        assert_eq!(local_light(0, false), LocalLight::Hidden);
     }
 
     #[test]
