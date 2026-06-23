@@ -33,6 +33,21 @@ guard. Build/clippy stay on rolling stable on purpose — only fmt is pinned.
 **Related**: deterministic-gate family — see `gate-patterns.md` (确定性 > 記憶);
 fmt is now a script-driven deterministic gate like `check-doc-drift.py` / `check-cjk-safe.sh`.
 
+## 加新 dep 會撞 `cargo deny check licenses`（CI-only gate，本機 local gate 沒跑）
+
+**Date**: 2026-06-23
+**Problem**: merge `self_update`（ureq+rustls backend）後 CI `cargo deny` job 紅 ——
+ureq 帶進 `webpki-roots`（TLS trust anchors），license 是 `CDLA-Permissive-2.0`，不在
+`deny.toml` allowlist。本機 quality gate（fmt/check/clippy/test/doc-drift/cjk-safe）**沒含
+cargo-deny**（沒裝），所以本機全綠、CI 才紅 → 紅了 main 一輪。
+**Solution**: 加 license 到 `deny.toml` allow（CDLA-Permissive-2.0 是 permissive、
+redistribution-safe）。**加任何 dep 後，push 前先本機 `cargo deny check licenses`**
+（`cargo install cargo-deny --locked` 一次）。多數 `A OR B` 授權只要有一個 allowed 就過；
+真正會卡的是**單一非標準 license**（webpki-roots=CDLA、ring 的自訂 license 等）。
+注意：self_update 0.44 的 reqwest backend 要 reqwest 0.13（≠ 專案的 0.12）會拉第二份，
+故維持 ureq backend。
+**Related**: CI gate 清單見 `.github/workflows/ci.yml`（fmt/clippy/test/deny/doc-drift/cjk-safe）—— deny 是唯一沒進本機 quality gate 的。
+
 ## `install --all` 在 statusLine 衝突時會整個 bail（hooks 沒裝）
 
 **Date**: 2026-06-23
