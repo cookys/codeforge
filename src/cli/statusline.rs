@@ -1118,176 +1118,6 @@ fn render_full<W: Write>(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Serialize env mutations across tests to avoid race conditions.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    /// Verify that NO_COLOR env var causes tc/tc_bold/tcs to emit plain text
-    /// with no ANSI escape sequences. (owo_colors if_supports_color honours it.)
-    #[test]
-    fn no_color_strips_ansi() {
-        let _g = ENV_LOCK.lock().unwrap();
-        // Force override: NO_COLOR=1 must suppress all color output.
-        owo_colors::set_override(false);
-        let s = tc("hi", (0xFF, 0x00, 0x00));
-        assert!(
-            !s.contains('\x1b'),
-            "NO_COLOR 下不該有 ANSI escape，got: {:?}",
-            s
-        );
-        let sb = tc_bold("bold", (0x00, 0xFF, 0x00));
-        assert!(
-            !sb.contains('\x1b'),
-            "tc_bold NO_COLOR 下不該有 ANSI escape，got: {:?}",
-            sb
-        );
-        // Restore default detection.
-        owo_colors::unset_override();
-    }
-
-    #[test]
-    fn ansi_vis_strips_escapes() {
-        // Even with colors on, ansi_vis should return visible width only.
-        let colored = tc("hello", (0xFF, 0xFF, 0xFF));
-        // visible width = 5 regardless of ANSI wrapping
-        assert_eq!(ansi_vis(&colored), 5);
-    }
-
-    // ── Task 13: bottom_border tests ─────────────────────────────────────────
-
-    fn bh(
-        l: crate::mnemos::health::LocalLight,
-        c: crate::mnemos::health::CentralLight,
-    ) -> crate::mnemos::health::BrainHealth {
-        crate::mnemos::health::BrainHealth {
-            local: l,
-            central: c,
-        }
-    }
-
-    #[test]
-    fn bottom_border_wide_shows_both() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        // Use no_color=true so output is predictable regardless of terminal
-        let s = bottom_border(
-            80,
-            DELIM,
-            String::new(),
-            0,
-            &bh(LocalLight::Active, CentralLight::Ok),
-            true,
-        );
-        assert!(
-            s.contains("memory"),
-            "should contain 'memory', got: {:?}",
-            s
-        );
-        assert!(
-            s.contains("mnemos"),
-            "should contain 'mnemos', got: {:?}",
-            s
-        );
-        assert!(
-            ansi_vis(&s) <= 80,
-            "不可溢出 panel_w=80，actual={}",
-            ansi_vis(&s)
-        );
-    }
-
-    #[test]
-    fn bottom_border_hidden_central_omits_mnemos() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        let s = bottom_border(
-            80,
-            DELIM,
-            String::new(),
-            0,
-            &bh(LocalLight::Active, CentralLight::Hidden),
-            true,
-        );
-        assert!(s.contains("memory"), "should contain 'memory'");
-        assert!(
-            !s.contains("mnemos"),
-            "Hidden central should not show 'mnemos', got: {:?}",
-            s
-        );
-    }
-
-    #[test]
-    fn bottom_border_narrow_no_overflow() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        for w in [20usize, 30, 40, 60] {
-            let s = bottom_border(
-                w,
-                DELIM,
-                "v0.0.5".into(),
-                6,
-                &bh(LocalLight::Active, CentralLight::Degraded),
-                true,
-            );
-            let actual = ansi_vis(&s);
-            assert!(actual <= w, "w={w} 溢出：actual={actual}, content={:?}", s);
-        }
-    }
-
-    #[test]
-    fn bottom_border_colored_wide_shows_both() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        // Test with colors forced on
-        let _g = ENV_LOCK.lock().unwrap();
-        owo_colors::set_override(true);
-        let s = bottom_border(
-            80,
-            DELIM,
-            String::new(),
-            0,
-            &bh(LocalLight::Active, CentralLight::Ok),
-            false, // colored path
-        );
-        // strip ANSI to check content
-        let plain = strip_ansi(&s);
-        assert!(
-            plain.contains("memory"),
-            "colored path should contain 'memory', plain={:?}",
-            plain
-        );
-        assert!(
-            plain.contains("mnemos"),
-            "colored path should contain 'mnemos', plain={:?}",
-            plain
-        );
-        assert!(ansi_vis(&s) <= 80, "不可溢出 panel_w=80");
-        owo_colors::unset_override();
-    }
-
-    #[test]
-    fn bottom_border_local_empty_word() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        // LocalLight::Empty means store exists but active=0 — must show "empty", NOT "offline"
-        let s = bottom_border(
-            80,
-            DELIM,
-            String::new(),
-            0,
-            &bh(LocalLight::Empty, CentralLight::Hidden),
-            true, // no_color=true for deterministic plain output
-        );
-        assert!(
-            s.contains("empty"),
-            "LocalLight::Empty 應輸出 'empty'，got: {:?}",
-            s
-        );
-        assert!(
-            !s.contains("offline"),
-            "LocalLight::Empty 不應輸出 'offline'，got: {:?}",
-            s
-        );
-    }
-}
-
 /// Render the bottom border with dual brain lights + 6-level degradation ladder.
 ///
 /// Format (colored): `╰─ memory ● active   mnemos ● ok ─── v0.0.5 ──╯`
@@ -1691,4 +1521,174 @@ fn bottom_border(
 
     // Ultimate fallback: just the border frame
     assemble(String::new(), 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Serialize env mutations across tests to avoid race conditions.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Verify that NO_COLOR env var causes tc/tc_bold/tcs to emit plain text
+    /// with no ANSI escape sequences. (owo_colors if_supports_color honours it.)
+    #[test]
+    fn no_color_strips_ansi() {
+        let _g = ENV_LOCK.lock().unwrap();
+        // Force override: NO_COLOR=1 must suppress all color output.
+        owo_colors::set_override(false);
+        let s = tc("hi", (0xFF, 0x00, 0x00));
+        assert!(
+            !s.contains('\x1b'),
+            "NO_COLOR 下不該有 ANSI escape，got: {:?}",
+            s
+        );
+        let sb = tc_bold("bold", (0x00, 0xFF, 0x00));
+        assert!(
+            !sb.contains('\x1b'),
+            "tc_bold NO_COLOR 下不該有 ANSI escape，got: {:?}",
+            sb
+        );
+        // Restore default detection.
+        owo_colors::unset_override();
+    }
+
+    #[test]
+    fn ansi_vis_strips_escapes() {
+        // Even with colors on, ansi_vis should return visible width only.
+        let colored = tc("hello", (0xFF, 0xFF, 0xFF));
+        // visible width = 5 regardless of ANSI wrapping
+        assert_eq!(ansi_vis(&colored), 5);
+    }
+
+    // ── Task 13: bottom_border tests ─────────────────────────────────────────
+
+    fn bh(
+        l: crate::mnemos::health::LocalLight,
+        c: crate::mnemos::health::CentralLight,
+    ) -> crate::mnemos::health::BrainHealth {
+        crate::mnemos::health::BrainHealth {
+            local: l,
+            central: c,
+        }
+    }
+
+    #[test]
+    fn bottom_border_wide_shows_both() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        // Use no_color=true so output is predictable regardless of terminal
+        let s = bottom_border(
+            80,
+            DELIM,
+            String::new(),
+            0,
+            &bh(LocalLight::Active, CentralLight::Ok),
+            true,
+        );
+        assert!(
+            s.contains("memory"),
+            "should contain 'memory', got: {:?}",
+            s
+        );
+        assert!(
+            s.contains("mnemos"),
+            "should contain 'mnemos', got: {:?}",
+            s
+        );
+        assert!(
+            ansi_vis(&s) <= 80,
+            "不可溢出 panel_w=80，actual={}",
+            ansi_vis(&s)
+        );
+    }
+
+    #[test]
+    fn bottom_border_hidden_central_omits_mnemos() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        let s = bottom_border(
+            80,
+            DELIM,
+            String::new(),
+            0,
+            &bh(LocalLight::Active, CentralLight::Hidden),
+            true,
+        );
+        assert!(s.contains("memory"), "should contain 'memory'");
+        assert!(
+            !s.contains("mnemos"),
+            "Hidden central should not show 'mnemos', got: {:?}",
+            s
+        );
+    }
+
+    #[test]
+    fn bottom_border_narrow_no_overflow() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        for w in [20usize, 30, 40, 60] {
+            let s = bottom_border(
+                w,
+                DELIM,
+                "v0.0.5".into(),
+                6,
+                &bh(LocalLight::Active, CentralLight::Degraded),
+                true,
+            );
+            let actual = ansi_vis(&s);
+            assert!(actual <= w, "w={w} 溢出：actual={actual}, content={:?}", s);
+        }
+    }
+
+    #[test]
+    fn bottom_border_colored_wide_shows_both() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        // Test with colors forced on
+        let _g = ENV_LOCK.lock().unwrap();
+        owo_colors::set_override(true);
+        let s = bottom_border(
+            80,
+            DELIM,
+            String::new(),
+            0,
+            &bh(LocalLight::Active, CentralLight::Ok),
+            false, // colored path
+        );
+        // strip ANSI to check content
+        let plain = strip_ansi(&s);
+        assert!(
+            plain.contains("memory"),
+            "colored path should contain 'memory', plain={:?}",
+            plain
+        );
+        assert!(
+            plain.contains("mnemos"),
+            "colored path should contain 'mnemos', plain={:?}",
+            plain
+        );
+        assert!(ansi_vis(&s) <= 80, "不可溢出 panel_w=80");
+        owo_colors::unset_override();
+    }
+
+    #[test]
+    fn bottom_border_local_empty_word() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        // LocalLight::Empty means store exists but active=0 — must show "empty", NOT "offline"
+        let s = bottom_border(
+            80,
+            DELIM,
+            String::new(),
+            0,
+            &bh(LocalLight::Empty, CentralLight::Hidden),
+            true, // no_color=true for deterministic plain output
+        );
+        assert!(
+            s.contains("empty"),
+            "LocalLight::Empty 應輸出 'empty'，got: {:?}",
+            s
+        );
+        assert!(
+            !s.contains("offline"),
+            "LocalLight::Empty 不應輸出 'offline'，got: {:?}",
+            s
+        );
+    }
 }
