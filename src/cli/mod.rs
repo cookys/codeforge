@@ -18,6 +18,7 @@ mod mnemos_cli;
 mod pet;
 mod recall;
 mod search;
+mod selfupdate;
 mod ship;
 mod snapshot;
 mod statusline;
@@ -60,6 +61,15 @@ pub enum Commands {
         /// 覆蓋 settings.json 路徑（預設 ~/.claude/settings.json 或 $CWD/.claude/settings.json for --project-hooks）
         #[arg(long, value_name = "PATH")]
         settings_path: Option<std::path::PathBuf>,
+        /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// 從最新 GitHub release 原地更新 codeforge 二進位（B20）
+    SelfUpdate {
+        /// 只檢查有沒有新版，不下載/替換
+        #[arg(long)]
+        check: bool,
         /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
         #[arg(long)]
         quiet: bool,
@@ -332,6 +342,9 @@ pub fn run(cli: Cli) -> Result<()> {
             settings_path,
             quiet,
         }),
+        Commands::SelfUpdate { check, quiet } => {
+            selfupdate::run(selfupdate::SelfUpdateOpts { check, quiet })
+        }
         Commands::Bootstrap { dry_run, quiet } => {
             bootstrap::run(bootstrap::BootstrapOpts { dry_run, quiet })
         }
