@@ -43,6 +43,40 @@ fn find_fmt_script(start: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Decide what step 1 reports, given the result of `install --all` and (when it
+/// failed) the hooks-only fallback. Pure → unit-testable without touching
+/// `~/.claude/settings.json`. Returns (lines to print, optional summary warning).
+///
+/// Why a fallback: `install --all` patches the statusLine first and aborts the
+/// whole call on a foreign statusLine (settings are written atomically at the
+/// end), so a statusLine conflict would otherwise silently skip the global hooks
+/// — the dream→ship/recall pipeline that is the whole point of bootstrap. So on
+/// `--all` failure we retry hooks-only (never touches the statusLine): the
+/// pipeline still lands, and we warn ONLY about the un-clobbered statusLine.
+fn step1_lines(
+    full_err: Option<&str>,
+    fallback_err: Option<&str>,
+) -> (Vec<String>, Option<String>) {
+    match (full_err, fallback_err) {
+        // `install --all` succeeded — statusLine + hooks both wired.
+        (None, _) => (Vec::new(), None),
+        // `--all` failed (statusLine conflict) but hooks-only landed the pipeline.
+        (Some(_), None) => (
+            vec![
+                "   ⚠ statusLine 已被其他程式設定，未覆蓋；global hooks 已安裝".to_string(),
+                "     （要讓 codeforge 接管 statusLine：codeforge install --all --force）"
+                    .to_string(),
+            ],
+            Some("statusLine 沿用現有（hooks 已裝；--force 可接管）".to_string()),
+        ),
+        // Even hooks-only failed — a real problem (e.g. settings.json unwritable).
+        (Some(_), Some(fe)) => (
+            vec![format!("   ⚠ 跳過：{fe}")],
+            Some(format!("Claude Code wiring: {fe}")),
+        ),
+    }
+}
+
 /// The Mnemos opt-in status line(s) — pure so it's unit-testable without env mutation.
 fn mnemos_status_lines(opted_in: bool, env_path: &str) -> Vec<String> {
     if opted_in {
@@ -69,30 +103,40 @@ pub fn run(opts: BootstrapOpts) -> Result<()> {
 
     let mut warnings: Vec<String> = Vec::new();
 
-    // Step 1: Claude Code wiring (statusline + global hooks) via install --all.
+    // Step 1: Claude Code wiring. Try statusline + hooks (`--all`); if that aborts
+    // on a foreign statusLine, fall back to hooks-only so the dream→ship/recall
+    // pipeline still lands non-destructively (see step1_lines docs).
     say(
         opts.quiet,
         "\n── [1/3] Claude Code wiring (install --all) ──",
     );
-    let install_res = install::run(InstallOpts {
-        hooks: false,
-        all: true,
+    let opts_at = |hooks: bool, all: bool| InstallOpts {
+        hooks,
+        all,
         project_hooks: false,
         dry_run: opts.dry_run,
         force: false,
         yes: true,
         settings_path: None,
         quiet: opts.quiet,
-    });
-    if let Err(e) = install_res {
-        // Most common benign case: a statusLine set by something else — codeforge
-        // refuses to clobber without --force. Report + continue, don't abort.
-        say(opts.quiet, &format!("   ⚠ 跳過：{e}"));
-        say(
-            opts.quiet,
-            "     （若要讓 codeforge 接管現有 statusLine：codeforge install --all --force）",
-        );
-        warnings.push(format!("Claude Code wiring: {e}"));
+    };
+    let full_err = install::run(opts_at(false, true))
+        .err()
+        .map(|e| e.to_string());
+    let fallback_err = if full_err.is_some() {
+        // hooks-only never touches the statusLine, so it can't hit that conflict.
+        install::run(opts_at(true, false))
+            .err()
+            .map(|e| e.to_string())
+    } else {
+        None
+    };
+    let (lines, warning) = step1_lines(full_err.as_deref(), fallback_err.as_deref());
+    for line in &lines {
+        say(opts.quiet, line);
+    }
+    if let Some(w) = warning {
+        warnings.push(w);
     }
 
     // Step 2: pinned fmt toolchain — only meaningful inside a codeforge clone.
@@ -150,7 +194,7 @@ pub fn run(opts: BootstrapOpts) -> Result<()> {
     // Summary.
     say(opts.quiet, "\n── 完成 ──");
     if warnings.is_empty() {
-        say(opts.quiet, "   ✓ 所有步驟就緒");
+        say(opts.quiet, "   ✓ 無待處理事項");
     } else {
         say(opts.quiet, &format!("   ⚠ {} 步需注意：", warnings.len()));
         for w in &warnings {
@@ -191,6 +235,33 @@ mod tests {
         // A directory with scripts/ but no fmt.sh must NOT match.
         std::fs::create_dir_all(sub.join("scripts")).unwrap();
         assert!(find_fmt_script(&sub).is_none());
+    }
+
+    #[test]
+    fn step1_full_install_ok_no_lines_no_warning() {
+        let (lines, warning) = step1_lines(None, None);
+        assert!(lines.is_empty());
+        assert!(warning.is_none());
+    }
+
+    #[test]
+    fn step1_statusline_conflict_but_hooks_land() {
+        // --all failed, hooks-only fallback succeeded → pipeline landed, warn re statusLine only.
+        let (lines, warning) = step1_lines(Some("statusLine 已被其他程式設定"), None);
+        assert!(lines.iter().any(|l| l.contains("global hooks 已安裝")));
+        assert!(lines.iter().any(|l| l.contains("--force")));
+        let w = warning.expect("should warn about statusLine");
+        assert!(w.contains("hooks 已裝"));
+    }
+
+    #[test]
+    fn step1_hooks_fallback_also_fails_surfaces_real_error() {
+        let (lines, warning) = step1_lines(Some("x"), Some("settings.json 無法寫入"));
+        assert!(lines.iter().any(|l| l.contains("settings.json 無法寫入")));
+        assert_eq!(
+            warning.as_deref(),
+            Some("Claude Code wiring: settings.json 無法寫入")
+        );
     }
 
     #[test]
