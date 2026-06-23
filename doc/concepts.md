@@ -217,7 +217,7 @@ codebase 是世界地圖、技術債是怪物、pet 是你的角色。
 
 ---
 
-## 6. 養寵連結 CodePower —— 今天 vs 規劃
+## 7. 養寵連結 CodePower —— 今天 vs 規劃
 
 CodePower（鬥技場，公開競技）與 CodeForge（鍛造間，私人累積）是搭配使用的。「Power 提供能量，Forge 塑形」。關於「把養好的寵物帶進 CodePower」這件事，現況如下：
 
