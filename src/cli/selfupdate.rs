@@ -44,6 +44,8 @@ pub fn run(opts: SelfUpdateOpts) -> Result<()> {
 
     if opts.check {
         let latest = updater.get_latest_release().context(NO_RELEASE_HINT)?;
+        // A malformed remote tag (semver parse error) is intentionally treated as
+        // "up to date" — never claim an update we can't verify is actually newer.
         if self_update::version::bump_is_greater(current, &latest.version).unwrap_or(false) {
             say(
                 opts.quiet,

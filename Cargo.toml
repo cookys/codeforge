@@ -70,6 +70,10 @@ sha1 = "0.10"
 
 # Environment
 dotenvy = "0.15"
+# self-update: ureq+rustls backend (pure-Rust TLS via ring) instead of the
+# default reqwest backend — avoids pulling a second copy of reqwest and adds no
+# new system library. (reqwest above still uses native-tls; the two crypto
+# backends coexist, but rustls/ring is self-contained.)
 self_update = { version = "0.44.0", default-features = false, features = ["archive-tar", "compression-flate2", "rustls", "ureq"] }
 
 [dev-dependencies]
