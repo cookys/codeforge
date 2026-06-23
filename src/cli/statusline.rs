@@ -211,38 +211,46 @@ const BRAIN_LBL: Rgb = (0x5F, 0x5F, 0x5F); // 240 — "memory"/"mnemos" labels
 const BRAIN_HINT: Rgb = (0x5F, 0x5F, 0x5F); // 240 — "→ doctor" hint
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
-// Route through owo_colors `if_supports_color` so NO_COLOR env var and
-// non-tty pipes automatically strip ANSI escape codes (spec §4.1).
+// The statusline's stdout is consumed by Claude Code's renderer (which handles
+// ANSI escape codes), NOT a raw terminal — CC ALWAYS pipes it. So we colorize by
+// default and gate ONLY on the standard NO_COLOR env var. We must NOT use
+// tty/if_supports_color detection: a pipe is not a tty, so that strips all color
+// in the real statusline (the 2026-06-24 regression this replaces). NO_COLOR
+// (non-empty, per https://no-color.org) is the one switch that turns color off.
+fn color_enabled() -> bool {
+    std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty())
+}
 
 fn tc(s: &str, (r, g, b): Rgb) -> String {
-    format!(
-        "{}",
-        s.if_supports_color(owo_colors::Stream::Stdout, |t| t.truecolor(r, g, b))
-    )
+    if color_enabled() {
+        format!("{}", s.truecolor(r, g, b))
+    } else {
+        s.to_string()
+    }
 }
 
 fn tc_bold(s: &str, (r, g, b): Rgb) -> String {
-    use owo_colors::Stream::Stdout;
-    // Two-step: truecolor first, then bold (avoids returning ref to temporary).
-    let colored = format!("{}", s.if_supports_color(Stdout, |t| t.truecolor(r, g, b)));
-    format!("{}", colored.if_supports_color(Stdout, |t| t.bold()))
+    if color_enabled() {
+        format!("{}", s.truecolor(r, g, b).bold())
+    } else {
+        s.to_string()
+    }
 }
 
 fn tcs(s: String, (r, g, b): Rgb) -> String {
-    format!(
-        "{}",
-        s.if_supports_color(owo_colors::Stream::Stdout, |t| t.truecolor(r, g, b))
-    )
+    if color_enabled() {
+        format!("{}", s.truecolor(r, g, b))
+    } else {
+        s
+    }
 }
 
-/// Probe whether stdout will receive ANSI color codes by asking tc() directly.
-///
-/// Uses a zero-width-space (U+200B) so no visible character appears in output.
-/// This is the ground-truth gate: it mirrors tc()'s own if_supports_color check
-/// (which respects NO_COLOR, FORCE_COLOR, non-tty, and owo set_override() all at
-/// once), so the plain/color branches never diverge.
+/// Whether to render the plain (no-ANSI) statusline form. Mirrors `color_enabled()`:
+/// the standard NO_COLOR env var (non-empty) selects plain. Pipe-vs-tty is
+/// irrelevant — CC consumes ANSI, so color is never stripped just because stdout
+/// isn't a terminal.
 fn stdout_is_plain() -> bool {
-    !tc("\u{200b}", (0, 0, 0)).contains('\x1b')
+    !color_enabled()
 }
 
 fn bar_rgb(pct: f64) -> Rgb {
@@ -1530,13 +1538,11 @@ mod tests {
     // Serialize env mutations across tests to avoid race conditions.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// Verify that NO_COLOR env var causes tc/tc_bold/tcs to emit plain text
-    /// with no ANSI escape sequences. (owo_colors if_supports_color honours it.)
+    /// NO_COLOR env var causes tc/tc_bold/tcs to emit plain text (no ANSI).
     #[test]
     fn no_color_strips_ansi() {
         let _g = ENV_LOCK.lock().unwrap();
-        // Force override: NO_COLOR=1 must suppress all color output.
-        owo_colors::set_override(false);
+        std::env::set_var("NO_COLOR", "1");
         let s = tc("hi", (0xFF, 0x00, 0x00));
         assert!(
             !s.contains('\x1b'),
@@ -1549,8 +1555,22 @@ mod tests {
             "tc_bold NO_COLOR 下不該有 ANSI escape，got: {:?}",
             sb
         );
-        // Restore default detection.
-        owo_colors::unset_override();
+        std::env::remove_var("NO_COLOR");
+    }
+
+    /// Regression (2026-06-24): CC pipes the statusline stdout (not a tty), so
+    /// color must be ON by default — NOT gated on tty detection. Without NO_COLOR,
+    /// tc() must emit ANSI even when stdout is not a terminal (as in `cargo test`).
+    #[test]
+    fn color_on_by_default_when_not_a_tty() {
+        let _g = ENV_LOCK.lock().unwrap();
+        std::env::remove_var("NO_COLOR");
+        let s = tc("x", (0xFF, 0x00, 0x00));
+        assert!(
+            s.contains('\x1b'),
+            "color 必須預設開（CC 吃 ANSI；不可靠 tty 偵測），got: {:?}",
+            s
+        );
     }
 
     #[test]
