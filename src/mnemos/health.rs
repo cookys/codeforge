@@ -1,5 +1,7 @@
 //! 央腦（Mnemos）連線健康 — probe liveness + ship readiness。
 //! statusline 熱路徑只讀此模組算好的 CentralHealth；快取 per-machine。
+//! 消費者：P1 probe/spawn、P2 ship、P3/P4 statusline
+#![allow(dead_code)]
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -128,7 +130,7 @@ pub fn central_light(
     opted_in: bool,
     liveness: Option<&LivenessCache>,
     ship: Option<&ShipCache>,
-    queue_depth: usize,
+    queue_degraded: bool,
     now: i64,
 ) -> CentralLight {
     if !opted_in {
@@ -151,7 +153,7 @@ pub fn central_light(
                 .filter(|s| now - s.last_ship_at <= SHIP_FRESH_WINDOW as i64)
                 .map(|s| !s.last_ship_ok)
                 .unwrap_or(false);
-            if fresh_ship_fail || queue_depth >= QUEUE_WARN_THRESHOLD {
+            if fresh_ship_fail || queue_degraded {
                 CentralLight::Degraded
             } else {
                 CentralLight::Ok
@@ -179,6 +181,43 @@ pub fn queue_depth() -> usize {
     count_json_in(&crate::mnemos::state::ship_failed_dir(
         &crate::mnemos::state::ship_root(),
     ))
+}
+
+/// 可測核心：count + oldest age 注入。
+/// spec §6/§11：count >= QUEUE_WARN_THRESHOLD OR 最舊一筆 age > 24h(86400s)。
+pub fn queue_degraded_from(count: usize, oldest_age_secs: Option<u64>) -> bool {
+    if count == 0 {
+        return false;
+    }
+    if count >= QUEUE_WARN_THRESHOLD {
+        return true;
+    }
+    oldest_age_secs.map(|a| a > 86_400).unwrap_or(false)
+}
+
+/// IO 殼：讀 ship-failed/ dir，計算 count + mtime-oldest，回傳是否 degraded。
+pub fn queue_degraded() -> bool {
+    let dir = crate::mnemos::state::ship_failed_dir(&crate::mnemos::state::ship_root());
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return false;
+    };
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut count = 0usize;
+    let mut oldest_age: Option<u64> = None;
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.extension().map(|x| x == "json").unwrap_or(false) {
+            count += 1;
+            if let Some(mtime) = file_mtime_secs(&path) {
+                let age = now_secs.saturating_sub(mtime as u64);
+                oldest_age = Some(oldest_age.map(|o| o.max(age)).unwrap_or(age));
+            }
+        }
+    }
+    queue_degraded_from(count, oldest_age)
 }
 
 use std::fs::OpenOptions;
@@ -236,9 +275,13 @@ pub fn release_probe_lock() {
 mod tests {
     use super::*;
 
+    // 序列化 env 操作，避免並行測試競態
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn runtime_dir_prefers_xdg() {
-        // SAFETY: test-only env mutation
+        let _g = ENV_LOCK.lock().unwrap();
+        // SAFETY: test-only env mutation, serialized by ENV_LOCK
         std::env::set_var("XDG_RUNTIME_DIR", "/run/user/1000");
         assert_eq!(runtime_dir(), PathBuf::from("/run/user/1000/codeforge"));
         std::env::remove_var("XDG_RUNTIME_DIR");
@@ -246,6 +289,7 @@ mod tests {
 
     #[test]
     fn runtime_dir_falls_back_when_xdg_unset() {
+        let _g = ENV_LOCK.lock().unwrap();
         std::env::remove_var("XDG_RUNTIME_DIR");
         let d = runtime_dir();
         assert!(d.ends_with("codeforge"));
@@ -294,12 +338,12 @@ mod tests {
         let now = 1_000_000;
         // 未 opt-in
         assert_eq!(
-            central_light(false, Some(&lv(ProbeOutcome::Ok, now)), None, 0, now),
+            central_light(false, Some(&lv(ProbeOutcome::Ok, now)), None, false, now),
             CentralLight::Hidden
         );
         // probe ok, 無 ship → 綠
         assert_eq!(
-            central_light(true, Some(&lv(ProbeOutcome::Ok, now)), None, 0, now),
+            central_light(true, Some(&lv(ProbeOutcome::Ok, now)), None, false, now),
             CentralLight::Ok
         );
         // probe ok + 新鮮 ship 失敗 → 黃
@@ -308,7 +352,7 @@ mod tests {
                 true,
                 Some(&lv(ProbeOutcome::Ok, now)),
                 Some(&sh(false, now)),
-                0,
+                false,
                 now
             ),
             CentralLight::Degraded
@@ -319,14 +363,14 @@ mod tests {
                 true,
                 Some(&lv(ProbeOutcome::Ok, now)),
                 Some(&sh(false, now - 90_000)),
-                0,
+                false,
                 now
             ),
             CentralLight::Ok
         );
-        // probe ok + queue 積壓 → 黃
+        // probe ok + queue 積壓（queue_degraded=true）→ 黃
         assert_eq!(
-            central_light(true, Some(&lv(ProbeOutcome::Ok, now)), None, 3, now),
+            central_light(true, Some(&lv(ProbeOutcome::Ok, now)), None, true, now),
             CentralLight::Degraded
         );
         // unreachable → 中性 offline
@@ -335,7 +379,18 @@ mod tests {
                 true,
                 Some(&lv(ProbeOutcome::Unreachable, now)),
                 None,
-                0,
+                false,
+                now
+            ),
+            CentralLight::Offline
+        );
+        // HttpError → offline
+        assert_eq!(
+            central_light(
+                true,
+                Some(&lv(ProbeOutcome::HttpError, now)),
+                None,
+                false,
                 now
             ),
             CentralLight::Offline
@@ -346,7 +401,7 @@ mod tests {
                 true,
                 Some(&lv(ProbeOutcome::Never, now - 100)),
                 None,
-                0,
+                false,
                 now
             ),
             CentralLight::Pending
@@ -357,14 +412,14 @@ mod tests {
                 true,
                 Some(&lv(ProbeOutcome::Never, now - 8 * 86_400)),
                 None,
-                0,
+                false,
                 now
             ),
             CentralLight::Hidden
         );
         // liveness 讀失敗（未知）→ offline
         assert_eq!(
-            central_light(true, None, None, 0, now),
+            central_light(true, None, None, false, now),
             CentralLight::Offline
         );
     }
@@ -394,6 +449,22 @@ mod tests {
         std::fs::write(dir.path().join("note.txt"), "x").unwrap();
         assert_eq!(count_json_in(dir.path()), 2);
         assert_eq!(count_json_in(&dir.path().join("missing")), 0);
+    }
+
+    #[test]
+    fn queue_degraded_from_cases() {
+        // count == 0 → false（短路，不看 age）
+        assert!(!queue_degraded_from(0, Some(999_999)));
+        // count >= QUEUE_WARN_THRESHOLD → true
+        assert!(queue_degraded_from(QUEUE_WARN_THRESHOLD, None));
+        assert!(queue_degraded_from(QUEUE_WARN_THRESHOLD + 5, Some(0)));
+        // count < threshold，age 剛好在邊界 (86400s) → false
+        assert!(!queue_degraded_from(1, Some(86_400)));
+        // count < threshold，age > 24h → true
+        assert!(queue_degraded_from(1, Some(86_401)));
+        assert!(queue_degraded_from(2, Some(100_000)));
+        // count < threshold，無 mtime 可讀 → false
+        assert!(!queue_degraded_from(1, None));
     }
 
     #[test]
