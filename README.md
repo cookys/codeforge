@@ -52,6 +52,18 @@ git clone https://github.com/cookys/codeforge && cd codeforge && cargo install -
 Requires Rust stable (MSRV 1.85). The built binary lands in
 `~/.cargo/bin/codeforge`.
 
+**Updating** — once installed (by any option above), update in place from the
+latest GitHub release without re-running the installer or juggling binary paths:
+
+```bash
+codeforge self-update          # pull the latest release, replace this binary in place
+codeforge self-update --check  # just report whether a newer version exists
+```
+
+It rewrites whichever binary you invoked (`~/.local/bin`, `~/.cargo/bin`, …), so
+it sidesteps the "which copy is on PATH" problem. (`cargo install` users can also
+just re-run `cargo install`.)
+
 **Then wire it into Claude Code:**
 
 ```bash
