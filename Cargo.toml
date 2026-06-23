@@ -44,7 +44,10 @@ tokio = { version = "1", features = ["full"] }
 hecs = "0.10"
 
 # HTTP client (for Claude Agent SDK in dream compile)
-reqwest = { version = "0.12", features = ["json"] }
+# rustls-tls (not the default native-tls) — pure-Rust TLS so it cross-compiles
+# to aarch64-linux without an openssl-sys C build, and shares the rustls/ring
+# stack with self_update below (single TLS stack across the binary).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 # Error handling
 anyhow = "1"
@@ -70,10 +73,9 @@ sha1 = "0.10"
 
 # Environment
 dotenvy = "0.15"
-# self-update: ureq+rustls backend (pure-Rust TLS via ring) instead of the
-# default reqwest backend — avoids pulling a second copy of reqwest and adds no
-# new system library. (reqwest above still uses native-tls; the two crypto
-# backends coexist, but rustls/ring is self-contained.)
+# self-update: ureq+rustls backend (not the default reqwest backend, whose
+# reqwest 0.13 req would pull a second reqwest alongside our 0.12). Shares the
+# rustls/ring TLS stack with reqwest above — one TLS stack, no openssl-sys.
 self_update = { version = "0.44.0", default-features = false, features = ["archive-tar", "compression-flate2", "rustls", "ureq"] }
 
 [dev-dependencies]

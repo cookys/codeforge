@@ -38,7 +38,7 @@ const SOURCE_EXTS: &[&str] = &["rs", "py", "ts", "js", "go"];
 /// Returns true when the current tick should run the scanner.
 /// Fires on tick 1, 11, 21, ... — avoids scanning every tick.
 pub fn should_scan_this_tick(tick_count: u64) -> bool {
-    tick_count > 0 && (tick_count - 1) % SCAN_EVERY_N_TICKS == 0
+    tick_count > 0 && (tick_count - 1).is_multiple_of(SCAN_EVERY_N_TICKS)
 }
 
 /// End-to-end: if scan fires this tick AND a scan dir is configured, walk
