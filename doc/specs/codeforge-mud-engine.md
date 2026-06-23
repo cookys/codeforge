@@ -212,9 +212,11 @@ codeforge strategy scholar
 
 **Loot 落地後的效果：**
 - **EXP** → pet level up
-- **Skill Point** → 解鎖 pet 技能（如 `Auto-Doc`、`Type Wizard`）
-- **Tome** → 直接寫入 L1 memory store
+- **Skill Point** → 解鎖 pet 技能（如 `Auto-Doc`、`Type Wizard`）— ⚠️ **未實作**
+- **Tome** → 直接寫入 L1 memory store — ⚠️ **未實作**
 - **Item** → 存入 inventory，user 可以手動使用（`codeforge use <item>`）
+
+> ⚠️ **as-shipped 修正（loot 效果）**：`Skill Point` 與 `Tome` 落地後**只是 inventory 物品標籤**（`src/daemon/loot.rs` 的 `kind="skill_point"` / `kind="tome"`，全 `INSERT INTO loot_inventory`）。**沒有**任何 code path 把 Tome 寫進 `.codeforge/store/concepts` 的 L1 store，也**沒有** Skill Point → ability 解鎖（abilities 是 §2.5 的 display-only catalog）；`Auto-Doc` / `Type Wizard` 在 code 中不存在。上述兩條為**規劃中** → BACKLOG。`EXP` / `Item` 為現行行為。
 
 ---
 
