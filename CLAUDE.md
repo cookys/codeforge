@@ -51,6 +51,7 @@ cargo run -- learn "some note"
 cargo run -- dream
 cargo run -- statusline
 cargo run -- pet
+cargo run -- bootstrap --dry-run   # one-command per-machine setup (B14); see README
 ```
 
 > **Formatting is pinned** (`scripts/fmt.sh`, single source of the rustfmt
