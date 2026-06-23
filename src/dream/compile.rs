@@ -246,8 +246,10 @@ fn apply_decision(
         Reconcile::Delete(i) => {
             if let Some(target) = candidates.get(i) {
                 let mut superseded = target.clone();
-                superseded.frontmatter.status =
-                    format!("superseded-by:{}", l1::L1Entry::slugify(&entry.frontmatter.topic));
+                superseded.frontmatter.status = format!(
+                    "superseded-by:{}",
+                    l1::L1Entry::slugify(&entry.frontmatter.topic)
+                );
                 superseded.save()?;
                 // Re-sync FTS (status isn't an FTS column, so this is content-only).
                 // What actually keeps the superseded entry from resurfacing as a
@@ -335,9 +337,15 @@ fn parse_reconcile_decision(text: &str, n_candidates: usize) -> Reconcile {
     let target = v["target"].as_u64().map(|t| t as usize);
     let in_range = |t: Option<usize>| t.filter(|&i| i < n_candidates);
     match v["op"].as_str().unwrap_or("add") {
-        "noop" => in_range(target).map(|_| Reconcile::Noop).unwrap_or(Reconcile::Add),
-        "update" => in_range(target).map(Reconcile::Update).unwrap_or(Reconcile::Add),
-        "delete" => in_range(target).map(Reconcile::Delete).unwrap_or(Reconcile::Add),
+        "noop" => in_range(target)
+            .map(|_| Reconcile::Noop)
+            .unwrap_or(Reconcile::Add),
+        "update" => in_range(target)
+            .map(Reconcile::Update)
+            .unwrap_or(Reconcile::Add),
+        "delete" => in_range(target)
+            .map(Reconcile::Delete)
+            .unwrap_or(Reconcile::Add),
         _ => Reconcile::Add,
     }
 }
@@ -595,23 +603,47 @@ mod tests {
 
     #[test]
     fn parse_add_when_op_add_or_unknown() {
-        assert_eq!(parse_reconcile_decision(r#"{"op":"add","target":null}"#, 2), Reconcile::Add);
-        assert_eq!(parse_reconcile_decision(r#"{"op":"bogus","target":0}"#, 2), Reconcile::Add);
+        assert_eq!(
+            parse_reconcile_decision(r#"{"op":"add","target":null}"#, 2),
+            Reconcile::Add
+        );
+        assert_eq!(
+            parse_reconcile_decision(r#"{"op":"bogus","target":0}"#, 2),
+            Reconcile::Add
+        );
     }
 
     #[test]
     fn parse_update_and_delete_and_noop_with_valid_target() {
-        assert_eq!(parse_reconcile_decision(r#"{"op":"update","target":1}"#, 2), Reconcile::Update(1));
-        assert_eq!(parse_reconcile_decision(r#"{"op":"delete","target":0}"#, 2), Reconcile::Delete(0));
-        assert_eq!(parse_reconcile_decision(r#"{"op":"noop","target":0}"#, 2), Reconcile::Noop);
+        assert_eq!(
+            parse_reconcile_decision(r#"{"op":"update","target":1}"#, 2),
+            Reconcile::Update(1)
+        );
+        assert_eq!(
+            parse_reconcile_decision(r#"{"op":"delete","target":0}"#, 2),
+            Reconcile::Delete(0)
+        );
+        assert_eq!(
+            parse_reconcile_decision(r#"{"op":"noop","target":0}"#, 2),
+            Reconcile::Noop
+        );
     }
 
     #[test]
     fn parse_out_of_range_or_missing_target_degrades_to_add() {
         // target ≥ n_candidates, or null, on a non-add op → Add (never drop the fact).
-        assert_eq!(parse_reconcile_decision(r#"{"op":"update","target":5}"#, 2), Reconcile::Add);
-        assert_eq!(parse_reconcile_decision(r#"{"op":"noop","target":null}"#, 2), Reconcile::Add);
-        assert_eq!(parse_reconcile_decision("not json at all", 2), Reconcile::Add);
+        assert_eq!(
+            parse_reconcile_decision(r#"{"op":"update","target":5}"#, 2),
+            Reconcile::Add
+        );
+        assert_eq!(
+            parse_reconcile_decision(r#"{"op":"noop","target":null}"#, 2),
+            Reconcile::Add
+        );
+        assert_eq!(
+            parse_reconcile_decision("not json at all", 2),
+            Reconcile::Add
+        );
     }
 
     // ---- apply_decision (file effects, no network) ----
@@ -625,7 +657,8 @@ mod tests {
         let new = entry(&store, "fresh fact", "# t\n\nnew body");
         let cand = entry(&store, "existing fact", "# t\n\nold body");
 
-        let applied = apply_decision(Reconcile::Noop, new.clone(), &[cand], &fts, dir.path()).unwrap();
+        let applied =
+            apply_decision(Reconcile::Noop, new.clone(), &[cand], &fts, dir.path()).unwrap();
         assert_eq!(applied, Applied::Noop);
         assert!(!new.file_path.exists(), "NOOP must not write the new entry");
     }
@@ -657,19 +690,42 @@ mod tests {
         let mut new = entry(&store, "tokio shutdown", "# t\n\nrefined explanation");
         new.frontmatter.sources = vec!["sig-new".to_string()];
 
-        let applied =
-            apply_decision(Reconcile::Update(0), new.clone(), std::slice::from_ref(&target), &fts, dir.path())
-                .unwrap();
+        let applied = apply_decision(
+            Reconcile::Update(0),
+            new.clone(),
+            std::slice::from_ref(&target),
+            &fts,
+            dir.path(),
+        )
+        .unwrap();
         assert_eq!(applied, Applied::Updated);
 
         // The new entry's *own* path is never written — the merge lands on target's path.
-        assert!(!new.file_path.exists(), "update must not create a second file");
+        assert!(
+            !new.file_path.exists(),
+            "update must not create a second file"
+        );
         let merged = L1Entry::from_file(&target.file_path).unwrap();
-        assert!(merged.body.contains("refined explanation"), "body refreshed");
-        assert_eq!(merged.frontmatter.created, "2025-12-01", "created preserved");
-        assert!(merged.frontmatter.sources.contains(&"sig-old".to_string()), "old source kept");
-        assert!(merged.frontmatter.sources.contains(&"sig-new".to_string()), "new source unioned");
-        assert_ne!(merged.frontmatter.updated, "2026-01-01", "updated bumped to today");
+        assert!(
+            merged.body.contains("refined explanation"),
+            "body refreshed"
+        );
+        assert_eq!(
+            merged.frontmatter.created, "2025-12-01",
+            "created preserved"
+        );
+        assert!(
+            merged.frontmatter.sources.contains(&"sig-old".to_string()),
+            "old source kept"
+        );
+        assert!(
+            merged.frontmatter.sources.contains(&"sig-new".to_string()),
+            "new source unioned"
+        );
+        assert_ne!(
+            merged.frontmatter.updated, "2026-01-01",
+            "updated bumped to today"
+        );
     }
 
     #[test]
@@ -679,13 +735,26 @@ mod tests {
         let conn = fts_conn();
         let fts = FtsIndex::new(&conn);
 
-        let target = entry(&store, "old wrong fact", "# t\n\nuse Notify::notify_waiters");
+        let target = entry(
+            &store,
+            "old wrong fact",
+            "# t\n\nuse Notify::notify_waiters",
+        );
         target.save().unwrap();
-        let new = entry(&store, "corrected shutdown fact", "# t\n\nuse mpsc::channel(1)");
+        let new = entry(
+            &store,
+            "corrected shutdown fact",
+            "# t\n\nuse mpsc::channel(1)",
+        );
 
-        let applied =
-            apply_decision(Reconcile::Delete(0), new.clone(), std::slice::from_ref(&target), &fts, dir.path())
-                .unwrap();
+        let applied = apply_decision(
+            Reconcile::Delete(0),
+            new.clone(),
+            std::slice::from_ref(&target),
+            &fts,
+            dir.path(),
+        )
+        .unwrap();
         assert_eq!(applied, Applied::Added);
 
         let old = L1Entry::from_file(&target.file_path).unwrap();
@@ -709,7 +778,10 @@ mod tests {
         new.frontmatter.links = vec!["b".to_string()];
 
         let merged = merge_into(&new, &target);
-        assert_eq!(merged.frontmatter.strength, 0.95, "target strength preserved");
+        assert_eq!(
+            merged.frontmatter.strength, 0.95,
+            "target strength preserved"
+        );
         assert_eq!(merged.file_path, target.file_path);
         assert!(merged.frontmatter.links.contains(&"a".to_string()));
         assert!(merged.frontmatter.links.contains(&"b".to_string()));
@@ -726,7 +798,10 @@ mod tests {
         let new = entry(&store, "t", "new");
 
         let merged = merge_into(&new, &target);
-        assert_eq!(merged.frontmatter.status, "active", "merge revives to active");
+        assert_eq!(
+            merged.frontmatter.status, "active",
+            "merge revives to active"
+        );
     }
 
     #[test]
@@ -738,7 +813,8 @@ mod tests {
         let new = entry(&store, "fresh fact", "# t\n\nbody");
 
         // No candidates but Update(0) → must not panic / drop; writes the new fact.
-        let applied = apply_decision(Reconcile::Update(0), new.clone(), &[], &fts, dir.path()).unwrap();
+        let applied =
+            apply_decision(Reconcile::Update(0), new.clone(), &[], &fts, dir.path()).unwrap();
         assert_eq!(applied, Applied::Added);
         assert!(new.file_path.exists());
     }
@@ -751,7 +827,8 @@ mod tests {
         let fts = FtsIndex::new(&conn);
         let new = entry(&store, "fresh fact", "# t\n\nbody");
 
-        let applied = apply_decision(Reconcile::Delete(0), new.clone(), &[], &fts, dir.path()).unwrap();
+        let applied =
+            apply_decision(Reconcile::Delete(0), new.clone(), &[], &fts, dir.path()).unwrap();
         assert_eq!(applied, Applied::Added);
         assert!(new.file_path.exists());
     }

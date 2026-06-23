@@ -63,7 +63,10 @@ pub fn run(opts: InstallOpts) -> Result<()> {
     let install_project_hooks = opts.project_hooks;
 
     if opts.force && !opts.yes {
-        say(opts.quiet, "⚠ --force 會清除 settings.json 內所有 hook entries（含非 codeforge）。");
+        say(
+            opts.quiet,
+            "⚠ --force 會清除 settings.json 內所有 hook entries（含非 codeforge）。",
+        );
         if !prompt_confirm("確定要繼續？輸入 'yes' 確認: ")? {
             bail!("使用者取消 --force 操作");
         }
@@ -85,7 +88,10 @@ pub fn run(opts: InstallOpts) -> Result<()> {
         .clone()
         .map(Ok)
         .unwrap_or_else(default_global_settings_path)?;
-    say(opts.quiet, &format!("  目標 settings.json: {}", settings_path.display()));
+    say(
+        opts.quiet,
+        &format!("  目標 settings.json: {}", settings_path.display()),
+    );
 
     let mut settings = load_settings(&settings_path)?;
 
@@ -106,7 +112,12 @@ pub fn run(opts: InstallOpts) -> Result<()> {
         } else {
             extract_hook_scripts()?
         };
-        let action = patch_hooks(&mut settings, &hooks_dir, opts.force, /*project=*/ false)?;
+        let action = patch_hooks(
+            &mut settings,
+            &hooks_dir,
+            opts.force,
+            /*project=*/ false,
+        )?;
         say(opts.quiet, &format!("✓ hooks {}", action));
         say(opts.quiet, &format!("  scripts: {}", hooks_dir.display()));
 
@@ -140,15 +151,19 @@ pub fn run(opts: InstallOpts) -> Result<()> {
 
     write_settings_atomic(&settings_path, &settings)?;
     say(opts.quiet, "");
-    say(opts.quiet, "生效方式：下個 user message 或 /clear 之後 Claude Code 會 pick up 新設定。");
+    say(
+        opts.quiet,
+        "生效方式：下個 user message 或 /clear 之後 Claude Code 會 pick up 新設定。",
+    );
     Ok(())
 }
 
 /// `codeforge uninstall` — remove codeforge-tagged entries.
 pub fn run_uninstall(opts: UninstallOpts) -> Result<()> {
     // If neither flag set, default to "everything"
-    let remove_statusline = !opts.statusline && !opts.hooks || opts.statusline;
-    let remove_hooks = !opts.statusline && !opts.hooks || opts.hooks;
+    let neither = !opts.statusline && !opts.hooks;
+    let remove_statusline = neither || opts.statusline;
+    let remove_hooks = neither || opts.hooks;
 
     let settings_path = opts
         .settings_path
@@ -157,11 +172,20 @@ pub fn run_uninstall(opts: UninstallOpts) -> Result<()> {
         .unwrap_or_else(default_global_settings_path)?;
 
     if !settings_path.exists() {
-        say(opts.quiet, &format!("settings.json 不存在：{}（沒事可做）", settings_path.display()));
+        say(
+            opts.quiet,
+            &format!(
+                "settings.json 不存在：{}（沒事可做）",
+                settings_path.display()
+            ),
+        );
         return Ok(());
     }
 
-    say(opts.quiet, &format!("  目標 settings.json: {}", settings_path.display()));
+    say(
+        opts.quiet,
+        &format!("  目標 settings.json: {}", settings_path.display()),
+    );
     let mut settings = load_settings(&settings_path)?;
 
     if remove_statusline {
@@ -176,8 +200,7 @@ pub fn run_uninstall(opts: UninstallOpts) -> Result<()> {
         // Also remove the extracted scripts dir
         let base = default_data_local_dir()?.join("codeforge").join("hooks");
         if base.exists() {
-            fs::remove_dir_all(&base)
-                .with_context(|| format!("移除 {} 失敗", base.display()))?;
+            fs::remove_dir_all(&base).with_context(|| format!("移除 {} 失敗", base.display()))?;
             say(opts.quiet, &format!("✓ removed {}", base.display()));
         }
     }
@@ -199,26 +222,42 @@ fn run_install_project_hooks(opts: &InstallOpts) -> Result<()> {
         .settings_path
         .clone()
         .unwrap_or_else(|| cwd.join(".claude").join("settings.json"));
-    say(opts.quiet, &format!("  目標 settings.json: {}", settings_path.display()));
+    say(
+        opts.quiet,
+        &format!("  目標 settings.json: {}", settings_path.display()),
+    );
 
     // Existence check uses the real CWD path (resolves $CLAUDE_PROJECT_DIR for us locally).
     let scripts_dir_real = cwd.join(".claude").join("scripts");
     for name in PROJECT_HOOK_SCRIPT_NAMES {
         let p = scripts_dir_real.join(name);
         if !p.exists() {
-            bail!("找不到必要 script：{}（執行位置不像 codeforge clone）", p.display());
+            bail!(
+                "找不到必要 script：{}（執行位置不像 codeforge clone）",
+                p.display()
+            );
         }
     }
 
     // Written into command strings — uses Claude Code's documented env var so the
     // committed settings.json is portable across every clone. Claude Code expands
     // `${CLAUDE_PROJECT_DIR}` before spawning the hook process.
-    let scripts_dir_template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER).join(".claude").join("scripts");
+    let scripts_dir_template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER)
+        .join(".claude")
+        .join("scripts");
 
     let mut settings = load_settings(&settings_path)?;
-    let action = patch_hooks(&mut settings, &scripts_dir_template, opts.force, /*project=*/ true)?;
+    let action = patch_hooks(
+        &mut settings,
+        &scripts_dir_template,
+        opts.force,
+        /*project=*/ true,
+    )?;
     say(opts.quiet, &format!("✓ project hooks {}", action));
-    say(opts.quiet, &format!("  scripts: {}", scripts_dir_template.display()));
+    say(
+        opts.quiet,
+        &format!("  scripts: {}", scripts_dir_template.display()),
+    );
     say(opts.quiet, &format!("  clone root: {}", cwd_str));
 
     if opts.dry_run {
@@ -238,13 +277,19 @@ fn run_install_project_hooks(opts: &InstallOpts) -> Result<()> {
 fn ensure_in_codeforge_repo(cwd: &Path) -> Result<()> {
     let cargo_toml = cwd.join("Cargo.toml");
     if !cargo_toml.exists() {
-        bail!("--project-hooks 必須在 codeforge clone root 執行（缺 Cargo.toml）：{}", cwd.display());
+        bail!(
+            "--project-hooks 必須在 codeforge clone root 執行（缺 Cargo.toml）：{}",
+            cwd.display()
+        );
     }
     let content = fs::read_to_string(&cargo_toml)
         .with_context(|| format!("讀取 {} 失敗", cargo_toml.display()))?;
     // Look for `name = "codeforge"` in the [package] section (simple substring is OK)
     if !content.contains("name = \"codeforge\"") {
-        bail!("Cargo.toml 的 package name 不是 codeforge：{}", cargo_toml.display());
+        bail!(
+            "Cargo.toml 的 package name 不是 codeforge：{}",
+            cargo_toml.display()
+        );
     }
     Ok(())
 }
@@ -253,8 +298,8 @@ fn ensure_in_codeforge_repo(cwd: &Path) -> Result<()> {
 
 fn load_settings(path: &Path) -> Result<Value> {
     if path.exists() {
-        let raw = fs::read_to_string(path)
-            .with_context(|| format!("讀取 {} 失敗", path.display()))?;
+        let raw =
+            fs::read_to_string(path).with_context(|| format!("讀取 {} 失敗", path.display()))?;
         if raw.trim().is_empty() {
             return Ok(json!({}));
         }
@@ -315,9 +360,7 @@ fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'st
     let prior = obj.get("statusLine").cloned();
     if let Some(p) = &prior {
         if !statusline_is_codeforge(p) && !force {
-            bail!(
-                "settings.json.statusLine 已被其他程式設定（不是 codeforge）；使用 --force 覆蓋"
-            );
+            bail!("settings.json.statusLine 已被其他程式設定（不是 codeforge）；使用 --force 覆蓋");
         }
     }
     obj.insert("statusLine".to_string(), new_block.clone());
@@ -346,8 +389,14 @@ fn unpatch_statusline(settings: &mut Value) -> Result<&'static str> {
 /// The 2 global-safe scripts. Project-specific scripts
 /// (check-improvements, check-dev-flow) are NOT installed by `--hooks`.
 const HOOK_SCRIPTS: &[(&str, &str)] = &[
-    ("emit-session.js", include_str!("../../.claude/scripts/emit-session.js")),
-    ("session-digest.js", include_str!("../../.claude/scripts/session-digest.js")),
+    (
+        "emit-session.js",
+        include_str!("../../.claude/scripts/emit-session.js"),
+    ),
+    (
+        "session-digest.js",
+        include_str!("../../.claude/scripts/session-digest.js"),
+    ),
 ];
 
 /// Codeforge-clone-only DEV scripts (used by `--project-hooks`). These already
@@ -358,10 +407,7 @@ const HOOK_SCRIPTS: &[(&str, &str)] = &[
 /// pipeline) are product-wide and live in the global `--hooks` install path
 /// (~/.claude/settings.json) — installing them into project settings too would
 /// cause dual-fire. See commit 2648b34.
-const PROJECT_HOOK_SCRIPT_NAMES: &[&str] = &[
-    "check-improvements.js",
-    "check-dev-flow.js",
-];
+const PROJECT_HOOK_SCRIPT_NAMES: &[&str] = &["check-improvements.js", "check-dev-flow.js"];
 
 fn extract_hook_scripts() -> Result<PathBuf> {
     let version = env!("CARGO_PKG_VERSION");
@@ -373,8 +419,7 @@ fn extract_hook_scripts() -> Result<PathBuf> {
         .with_context(|| format!("建立 hooks 目錄 {} 失敗", base.display()))?;
     for (name, content) in HOOK_SCRIPTS {
         let dest = base.join(name);
-        fs::write(&dest, content)
-            .with_context(|| format!("寫入 {} 失敗", dest.display()))?;
+        fs::write(&dest, content).with_context(|| format!("寫入 {} 失敗", dest.display()))?;
     }
     Ok(base)
 }
@@ -415,46 +460,84 @@ fn patch_hooks(
         let check_improvements = scripts_dir.join("check-improvements.js");
         let check_dev_flow = scripts_dir.join("check-dev-flow.js");
         vec![
-            ("SessionStart", None, vec![
-                hook_entry(&format!("node {}", check_improvements.display()), 10000, &marker),
-            ]),
-            ("PreToolUse", Some("Edit|Write|Bash"), vec![
-                hook_entry(&format!("node {}", check_dev_flow.display()), 5000, &marker),
-            ]),
+            (
+                "SessionStart",
+                None,
+                vec![hook_entry(
+                    &format!("node {}", check_improvements.display()),
+                    10000,
+                    &marker,
+                )],
+            ),
+            (
+                "PreToolUse",
+                Some("Edit|Write|Bash"),
+                vec![hook_entry(
+                    &format!("node {}", check_dev_flow.display()),
+                    5000,
+                    &marker,
+                )],
+            ),
         ]
     } else {
         vec![
-            ("SessionStart", None, vec![
-                hook_entry(
-                    &format!("node {} session_start", emit_path.display()),
-                    3000,
+            (
+                "SessionStart",
+                None,
+                vec![
+                    hook_entry(
+                        &format!("node {} session_start", emit_path.display()),
+                        3000,
+                        &marker,
+                    ),
+                    // Local recall (no-mnemos READ path): inject a lean ranked L1
+                    // index as additionalContext. No-op when the project has no
+                    // active L1. Symmetric to the mnemos-cli context central path.
+                    hook_entry(
+                        "codeforge memory context --hook 2>/dev/null || true",
+                        10000,
+                        &marker,
+                    ),
+                ],
+            ),
+            (
+                "SessionEnd",
+                None,
+                vec![
+                    hook_entry(
+                        &format!("node {} session_end", emit_path.display()),
+                        3000,
+                        &marker,
+                    ),
+                    hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
+                    // Memory pipeline: dream distills L0→L1, ship forwards to Mnemos.
+                    // Order matters — ship reads the L1 that dream just produced.
+                    hook_entry(
+                        "codeforge dream --quiet 2>/dev/null || true",
+                        30000,
+                        &marker,
+                    ),
+                    hook_entry(
+                        "codeforge ship --no-hook 2>/dev/null || true",
+                        30000,
+                        &marker,
+                    ),
+                ],
+            ),
+            (
+                "PreCompact",
+                None,
+                vec![hook_entry(
+                    &format!("node {}", digest_path.display()),
+                    30000,
                     &marker,
-                ),
-                // Local recall (no-mnemos READ path): inject a lean ranked L1
-                // index as additionalContext. No-op when the project has no
-                // active L1. Symmetric to the mnemos-cli context central path.
-                hook_entry("codeforge memory context --hook 2>/dev/null || true", 10000, &marker),
-            ]),
-            ("SessionEnd", None, vec![
-                hook_entry(&format!("node {} session_end", emit_path.display()), 3000, &marker),
-                hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
-                // Memory pipeline: dream distills L0→L1, ship forwards to Mnemos.
-                // Order matters — ship reads the L1 that dream just produced.
-                hook_entry("codeforge dream --quiet 2>/dev/null || true", 30000, &marker),
-                hook_entry("codeforge ship --no-hook 2>/dev/null || true", 30000, &marker),
-            ]),
-            ("PreCompact", None, vec![hook_entry(
-                &format!("node {}", digest_path.display()),
-                30000,
-                &marker,
-            )]),
+                )],
+            ),
         ]
     };
 
     let obj = settings.as_object_mut().expect("checked");
-    let hooks_root = obj
-        .entry("hooks".to_string())
-        .or_insert_with(|| json!({}));
+    let hooks_root = obj.entry("hooks".to_string()).or_insert_with(|| json!({}));
     let hooks_root = hooks_root
         .as_object_mut()
         .ok_or_else(|| anyhow!("settings.hooks 不是 object"))?;
@@ -797,7 +880,10 @@ mod tests {
         assert_eq!(session_start.as_array().unwrap().len(), 2);
         let ss_cmds = serde_json::to_string(session_start).unwrap();
         assert!(ss_cmds.contains("emit-session"), "missing emit-session");
-        assert!(ss_cmds.contains("codeforge memory context --hook"), "missing local-recall injector");
+        assert!(
+            ss_cmds.contains("codeforge memory context --hook"),
+            "missing local-recall injector"
+        );
         // Global SessionEnd chain: emit-session, session-digest, dream, ship (4).
         let session_end = &s["hooks"]["SessionEnd"][0]["hooks"];
         assert_eq!(session_end.as_array().unwrap().len(), 4);
@@ -808,8 +894,14 @@ mod tests {
         assert!(cmds.contains("codeforge ship --no-hook"), "missing ship");
         // dream must come before ship (ship reads the L1 dream produces).
         let se = session_end.as_array().unwrap();
-        let dream_idx = se.iter().position(|h| h["command"].as_str().unwrap().contains("dream")).unwrap();
-        let ship_idx = se.iter().position(|h| h["command"].as_str().unwrap().contains("ship")).unwrap();
+        let dream_idx = se
+            .iter()
+            .position(|h| h["command"].as_str().unwrap().contains("dream"))
+            .unwrap();
+        let ship_idx = se
+            .iter()
+            .position(|h| h["command"].as_str().unwrap().contains("ship"))
+            .unwrap();
         assert!(dream_idx < ship_idx, "dream must precede ship");
     }
 
@@ -823,22 +915,54 @@ mod tests {
         // is global-only too.
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["PreToolUse"].is_array());
-        assert!(s["hooks"].get("SessionEnd").is_none(), "dream/ship are global-only now");
-        assert!(s["hooks"].get("PreCompact").is_none(), "PreCompact must be global-only");
+        assert!(
+            s["hooks"].get("SessionEnd").is_none(),
+            "dream/ship are global-only now"
+        );
+        assert!(
+            s["hooks"].get("PreCompact").is_none(),
+            "PreCompact must be global-only"
+        );
         // PreToolUse has the Edit|Write|Bash matcher
         assert_eq!(s["hooks"]["PreToolUse"][0]["matcher"], "Edit|Write|Bash");
         // Each present hook type has exactly 1 entry (the codeforge-clone-only one)
-        assert_eq!(s["hooks"]["SessionStart"][0]["hooks"].as_array().unwrap().len(), 1);
-        assert_eq!(s["hooks"]["PreToolUse"][0]["hooks"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            s["hooks"]["SessionStart"][0]["hooks"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            s["hooks"]["PreToolUse"][0]["hooks"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         // SessionStart is check-improvements
-        let ss_cmd = s["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str().unwrap();
+        let ss_cmd = s["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            .as_str()
+            .unwrap();
         assert!(ss_cmd.contains("check-improvements.js"), "got: {}", ss_cmd);
         // No product-wide hooks leaked into project hooks (dual-fire prevention)
         let all_commands = serde_json::to_string(&s["hooks"]).unwrap();
-        assert!(!all_commands.contains("emit-session"), "emit-session leaked into project hooks");
-        assert!(!all_commands.contains("session-digest"), "session-digest leaked into project hooks");
-        assert!(!all_commands.contains("codeforge dream"), "dream leaked into project hooks");
-        assert!(!all_commands.contains("codeforge ship"), "ship leaked into project hooks");
+        assert!(
+            !all_commands.contains("emit-session"),
+            "emit-session leaked into project hooks"
+        );
+        assert!(
+            !all_commands.contains("session-digest"),
+            "session-digest leaked into project hooks"
+        );
+        assert!(
+            !all_commands.contains("codeforge dream"),
+            "dream leaked into project hooks"
+        );
+        assert!(
+            !all_commands.contains("codeforge ship"),
+            "ship leaked into project hooks"
+        );
     }
 
     #[test]
@@ -859,9 +983,17 @@ mod tests {
                 }]
             }
         });
-        let action = patch_hooks(&mut s, Path::new("/tmp/cf-test"), false, /*project=*/ true)
-            .unwrap();
-        assert_eq!(action, "更新", "legacy dream entry recognized as ours and swept");
+        let action = patch_hooks(
+            &mut s,
+            Path::new("/tmp/cf-test"),
+            false,
+            /*project=*/ true,
+        )
+        .unwrap();
+        assert_eq!(
+            action, "更新",
+            "legacy dream entry recognized as ours and swept"
+        );
         // SessionEnd collapsed away — project mode no longer writes it, and the
         // stale dream group was removed rather than orphaned.
         assert!(
@@ -911,14 +1043,31 @@ mod tests {
                 ]}]
             }
         });
-        patch_hooks(&mut s, Path::new("/tmp/cf-test"), false, /*project=*/ false).unwrap();
+        patch_hooks(
+            &mut s,
+            Path::new("/tmp/cf-test"),
+            false,
+            /*project=*/ false,
+        )
+        .unwrap();
         // Exactly one SessionEnd group, with the new 4-entry chain — no 0.0.3 dupes.
         let se = s["hooks"]["SessionEnd"].as_array().unwrap();
-        assert_eq!(se.len(), 1, "old un-markered group must be swept, not kept as sibling");
+        assert_eq!(
+            se.len(),
+            1,
+            "old un-markered group must be swept, not kept as sibling"
+        );
         let inner = se[0]["hooks"].as_array().unwrap();
-        assert_eq!(inner.len(), 4, "emit-session + session-digest + dream + ship");
+        assert_eq!(
+            inner.len(),
+            4,
+            "emit-session + session-digest + dream + ship"
+        );
         let all = serde_json::to_string(&s["hooks"]).unwrap();
-        assert!(!all.contains("0.0.3"), "stale 0.0.3 entries must be gone: {all}");
+        assert!(
+            !all.contains("0.0.3"),
+            "stale 0.0.3 entries must be gone: {all}"
+        );
     }
 
     #[test]
@@ -938,9 +1087,19 @@ mod tests {
                 }]
             }
         });
-        patch_hooks(&mut s, Path::new("/tmp/cf-test"), false, /*project=*/ false).unwrap();
+        patch_hooks(
+            &mut s,
+            Path::new("/tmp/cf-test"),
+            false,
+            /*project=*/ false,
+        )
+        .unwrap();
         let se = s["hooks"]["SessionEnd"].as_array().unwrap();
-        assert_eq!(se.len(), 1, "one codeforge group, legacy not left as a sibling");
+        assert_eq!(
+            se.len(),
+            1,
+            "one codeforge group, legacy not left as a sibling"
+        );
         let inner = se[0]["hooks"].as_array().unwrap();
         // emit-session, session-digest, dream, ship — exactly one dream.
         let dream_count = inner
@@ -948,7 +1107,9 @@ mod tests {
             .filter(|h| h["command"].as_str().unwrap().contains("codeforge dream"))
             .count();
         assert_eq!(dream_count, 1, "no duplicate dream after relocation");
-        assert!(inner.iter().any(|h| h["command"].as_str().unwrap().contains("codeforge ship")));
+        assert!(inner
+            .iter()
+            .any(|h| h["command"].as_str().unwrap().contains("codeforge ship")));
     }
 
     #[test]
@@ -964,7 +1125,11 @@ mod tests {
         let mut s = json!({ "cleanupPeriodDays": 90 });
         let action = patch_cleanup_period(&mut s, false);
         assert_eq!(action, "已設定（保留現值）");
-        assert_eq!(s["cleanupPeriodDays"], json!(90), "must not clobber user's value");
+        assert_eq!(
+            s["cleanupPeriodDays"],
+            json!(90),
+            "must not clobber user's value"
+        );
     }
 
     #[test]
@@ -981,7 +1146,9 @@ mod tests {
         // not a real on-disk path. Verifies the commands written into
         // settings.json are portable (no per-machine absolute paths).
         let mut s = json!({});
-        let template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER).join(".claude").join("scripts");
+        let template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER)
+            .join(".claude")
+            .join("scripts");
         patch_hooks(&mut s, &template, false, /*project=*/ true).unwrap();
         let cmd = s["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             .as_str()
@@ -992,8 +1159,16 @@ mod tests {
             cmd
         );
         // No absolute /home/, /Users/, or C:\ paths should leak
-        assert!(!cmd.contains("/home/"), "unexpected absolute /home/ path: {}", cmd);
-        assert!(!cmd.contains("/Users/"), "unexpected absolute /Users/ path: {}", cmd);
+        assert!(
+            !cmd.contains("/home/"),
+            "unexpected absolute /home/ path: {}",
+            cmd
+        );
+        assert!(
+            !cmd.contains("/Users/"),
+            "unexpected absolute /Users/ path: {}",
+            cmd
+        );
     }
 
     #[test]

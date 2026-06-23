@@ -210,7 +210,10 @@ mod tests {
         // Config file present → opted in.
         assert!(MnemosConfig::opted_in_from(true, None));
         // Explicit ingest URL env → opted in even without the file.
-        assert!(MnemosConfig::opted_in_from(false, Some("http://127.0.0.1:8845")));
+        assert!(MnemosConfig::opted_in_from(
+            false,
+            Some("http://127.0.0.1:8845")
+        ));
         // Both present → opted in.
         assert!(MnemosConfig::opted_in_from(true, Some("http://h:1")));
     }
