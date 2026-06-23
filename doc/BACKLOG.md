@@ -196,3 +196,14 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 - **三層 enforcement（確定性 > 記憶）**：CI fmt job → `./scripts/fmt.sh --check`（不可繞過守門）；`.claude/quality-gate-config.md` + `dev-flow-config.md` S/L/H gate 都加 `--check`；CLAUDE.md Development Commands 規範一律走 wrapper、禁裸 `cargo fmt`。
 - knowledge `environment.md` 記決策（cross-link `gate-patterns.md` 確定性 gate 家族）。
 **Status 2026-06-23**: 由「研究怎樣處理最好 + 讓所有 session agent 自動 follow」需求展開。研究背書（RFC 2437 跨版本不保證 fmt 穩定；decouple fmt/build toolchain）。
+
+---
+
+## B20 — `codeforge self-update` 二進位自更新（現代化更新機制）
+
+**Area**: `src/cli/selfupdate.rs`、`Cargo.toml`（self_update dep）、`install.sh`、release pipeline
+**Premise**: 安裝/更新機制現狀 —— `install.sh`（curl|sh 首裝，public-readiness 時做的）存在但更新得手動重跑 / `cargo install` / 手動 cp；且 `~/.local/bin` vs `~/.cargo/bin` 雙位置會 stale（本機實際撞到：PATH 上 0.0.4、cargo bin 0.0.5）。
+**Shipped** (`feature/self-update`, L-size 2026-06-23): `codeforge self-update [--check]`（self_update crate，GitHub release 後端，ureq+rustls 不重複拉 reqwest）。原地替換 `current_exe` → 不管 binary 在哪都更新對、繞開「哪個在 PATH」問題。`bin_path_in_archive` 對應 release.yml 的 `codeforge-<v>-<target>/codeforge` 結構。install.sh「Next steps」改指向 `bootstrap` + `self-update`。README Updating 一節。
+**未竟（需 user 確認後做）**: **尚未發布任何 release** —— `gh release list` 為空，release.yml 只產 draft 從沒 publish。self-update / install.sh 要能運作，必須先 `git tag v0.0.5` → CI build → publish draft。user 2026-06-23 決定「先做 code，release 等確認」。
+**Trigger**: 確認後 cut v0.0.5（首發），之後每次發版 self-update 即可跨機更新。可選：release.yml `draft:true`→自動 publish，或保留 draft 手動 publish。
+**Status 2026-06-23**: code + docs done；release 待 user 確認發布。
