@@ -111,12 +111,25 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 
 ---
 
-## B14 — 其他機器部署 ship-online（new binary + install --hooks）
+## ~~B14 — 其他機器部署 ship-online（new binary + install --hooks）~~ ✅ 一鍵命令 Done 2026-06-23
 
 **Area**: 各機器 `~/.local/bin/codeforge` + `~/.claude/settings.json` + `~/.config/mnemos.env`
 **Premise**: ship-online 的跨專案 dream→ship 鏈 + cleanupPeriodDays 只在本機(twgs-revival)部署。settings.json 是 per-machine,使用者有多台機器（cleanupPeriodDays 原始問題就是「每台都要」）。每台需:(1) 裝 0.0.4+ binary 到 `~/.local/bin`;(2) 跑 `codeforge install --hooks`（寫 global dream→ship 鏈 + cleanupPeriodDays);(3) 用 Mnemos 的機器建 `~/.config/mnemos.env` opt-in。
-**Trigger**: 下次在每台其他機器工作時執行上述三步;或做一個 `codeforge bootstrap` 一鍵命令收斂這流程。
-**Status 2026-06-15**: 本機已部署驗證;其他機器待逐台執行。
+**Shipped** (`codeforge bootstrap`, L-size 2026-06-23): trigger 的「一鍵命令」方案完成 —— `src/cli/bootstrap.rs` 薄 orchestrator 收斂 install --all + fmt pin toolchain（B19）+ Mnemos opt-in 報告。best-effort、idempotent、`--dry-run`/`--quiet`。
+
+**Per-machine runbook**（每台其他機器執行）:
+```bash
+# 1. 裝/更新 binary（在該機器的 codeforge clone 內）
+cargo install --path .            # → ~/.cargo/bin/codeforge
+# 2. 一鍵設定（取代舊三步手動流程）
+codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀態
+#    或先預覽： codeforge bootstrap --dry-run
+# 3. （只有用 Mnemos 的機器）opt-in —— bootstrap 只會「報告」不自動建：
+#    建 ~/.config/mnemos.env（或設 MNEMOS_INGEST_URL）後重跑 bootstrap 確認 ✓
+# 4. 之後維護：在該 clone `git pull && codeforge bootstrap`（fmt pin 隨 pull 走、toolchain self-install）
+```
+注意：bootstrap 不自動裝 binary 本身（你得先有 binary 才能跑它）、不自動建 mnemos.env（opt-in 刻意手動）。既有非-codeforge statusLine 不會被 clobber（會警示，要接管用 `install --all --force`）。
+**Status 2026-06-23**: 一鍵命令上線（本機驗證 dry-run 正確）。各機器仍需逐台執行上述 runbook（CLI 只能本機跑，無法遠端代部署）—— 但已從「記三步」收斂成「一行」。
 
 ---
 

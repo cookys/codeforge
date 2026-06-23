@@ -74,6 +74,20 @@ and the "First-time Claude Code hook setup" section below:
 - `codeforge install --project-hooks` — codeforge-clone-only dev hooks (SessionStart + PreToolUse)
 - `--dry-run` previews the settings.json changes without writing.
 
+**Setting up a new machine?** Use the one-command bootstrap instead of running
+the steps by hand:
+
+```bash
+codeforge bootstrap            # idempotent; --dry-run to preview, --quiet for hooks
+```
+
+It runs `install --all`, makes sure the pinned rustfmt toolchain is ready (only
+when run inside a codeforge clone — see *Formatting* below), and reports your
+Mnemos opt-in status. It's best-effort: a step that can't proceed (e.g. a
+statusLine already set by something else) is reported and skipped, not fatal —
+the rest still run. Re-run it any time; on each machine's clone do
+`git pull && codeforge bootstrap`.
+
 **macOS first-run note:** if Gatekeeper blocks the binary, run once:
 
 ```bash
