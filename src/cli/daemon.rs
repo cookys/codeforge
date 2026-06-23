@@ -120,7 +120,7 @@ fn status(ctx: &Context) -> Result<()> {
                     false
                 };
                 (alive, Some(p), verified)
-            },
+            }
             Err(_) => (false, None, false),
         }
     } else {
@@ -132,7 +132,11 @@ fn status(ctx: &Context) -> Result<()> {
     println!("  running: {}", if running { "yes" } else { "no" });
     if let Some(p) = pid {
         let state = if running {
-            if verified { "valid" } else { "unknown (possible recycle?)" }
+            if verified {
+                "valid"
+            } else {
+                "unknown (possible recycle?)"
+            }
         } else {
             "stale"
         };

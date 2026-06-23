@@ -90,7 +90,10 @@ mod tests {
     #[test]
     fn dedups_by_atom_id() {
         let atoms = vec![atom("01A", "repeated phrase here")];
-        let hits = detect("repeated phrase here ... repeated phrase here again", &atoms);
+        let hits = detect(
+            "repeated phrase here ... repeated phrase here again",
+            &atoms,
+        );
         assert_eq!(hits.len(), 1);
     }
 }

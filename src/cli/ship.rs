@@ -92,7 +92,10 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
     // but still flush the failed queue (unless --no-hook).
     let mut sstate = state::load_state(&root);
     if state::already_shipped(&sstate, &repo, &ledger_date) {
-        println!("ℹ {} ({repo} {ledger_date})", rust_i18n::t!("ship.already_shipped"));
+        println!(
+            "ℹ {} ({repo} {ledger_date})",
+            rust_i18n::t!("ship.already_shipped")
+        );
         if !opts.no_hook {
             rt.block_on(flush_failed_queue(&cfg, &root, false));
         }
@@ -178,7 +181,10 @@ fn build_lessons(
         }),
         Err(e) => {
             eprintln!("ℹ claude -p 不可用（{e}）— 試 ANTHROPIC_API_KEY / passthrough");
-            match std::env::var("ANTHROPIC_API_KEY").ok().filter(|k| !k.is_empty()) {
+            match std::env::var("ANTHROPIC_API_KEY")
+                .ok()
+                .filter(|k| !k.is_empty())
+            {
                 Some(key) => match rt.block_on(call_haiku(&key, &prompt)) {
                     Ok(json) => digest::parse_digest_json(&json).unwrap_or_else(|e| {
                         eprintln!("⚠ Haiku digest parse 失敗（{e}）— passthrough");
@@ -199,7 +205,11 @@ fn build_lessons(
 
     // Enrich evidence with today's commits (§5.1 rule 4) + merge same-title (rule 5).
     let mut lessons = digest::merge_lessons(lessons);
-    if let Some(head) = git_head_branch(&ctx.project_dir).0.split_whitespace().next() {
+    if let Some(head) = git_head_branch(&ctx.project_dir)
+        .0
+        .split_whitespace()
+        .next()
+    {
         if !head.is_empty() {
             for l in &mut lessons {
                 let has_commit = l.source_evidence.iter().any(|e| e.kind == "git_commit");
@@ -235,8 +245,7 @@ async fn send_envelope(cfg: &MnemosConfig, env: &LedgerEnvelope, no_hook: bool) 
     let url = cfg.ledger_url();
     let token = cfg.token.clone();
     if no_hook {
-        let outcome =
-            transport::post_attempt(&client, &url, token.as_deref(), env).await;
+        let outcome = transport::post_attempt(&client, &url, token.as_deref(), env).await;
         transport::run_single(|_| outcome.clone())
     } else {
         // Default: §7.2 backoff retry, driven by the shared async policy.
@@ -321,7 +330,10 @@ async fn call_haiku(api_key: &str, prompt: &str) -> Result<String> {
         anyhow::bail!("Haiku API 錯誤：{st}");
     }
     let body: serde_json::Value = resp.json().await?;
-    Ok(body["content"][0]["text"].as_str().unwrap_or("{}").to_string())
+    Ok(body["content"][0]["text"]
+        .as_str()
+        .unwrap_or("{}")
+        .to_string())
 }
 
 fn repo_name(project_dir: &Path) -> String {

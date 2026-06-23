@@ -67,7 +67,11 @@ pub fn format_markdown_with(
     }
     if !themes.is_empty() {
         for t in themes {
-            let label = if t.label.trim().is_empty() { "(unlabeled)" } else { t.label.trim() };
+            let label = if t.label.trim().is_empty() {
+                "(unlabeled)"
+            } else {
+                t.label.trim()
+            };
             out.push_str(&format!(
                 "[theme] {label} ({} atoms): {}\n",
                 t.member_count,
@@ -128,19 +132,12 @@ pub fn derive_topic(repo_dir: &std::path::Path) -> String {
         let b = branch.trim();
         if !b.is_empty() && b != "HEAD" {
             // strip common prefixes like feature/ fix/ so the topic reads as keywords
-            let cleaned = b
-                .rsplit('/')
-                .next()
-                .unwrap_or(b)
-                .replace(['-', '_'], " ");
+            let cleaned = b.rsplit('/').next().unwrap_or(b).replace(['-', '_'], " ");
             parts.push(cleaned);
         }
     }
 
-    if let Some(log) = git_output(
-        repo_dir,
-        &["log", "-3", "--pretty=format:%s"],
-    ) {
+    if let Some(log) = git_output(repo_dir, &["log", "-3", "--pretty=format:%s"]) {
         for subject in log.lines().take(3) {
             let s = subject.trim();
             if !s.is_empty() {
