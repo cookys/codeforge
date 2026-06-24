@@ -245,6 +245,43 @@ fn tcs(s: String, (r, g, b): Rgb) -> String {
     }
 }
 
+/// HSV(S=V=1)的 hue(度,0..360)→ RGB。給彩虹漸層用(純函式,可測)。
+fn hue_rgb(h: f64) -> Rgb {
+    let hp = (h.rem_euclid(360.0)) / 60.0;
+    let x = 1.0 - (hp % 2.0 - 1.0).abs();
+    let (r, g, b) = match hp as u32 {
+        0 => (1.0, x, 0.0),
+        1 => (x, 1.0, 0.0),
+        2 => (0.0, 1.0, x),
+        3 => (0.0, x, 1.0),
+        4 => (x, 0.0, 1.0),
+        _ => (1.0, 0.0, x),
+    };
+    ((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
+}
+
+/// 連上央腦(CentralLight::Ok)時,把 "mnemos" label 渲染成隨時間流動的彩虹漸層:
+/// 每字一個 hue stop、相位由系統時鐘推進 → statusline 每次重繪 hue 位移,字看起來在流動
+/// (Claude Code ultra-think 那種閃爍感)。bold 讓它跳出來。
+/// 只走有色路徑(no-color 用 `label:status` 純文字變體);gate 在 color_enabled。
+fn rainbow(text: &str) -> String {
+    if !color_enabled() {
+        return text.to_string();
+    }
+    // 相位:系統時鐘毫秒。CC 約每數秒重繪,每次重繪相位前進 → 彩虹沿字流動。
+    let phase = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let phase_deg = (phase / 90) as f64 % 360.0;
+    let mut out = String::new();
+    for (i, ch) in text.chars().enumerate() {
+        let (r, g, b) = hue_rgb(phase_deg + i as f64 * 45.0); // 45°/字 散開成漸層
+        out.push_str(&format!("{}", ch.truecolor(r, g, b).bold()));
+    }
+    out
+}
+
 /// Whether to render the plain (no-ANSI) statusline form. Mirrors `color_enabled()`:
 /// the standard NO_COLOR env var (non-empty) selects plain. Pipe-vs-tty is
 /// irrelevant — CC consumes ANSI, so color is never stripped just because stdout
@@ -1195,6 +1232,12 @@ fn bottom_border(
         CentralLight::Degraded => BRAIN_YELLOW,
         _ => BRAIN_GRAY,
     };
+    // 連上央腦(Ok)→ "mnemos" label 跑彩虹流光(ultra-think vibe);其餘狀態維持灰。
+    let central_label_render = if matches!(brain.central, CentralLight::Ok) {
+        rainbow(&central_label)
+    } else {
+        tc(&central_label, BRAIN_LBL)
+    };
 
     // hint only appears for yellow/gray central states
     let show_hint = matches!(
@@ -1251,7 +1294,7 @@ fn bottom_border(
         }
         let s = format!(
             "{} {} {}",
-            tc(&central_label, BRAIN_LBL),
+            central_label_render,
             tc(central_glyph, central_glyph_color),
             tc(word, STAT_VAL),
         );
@@ -1265,7 +1308,7 @@ fn bottom_border(
         }
         let s = format!(
             "{} {}",
-            tc(&central_label, BRAIN_LBL),
+            central_label_render,
             tc(central_glyph, central_glyph_color),
         );
         let w = vis(&central_label) + 1 + 1;
@@ -1710,5 +1753,44 @@ mod tests {
             "LocalLight::Empty 不應輸出 'offline'，got: {:?}",
             s
         );
+    }
+
+    /// hue_rgb 純函式:三原色錨點 + 越界折回(rem_euclid)。
+    #[test]
+    fn hue_rgb_primary_anchors() {
+        assert_eq!(hue_rgb(0.0), (255, 0, 0)); // 紅
+        assert_eq!(hue_rgb(120.0), (0, 255, 0)); // 綠
+        assert_eq!(hue_rgb(240.0), (0, 0, 255)); // 藍
+        assert_eq!(hue_rgb(360.0), (255, 0, 0)); // 折回紅
+        assert_eq!(hue_rgb(-120.0), (0, 0, 255)); // 負值折回藍
+    }
+
+    /// rainbow:NO_COLOR 下回純文字;有色時含 ANSI 但 vis() 寬度不變(只改色不改字)。
+    #[test]
+    fn rainbow_respects_no_color_and_preserves_width() {
+        let _g = ENV_LOCK.lock().unwrap();
+        std::env::set_var("NO_COLOR", "1");
+        assert_eq!(rainbow("mnemos"), "mnemos");
+        std::env::remove_var("NO_COLOR");
+        let colored = rainbow("mnemos");
+        assert!(
+            colored.contains('\u{1b}'),
+            "有色時應含 ANSI escape: {colored:?}"
+        );
+        // 剝掉 ESC...m 序列後應還原成原字 → 彩虹只改色、不動字元(layout 不變)。
+        let mut stripped = String::new();
+        let mut chars = colored.chars();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' {
+                for d in chars.by_ref() {
+                    if d == 'm' {
+                        break;
+                    }
+                }
+            } else {
+                stripped.push(c);
+            }
+        }
+        assert_eq!(stripped, "mnemos", "剝色後應還原原字");
     }
 }
