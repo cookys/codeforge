@@ -189,14 +189,15 @@ fn build_lessons(
     let prompt = digest::build_prompt(&repo, ledger_date, &head, &branch, &git_log, &l1_block);
     let pass = || digest::passthrough_lessons(&selected, project_parent);
 
-    // backend fallback 鏈:claude -p headless(免 key,品質最高)→ ANTHROPIC_API_KEY(Haiku)→ passthrough。
-    let lessons = match crate::llm::claude_p(&prompt, &crate::llm::digest_model()) {
+    // backend fallback 鏈:headless 三引擎(claude -p → agy → codex,見 llm::headless_digest)
+    //   → ANTHROPIC_API_KEY(Haiku)→ passthrough。
+    let lessons = match crate::llm::headless_digest(&prompt, &crate::llm::digest_model()) {
         Ok(json) => digest::parse_digest_json(&json).unwrap_or_else(|e| {
-            eprintln!("⚠ claude -p digest parse 失敗（{e}）— fallback passthrough");
+            eprintln!("⚠ headless digest parse 失敗（{e}）— fallback passthrough");
             pass()
         }),
         Err(e) => {
-            eprintln!("ℹ claude -p 不可用（{e}）— 試 ANTHROPIC_API_KEY / passthrough");
+            eprintln!("ℹ headless 三引擎不可用（{e}）— 試 ANTHROPIC_API_KEY / passthrough");
             match std::env::var("ANTHROPIC_API_KEY")
                 .ok()
                 .filter(|k| !k.is_empty())

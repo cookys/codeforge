@@ -249,3 +249,14 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 **Dependency（已就緒，code 已驗）**: `GET /v1/whoami` 端點 **Mnemos 已實作並 merge 進 main**（commit `70fa2d0`；origin/main `Cargo.toml` v0.3.5；落 spec 10 §8 / §3.2）。code 在 `crates/mnemos/src/api.rs`（route line 42 + handler line 67 + 3 tests：auth關→200、auth開缺token→401、auth開對token→200）。回 `{"ok":true,"version":"<crate>","auth":"enabled|disabled"}`：auth 關→恆 200 當 liveness；auth 開→缺/錯 token 401、對 token 200 → readiness 即時。不碰 store/embedder（比 `/v1/atoms/context` 省一輪 hybrid 檢索）。**caveat**: staging :8846 仍舊 binary 無此端點，flip-prod 一起換。runtime **已本機實證**（2026-06-24 經 SSH 隧道打 prod `/v1/whoami` 回 `{"auth":"disabled","ok":true,"version":"0.3.5"}`，與 origin/main `Cargo.toml` 對齊 → prod 腦確跑帶 whoami 的 binary）。
 **Trigger**: Mnemos flip-prod 開 auth（設 `MNEMOS_API_TOKEN`）/ fleet 開始多機收錄。現在不做（auth 關、單機，零價值）。端點雖已 live，auth 開前它只是 liveness、無 readiness 意義。
 **Cross-repo**: 與 `cookys/mnemos:docs/projects/fleet-ingest-rollout` 對齊；`/v1/whoami` 端點落 Mnemos repo（spec 10 §8）。
+
+## B26 — digest 引擎 fallback 鏈（claude -p → agy → codex → Haiku → rule-based）✅ 實作 2026-06-24
+
+**Area**: `src/llm.rs`（`headless_digest` + `agy_p`/`codex_exec`）、caller `src/cli/ship.rs`、`src/dream/compile.rs`（reconcile + compile_signal）
+**Premise（品質懸崖）**: dream/ship digest 走 `claude -p`(Opus)。但 `claude -p` 大 prompt 可能空輸出(#7263) → 無 `ANTHROPIC_API_KEY` 的機器**直接掉 rule-based passthrough**（最差），中間無 LLM 級檔位。ship 是 production critical path，品質下限不該是 passthrough。
+**Bake-off（2026-06-24，真實 ship-shape prompt）**: 三家 headless 引擎都產 valid JSON、3+ lessons、evidence 歸因正確。claude(Opus) 40s/nuance 最全、title 最像結論；agy(Gemini Flash) 16s/最快/夠好但丟部分 nuance；codex(0.142.0) 中速/最徹底(抓 4 條)。三家 decorrelated（Anthropic/Google/OpenAI），且都走訂閱（claude/ChatGPT）或近免費（agy）→ 免 per-token key。
+**改法（已實作）**: 抽 `llm::run_cli` 共用 headless 執行器；`headless_digest` 串 `claude_p → agy_p → codex_exec`，回第一個非空輸出；三家全失敗才 Err，caller 再接既有 Haiku(key)→rule-based 尾。主力仍 Opus（`CODEFORGE_DIGEST_MODEL`，bake-off 最佳），agy/codex 是免 key 中間檔。env：`CODEFORGE_AGY_MODEL`（預設 `Gemini 3.5 Flash (Medium)`）。
+**已知限制 / 後續**:
+- (a) **parse-fail 不換引擎**：某引擎回「非空但無法 parse 的 JSON」→ caller 走 passthrough，不會 fall through 到下一引擎（維持原 claude parse-fail 語義）。要更穩可讓 `headless_digest` 收 validator closure，逐引擎驗 parseable。低優先（Opus 回垃圾罕見）。
+- (b) **codex 輸出格式**：codex exec 是 agent，stdout 理論上可能夾雜非 JSON 前後文；bake-off 實測乾淨，但它是第三 fallback、罕觸發。若實戰發現髒輸出，parse 端已有 `extract_json` 容忍。
+- (c) **cron PATH**：agy/codex 常在 `~/.local/bin` 或 nvm bin，cron 下 ship 要確保在 PATH 內（`scripts/codeforge_ship.sh`），否則該層 spawn 失敗沿鏈降級。
