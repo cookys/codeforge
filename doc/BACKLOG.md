@@ -240,3 +240,11 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 **Area**: `src/memory/l1.rs:count_active`、`src/cli/statusline.rs`（呼叫點）
 **Premise**: `count_active` 對 `store/concepts/` 下每個 `.md` 逐一 parse frontmatter，per-render 呼叫、未快取。概念數通常 <100 故成本可忽略，但 concepts 目錄成長至數百筆後，每次 statusline render 均有 O(n) 讀檔+解析開銷。
 **Trigger**: concepts 目錄 >200 筆，或 statusline render 延遲有感變慢時。改法選一：(a) 在 SQLite DB 加 `l1_count` 欄位、dream 寫入後更新，statusline 走 DB 查詢；(b) 快取到 runtime_dir（與 liveness cache 同源）並由 dream 觸碰失效。
+
+## B25 — fleet authed-readiness probe（央腦燈即時反映「真能 ship」）
+
+**Area**: `src/mnemos/health.rs`（probe）、`central_light` readiness 軸；協調 Mnemos repo `fleet-ingest-rollout`
+**Premise**: 央腦燈是 probe(liveness, `/health`) + ship(readiness) 雙軸。`/health` 結構性豁免 auth → 綠燈只證「腦活著」，**不證 token 配對正確**。fleet 機若 `MNEMOS_TOKEN` 錯/缺 → `/health` 綠、但 ship/context 吃 401。現況靠 ship 結果（401→`last_ship_ok=false`→燈翻黃）已能抓到，**但延遲到 SessionEnd（一 session 一次）**。
+**改法**: 背景 probe 在「有 token」時多打一條 **authed liveness**，餵進**既有 readiness 軸**（即時取代延遲的 ship 訊號），維持單一健康軸（綠/黃/灰）。不做成第三條獨立燈。frequency 放低（liveness 30s / readiness ~5min，因 authed 端點較重）。**建議 Mnemos 加輕量 `GET /v1/whoami`**（只驗 token、不查 FTS）當 authed liveness，比打 `/v1/atoms/context` 省腦負載。
+**Trigger**: Mnemos flip-prod 開 auth（設 `MNEMOS_API_TOKEN`）/ fleet 開始多機收錄。現在不做（auth 關、單機，零價值）。
+**Cross-repo**: 與 `cookys/mnemos:docs/projects/fleet-ingest-rollout` 對齊；`/v1/whoami` 端點落 Mnemos repo。
