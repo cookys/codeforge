@@ -245,6 +245,7 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 
 **Area**: `src/mnemos/health.rs`（probe）、`central_light` readiness 軸；協調 Mnemos repo `fleet-ingest-rollout`
 **Premise**: 央腦燈是 probe(liveness, `/health`) + ship(readiness) 雙軸。`/health` 結構性豁免 auth → 綠燈只證「腦活著」，**不證 token 配對正確**。fleet 機若 `MNEMOS_TOKEN` 錯/缺 → `/health` 綠、但 ship/context 吃 401。現況靠 ship 結果（401→`last_ship_ok=false`→燈翻黃）已能抓到，**但延遲到 SessionEnd（一 session 一次）**。
-**改法**: 背景 probe 在「有 token」時多打一條 **authed liveness**，餵進**既有 readiness 軸**（即時取代延遲的 ship 訊號），維持單一健康軸（綠/黃/灰）。不做成第三條獨立燈。frequency 放低（liveness 30s / readiness ~5min，因 authed 端點較重）。**建議 Mnemos 加輕量 `GET /v1/whoami`**（只驗 token、不查 FTS）當 authed liveness，比打 `/v1/atoms/context` 省腦負載。
-**Trigger**: Mnemos flip-prod 開 auth（設 `MNEMOS_API_TOKEN`）/ fleet 開始多機收錄。現在不做（auth 關、單機，零價值）。
-**Cross-repo**: 與 `cookys/mnemos:docs/projects/fleet-ingest-rollout` 對齊；`/v1/whoami` 端點落 Mnemos repo。
+**改法**: 背景 probe 在「有 token」時多打一條 **authed liveness**，餵進**既有 readiness 軸**（即時取代延遲的 ship 訊號），維持單一健康軸（綠/黃/灰）。不做成第三條獨立燈。frequency 放低（liveness 30s / readiness ~5min，因 authed 端點較重）。打 **`GET /v1/whoami`** 當 authed liveness（只過 Bearer middleware、零腦負載），比打 `/v1/atoms/context` 省。
+**Dependency（已就緒，code 已驗）**: `GET /v1/whoami` 端點 **Mnemos 已實作並 merge 進 main**（commit `70fa2d0`；origin/main `Cargo.toml` v0.3.5；落 spec 10 §8 / §3.2）。code 在 `crates/mnemos/src/api.rs`（route line 42 + handler line 67 + 3 tests：auth關→200、auth開缺token→401、auth開對token→200）。回 `{"ok":true,"version":"<crate>","auth":"enabled|disabled"}`：auth 關→恆 200 當 liveness；auth 開→缺/錯 token 401、對 token 200 → readiness 即時。不碰 store/embedder（比 `/v1/atoms/context` 省一輪 hybrid 檢索）。**caveat**: staging :8846 仍舊 binary 無此端點，flip-prod 一起換。runtime **已本機實證**（2026-06-24 經 SSH 隧道打 prod `/v1/whoami` 回 `{"auth":"disabled","ok":true,"version":"0.3.5"}`，與 origin/main `Cargo.toml` 對齊 → prod 腦確跑帶 whoami 的 binary）。
+**Trigger**: Mnemos flip-prod 開 auth（設 `MNEMOS_API_TOKEN`）/ fleet 開始多機收錄。現在不做（auth 關、單機，零價值）。端點雖已 live，auth 開前它只是 liveness、無 readiness 意義。
+**Cross-repo**: 與 `cookys/mnemos:docs/projects/fleet-ingest-rollout` 對齊；`/v1/whoami` 端點落 Mnemos repo（spec 10 §8）。
