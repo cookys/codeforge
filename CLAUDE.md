@@ -163,6 +163,7 @@ src/
 | `doc/specs/codeforge-mud-engine.md` | Phase 2+ MUD engine — daemon, combat, TUI, §3 黏著度機制, §3.10 Nation Theme |
 | `doc/specs/nation-p2p-design.md` | Phase 5 Nation P2P — credential schema, Organizer role, P2P integrity |
 | `doc/specs/codeforge-ship.md` | Mnemos source role — L2 ledger producer + cite client (stub; Sprint 1 expand) |
+| `doc/specs/codeforge-mnemos-runtime.md` | **運維現況**（非設計）— 腦↔codeforge 目前怎麼跑：拓樸、WRITE/READ live vs 未接、hook chain、自檢指令、fleet 隧道。免每次翻 hook+code |
 | `.claude/rpg-engine-spec.md` | Phase 1 architectural decisions (daemon model, write ownership) |
 | `.claude/i18n-spec.md` | i18n two-layer design (compile-time UI + runtime content) |
 
