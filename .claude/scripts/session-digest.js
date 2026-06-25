@@ -212,8 +212,10 @@ const NOISE_LINE_PATTERNS = [
 ];
 
 function isPureExitStatusNoise(errorText) {
-  if (!errorText || !errorText.trim()) return true;   // 全空 = 無實質 = 噪音
-  const residual = errorText
+  // 型別防護：helper 為 export 公開 API，非 string 入參（物件/數字）不可炸。
+  const text = typeof errorText === 'string' ? errorText : String(errorText ?? '');
+  if (!text.trim()) return true;   // 全空 = 無實質 = 噪音
+  const residual = text
     .split('\n')
     .filter(line => line.trim() && !NOISE_LINE_PATTERNS.some(p => p.test(line)))
     .join('\n')
@@ -232,12 +234,16 @@ const PATH_RE = new RegExp([
 ].join('|'), 'g');
 
 function recoverySignature(toolName, rawErrorText) {
-  const norm = (rawErrorText || '')
+  // 型別防護：同 isPureExitStatusNoise。
+  const text = typeof rawErrorText === 'string' ? rawErrorText : String(rawErrorText ?? '');
+  // 註：原有泛化 tmp-hash rule `[.\-][0-9a-f]{6,}` 已移除 —— 它會誤吃 crate-abcdef12 /
+  // commit-<hash> / v1.abcdef12 等一般 hex suffix，使不同 build/commit 的 error 誤併。
+  // 路徑內的臨時檔已由 PATH_RE 處理，這條泛化規則弊大於利（gpt-5.5 impl review）。
+  const norm = text
     .toLowerCase()
     .replace(PATH_RE, '<path>')              // 精確路徑 → 佔位（不吃 read/write）
     .replace(/:\d+:\d+\b/g, ':<lc>')          // 殘留 line:col
     .replace(/\bline\s+\d+\b/gi, 'line <n>')  // "line 42"
-    .replace(/[.\-][0-9a-f]{6,}\b/gi, '<tmp>')// 臨時檔 hash / -XXXXXX
     .replace(/\s+/g, ' ')
     .trim();
   // 完整 normalized 字串即指紋（保留 E\d+ / HTTP status / diag code 等區分性 token；不 slice 前綴）
