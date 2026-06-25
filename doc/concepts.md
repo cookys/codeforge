@@ -43,6 +43,51 @@ L0 是人類可讀、git 友善的純文字 append log；L1 是結構化、可�
 
 ---
 
+## 2.5 `absorb` — 一個 conversation 怎麼變成 L0
+
+L0 最大的來源是**每次 session 的對話本身**。這條 absorb 鏈把 transcript 自動萃取成 raw signal，是整個記憶迴圈的入口（`learn` 手動寫入是另一條較小的來源）。
+
+### 觸發：`session-digest.js`（hook）
+
+- **PreCompact**（主）：context 壓縮前跑，完整 transcript 還在。
+- **SessionEnd**（備）：exit / clear / logout 時跑。
+- 只在 cwd 位於某個 `.codeforge` 專案內才寫 digest（隱私預設：非 codeforge 專案的對話絕不落地）。assistant 訊息 < 10 則的短 session 直接略過。
+
+### 萃取：三種 signal extractor
+
+| extractor | 抓什麼 | confidence |
+|---|---|---|
+| **error-recovery** | tool error → 後 5 則 assistant 內對「同檔／同命令」的成功（從錯誤中恢復＝可學的教訓） | high |
+| **user-correction** | 使用者訊息含「不對／錯了／wrong…」等糾正語 | high |
+| **self-correction** | assistant 自己「我搞錯…應該…」且前面真有 tool error | medium |
+
+### 兩道萃取淨化（2026-06-25 加）
+
+raw error-recovery 一度夾帶大量低價值噪音（純 `Exit code 2`、重複 6 次的「File has not been read yet」）。萃取階段現在多兩道：
+
+1. **濾純 exit-code 噪音**（`isPureExitStatusNoise`）：error 文字剝掉 `Exit code N` 之類樣板行後若**毫無剩餘內容**，視為純噪音丟棄 —— 但**短卻實質**的 error（`ENOENT` / `EACCES` / `Killed`）一律放行。判準是「這次失敗有沒有可學的 error」，不是字數。
+2. **同 session 同類聚合計數**（`recoverySignature` + repeat marker）：同一 session 內同類錯誤（如「Read-before-Edit 違反」在 6 個不同檔各踩一次）**併成一條、帶次數**（`[repeat_count=6 same_session=true files=6]` 以 ASCII marker 寫進 context 欄，error 本體保持乾淨），而非 6 條各燒一次 distill LLM。錯誤頻率是方法論指標，聚合保住它、又不污染記憶。
+
+### digest → ingest → L0
+
+萃取出的 signal 寫成 per-repo `.codeforge/digests/<date>-<session>.json`（atomic write，temp + rename）。`dream` 的 **ingest-digests** 階段只收 `confidence:high` 的，轉成可讀 L0 content（`format_signal`，太短 < 15 字者丟），append 進 `signals/*.jsonl`，成功後刪 digest（明文不長存）。append 失敗則**保留 digest 待下次重收**，絕不靜默吞掉（這曾是「L0 永遠 0、從沒 ship」的真根因）。
+
+### 整條過濾漏斗（四關，由寬到嚴）
+
+```
+extraction confidence:high          ← session-digest.js（self-correction 的 medium 在此被擋）
+   ↓
+ingest 只收 high + format_signal <15 字丟   ← ingest_digests.rs
+   ↓
+compile「低品質跳過」純噪音           ← dream/compile.rs（distill 時最後一道）
+   ↓
+L1 concept
+```
+
+> 設計演進：純 exit-code 噪音**以前**只靠最後一關（compile 低品質跳過）事後丟，白佔 L0 容量、白燒 LLM；2026-06-25 把濾除前移到第一關（萃取），並把「重複錯誤」從「被 compile dedup 毀掉、次數丟失」改成「萃取時聚合計數」。詳見 `doc/plans/2026-06-25-extraction-filter.md`。
+
+---
+
 ## 3. `dream` — 本機蒸餾（L0 → L1）
 
 `dream` 把累積的 raw signal 蒸餾成 compiled knowledge。**這是本機功能，不需要 Mnemos。**
