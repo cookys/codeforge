@@ -260,3 +260,14 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 - (a) **parse-fail 不換引擎**：某引擎回「非空但無法 parse 的 JSON」→ caller 走 passthrough，不會 fall through 到下一引擎（維持原 claude parse-fail 語義）。要更穩可讓 `headless_digest` 收 validator closure，逐引擎驗 parseable。低優先（Opus 回垃圾罕見）。
 - (b) **codex 輸出格式**：codex exec 是 agent，stdout 理論上可能夾雜非 JSON 前後文；bake-off 實測乾淨，但它是第三 fallback、罕觸發。若實戰發現髒輸出，parse 端已有 `extract_json` 容忍。
 - (c) **cron PATH**：agy/codex 常在 `~/.local/bin` 或 nvm bin，cron 下 ship 要確保在 PATH 內（`scripts/codeforge_ship.sh`），否則該層 spawn 失敗沿鏈降級。
+
+## B27 — statusline 中段 indicator（hangar-bridge / autopilot / …）
+
+**Area**: `src/cli/statusline.rs` `bottom_border`（擴充點註解已就位，central segment 之後）
+**Premise**: 版號已右對齊（commit `ff51004`），bottom border 變成 `╰─ memory… mnemos ● ok ──[中段 fill]── ⬆ v… ──╯`。中段 fill 是預留空間，未來新功能的即時狀態燈（hangar-bridge 連線、autopilot 模式指示等）就接在這 —— central(mnemos) 之後、版號之前，當作「左側 content」的額外 segment，fill 自動縮短吸收。
+**接法（code 內已寫詳細步驟）**: 對齊 central segment 的 pattern：(1) 狀態來源 enum + glyph/顏色 match；(2) `make_<name>_seg_{colored,glyph_only_colored,nocolor}` 三變體；(3) degradation ladder 每 level `total += seg_vis + gap` 並 `content.push_str` 接在 central 後；(4) 窄寬度於較低 level 優先丟（如 hint 的處理）。width 自動正確（ladder 用 vis 量、assemble fill = panel_w - overhead - left_vis - right_vis）。
+**候選 indicator**:
+- **hangar-bridge**：跨 agent 通道連線狀態（此概念目前 repo 內不存在，需先定義；見本 session 接腦討論）。
+- **autopilot**：autopilot 模式 / DOA 狀態指示。
+**Trigger**: 當 hangar-bridge 或 autopilot indicator 有了明確語義 + 狀態來源時。現在不做（無狀態來源、純預留）。
+**注意**: 每加一個 indicator 中段 fill 變窄；窄終端要靠 ladder 的 drop 順序保證不溢出（已有 `bottom_border_narrow_no_overflow` 測試守著）。
