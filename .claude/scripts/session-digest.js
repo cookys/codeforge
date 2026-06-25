@@ -202,6 +202,54 @@ function loadSkillSourceMap(cwd) {
 }
 
 // ---------------------------------------------------------------------------
+// Noise and signature helpers for error-recovery extraction
+// ---------------------------------------------------------------------------
+
+const NOISE_LINE_PATTERNS = [
+  /^\s*(?:\[?error\]?:?)?\s*\(?\s*exit\s+(code|status)\s*:?\s*\d+\s*\)?\s*$/i,
+  /^\s*(?:\[?error\]?:?)?\s*\(?\s*(command|process|bash\s+command)\s+(failed\s+with\s+exit\s+code|exited\s+with\s+code)\s*:?\s*\d+\.?\s*\)?\s*$/i,
+  /^\s*error\s*:\s*exit\s+(code|status)\s*\d+\s*$/i,
+];
+
+function isPureExitStatusNoise(errorText) {
+  if (!errorText || !errorText.trim()) return true;   // 全空 = 無實質 = 噪音
+  const residual = errorText
+    .split('\n')
+    .filter(line => line.trim() && !NOISE_LINE_PATTERNS.some(p => p.test(line)))
+    .join('\n')
+    .trim();
+  return residual.length === 0;   // 剝樣板後無殘留 → 純噪音
+}
+
+// 精確 path detector：避免吃普通英文 word/word；涵蓋帶 line:col 尾綴
+// 順序重要（alternation 從左優先）：最具體「含副檔名多段路徑」在前。
+const PATH_RE = new RegExp([
+  // (R3) 含副檔名的多段路徑，相對或絕對皆涵蓋（最後段須有 .副檔名 → 不吃 read/write）：
+  //   src/foo.rs:1:1、lib/foo.rs:9:9、/a/foo.rs:12:3、./x.ts
+  '(?:(?:~|\\.{1,2})?\\/)?(?:[\\w.\\-]+\\/)+[\\w.\\-]+\\.\\w+(?::\\d+(?::\\d+)?)?',
+  '(?:~|\\.{1,2})\\/[\\w.\\-\\/]+',                            // ~/ ./ ../ 開頭路徑（無副檔名也算）
+  '\\/(?:[\\w.\\-]+\\/)+[\\w.\\-]+',                           // 絕對多段無副檔名 /usr/local/bin
+].join('|'), 'g');
+
+function recoverySignature(toolName, rawErrorText) {
+  const norm = (rawErrorText || '')
+    .toLowerCase()
+    .replace(PATH_RE, '<path>')              // 精確路徑 → 佔位（不吃 read/write）
+    .replace(/:\d+:\d+\b/g, ':<lc>')          // 殘留 line:col
+    .replace(/\bline\s+\d+\b/gi, 'line <n>')  // "line 42"
+    .replace(/[.\-][0-9a-f]{6,}\b/gi, '<tmp>')// 臨時檔 hash / -XXXXXX
+    .replace(/\s+/g, ' ')
+    .trim();
+  // 完整 normalized 字串即指紋（保留 E\d+ / HTTP status / diag code 等區分性 token；不 slice 前綴）
+  return `${toolName}::${norm}`;
+}
+
+function withRepeatMeta(signal, count, fileCount) {
+  const marker = `[repeat_count=${count} same_session=true${fileCount > 1 ? ` files=${fileCount}` : ''}]`;
+  return { ...signal, context: signal.context ? `${marker} ${signal.context}` : marker };
+}
+
+// ---------------------------------------------------------------------------
 // Signal extractors
 // ---------------------------------------------------------------------------
 
@@ -296,6 +344,8 @@ function extractErrorRecoveries(messages) {
       }
 
       if (recovered) {
+        if (isPureExitStatusNoise(errorText)) continue;
+
         // Find context: what was the assistant doing around this error?
         let context = '';
         for (let k = i - 1; k >= 0 && k >= i - 3; k--) {
@@ -312,12 +362,28 @@ function extractErrorRecoveries(messages) {
           error: truncate(errorText, 300),
           file: errorFile || undefined,
           context: context || undefined,
+          _rawError: errorText, // R2：raw（未截斷）供 signature；下方聚合後 delete
         });
       }
     }
   }
 
-  return signals;
+  const grouped = new Map();   // signature -> { signal, count, files:Set }
+  for (const s of signals) {
+    const key = recoverySignature(s.tool, s._rawError);   // R2：用 raw、非 truncate 後 s.error
+    const g = grouped.get(key);
+    if (g) {
+      g.count += 1;
+      if (s.file) g.files.add(s.file);
+    } else {
+      grouped.set(key, { signal: s, count: 1, files: new Set(s.file ? [s.file] : []) });
+    }
+  }
+  return [...grouped.values()].map(({ signal, count, files }) => {
+    const out = count > 1 ? withRepeatMeta(signal, count, files.size) : signal;
+    delete out._rawError;            // R2：不洩漏 raw 進 digest（避免明文/未遮罩外洩 + 體積）
+    return out;
+  });
 }
 
 /**
@@ -1017,6 +1083,15 @@ async function main() {
   cleanupOldDigests(digestDir);
 }
 
-main().catch(err => {
-  log('ERROR', `Unhandled error: ${err.message}\n${err.stack}`);
-});
+if (require.main === module) {
+  main().catch(err => {
+    log('ERROR', `Unhandled error: ${err.message}\n${err.stack}`);
+  });
+} else {
+  module.exports = {
+    isPureExitStatusNoise,
+    recoverySignature,
+    withRepeatMeta,
+    extractErrorRecoveries,
+  };
+}
