@@ -1331,17 +1331,28 @@ fn bottom_border(
     let overhead = vis("╰─ ") + vis(" ──╯"); // 3 + 4 = 7
 
     // Helper: assemble the full border from measured components.
-    // segments_vis = total visible width of the segments content area
-    // content = ANSI string for the content area
-    let assemble = |content: String, content_vis: usize| -> String {
-        let fill = panel_w.saturating_sub(overhead + content_vis);
+    // Layout: ╰─ <left content> <fill dashes> <right> ──╯
+    // `right` (version chip) is right-aligned; the middle fill is reserved空間 —
+    // 未來 indicator(hangar-bridge / autopilot 之類)就 slot 在這段 fill。
+    let assemble = |left: String, left_vis: usize, right: String, right_vis: usize| -> String {
+        let fill = panel_w.saturating_sub(overhead + left_vis + right_vis);
         format!(
-            "{}{}{}{}",
+            "{}{}{}{}{}",
             tc("╰─ ", delim_c),
-            content,
+            left,
             tcs("─".repeat(fill), delim_c),
+            right,
             tc(" ──╯", delim_c),
         )
+    };
+
+    // 版號做成右對齊段:前置一個空格與 fill dashes 分隔。`v`==0(無版號/被丟)→ 空。
+    let ver_right = |s: &str, v: usize| -> (String, usize) {
+        if v > 0 {
+            (format!(" {s}"), 1 + v)
+        } else {
+            (String::new(), 0)
+        }
     };
 
     // ─── Degradation ladder ─────────────────────────────────────────────
@@ -1366,11 +1377,8 @@ fn bottom_border(
                     content.push_str("   ");
                     content.push_str(&central_seg);
                 }
-                if ver_vis > 0 {
-                    content.push(' ');
-                    content.push_str(&ver_str);
-                }
-                let result = assemble(content, total_content_vis);
+                let (vr, vr_vis) = ver_right(&ver_str, ver_vis);
+                let result = assemble(content, total_content_vis - vr_vis, vr, vr_vis);
                 if ansi_vis(&result) <= panel_w {
                     return result;
                 }
@@ -1393,11 +1401,8 @@ fn bottom_border(
                     content.push_str("   ");
                     content.push_str(&central_seg);
                 }
-                if eff_ver_vis > 0 {
-                    content.push(' ');
-                    content.push_str(&eff_ver_str);
-                }
-                let result = assemble(content, total_content_vis);
+                let (vr, vr_vis) = ver_right(&eff_ver_str, eff_ver_vis);
+                let result = assemble(content, total_content_vis - vr_vis, vr, vr_vis);
                 if ansi_vis(&result) <= panel_w {
                     return result;
                 }
@@ -1416,6 +1421,8 @@ fn bottom_border(
             return assemble(
                 content,
                 total_content_vis.min(panel_w.saturating_sub(overhead)),
+                String::new(),
+                0,
             );
         }
     }
@@ -1447,11 +1454,8 @@ fn bottom_border(
                 content.push_str("   ");
                 content.push_str(&hint_colored);
             }
-            if ver_vis > 0 {
-                content.push(' ');
-                content.push_str(&ver_str);
-            }
-            let result = assemble(content, total);
+            let (vr, vr_vis) = ver_right(&ver_str, ver_vis);
+            let result = assemble(content, total - vr_vis, vr, vr_vis);
             if ansi_vis(&result) <= panel_w {
                 return result;
             }
@@ -1469,11 +1473,8 @@ fn bottom_border(
                 content.push_str("   ");
                 content.push_str(&central_seg_full);
             }
-            if ver_vis > 0 {
-                content.push(' ');
-                content.push_str(&ver_str);
-            }
-            let result = assemble(content, total);
+            let (vr, vr_vis) = ver_right(&ver_str, ver_vis);
+            let result = assemble(content, total - vr_vis, vr, vr_vis);
             if ansi_vis(&result) <= panel_w {
                 return result;
             }
@@ -1491,11 +1492,8 @@ fn bottom_border(
                 content.push_str("   ");
                 content.push_str(&central_seg_short);
             }
-            if ver_vis > 0 {
-                content.push(' ');
-                content.push_str(&ver_str);
-            }
-            let result = assemble(content, total);
+            let (vr, vr_vis) = ver_right(&ver_str, ver_vis);
+            let result = assemble(content, total - vr_vis, vr, vr_vis);
             if ansi_vis(&result) <= panel_w {
                 return result;
             }
@@ -1518,11 +1516,8 @@ fn bottom_border(
                 content.push_str("   ");
                 content.push_str(&central_seg_short);
             }
-            if eff_ver_vis > 0 {
-                content.push(' ');
-                content.push_str(&eff_ver_str);
-            }
-            let result = assemble(content, total);
+            let (vr, vr_vis) = ver_right(&eff_ver_str, eff_ver_vis);
+            let result = assemble(content, total - vr_vis, vr, vr_vis);
             if ansi_vis(&result) <= panel_w {
                 return result;
             }
@@ -1545,11 +1540,8 @@ fn bottom_border(
                 content.push_str("   ");
                 content.push_str(&central_seg_glyph);
             }
-            if eff_ver_vis > 0 {
-                content.push(' ');
-                content.push_str(&eff_ver_str);
-            }
-            let result = assemble(content, total);
+            let (vr, vr_vis) = ver_right(&eff_ver_str, eff_ver_vis);
+            let result = assemble(content, total - vr_vis, vr, vr_vis);
             if ansi_vis(&result) <= panel_w {
                 return result;
             }
@@ -1560,18 +1552,18 @@ fn bottom_border(
     {
         let total = local_vis_full;
         if overhead + total <= panel_w {
-            return assemble(local_seg_full, total);
+            return assemble(local_seg_full, total, String::new(), 0);
         }
     }
     {
         let total = local_vis_glyph;
         if overhead + total <= panel_w {
-            return assemble(local_seg_glyph, total);
+            return assemble(local_seg_glyph, total, String::new(), 0);
         }
     }
 
     // Ultimate fallback: just the border frame
-    assemble(String::new(), 0)
+    assemble(String::new(), 0, String::new(), 0)
 }
 
 #[cfg(test)]
@@ -1792,5 +1784,34 @@ mod tests {
             }
         }
         assert_eq!(stripped, "mnemos", "剝色後應還原原字");
+    }
+
+    /// 版號右對齊:寬版有版號時,strip 後是 `…mnemos… ─fill─ v0.0.5 ──╯`(版號在 fill 之後、
+    /// 靠右),而非黏在 mnemos 左側。防「版號回到左邊」的 layout regression。
+    #[test]
+    fn bottom_border_version_right_aligned() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        let _g = ENV_LOCK.lock().unwrap();
+        std::env::set_var("NO_COLOR", "1"); // 純文字、好斷言位置
+        let s = bottom_border(
+            80,
+            DELIM,
+            "v0.0.5".to_string(),
+            6,
+            &bh(LocalLight::Active, CentralLight::Ok),
+            true,
+        );
+        std::env::remove_var("NO_COLOR");
+        assert!(
+            s.trim_end().ends_with("v0.0.5 ──╯"),
+            "版號應靠右收尾,got: {s:?}"
+        );
+        let mpos = s.find("mnemos").expect("應含 mnemos");
+        let vpos = s.find("v0.0.5").expect("應含版號");
+        assert!(vpos > mpos, "版號應在 mnemos 之後,got: {s:?}");
+        assert!(
+            s[mpos..vpos].contains('─'),
+            "mnemos 與版號之間應有 fill dash(證明版號在 fill 右側),got: {s:?}"
+        );
     }
 }
