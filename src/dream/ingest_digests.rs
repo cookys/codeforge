@@ -338,9 +338,50 @@ fn format_signal(sig: &serde_json::Value) -> Option<String> {
 }
 
 /// 粗略遮罩常見 credential/token,避免 secret 隨 dev signal 進腦(codeforge 無共用遮罩
-/// 函式;無 regex crate,用 prefix + 高熵長度啟發式,寧可多遮)。逐 token 檢查。
+/// 函式;無 regex crate,用 prefix + 高熵長度啟發式,寧可多遮)。
+///
+/// 兩道:(1) 先整段遮 PEM / OpenSSH 私鑰 block(多行,逐 token 啟發式抓不到 header /
+/// 行長 metadata / key 路徑等周邊);(2) 再逐 token 遮已知前綴 / 高熵 token。
 fn mask_secrets(s: &str) -> String {
-    s.split(' ').map(mask_word).collect::<Vec<_>>().join(" ")
+    let pem_masked = mask_pem_blocks(s);
+    pem_masked
+        .split(' ')
+        .map(mask_word)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// 整段遮蔽 PEM / OpenSSH 私鑰 block:任何含 `BEGIN`+`PRIVATE KEY` 的行起,到含
+/// `END`+`PRIVATE KEY` 的行止(含),整段(header / body / footer)收成單一 marker。
+///
+/// 為何需要:私鑰 base64 body 雖是高熵、token 啟發式或可抓,但 header
+/// (`-----BEGIN OPENSSH PRIVATE KEY-----`)、`base64 body 行長` 之類結構 metadata、
+/// key 路徑等周邊全漏網;且被 `truncate(300)` 截斷的 block 根本沒有 END 行。逐行整段
+/// 遮才穩。無 END(截斷)時,從 BEGIN 行起遮到字串尾(保守,寧可多遮)。
+/// codeforge 無 regex crate → 逐行字串比對。
+fn mask_pem_blocks(s: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    let mut in_key = false;
+    for line in s.split('\n') {
+        let has_pk = line.contains("PRIVATE KEY");
+        if in_key {
+            // body / footer 全丟,看到 END 行才退出 redact。
+            if has_pk && line.contains("END") {
+                in_key = false;
+            }
+            continue;
+        }
+        if has_pk && line.contains("BEGIN") {
+            out.push("[PRIVATE KEY REDACTED]");
+            // 純 BEGIN 行 → 進多行 redact;同行 BEGIN+END(單行表示)罕見,只留 marker。
+            if !line.contains("END") {
+                in_key = true;
+            }
+            continue;
+        }
+        out.push(line);
+    }
+    out.join("\n")
 }
 
 /// 遮一個以空白切出的詞:取 `=`/`:` 之後的值部分當候選(處理 KEY=secret /
@@ -406,6 +447,33 @@ mod tests {
             mask_secrets("檔案 /home/cookys/projects/mnemos/src"),
             "檔案 /home/cookys/projects/mnemos/src"
         );
+    }
+
+    #[test]
+    fn masks_pem_private_key_blocks() {
+        // 完整 block:header / body / footer 全遮,前後文保留。
+        let full = "ctx before\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXkAAAAB\nMOREKEYBODY9999\n-----END OPENSSH PRIVATE KEY-----\nctx after";
+        let m = mask_secrets(full);
+        assert!(m.contains("[PRIVATE KEY REDACTED]"), "需有 marker: {m}");
+        assert!(!m.contains("BEGIN OPENSSH"), "header 須遮: {m}");
+        assert!(!m.contains("b3BlbnNzaC1rZXk"), "body 須遮: {m}");
+        assert!(!m.contains("MOREKEYBODY9999"), "body 須遮: {m}");
+        assert!(
+            m.contains("ctx before") && m.contains("ctx after"),
+            "前後文須保留: {m}"
+        );
+
+        // 截斷(被 truncate(300) 砍掉 END):從 BEGIN 遮到字串尾。
+        let truncated =
+            "行數: 8\n-----BEGIN OPENSSH PRIVATE KEY-----   \nbase64 body 行長:\n2: 70\nLEAKTAIL";
+        let mt = mask_secrets(truncated);
+        assert!(mt.contains("[PRIVATE KEY REDACTED]"));
+        assert!(!mt.contains("BEGIN OPENSSH"));
+        assert!(!mt.contains("LEAKTAIL"), "截斷後 BEGIN 之後須全遮: {mt}");
+        assert!(mt.contains("行數: 8"), "BEGIN 前文字須保留: {mt}");
+
+        // 無 PEM 的一般多行文字不受影響。
+        assert_eq!(mask_secrets("line one\nline two"), "line one\nline two");
     }
 
     #[test]
