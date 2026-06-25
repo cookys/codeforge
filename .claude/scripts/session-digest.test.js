@@ -293,6 +293,54 @@ test('Case 15: _rawError must not leak in the output signals', () => {
   assert.strictEqual(signals[0]._rawError, undefined, 'Output signal must not contain _rawError');
 });
 
+// ---------------------------------------------------------------------------
+// Case 16: 主流程聚合用 raw _rawError，非 truncated error（gpt-5.5 impl review）
+// 兩筆 error 前 300 字相同、第 301+ 字不同：truncate(300) 後 error 欄相同，
+// 但 _rawError 不同 → signature 不同 → 不誤併（若 bug 用 truncated 會併成 1）。
+// ---------------------------------------------------------------------------
+test('Case 16: aggregation uses raw _rawError not truncated error', () => {
+  const common = 'X'.repeat(300);
+  const errors = [
+    { errorText: common + 'AAA-distinct-tail', file: 'src/a.js' },
+    { errorText: common + 'BBB-distinct-tail', file: 'src/b.js' },
+  ];
+  const messages = makeRecoveryMessages('Bash', errors);
+  const signals = extractErrorRecoveries(messages);
+  assert.strictEqual(signals.length, 2,
+    'Must NOT merge: first 300 chars equal but raw tails differ — proves signature uses _rawError');
+});
+
+// ---------------------------------------------------------------------------
+// Case 17: count===1 路徑也 delete _rawError（out===原 signal 參考）
+// ---------------------------------------------------------------------------
+test('Case 17: _rawError deleted on count===1 path', () => {
+  const messages = makeRecoveryMessages('Bash',
+    [{ errorText: 'Some real singular error here', file: 'src/x.js' }]
+  );
+  const signals = extractErrorRecoveries(messages);
+  assert.strictEqual(signals.length, 1);
+  assert.strictEqual(signals[0]._rawError, undefined,
+    'count===1 output signal must not contain _rawError');
+});
+
+// ---------------------------------------------------------------------------
+// Case 18: 同檔重複（fileCount=1）marker 無 files= 段（plan 刻意設計）
+// ---------------------------------------------------------------------------
+test('Case 18: same-file repeat marker omits files= segment', () => {
+  const errors = [
+    { errorText: 'Repeated identical error', file: 'src/dup.js' },
+    { errorText: 'Repeated identical error', file: 'src/dup.js' },
+    { errorText: 'Repeated identical error', file: 'src/dup.js' },
+  ];
+  const messages = makeRecoveryMessages('Bash', errors);
+  const signals = extractErrorRecoveries(messages);
+  assert.strictEqual(signals.length, 1);
+  assert.ok(signals[0].context.includes('[repeat_count=3 same_session=true]'),
+    'marker must carry repeat_count=3');
+  assert.ok(!signals[0].context.includes('files='),
+    'fileCount=1 must omit files= segment (deliberate plan design)');
+});
+
 console.log(`\nTests completed: ${passedTests}/${totalTests} passed.`);
 if (passedTests === totalTests) {
   console.log('ALL TESTS PASSED!');
