@@ -123,6 +123,9 @@ pub enum Commands {
         /// 靜默模式（session-end hook 使用，不輸出任何文字）
         #[arg(long)]
         quiet: bool,
+        /// Dry-run 預覽：印出會 ingest 的 signal + 會編出的 L1，不寫 L0、不刪 digest、不產 L1
+        #[arg(long)]
+        dry_run: bool,
     },
     /// 批量匯入知識來源（web chat export、markdown 檔）
     Ingest {
@@ -363,7 +366,11 @@ pub fn run(cli: Cli) -> Result<()> {
             MemoryAction::Status => search::status(&ctx),
             MemoryAction::Context { max_tokens, hook } => recall::run(&ctx, max_tokens, hook),
         },
-        Commands::Dream { only, quiet } => dream::run(&ctx, only.as_deref(), quiet),
+        Commands::Dream {
+            only,
+            quiet,
+            dry_run,
+        } => dream::run(&ctx, only.as_deref(), quiet, dry_run),
         Commands::Ingest { path, source } => ingest::run(&ctx, &path, &source),
         Commands::Adopt => adopt::run(&ctx),
         Commands::Pet => pet::run(&ctx),

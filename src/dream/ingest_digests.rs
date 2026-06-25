@@ -85,6 +85,74 @@ pub fn run(ctx: &db::Context) -> Result<IngestResult> {
     })
 }
 
+/// Dry-run 預覽:掃同樣的 digest 目錄,回「會被 ingest 的 signal」,
+/// 但**不 append L0、不刪 digest、不改任何檔**。給 `dream --dry-run` 用。
+pub fn preview_signals(ctx: &db::Context) -> Result<Vec<Signal>> {
+    let mut out = Vec::new();
+    if ctx.no_ship() {
+        return Ok(out);
+    }
+    preview_from_dir(&ctx.project_dir.join("digests"), None, &mut out);
+    if let Some(home) = dirs::home_dir() {
+        let legacy_dir = home.join(".claude").join("session-digests");
+        let repo_root = ctx.project_dir.parent().map(|p| p.to_path_buf());
+        let repo_root_canon = repo_root
+            .as_ref()
+            .and_then(|p| std::fs::canonicalize(p).ok());
+        let filter = CwdFilter {
+            repo_root,
+            repo_root_canon,
+        };
+        preview_from_dir(&legacy_dir, Some(&filter), &mut out);
+    }
+    Ok(out)
+}
+
+/// preview_signals 的單目錄掃描:同 ingest_from_dir 的過濾(processed / cwd / high-confidence)
+/// 但只收集、不寫不刪。
+fn preview_from_dir(dir: &Path, cwd_filter: Option<&CwdFilter>, out: &mut Vec<Signal>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.extension().map(|e| e != "json").unwrap_or(true) {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) else {
+            continue;
+        };
+        if v.get("processed")
+            .and_then(|p| p.as_bool())
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if let Some(f) = cwd_filter {
+            let cwd = v.get("cwd").and_then(|c| c.as_str()).unwrap_or("");
+            if !cwd_matches_repo(cwd, f.repo_root.as_deref(), f.repo_root_canon.as_deref()) {
+                continue;
+            }
+        }
+        let empty = Vec::new();
+        let signals = v
+            .get("signals")
+            .and_then(|s| s.as_array())
+            .unwrap_or(&empty);
+        for sig in signals {
+            if sig.get("confidence").and_then(|c| c.as_str()) != Some("high") {
+                continue;
+            }
+            if let Some(text) = format_signal(sig) {
+                out.push(Signal::new(text, SignalSource::SessionDigest));
+            }
+        }
+    }
+}
+
 /// 掃一個 digest 目錄:吸 high-confidence signals → ingest 完刪檔。
 /// `cwd_filter` = Some 時只收 cwd 對應本 repo 的檔(過渡期舊全域目錄用);None = per-repo
 /// 目錄天然隔離全收。

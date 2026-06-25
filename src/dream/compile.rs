@@ -124,6 +124,43 @@ pub async fn run(ctx: &db::Context, conn: &Connection) -> Result<CompileResult> 
     })
 }
 
+/// Dry-run:對 dry-ingest 出的 signals 跑 compile_signal(LLM)看會編出什麼 L1,
+/// 印出預覽但**不 save、不 mark_compiled、不對賬寫入**。回 (會升L1, 低品質跳過, 失敗)。
+pub async fn run_dry(ctx: &db::Context, signals: &[l0::Signal]) -> Result<(usize, usize, usize)> {
+    let (mut created, mut skipped, mut failed) = (0usize, 0usize, 0usize);
+    for signal in signals {
+        match compile_signal(ctx, signal).await {
+            Ok(Some(entry)) => {
+                created += 1;
+                let body_head: String = entry
+                    .body
+                    .lines()
+                    .find(|l| !l.trim().is_empty() && !l.starts_with('#'))
+                    .unwrap_or("")
+                    .chars()
+                    .take(80)
+                    .collect();
+                println!(
+                    "  ✓ 會升 L1 [{}] {} — {}",
+                    entry.frontmatter.topic, entry.title, body_head
+                );
+            }
+            Ok(None) => {
+                skipped += 1;
+                println!(
+                    "  · 低品質跳過:{}",
+                    signal.content.chars().take(60).collect::<String>()
+                );
+            }
+            Err(e) => {
+                failed += 1;
+                println!("  ⚠ compile 失敗:{e}");
+            }
+        }
+    }
+    Ok((created, skipped, failed))
+}
+
 /// Merge a freshly-compiled `new` fact into a `target` entry, in place: take the
 /// new body/title but preserve the target's accumulated metadata (path, kind,
 /// topic, created date, strength, refs, last_ref) and union sources + links.
