@@ -16,6 +16,10 @@
 //! 最徹底(多抓一條)、claude(Opus)nuance 最全 → Opus 當主、agy→codex 當 fallback。
 //!
 //! 運維注意:
+//! - **限流閥(throttle)**:LLM 子程序受三層保護,別讓 dream/ship 壓垮忙碌的機器 ——
+//!   (1) 高載退讓:1-min load/核心數 > `CODEFORGE_LLM_MAX_LOAD_PER_CORE`(預設 2.0)→ 直接
+//!   退 rule-based、不 spawn;(2) single-flight:全機同時只一個 codeforge LLM 子程序;
+//!   (3) `nice -n 19`:子程序永遠讓步給其他 CPU 工作。三者任一觸發 → 沿 fallback 鏈降級。
 //! - **cron PATH**:`claude`/`agy`/`codex` 常在 `~/.local/bin` 或 nvm bin,須在 cron 的 PATH 內
 //!   (見 `scripts/codeforge_ship.sh`),否則 spawn 失敗 → 沿鏈降級(失去較高品質)。
 //! - **#7263**:舊版 `claude -p` 大 stdin(>~7KB)可能 exit 0 但空 stdout;空輸出 → Err 防衛,
@@ -50,12 +54,106 @@ fn timeout_secs() -> u64 {
         .unwrap_or(180)
 }
 
+// ─── 限流閥(throttle):別讓 dream/ship 的 LLM 子程序壓垮一台已忙的機器 ──────────
+// 三層:(1) load ceiling 高載直接退 rule-based、(2) single-flight 全機同時只一個、
+// (3) nice -n 19 永遠讓步給其他 CPU 工作(在 run_cli 的 spawn 處)。
+
+/// 系統 1-min load / 核心數 > `CODEFORGE_LLM_MAX_LOAD_PER_CORE`(預設 2.0)→ true(該退讓)。
+/// 讀不到 /proc/loadavg(非 Linux)→ false(不擋,保持原行為)。
+fn load_too_high() -> bool {
+    let max_per_core = std::env::var("CODEFORGE_LLM_MAX_LOAD_PER_CORE")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(2.0);
+    let Ok(s) = std::fs::read_to_string("/proc/loadavg") else {
+        return false;
+    };
+    let Some(load1) = s
+        .split_whitespace()
+        .next()
+        .and_then(|x| x.parse::<f64>().ok())
+    else {
+        return false;
+    };
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1) as f64;
+    load1 / cores > max_per_core
+}
+
+fn lock_path() -> std::path::PathBuf {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("codeforge")
+        .join("llm.lock")
+}
+
+/// 全機單飛鎖:同時只允許一個 codeforge LLM 子程序。RAII,drop 時釋放。
+/// 拿不到(別人持有且未過期)→ None,呼叫端視為 throttled。std-only(O_EXCL + mtime 防孤兒)。
+struct LlmSlot {
+    path: std::path::PathBuf,
+}
+
+impl LlmSlot {
+    fn try_acquire() -> Option<Self> {
+        Self::try_acquire_at(lock_path())
+    }
+
+    fn try_acquire_at(path: std::path::PathBuf) -> Option<Self> {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        // 孤兒鎖防護:比 (timeout + 60s) 還舊 → 持有者大概早死了,搶走。
+        if let Ok(meta) = std::fs::metadata(&path) {
+            let stale = meta
+                .modified()
+                .ok()
+                .and_then(|m| m.elapsed().ok())
+                .map(|age| age.as_secs() > timeout_secs() + 60)
+                .unwrap_or(true);
+            if stale {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true) // O_EXCL:已存在即失敗 = 別人持有
+            .open(&path)
+        {
+            Ok(_) => Some(Self { path }),
+            Err(_) => None,
+        }
+    }
+}
+
+impl Drop for LlmSlot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 /// 共用 headless CLI 執行器:`timeout <secs> <argv...>`,prompt 走 stdin(避免 ARG_MAX),
 /// capture stdout。三引擎(claude/agy/codex)同一把尺,避免各自 drift。
 ///
 /// spawn 失敗 / 非零退出 / 空 stdout → Err,呼叫端據此 fallback。`label` 只用於錯誤訊息。
 fn run_cli(label: &str, argv: &[&str], prompt: &str) -> Result<String> {
-    let mut child = Command::new("timeout")
+    // 限流閥 1:高載 → 不 spawn,直接 Err 讓呼叫端退 rule-based(不往機器上堆重程序)。
+    if load_too_high() {
+        anyhow::bail!("`{label}` 限流:系統負載過高(1-min load/core 超過閥值)→ 退 fallback");
+    }
+    // 限流閥 2:single-flight。全機已有 codeforge LLM 子程序在跑 → 不排隊,直接退 fallback。
+    // _slot 持有到本函式結束(子程序跑完)才 drop 釋放。
+    let _slot = LlmSlot::try_acquire().ok_or_else(|| {
+        anyhow::anyhow!("`{label}` 限流:已有 codeforge LLM 子程序在跑 → 退 fallback")
+    })?;
+
+    // 限流閥 3:`nice -n 19` 包住 → 子程序永遠讓步給其他 CPU 工作(如本機長跑運算)。
+    let mut child = Command::new("nice")
+        .arg("-n")
+        .arg("19")
+        .arg("timeout")
         .arg(timeout_secs().to_string())
         .args(argv)
         .stdin(Stdio::piped())
@@ -156,5 +254,27 @@ mod tests {
         assert_eq!(agy_model(), "Gemini 3.5 Flash (Medium)");
 
         std::env::remove_var("CODEFORGE_AGY_MODEL");
+    }
+
+    /// 限流閥 load ceiling:閥值設極高時永不擋(load/core 不可能超過 1e6)。
+    #[test]
+    fn load_ceiling_huge_threshold_never_throttles() {
+        std::env::set_var("CODEFORGE_LLM_MAX_LOAD_PER_CORE", "1000000");
+        assert!(!load_too_high(), "閥值極高時不該 throttle");
+        std::env::remove_var("CODEFORGE_LLM_MAX_LOAD_PER_CORE");
+    }
+
+    /// 限流閥 single-flight:同一鎖路徑,持有時第二次拿不到,釋放後可再拿。
+    #[test]
+    fn llm_slot_is_single_flight() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let p = tmp.path().join("llm.lock");
+        let a = LlmSlot::try_acquire_at(p.clone());
+        assert!(a.is_some(), "首次應拿到鎖");
+        let b = LlmSlot::try_acquire_at(p.clone());
+        assert!(b.is_none(), "已持有時第二次應拿不到(single-flight)");
+        drop(a);
+        let c = LlmSlot::try_acquire_at(p.clone());
+        assert!(c.is_some(), "釋放後應能再拿");
     }
 }
