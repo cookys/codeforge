@@ -718,7 +718,21 @@ fn hook_is_codeforge(h: &Value) -> bool {
 /// install. Safe to delete when no production settings.json carries an un-marker
 /// codeforge entry.
 fn is_legacy_codeforge_command(cmd: &str) -> bool {
-    if cmd.starts_with("codeforge dream") {
+    // Pre-marker inline subcommands codeforge shipped in the SessionEnd /
+    // SessionStart chains: `dream`, `ship`, `memory context`. `ship` + `memory
+    // context` were chained in after `dream` but before every field install cycled
+    // through the marker. While they were unrecognized, a pre-marker group
+    // containing one of them failed `group_is_codeforge`'s ALL-hooks-ours gate, so
+    // the WHOLE group escaped the sweep and the new marked group stacked beside it
+    // → dual-fire. Recognizing them lets a re-install reclaim the full pre-marker
+    // group. Match on a token boundary (exact, or subcommand + space) so a
+    // prefix collision like `codeforge shipment` / `memory contextualize` (or any
+    // future codeforge subcommand) is NOT mistaken for one of these.
+    let is_premarker_sub = |sub: &str| {
+        let exact = format!("codeforge {sub}");
+        cmd == exact || cmd.starts_with(&format!("{exact} "))
+    };
+    if is_premarker_sub("dream") || is_premarker_sub("ship") || is_premarker_sub("memory context") {
         return true;
     }
     let on_codeforge_path = cmd.contains("/codeforge/hooks/") || cmd.contains("/.claude/scripts/");
@@ -1018,9 +1032,64 @@ mod tests {
         assert!(is_legacy_codeforge_command(
             "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/check-dev-flow.js"
         ));
+        // Pre-marker inline subcommands. ship + memory-context were the dual-fire
+        // root cause: previously unrecognized, so a pre-marker group containing
+        // them failed the all()-codeforge gate and escaped the sweep.
+        assert!(is_legacy_codeforge_command(
+            "codeforge dream --quiet 2>/dev/null || true"
+        ));
+        assert!(is_legacy_codeforge_command(
+            "codeforge ship --no-hook 2>/dev/null || true"
+        ));
+        assert!(is_legacy_codeforge_command(
+            "codeforge memory context --hook 2>/dev/null || true"
+        ));
         // Not ours — must not clobber.
         assert!(!is_legacy_codeforge_command("node /home/u/myscript.js"));
         assert!(!is_legacy_codeforge_command("prettier --write x.ts"));
+        // Tight: a different codeforge subcommand we never auto-installed must NOT
+        // be swept (guards against over-broad `codeforge ` prefix matching).
+        assert!(!is_legacy_codeforge_command("codeforge pet"));
+        assert!(!is_legacy_codeforge_command("codeforge statusline"));
+        // Token-boundary: prefix collisions must NOT be mistaken for the real subs.
+        assert!(!is_legacy_codeforge_command("codeforge shipment --foo"));
+        assert!(!is_legacy_codeforge_command(
+            "codeforge memory contextualize"
+        ));
+        assert!(!is_legacy_codeforge_command("codeforge dreamboat"));
+    }
+
+    #[test]
+    fn premarker_group_with_ship_and_memory_context_is_swept() {
+        // Regression for the field dual-fire: a pre-marker SessionEnd group whose
+        // entries include the unmarked `codeforge ship` (and SessionStart's
+        // `codeforge memory context`) must be recognized as wholly codeforge-owned
+        // so a re-install sweeps it instead of stacking a second marked group.
+        let session_end_group = json!({
+            "matcher": "",
+            "hooks": [
+                { "command": "node /home/u/.local/share/codeforge/hooks/0.0.5/emit-session.js session_end" },
+                { "command": "node /home/u/.local/share/codeforge/hooks/0.0.5/session-digest.js" },
+                { "command": "codeforge dream --quiet 2>/dev/null || true" },
+                { "command": "codeforge ship --no-hook 2>/dev/null || true" }
+            ]
+        });
+        assert!(
+            group_is_codeforge(&session_end_group),
+            "pre-marker SessionEnd group containing `codeforge ship` must be swept"
+        );
+
+        let session_start_group = json!({
+            "matcher": "",
+            "hooks": [
+                { "command": "node /home/u/.local/share/codeforge/hooks/0.0.5/emit-session.js session_start" },
+                { "command": "codeforge memory context --hook 2>/dev/null || true" }
+            ]
+        });
+        assert!(
+            group_is_codeforge(&session_start_group),
+            "pre-marker SessionStart group containing `codeforge memory context` must be swept"
+        );
     }
 
     #[test]
