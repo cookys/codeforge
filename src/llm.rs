@@ -106,6 +106,8 @@ impl LlmSlot {
             let _ = std::fs::create_dir_all(parent);
         }
         // 孤兒鎖防護:比 (timeout + 60s) 還舊 → 持有者大概早死了,搶走。
+        // 不變式:合法持有者的鎖最多 timeout_secs 老(`timeout` 包住子程序、跑完即 drop),
+        // 故 +60s margin 永遠搶不到「活著的鎖」。日後改 timeout 包法須維持此不變式。
         if let Ok(meta) = std::fs::metadata(&path) {
             let stale = meta
                 .modified()
