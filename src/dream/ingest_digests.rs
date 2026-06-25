@@ -154,11 +154,15 @@ fn ingest_from_dir(
                     Ok(_) => *ingested += 1,
                     // append 失敗(如 signals/ 建不出)→ 記下,稍後保留 digest 待重收。
                     // 絕不可吞掉 + 照刪:那會把寫入失敗變成 high-confidence signal 永久遺失。
+                    // 第一次失敗即 break:保留的 digest 下次重收時會從頭再跑,若這次已寫入 1..k,
+                    // 繼續 append 會讓 1..k 在重收時重複(各帶新 uuid)→ L0 重複行。break 維持
+                    // 「保留的 digest 尚無 partial prefix 寫入」,重收時乾淨重來。
                     Err(e) => {
                         eprintln!(
                             "⚠ ingest-digests: append signal 失敗（{e}）— 保留 digest 待重收"
                         );
                         append_failed = true;
+                        break;
                     }
                 }
             }
