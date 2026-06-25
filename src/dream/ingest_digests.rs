@@ -110,6 +110,9 @@ pub fn preview_signals(ctx: &db::Context) -> Result<Vec<Signal>> {
 
 /// preview_signals 的單目錄掃描:同 ingest_from_dir 的過濾(processed / cwd / high-confidence)
 /// 但只收集、不寫不刪。
+/// ⚠ 過濾邏輯必須與 `ingest_from_dir` 一致(改一邊要改另一邊),否則 dry-run 會誤導
+/// (預覽出來的跟實際 ingest 的不符)。`preview_signals_is_read_only` 測試守 read-only,
+/// 但過濾平價沒有測試守 —— 改 filter 時人工確認兩處同步。
 fn preview_from_dir(dir: &Path, cwd_filter: Option<&CwdFilter>, out: &mut Vec<Signal>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -492,6 +495,42 @@ mod tests {
         assert_eq!(ingested, 1, "應吸 1 個 high-confidence signal");
         assert_eq!(processed, 1);
         assert!(!digest.exists(), "ingest 完應刪 digest 檔(A′ 明文不長存)");
+    }
+
+    /// `dream --dry-run` 用的 preview_signals 必須是純讀:回會吸入的 signal,但
+    /// 不刪 digest、不寫 L0/log。對比上面真 ingest 會刪 —— 釘死 read-only 不變式,
+    /// 防未來改動(如 compile_signal 長出 side effect)讓 dry-run 默默寫 prod store。
+    #[test]
+    fn preview_signals_is_read_only() {
+        let temp = TempDir::new().unwrap();
+        let ctx = test_ctx(&temp, "myrepo");
+        let digests = ctx.project_dir.join("digests");
+        let digest = write_digest(
+            &digests,
+            "2026-06-25-readonly.json",
+            serde_json::json!({
+                "cwd": "/whatever", "date": "2026-06-25", "processed": false,
+                "signals": [
+                    {"type":"error-recovery","confidence":"high","tool":"Bash","error":"demo read-only preview signal 夠長以過字數門檻"}
+                ]
+            }),
+        );
+        let sigs = preview_signals(&ctx).unwrap();
+        assert!(
+            sigs.iter().any(|s| s.content.contains("demo read-only")),
+            "preview 應回會吸入的 signal"
+        );
+        assert!(digest.exists(), "preview 不該刪 digest");
+        let jsonl_count = std::fs::read_dir(ctx.project_dir.join("signals"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map(|x| x == "jsonl").unwrap_or(false))
+            .count();
+        assert_eq!(jsonl_count, 0, "preview 不該寫任何 L0 signal 檔");
+        assert!(
+            !ctx.project_dir.join("log.md").exists(),
+            "preview 不該寫 log.md"
+        );
     }
 
     #[test]
