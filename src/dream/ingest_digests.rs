@@ -141,6 +141,7 @@ fn ingest_from_dir(
             .get("signals")
             .and_then(|s| s.as_array())
             .unwrap_or(&empty);
+        let mut append_failed = false;
         for sig in signals {
             // 只收 high-confidence(對齊海馬 ripple 選擇性 +「high-confidence」承諾;
             // self-correction 等 medium 略過,寧缺勿濫)。
@@ -149,10 +150,24 @@ fn ingest_from_dir(
             }
             if let Some(text) = format_signal(sig) {
                 let signal = Signal::new(text, SignalSource::SessionDigest);
-                if writer.append(&signal).is_ok() {
-                    *ingested += 1;
+                match writer.append(&signal) {
+                    Ok(_) => *ingested += 1,
+                    // append 失敗(如 signals/ 建不出)→ 記下,稍後保留 digest 待重收。
+                    // 絕不可吞掉 + 照刪:那會把寫入失敗變成 high-confidence signal 永久遺失。
+                    Err(e) => {
+                        eprintln!(
+                            "⚠ ingest-digests: append signal 失敗（{e}）— 保留 digest 待重收"
+                        );
+                        append_failed = true;
+                    }
                 }
             }
+        }
+
+        // append 曾失敗 → 不刪此 digest(留待修好後重收),避免靜默遺失未寫入的 signal。
+        if append_failed {
+            *digests_processed += 1;
+            continue;
         }
 
         // ingest 完刪 digest 檔(A′:明文不長存)。**全 medium(吸 0 顆)也刪**:medium 本

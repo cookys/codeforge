@@ -67,6 +67,13 @@ impl<'a> SignalWriter<'a> {
     pub fn append(&self, signal: &Signal) -> Result<String> {
         let jsonl_path = self.today_file();
 
+        // `create(true)` 只建檔、不建父目錄 → 新 store(無 signals/)會 open 失敗。
+        // 必須先 create_dir_all,否則 append 靜默失敗、上游若「失敗也刪 digest」就資料遺失。
+        if let Some(parent) = jsonl_path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("建 signals 目錄失敗：{}", parent.display()))?;
+        }
+
         // JSONL append（append-only，不刪除）
         let line = serde_json::to_string(signal)? + "\n";
         use std::fs::OpenOptions;
@@ -204,5 +211,43 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
         s.to_string()
     } else {
         format!("{}…", chars[..max_chars].iter().collect::<String>())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    /// 回歸:fresh store(無 signals/ 目錄)時 append 必須自建目錄並成功寫入。
+    /// 否則 append 靜默失敗,上游 ingest-digests「失敗也刪 digest」會造成
+    /// high-confidence signal 永久遺失(2026-06-25 抓到的 bug)。
+    #[test]
+    fn append_creates_signals_dir_on_fresh_store() {
+        let tmp = TempDir::new().unwrap();
+        let ctx = db::Context {
+            project_dir: tmp.path().to_path_buf(),
+            brain_dir: tmp.path().join("brain"),
+            db_path: tmp.path().join("state.db"),
+        };
+        assert!(
+            !tmp.path().join("signals").exists(),
+            "前提:store 一開始無 signals/ 目錄"
+        );
+        let writer = SignalWriter::new(&ctx);
+        let sig = Signal::new(
+            "【錯誤修復】tool=Bash | error=demo signal".to_string(),
+            SignalSource::SessionDigest,
+        );
+        let r = writer.append(&sig);
+        assert!(r.is_ok(), "append 應成功(自建 signals/),got: {r:?}");
+        assert!(
+            tmp.path().join("signals").is_dir(),
+            "append 應 create_dir_all 出 signals/"
+        );
+        let n = std::fs::read_dir(tmp.path().join("signals"))
+            .unwrap()
+            .count();
+        assert_eq!(n, 1, "應寫出一個 jsonl 檔");
     }
 }
