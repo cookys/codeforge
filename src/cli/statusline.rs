@@ -1324,6 +1324,18 @@ fn bottom_border(
         (s, w)
     };
 
+    // ─── 未來 indicator 擴充點(hangar-bridge / autopilot / …) ─────────────
+    // 新 indicator 是「左側 content」的另一段,擺在 central(mnemos)之後、右側版號之前
+    // (中間的 fill 會自動吸收/縮短)。接法(對齊 central segment 的既有 pattern):
+    //   1. 加狀態來源(如 health.rs 的 CentralLight 那樣的 enum)+ glyph/顏色 match。
+    //   2. 寫 make_<name>_seg_{colored,glyph_only_colored,nocolor} 三個變體(回 (String, vis))。
+    //   3. 在下面 degradation ladder 的每個 level:`total += seg_vis + gap`、
+    //      `content.push_str("   "); content.push_str(&seg)`(接在 central 之後)。
+    //      width 自動正確 —— ladder 用 vis 量、assemble 的 fill = panel_w - overhead
+    //      - left_vis - right_vis,indicator 算進 left_vis 即可。
+    //   4. 窄寬度時於 ladder 較低 level 優先丟掉此 indicator(如 hint 的處理方式)。
+    // 設計細節 + 觸發語義見 BACKLOG B27。
+
     // ─── Assemble final string from chosen components ───────────────────
     // The caller passes `no_color` so we can vary layout.
     // The border itself is: ╰─ <content> ──╯
