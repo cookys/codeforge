@@ -9,6 +9,7 @@
 //! Contract truth: `cookys/mnemos/docs/specs/10-source-contract.md` (§3 envelope,
 //! §5.1 ledger, §11 cite) cross-checked against Mnemos `crates/mnemos/src/api.rs`.
 
+pub mod autocite;
 pub mod cite;
 pub mod cite_detect;
 pub mod config;

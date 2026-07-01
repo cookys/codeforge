@@ -12,7 +12,7 @@ use crate::mnemos::config::MnemosConfig;
 use crate::mnemos::health;
 use crate::mnemos::ledger::{LedgerEnvelope, LedgerLesson, LedgerPayload};
 use crate::mnemos::transport::{self, SendResult};
-use crate::mnemos::{digest, evidence::SourceEvidence, new_ulid, state};
+use crate::mnemos::{autocite, digest, evidence::SourceEvidence, new_ulid, state};
 
 /// Haiku model for ship digest（provenance + API 呼叫共用,抽常數避免 drift,review Minor）。
 const HAIKU_MODEL: &str = "claude-haiku-4-5-20251001";
@@ -109,12 +109,17 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
                 record_ship_health(true);
             }
         }
+        // B18: still cite atoms this session referenced (citation is about usage,
+        // independent of whether a fresh ledger was shipped today).
+        maybe_auto_cite(ctx, &cfg, &rt, &ledger_date);
         return Ok(());
     }
 
     // §5.1 rule 2: empty lessons → don't POST (avoid atom-less document).
     if envelope.payload.lessons.is_empty() {
         eprintln!("⚠ {} ({ledger_date})", rust_i18n::t!("ship.empty_ledger"));
+        // B18: an empty ledger still had a session — cite what it referenced.
+        maybe_auto_cite(ctx, &cfg, &rt, &ledger_date);
         return Ok(());
     }
 
@@ -138,6 +143,8 @@ pub fn run(ctx: &db::Context, opts: ShipOpts) -> Result<()> {
                 "✓ {} ({repo} {ledger_date} — {n} lessons, ship_id {ship_id})",
                 rust_i18n::t!("ship.shipped")
             );
+            // B18: auto-cite atoms this session referenced (best-effort, §9).
+            maybe_auto_cite(ctx, &cfg, &rt, &ledger_date);
             Ok(())
         }
         SendResult::Exhausted(msg) => {
@@ -237,6 +244,34 @@ fn build_lessons(
         }
     }
     Ok(lessons)
+}
+
+/// B18 auto-cite-on-ship (spec §9): after a ship, scan today's session transcripts
+/// for this repo and cite any surfaced Mnemos atom. Best-effort — never fails ship,
+/// only prints when at least one cite was detected. Runs regardless of `--no-hook`
+/// (SessionEnd is exactly when we want it) but only when Mnemos is opted-in.
+fn maybe_auto_cite(
+    ctx: &db::Context,
+    cfg: &MnemosConfig,
+    rt: &tokio::runtime::Runtime,
+    ledger_date: &str,
+) {
+    if !MnemosConfig::opted_in() {
+        return;
+    }
+    let Some(repo_root) = ctx.project_dir.parent() else {
+        return;
+    };
+    let report = autocite::run(cfg, rt, repo_root, ledger_date);
+    if report.hits > 0 {
+        println!(
+            "✓ {} ({}/{} — scanned {} transcript)",
+            rust_i18n::t!("ship.auto_cite_done"),
+            report.cited_ok,
+            report.hits,
+            report.transcripts
+        );
+    }
 }
 
 fn build_provenance(ctx: &db::Context, lessons: &[LedgerLesson]) -> serde_json::Value {
