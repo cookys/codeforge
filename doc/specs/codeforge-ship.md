@@ -379,13 +379,14 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 
 `codeforge mnemos-cli context|cite|cite-detect` 是另一個 subcommand。**已實作（v0.0.4）**；未拆出獨立 spec 檔（原規劃的 `codeforge-mnemos-cli.md` 從未建立）—— 行為見 CHANGELOG `[0.0.4]` 與 [`../concepts.md`](../concepts.md) §4。
 
-> ⚠️ **NOT YET IMPLEMENTED — auto-cite-on-ship**：以下「ship 結束順便偵測 + 回寫」是**設計目標，尚未接線**。`ship` 不呼叫 cite，SessionEnd hook 鏈也不含 cite-detect（見 §10）。目前 citation 回寫只能**手動**跑 `codeforge mnemos-cli cite-detect <transcript>`。→ BACKLOG B18。
+> ✅ **IMPLEMENTED — auto-cite-on-ship（B18，2026-07-02）**：`ship` 成功（或當日已 ship / 空 ledger）後,自動掃當日本 repo 的 Claude session transcript,比對候選 atom 標題,命中即 cite。實作 `src/mnemos/autocite.rs`（`ship.rs::maybe_auto_cite` 在三個成功分支呼叫）。best-effort:永不 fail ship(SessionEnd 不可斷),gated on `MnemosConfig::opted_in()`。手動 `codeforge mnemos-cli cite-detect <transcript>` 子命令仍保留。
 
-`ship` 與 `mnemos-cli cite` 的**設計**協作（待實作）：
-- ship 結束時順便偵測「本 session transcript 是否引用任何 Mnemos atom」。
-- 偵測到 → 對每個 atom 呼叫 `mnemos-cli cite <atom_id>`（write-back → Mnemos `atom.citation_count++`）。
-- Sprint 1 用 fulltext_match heuristic；Sprint 5+ 改 Haiku。
-- **confidence**：cite-detect（自動偵測）用 `0.5`；手動 `mnemos-cli cite <atom_id>` 用 `0.7`。
+`ship` 與 `mnemos-cli cite` 的協作（**已接線**）：
+- ship 結束時掃 `~/.claude/projects/<repo-slug>/*.jsonl`（mtime 落在 ledger_date UTC 窗口內）偵測「本 session transcript 是否引用任何 Mnemos atom」。候選 atom 由 `mnemos-cli context`（topic = `derive_topic(repo)`、`max=20`、`max_sensitivity=work`）取。
+- 偵測到 → 對每個 atom POST `/v1/atoms/:id/cite`（write-back → Mnemos `atom.citation_count++`）。跨 transcript 對同 atom client 端去重（一次 ship = 一 atom 一 cite）。
+- Sprint 1 用 fulltext_match heuristic（`cite_detect::detect`,標題子字串 case-insensitive）；Sprint 5+ 改 Haiku。
+- **confidence**：auto-cite（自動偵測）用 `0.5` + `session_jsonl` provenance ref；手動 `mnemos-cli cite <atom_id>` 用 `0.7`。
+- **e2e 驗證**：`scripts/e2e-mnemos-chain.sh` 步驟 5 對 live daemon 實證（ship 再跑 → 掃 transcript → citation_count 再 +1）。
 
 > 本 spec 只負責 `ship`（L2 ledger 產出）。cite write-back 的精確 contract 見 CHANGELOG `[0.0.4]` 的 `mnemos-cli cite` 條目與 Mnemos `10-source-contract.md` §11。
 
