@@ -58,11 +58,11 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 
 ---
 
-## B7 — Memory Projection to AGENTS.md
+## ~~B7 — Memory Projection to AGENTS.md~~ ✅ Done 2026-07-02 (fuchikoma P1.2)
 
-**Area**: `src/` (projection module placeholder)
-**Premise**: The architecture mentions `projection/` for writing memory context to `AGENTS.md`, but this is not yet implemented.
-**Trigger**: Pick up before Phase 2 when sub-agents need context from codeforge memory.
+**Area**: `src/memory/projection.rs` (new), `codeforge memory project`, dream refresh
+**Premise**: The architecture mentions `projection/` for writing memory context to `AGENTS.md`, but the write logic was unimplemented (init.rs created the dir only).
+**Shipped**: `src/memory/projection.rs` — reuses the SAME `recall::rank` + `recall::render_index` as the SessionStart local recall (so the two READ surfaces never drift) and materializes `.codeforge/projections/AGENTS.md` (banner + preamble + ranked lean index) for **non-Claude agents** (Cursor/aider/Codex-CLI read `AGENTS.md`, not Claude Code hooks). Runnable via `codeforge memory project`; auto-refreshed at the end of every full `codeforge dream` (best-effort, never fails the SessionEnd hook). Validated: produced a real 86-active-L1 AGENTS.md against the live store. Unit tests in the module.
 
 ---
 

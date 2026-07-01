@@ -5,7 +5,7 @@
 //! rendering lives in `crate::memory::recall`; this is the IO glue.
 
 use crate::db;
-use crate::memory::{l1, recall};
+use crate::memory::{l1, projection, recall};
 use anyhow::Result;
 use std::io::Read;
 
@@ -37,5 +37,19 @@ pub fn run(ctx: &db::Context, max_tokens: usize, hook: bool) -> Result<()> {
         let md = recall::render_index(&ranked, "", max_tokens);
         println!("{md}");
     }
+    Ok(())
+}
+
+/// `codeforge memory project` (B7) — materialize the ranked L1 index to
+/// `.codeforge/projections/AGENTS.md` for non-Claude agents to read.
+pub fn run_project(ctx: &db::Context) -> Result<()> {
+    ctx.ensure_initialized()?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let (path, count) = projection::regenerate(&ctx.project_dir, &now)?;
+    println!(
+        "✓ {} → {} ({count} active L1)",
+        rust_i18n::t!("memory.projected"),
+        path.display()
+    );
     Ok(())
 }
