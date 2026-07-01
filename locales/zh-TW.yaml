@@ -38,6 +38,7 @@ mnemos.cited: "已 cite atom"
 mnemos.cite_failed: "cite 失敗"
 mnemos.cite_detect_none: "cite-detect：無偵測到引用"
 mnemos.cite_detect_done: "cite-detect：引用已 write-back"
+memory.projected: "已投影 ranked L1 index 到 AGENTS.md"
 
 # Brain indicator labels (Task 10) — 保持英文短詞，與 en.yaml 一致
 ui.brain.local_label: "memory"
