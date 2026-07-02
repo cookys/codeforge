@@ -94,6 +94,16 @@ pub fn run(
                 continue;
             }
             report.hits += 1;
+            // At-most-once: record the atom as handled for (repo, date) the moment we
+            // commit to citing it — BEFORE the POST — so a client-observed transient
+            // failure (a 5xx/timeout the server may nonetheless have committed) is
+            // never re-POSTed on a later same-day ship with a fresh cite_id, which
+            // would double-bump citation_count and re-pollute the rank signal C1
+            // protects. Cost: a cite that genuinely failed to reach the server is not
+            // retried today (undercount — fail-safe, never inflates; the atom re-cites
+            // the next day it is genuinely used). Exactly-once would need server-side
+            // atom+date idempotency (follow-up in the ship spec).
+            newly_cited.push(hit.atom_id.clone());
             let env = CiteEnvelope::fulltext_match(
                 new_ulid(),
                 chrono::Utc::now().to_rfc3339(),
@@ -105,10 +115,7 @@ pub fn run(
                 })),
             );
             match rt.block_on(post_cite(cfg, &hit.atom_id, &env)) {
-                transport::AttemptOutcome::Success => {
-                    report.cited_ok += 1;
-                    newly_cited.push(hit.atom_id.clone());
-                }
+                transport::AttemptOutcome::Success => report.cited_ok += 1,
                 other => eprintln!("ℹ auto-cite: cite {} 未成功（{other:?}）", hit.atom_id),
             }
         }
