@@ -38,7 +38,7 @@ fn is_cjk(c: char) -> bool {
         0x4E00..=0x9FFF |   // CJK Unified
         0xAC00..=0xD7AF |   // Hangul syllables
         0xF900..=0xFAFF |   // CJK Compatibility Ideographs
-        0x20000..=0x2FA1F)  // CJK Ext B+ / Compatibility Supplement
+        0x20000..=0x2FA1F) // CJK Ext B+ / Compatibility Supplement
 }
 
 /// Information weight of a title: CJK/Kana/Hangul chars count 2, others 1.
@@ -257,7 +257,11 @@ mod tests {
         let citable = citable_text_from_transcript(&transcript);
         let atoms = vec![atom("01A", atom_title)];
         let hits = detect(&citable, &atoms);
-        assert_eq!(hits.len(), 1, "genuine reference in a user turn must be cited");
+        assert_eq!(
+            hits.len(),
+            1,
+            "genuine reference in a user turn must be cited"
+        );
     }
 
     #[test]
