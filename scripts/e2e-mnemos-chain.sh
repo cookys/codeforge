@@ -146,9 +146,13 @@ pass "citation_count incremented $CIT0 → $CIT1"
 # ---- 5. B18 auto-cite-on-ship -----------------------------------------------
 step "5. B18 auto-cite: a ship run auto-detects a referenced atom"
 # a session transcript for THIS repo, dated today, that references the atom title.
+# Real Claude Code jsonl shape (message.content) — the C1 feedback-loop guard
+# (citable_text_from_transcript) scans genuine user/assistant turns via
+# message.content and strips injected context, so the reference must live in a
+# real turn, not a top-level `text` field.
 cat > "$TSDIR/session-$NONCE.jsonl" <<EOF
-{"type":"user","text":"working on the loop"}
-{"type":"assistant","text":"as noted: $TITLE — reusing that lesson here"}
+{"type":"user","message":{"role":"user","content":"working on the loop; reusing the lesson: $TITLE right here"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"applied $TITLE"}]}}
 EOF
 aout="$(run_cf ship --date "$DATE" 2>&1)" || { echo "$aout"; fail "second ship exited non-zero"; }
 echo "$aout" | sed 's/^/    /'
