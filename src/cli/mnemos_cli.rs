@@ -4,6 +4,7 @@
 //! - `cite <atom_id>` → POST /v1/atoms/:id/cite (fulltext_match envelope, §11.1).
 
 use anyhow::Result;
+use std::io::Read;
 
 use crate::db;
 use crate::mnemos::cite::CiteEnvelope;
@@ -20,6 +21,10 @@ pub enum MnemosCliCmd {
         max_sensitivity: Option<String>,
         /// P-E: ask Mnemos for top-3 theme summaries (`include_themes=true`).
         with_themes: bool,
+        /// SessionStart hook mode (fleet recall downlink): self-gate on Mnemos
+        /// opt-in (clean no-op otherwise), drain stdin, and inject NOTHING on
+        /// empty/error rather than an empty "no memory" block.
+        hook: bool,
     },
     Cite {
         atom_id: String,
@@ -50,7 +55,17 @@ pub fn run(ctx: &db::Context, cmd: MnemosCliCmd) -> Result<()> {
             max,
             max_sensitivity,
             with_themes,
-        } => run_context(ctx, &cfg, &rt, topic, max, max_sensitivity, with_themes),
+            hook,
+        } => run_context(
+            ctx,
+            &cfg,
+            &rt,
+            topic,
+            max,
+            max_sensitivity,
+            with_themes,
+            hook,
+        ),
         MnemosCliCmd::Cite {
             atom_id,
             matched_text,
@@ -130,7 +145,20 @@ fn run_context(
     max: Option<usize>,
     max_sensitivity: Option<String>,
     with_themes: bool,
+    hook: bool,
 ) -> Result<()> {
+    // Fleet recall downlink (SessionStart hook): self-gate on Mnemos opt-in so a
+    // codeforge-only machine that installed the global hooks stays a clean no-op —
+    // symmetric with `ship --no-hook`. Non-opted → inject nothing.
+    if hook && !MnemosConfig::opted_in() {
+        return Ok(());
+    }
+    // Hooks must consume the SessionStart event JSON on stdin.
+    if hook {
+        let mut buf = String::new();
+        let _ = std::io::stdin().read_to_string(&mut buf);
+    }
+
     // Derive topic from git branch + recent commits when not provided.
     let repo_parent = ctx
         .project_dir
@@ -150,6 +178,12 @@ fn run_context(
     ));
     match resp {
         Ok(r) => {
+            // Hook mode injects NOTHING when there's no memory to surface (avoid a
+            // useless "no relevant atoms" block on every session, esp. fleet boxes
+            // whose tunnel is up but returned nothing for this topic).
+            if hook && r.atoms.is_empty() && r.themes.is_empty() {
+                return Ok(());
+            }
             // Themes render before atoms (coarse-grained first, P-E). An old server
             // without the `themes` field deserializes to [] → block silently skipped.
             print!(
@@ -159,8 +193,13 @@ fn run_context(
             Ok(())
         }
         Err(e) => {
-            // Don't fail SessionStart hard — emit an empty-but-valid block + warn.
+            // Never fail SessionStart. Hook mode: warn to stderr but inject nothing
+            // (an empty block on a transient tunnel/daemon hiccup is just noise).
             eprintln!("⚠ {}: {e}", rust_i18n::t!("mnemos.context_failed"));
+            if hook {
+                return Ok(());
+            }
+            // Interactive: emit an empty-but-valid block so the user sees the state.
             print!(
                 "{}",
                 context::format_markdown_with(&header, &empty, &topic, &[], &[])

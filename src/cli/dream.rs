@@ -28,6 +28,25 @@ pub fn run(ctx: &db::Context, only: Option<&str>, quiet: bool, dry_run: bool) ->
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(runner.run(&ops))?;
 
+    // B7: after a full distillation pass, refresh the AGENTS.md projection so
+    // non-Claude agents see the current ranked L1 index. Best-effort — a projection
+    // failure must never fail dream (SessionEnd hook path). Only on the full
+    // pipeline (`only.is_none()`); a targeted `dream --only X` leaves it untouched.
+    if only.is_none() {
+        let now = chrono::Utc::now().to_rfc3339();
+        match crate::memory::projection::regenerate(&ctx.project_dir, &now) {
+            Ok((path, count)) if !quiet => {
+                println!(
+                    "  ✓ AGENTS.md 投影更新（{count} active L1）→ {}",
+                    path.display()
+                );
+            }
+            Ok(_) => {}
+            Err(e) if !quiet => eprintln!("  ⚠ AGENTS.md 投影更新失敗（{e}）"),
+            Err(_) => {}
+        }
+    }
+
     Ok(())
 }
 
