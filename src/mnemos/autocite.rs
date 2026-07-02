@@ -21,7 +21,7 @@ use super::cite::CiteEnvelope;
 use super::cite_detect;
 use super::config::MnemosConfig;
 use super::context::{self, ContextAtom, ContextResponse};
-use super::{new_ulid, transport};
+use super::{new_ulid, state, transport};
 
 /// Summary of one auto-cite pass (for the caller's log line).
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -66,14 +66,29 @@ pub fn run(
         return report;
     }
 
-    // Detect + cite. Dedup across transcripts so the same atom is cited at most once
-    // per ship (cite_dedup on the server side is keyed by cite_id, which is fresh
-    // each ship; the client-side dedup keeps one ship = one cite per atom).
-    let mut cited: HashSet<String> = HashSet::new();
+    // Detect + cite. Dedup is TWO-tier:
+    //   * within this pass — one ship never cites the same atom twice; and
+    //   * across same-day sessions (C2) — a persistent `{repo:{date:[atom_id]}}`
+    //     set seeds the skip list, so a later session's SessionEnd ship re-scanning
+    //     the same day's transcripts never re-cites an atom already auto-cited today.
+    let ac_root = state::ship_root();
+    let mut ac_state = state::load_autocite(&ac_root);
+    let repo_key = repo_root.to_string_lossy().to_string();
+    let already: HashSet<String> = ac_state
+        .get(&repo_key)
+        .and_then(|m| m.get(ledger_date))
+        .map(|v| v.iter().cloned().collect())
+        .unwrap_or_default();
+    let mut cited: HashSet<String> = already; // seed → skip cross-session repeats
+    let mut newly_cited: Vec<String> = Vec::new();
     for path in &transcripts {
-        let Ok(text) = std::fs::read_to_string(path) else {
+        let Ok(raw) = std::fs::read_to_string(path) else {
             continue;
         };
+        // C1 (feedback-loop guard, RISKS ③): scan genuine conversation ONLY — strip
+        // the SessionStart-hook additionalContext (incl. the P1.2 central-recall
+        // downlink) so surfaced atom titles don't self-cite.
+        let text = cite_detect::citable_text_from_transcript(&raw);
         for hit in cite_detect::detect(&text, &atoms) {
             if !cited.insert(hit.atom_id.clone()) {
                 continue;
@@ -90,10 +105,24 @@ pub fn run(
                 })),
             );
             match rt.block_on(post_cite(cfg, &hit.atom_id, &env)) {
-                transport::AttemptOutcome::Success => report.cited_ok += 1,
+                transport::AttemptOutcome::Success => {
+                    report.cited_ok += 1;
+                    newly_cited.push(hit.atom_id.clone());
+                }
                 other => eprintln!("ℹ auto-cite: cite {} 未成功（{other:?}）", hit.atom_id),
             }
         }
+    }
+    // Persist atoms successfully cited today so later same-day sessions skip them
+    // (best-effort — a persistence failure never breaks the ship).
+    if !newly_cited.is_empty() {
+        ac_state
+            .entry(repo_key)
+            .or_default()
+            .entry(ledger_date.to_string())
+            .or_default()
+            .extend(newly_cited);
+        let _ = state::save_autocite(&ac_root, &ac_state);
     }
     report
 }
@@ -223,5 +252,42 @@ mod tests {
         // A repo path that certainly has no ~/.claude/projects slug dir.
         let got = discover_transcripts(Path::new("/nonexistent/repo/xyzzy-unlikely"), "2026-07-02");
         assert!(got.is_empty());
+    }
+
+    #[test]
+    fn autocite_dedup_state_roundtrips_and_seeds_skip() {
+        // C2: the persistent (repo, date, atom) set is what stops a later same-day
+        // session from re-citing. Prove the state layer: save today's cited atom,
+        // reload, and confirm it seeds the skip set for the same (repo, date).
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let repo = "/home/cookys/projects/codeforge";
+        let date = "2026-07-02";
+
+        let mut st = state::load_autocite(root);
+        assert!(st.is_empty(), "fresh dir → empty state");
+        st.entry(repo.to_string())
+            .or_default()
+            .entry(date.to_string())
+            .or_default()
+            .push("ATOM_X".to_string());
+        state::save_autocite(root, &st).unwrap();
+
+        // A later same-day session reloads and seeds its skip set from this.
+        let reloaded = state::load_autocite(root);
+        let already: std::collections::HashSet<String> = reloaded
+            .get(repo)
+            .and_then(|m| m.get(date))
+            .map(|v| v.iter().cloned().collect())
+            .unwrap_or_default();
+        assert!(already.contains("ATOM_X"), "same-day cite must be remembered");
+
+        // A different day does NOT skip it (citation is per-day).
+        let other_day: std::collections::HashSet<String> = reloaded
+            .get(repo)
+            .and_then(|m| m.get("2026-07-03"))
+            .map(|v| v.iter().cloned().collect())
+            .unwrap_or_default();
+        assert!(!other_day.contains("ATOM_X"), "next day starts fresh");
     }
 }
