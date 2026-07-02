@@ -152,21 +152,55 @@ fn discover_transcripts(repo_root: &Path, ledger_date: &str) -> Vec<PathBuf> {
         if path.extension().and_then(|x| x.to_str()) != Some("jsonl") {
             continue;
         }
-        let in_window = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| {
-                let secs = d.as_secs() as i64;
-                secs >= start && secs < end
-            })
-            .unwrap_or(false);
-        if in_window {
+        if transcript_in_window(&entry, &path, start, end) {
             out.push(path);
         }
     }
     out
+}
+
+/// True if a transcript belongs to the `[start, end)` UTC day window.
+///
+/// mtime alone is unreliable — a session opened before midnight UTC but appended
+/// through the ledger day, a copied/rsynced file, or a `ship --date` backfill can
+/// carry an out-of-window mtime and silently drop real citations. So: take the
+/// mtime fast-path when it's already in-window, otherwise fall back to the
+/// transcript's OWN event timestamps (Claude Code writes an ISO-8601 `timestamp`
+/// per record) and include the file if ANY event lands in the window.
+fn transcript_in_window(entry: &std::fs::DirEntry, path: &Path, start: i64, end: i64) -> bool {
+    let mtime = entry
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+    if let Some(secs) = mtime {
+        if secs >= start && secs < end {
+            return true;
+        }
+    }
+    // mtime out-of-window (or unreadable) → trust the transcript's own timestamps.
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if let Some(ts) = v.get("timestamp").and_then(|t| t.as_str()) {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) {
+                let secs = dt.timestamp();
+                if secs >= start && secs < end {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Claude Code's project-dir slug: absolute path, every non-alnum char → `-`.
@@ -255,6 +289,46 @@ mod tests {
     }
 
     #[test]
+    fn discover_uses_event_timestamps_when_mtime_is_out_of_window() {
+        // Robustness (hetero-review finding): a transcript whose FILE mtime is set
+        // to yesterday (backfill / copy / skew) but whose EVENT timestamps fall in
+        // the target day must still be discovered — mtime alone would drop it.
+        use std::io::Write;
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let repo = Path::new("/some/repo/proj");
+        let slug = claude_project_slug(repo);
+        let dir = home.join(".claude").join("projects").join(&slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("sess.jsonl");
+        let mut fh = std::fs::File::create(&f).unwrap();
+        // event timestamp is inside 2026-07-02 UTC
+        writeln!(
+            fh,
+            r#"{{"type":"user","timestamp":"2026-07-02T09:00:00Z","message":{{"role":"user","content":"hi"}}}}"#
+        )
+        .unwrap();
+        drop(fh);
+        // force the FILE mtime to a day OUTSIDE the window (2026-07-01)
+        let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_751_328_000); // 2026-07-01
+        filetime_set(&f, old);
+
+        let (start, end) = day_window_unix("2026-07-02").unwrap();
+        let e = std::fs::read_dir(&dir).unwrap().next().unwrap().unwrap();
+        assert!(
+            transcript_in_window(&e, &f, start, end),
+            "event-timestamp in-window must be discovered despite out-of-window mtime"
+        );
+    }
+
+    // Minimal mtime setter for the test above (avoids adding a dep — uses the same
+    // UNIX_EPOCH-relative SystemTime the discover path reads).
+    fn filetime_set(path: &Path, when: std::time::SystemTime) {
+        let f = std::fs::File::options().write(true).open(path).unwrap();
+        f.set_modified(when).unwrap();
+    }
+
+    #[test]
     fn autocite_dedup_state_roundtrips_and_seeds_skip() {
         // C2: the persistent (repo, date, atom) set is what stops a later same-day
         // session from re-citing. Prove the state layer: save today's cited atom,
@@ -280,7 +354,10 @@ mod tests {
             .and_then(|m| m.get(date))
             .map(|v| v.iter().cloned().collect())
             .unwrap_or_default();
-        assert!(already.contains("ATOM_X"), "same-day cite must be remembered");
+        assert!(
+            already.contains("ATOM_X"),
+            "same-day cite must be remembered"
+        );
 
         // A different day does NOT skip it (citation is per-day).
         let other_day: std::collections::HashSet<String> = reloaded
