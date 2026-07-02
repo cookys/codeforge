@@ -43,6 +43,31 @@ pub fn save_state(root: &Path, state: &ShipState) -> Result<()> {
     Ok(())
 }
 
+// --- B18 auto-cite dedup (C2): one cite per (repo, date, atom) across sessions ---
+
+/// `{ repo: { date: [atom_id, …] } }` — atoms already auto-cited per repo+day.
+/// Seeds the skip list so a later same-day session's SessionEnd ship (which
+/// re-scans the whole day's transcripts) never double-cites an atom.
+pub type AutoCiteState = BTreeMap<String, BTreeMap<String, Vec<String>>>;
+
+pub fn autocite_state_path(root: &Path) -> PathBuf {
+    root.join("autocite-state.json")
+}
+
+pub fn load_autocite(root: &Path) -> AutoCiteState {
+    std::fs::read_to_string(autocite_state_path(root))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_autocite(root: &Path, state: &AutoCiteState) -> Result<()> {
+    std::fs::create_dir_all(root)?;
+    let json = serde_json::to_string_pretty(state)?;
+    std::fs::write(autocite_state_path(root), json)?;
+    Ok(())
+}
+
 /// Has this repo+date already been shipped successfully?
 pub fn already_shipped(state: &ShipState, repo: &str, date: &str) -> bool {
     state

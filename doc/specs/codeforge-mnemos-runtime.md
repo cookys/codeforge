@@ -42,14 +42,14 @@ Mnemos 是中央腦，多來源收錄（Slack/LINE/Email/Docs/…）；CodeForge
 
 ## 3. READ 路徑（↓ 下行，腦 → 本機）
 
-READ 鏡像 WRITE 的 local-always / central-opt-in 切分，但**目前 hook 只接了 local 那半**：
+READ 鏡像 WRITE 的 local-always / central-opt-in 切分。**per-host 狀態不同**（下表「現況」欄分本機 = 腦 host vs 其他 fleet 機）：
 
 | | 指令 | 裝在哪 | 現況 |
 |---|---|---|---|
 | **本機 recall** | `codeforge memory context --hook` | 全域 SessionStart | ✅ **live** — 本機 active L1 排序成 lean index(~1.5K tok) 注入 `additionalContext` |
-| **中央 recall** | `mnemos-cli context` | （未進 hook） | ⚠️ **未接** — 只能手動跑；跨源 atom（Slack/Email/…）不會自動回灌 |
+| **中央 recall** | `mnemos-cli context --hook` | 全域 SessionStart（**`install --hooks` 已寫**，P1.2） | ✅ **live（本機）+ 下行機制已備（fleet）** — `codeforge install --hooks` 現在把 `codeforge mnemos-cli context --hook --max 5 --with-themes --max-sensitivity work` 寫進全域 SessionStart。`--hook` 自我 gate on opt-in（未 opt-in→乾淨 no-op；空/腦不可達→不注入空區塊），故每台機都安全。跨源 atom（Slack/Email/ledger…）注入 stdout。本機原手動寫的無 marker 版,再跑 install 會被 legacy-sweep 收掉,不 dual-fire。 |
 
-> **關鍵不對稱**：接了腦的 fleet 機目前是 **WRITE-only**（ship 上行通），下行的中央 recall 還沒進 SessionStart hook。要雙向，把 `mnemos-cli context` 也加進全域 SessionStart。
+> **對稱補完（per-host，2026-07-02）**：**本機（腦 host）已雙向** —— ship 上行 + 中央 recall 下行都 live。**fleet 機下行機制已備**：`install --hooks`（含 `codeforge bootstrap`）現在會寫中央 recall SessionStart 行,`--hook` 自我 gate,已接腦（tunnel + `~/.config/mnemos.env` opt-in）的 fleet 機**下次跑 `codeforge bootstrap` / `install --hooks` 即取得下行**,從 WRITE-only 變雙向。**遠端部署**:CLI 只能本機跑（無法遠端代裝）→ 各 fleet 機逐台 `git pull && codeforge bootstrap`（沿用 BACKLOG B14 runbook）。本次只在本機驗（loopback :8845 + `--hook` opt-in/no-op/dry-run 三態）；實機 fleet rollout 列 follow-up。
 
 ## 4. 現況矩陣（live vs 設計未接）
 
@@ -58,9 +58,9 @@ READ 鏡像 WRITE 的 local-always / central-opt-in 切分，但**目前 hook �
 | dream（L0→L1 本機蒸餾） | ✅ live | 全域 SessionEnd，每 project |
 | ship（L2 ledger 上行） | ✅ live（接腦後） | opt-in + 隧道通才真送；否則 no-op |
 | 本機 recall（SessionStart 注入 L1） | ✅ live | `memory context --hook` |
-| 中央 recall（跨源 atom 回灌） | ⚠️ 未接 hook | `mnemos-cli context` 手動 |
-| cite 回填（引用 atom → citation_count++） | ⚠️ 未自動 | 只有手動 `mnemos-cli cite-detect`；BACKLOG B18 |
-| ship 掃 session jsonl | ❌ 未實作 | 設計目標；現只 L1+git+metrics |
+| 中央 recall（跨源 atom 回灌） | ✅ live（本機）/ ✅ 下行機制已備（fleet，P1.2） | `install --hooks` 現寫 `mnemos-cli context --hook`（自我 gate on opt-in）；fleet 機下次 `bootstrap` 即下行。實機 rollout = follow-up |
+| cite 回填（引用 atom → citation_count++） | ✅ auto-cite-on-ship（B18 已接，2026-07-02） | `ship` 結束掃當日本 repo session transcript，比對 atom 標題自動 cite（`src/mnemos/autocite.rs`，confidence 0.5 + `session_jsonl` provenance）；手動 `mnemos-cli cite-detect` 仍在。**部署**：需裝含此的新 binary（跑舊 binary 的機器 cite 仍不自動）。 |
+| ship 掃 session jsonl（digest source_evidence） | ❌ 未實作 | ship **digest** 仍只讀 L1+git（source_evidence 不帶 jsonl locator）；B18 auto-cite 另讀 jsonl 僅供 cite 偵測，非 digest 證據。此列指 digest 端，仍為設計目標 |
 | 腦端 auth | 現關閉 | tokenless POST；flip-prod 開 auth 後各 fleet 機補 `MNEMOS_TOKEN` |
 | 央腦燈 readiness 即時化（whoami authed probe） | 🔜 B25 | trigger=flip-prod 開 auth |
 

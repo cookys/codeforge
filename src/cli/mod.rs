@@ -239,6 +239,9 @@ pub enum MnemosCliAction {
         /// 附 top-3 相關 theme summary（粗粒度上下文，排在 atoms 前；舊 server 無此欄則靜默略過）
         #[arg(long)]
         with_themes: bool,
+        /// SessionStart hook 模式（fleet recall 下行）：未 opt-in 則乾淨 no-op；空/錯不注入空區塊
+        #[arg(long)]
+        hook: bool,
     },
     /// 回報某 atom 被引用（POST cite，bump citation_count）
     Cite {
@@ -317,6 +320,8 @@ pub enum MemoryAction {
         #[arg(long)]
         hook: bool,
     },
+    /// 把 ranked L1 index 投影到 .codeforge/projections/AGENTS.md（供非 Claude agent 讀，B7）
+    Project,
 }
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -365,6 +370,7 @@ pub fn run(cli: Cli) -> Result<()> {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),
             MemoryAction::Status => search::status(&ctx),
             MemoryAction::Context { max_tokens, hook } => recall::run(&ctx, max_tokens, hook),
+            MemoryAction::Project => recall::run_project(&ctx),
         },
         Commands::Dream {
             only,
@@ -429,11 +435,13 @@ pub fn run(cli: Cli) -> Result<()> {
                     max,
                     max_sensitivity,
                     with_themes,
+                    hook,
                 } => mnemos_cli::MnemosCliCmd::Context {
                     topic,
                     max,
                     max_sensitivity,
                     with_themes,
+                    hook,
                 },
                 MnemosCliAction::Cite {
                     atom_id,

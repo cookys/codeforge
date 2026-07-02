@@ -9,7 +9,7 @@ CodeForge 是 **CodePower 生態系裡的私人鍛造間**（personal smithy）�
 **三支柱**：
 - **Memory pipeline** — L0 raw signals → L1 compiled knowledge（透過 Anthropic Haiku），本機累積
 - **MUD 引擎** — codebase 是世界地圖、技術債是怪物、pet 是玩家角色
-- **Mnemos source role** — `codeforge ship` 把 L1 + git log 再 digest 成 L2 daily ledger、POST 到 Mnemos（中央 brain）。（讀 session jsonl 為設計目標、code 未實作，見 ship spec 修正 (c)；`codeforge mnemos-cli cite-detect` 可回填用過的 atom，但目前是手動子命令、未接入 SessionEnd hook。）**Production critical path**（不是 nice-to-have）— SessionEnd hook 觸發、失敗有 retry policy、結果影響 Mnemos 資料完整性。詳見 [`doc/specs/codeforge-ship.md`](doc/specs/codeforge-ship.md)。
+- **Mnemos source role** — `codeforge ship` 把 L1 + git log 再 digest 成 L2 daily ledger、POST 到 Mnemos（中央 brain）。（讀 session jsonl 為設計目標、code 未實作，見 ship spec 修正 (c)；`codeforge mnemos-cli cite-detect` 可手動回填用過的 atom；**auto-cite-on-ship（B18）已把偵測+回寫接進 `ship` 路徑**，見下方 Cite 段。）**Production critical path**（不是 nice-to-have）— SessionEnd hook 觸發、失敗有 retry policy、結果影響 Mnemos 資料完整性。詳見 [`doc/specs/codeforge-ship.md`](doc/specs/codeforge-ship.md)。
 
 **生態系定位**：
 - **CodePower**（鬥技場）— 公開、聯邦、競技；Nation 團戰、scoring 排行、federated 賽事
@@ -216,7 +216,7 @@ Then digests via Haiku and POSTs the L2 ledger payload to Mnemos at `http://127.
 
 ### Cite (natural citation, client-side write-back)
 
-⚠️ **NOT YET IMPLEMENTED (auto-cite-on-ship)** — `ship` does NOT call cite; the SessionEnd hook chain does not run cite-detect. Citation write-back currently only happens via the **manual** `codeforge mnemos-cli cite-detect <transcript>` subcommand. *Designed* behavior (BACKLOG B18): when a session references a Mnemos atom (Sprint 1: fulltext_match; Sprint 5+: Haiku), cite-back via `mnemos-cli cite <atom_id>` per atom → Mnemos increments `citation_count` / `last_cited_at` / ranking signal. Mnemos contract: `cookys/mnemos:docs/specs/10-source-contract.md` §11.
+✅ **IMPLEMENTED (auto-cite-on-ship, B18, 2026-07-02)** — `ship` auto-cites: after a successful (or already-shipped / empty) ship, it scans the day's `~/.claude/projects/<repo-slug>/*.jsonl` transcripts and, for each candidate atom (`mnemos-cli context`) whose title appears, POSTs `mnemos-cli cite <atom_id>` → Mnemos increments `citation_count` / `last_cited_at` (Sprint 1: fulltext_match @ confidence 0.5; Sprint 5+: Haiku). Best-effort, never fails SessionEnd, gated on Mnemos opt-in. Code: `src/mnemos/autocite.rs` + `ship.rs::maybe_auto_cite`. The manual `codeforge mnemos-cli cite-detect <transcript>` subcommand remains. e2e proof: `scripts/e2e-mnemos-chain.sh`. Mnemos contract: `cookys/mnemos:docs/specs/10-source-contract.md` §11.
 
 ### Retry policy
 

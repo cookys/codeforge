@@ -40,7 +40,9 @@ const PROJECT_DIR_ENV_PLACEHOLDER: &str = "${CLAUDE_PROJECT_DIR}";
 ///
 /// Flags:
 /// - `--hooks`: install global hooks that run in every project — `emit-session`,
-///   `session-digest`, plus the `codeforge dream → codeforge ship --no-hook`
+///   `session-digest`, the SessionStart recall injectors (local `memory context
+///   --hook` + central `mnemos-cli context --hook`, the latter = P1.2 fleet recall
+///   downlink), plus the `codeforge dream → codeforge ship --no-hook`
 ///   memory-pipeline SessionEnd chain.
 /// - `--all`:   statusLine + global hooks.
 /// - `--project-hooks`: wire the 2 codeforge-clone-only DEV scripts
@@ -498,6 +500,17 @@ fn patch_hooks(
                         10000,
                         &marker,
                     ),
+                    // Central recall (fleet recall DOWNLINK, P1.2): pull cross-source
+                    // atoms from the Mnemos brain and inject them at SessionStart —
+                    // the READ half that makes tunnel-connected fleet boxes bidirectional
+                    // instead of WRITE-only. `--hook` self-gates on Mnemos opt-in
+                    // (clean no-op for codeforge-only machines) and injects nothing on
+                    // empty/unreachable, so this line is safe to ship to every machine.
+                    hook_entry(
+                        "codeforge mnemos-cli context --hook --max 5 --with-themes --max-sensitivity work 2>/dev/null || true",
+                        10000,
+                        &marker,
+                    ),
                 ],
             ),
             (
@@ -732,7 +745,14 @@ fn is_legacy_codeforge_command(cmd: &str) -> bool {
         let exact = format!("codeforge {sub}");
         cmd == exact || cmd.starts_with(&format!("{exact} "))
     };
-    if is_premarker_sub("dream") || is_premarker_sub("ship") || is_premarker_sub("memory context") {
+    if is_premarker_sub("dream")
+        || is_premarker_sub("ship")
+        || is_premarker_sub("memory context")
+        // Central recall (P1.2 fleet downlink) was hand-added to some SessionStart
+        // groups before it shipped in `install`; recognize it so a re-install sweeps
+        // the un-marked entry instead of stacking a second (dual context injection).
+        || is_premarker_sub("mnemos-cli context")
+    {
         return true;
     }
     let on_codeforge_path = cmd.contains("/codeforge/hooks/") || cmd.contains("/.claude/scripts/");
@@ -889,14 +909,18 @@ mod tests {
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["SessionEnd"].is_array());
         assert!(s["hooks"]["PreCompact"].is_array());
-        // Global SessionStart: emit-session + local-recall injector (2).
+        // Global SessionStart: emit-session + local-recall + central-recall (3).
         let session_start = &s["hooks"]["SessionStart"][0]["hooks"];
-        assert_eq!(session_start.as_array().unwrap().len(), 2);
+        assert_eq!(session_start.as_array().unwrap().len(), 3);
         let ss_cmds = serde_json::to_string(session_start).unwrap();
         assert!(ss_cmds.contains("emit-session"), "missing emit-session");
         assert!(
             ss_cmds.contains("codeforge memory context --hook"),
             "missing local-recall injector"
+        );
+        assert!(
+            ss_cmds.contains("codeforge mnemos-cli context --hook"),
+            "missing central-recall downlink (P1.2)"
         );
         // Global SessionEnd chain: emit-session, session-digest, dream, ship (4).
         let session_end = &s["hooks"]["SessionEnd"][0]["hooks"];
