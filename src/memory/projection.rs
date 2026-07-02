@@ -47,16 +47,21 @@ citation).\n\n",
 }
 
 /// Write `content` to `.codeforge/projections/AGENTS.md`, creating the dir if needed.
-/// Returns the path written. Atomic-ish: writes then the fs handles the rename-free
-/// overwrite (the file is small and single-writer — dream/CLI, never concurrent).
+/// Returns the path written. Truly atomic (C4): write a temp sibling then `rename`
+/// over the target, so a concurrent reader (Cursor / aider / Codex pulling
+/// `AGENTS.md`) never observes a truncated or half-written file while `dream`
+/// refreshes it.
 pub fn write_projection(project_dir: &Path, content: &str) -> Result<PathBuf> {
     let path = projection_path(project_dir);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("建立 projections 目錄失敗：{}", parent.display()))?;
     }
-    std::fs::write(&path, content)
-        .with_context(|| format!("寫入 AGENTS.md 失敗：{}", path.display()))?;
+    let tmp = path.with_extension("md.tmp");
+    std::fs::write(&tmp, content)
+        .with_context(|| format!("寫入 AGENTS.md 暫存檔失敗：{}", tmp.display()))?;
+    std::fs::rename(&tmp, &path)
+        .with_context(|| format!("atomically rename AGENTS.md 失敗：{}", path.display()))?;
     Ok(path)
 }
 
