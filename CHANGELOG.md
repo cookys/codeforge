@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Live context files** (autopilot v2.36.1 P1) — `codeforge statusline` now also writes a small
+  RAM-backed JSON snapshot (`<live-base>/context/<sid>.json`) after every render, and a new
+  `codeforge subagent-statusline` command writes the subagent task list
+  (`<live-base>/context/<sid>.tasks.json`) — one writer per file, no merge, atomic same-dir
+  temp+rename at mode 0600. Base-dir resolution order: `$AUTOPILOT_LIVE_DIR` →
+  `$XDG_RUNTIME_DIR/autopilot` → `/dev/shm/autopilot-<uid>` → `/tmp/autopilot-<uid>`, each verified
+  tmpfs/ramfs via `findmnt` (falls back to `/proc/mounts` parsing when `findmnt` is absent); every
+  candidate rejected falls back to `~/.autopilot` with one warning line on stderr. `codeforge
+  install --subagent-statusline` (opt-in, only when `statusLine.command` already points at
+  `codeforge statusline`) idempotently wires the `subagentStatusLine` hook. Never changes
+  statusline rendering or exit code — a write failure is logged to stderr once per process. See
+  README § "Live context files".
 - **Brain connection indicators** — statusline bottom border 升級為兩顆真實狀態燈：
   - **`memory ●/◌`**（本地腦，永遠顯示）：`●` 綠＝active L1 > 0；`◌` 灰＝store 存在但 active = 0；不顯示＝全新專案。
   - **`mnemos ●/◐/○/◌`**（央腦，僅 opt-in 顯示）：`●` ok / `◐` degraded / `○` offline / `◌` pending。server 沒跑為中性灰 `offline`，不是告警。
