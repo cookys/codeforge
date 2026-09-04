@@ -78,8 +78,12 @@ dotenvy = "0.15"
 # rustls/ring TLS stack with reqwest above — one TLS stack, no openssl-sys.
 self_update = { version = "0.44.0", default-features = false, features = ["archive-tar", "compression-flate2", "rustls", "ureq"] }
 
-[dev-dependencies]
+# Same-directory atomic temp-file + rename (src/live.rs writer). Was
+# dev-only; promoted to a normal dependency — no new crate added to the
+# graph, tempfile was already present as a transitive/dev dep.
 tempfile = "3"
+
+[dev-dependencies]
 # test-util: tokio 虛擬時鐘(start_paused),讓 backoff retry 測試不真的等 1s/5s/30s。
 tokio = { version = "1", features = ["test-util"] }
 

@@ -113,6 +113,7 @@ pub fn run(opts: BootstrapOpts) -> Result<()> {
     let opts_at = |hooks: bool, all: bool| InstallOpts {
         hooks,
         all,
+        subagent_statusline: false,
         project_hooks: false,
         dry_run: opts.dry_run,
         force: false,

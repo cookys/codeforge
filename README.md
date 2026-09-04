@@ -246,6 +246,71 @@ The liveness probe runs as a detached background process (`process_group` isolat
 
 **Diagnostics:** `codeforge doctor` shows all dimensions — local L1 count, opt-in status, live probe result, last ship time/outcome, queue depth, and next-step recommendations. `codeforge mnemos-cli probe [--verbose]` probes `GET /health` directly.
 
+## Live context files
+
+`codeforge statusline` and the opt-in `codeforge subagent-statusline` each write a small JSON
+snapshot to a RAM-backed directory after every render, so other tools can poll session state
+without touching the transcript. Two files, one writer each, no merge — neither writer reads the
+other's file.
+
+**Base-dir resolution** (fixed order, first accepted candidate wins):
+
+1. `$AUTOPILOT_LIVE_DIR` (override knob)
+2. `$XDG_RUNTIME_DIR/autopilot`
+3. `/dev/shm/autopilot-<uid>`
+4. `/tmp/autopilot-<uid>`
+
+Every candidate — including the override — is accepted only if it resolves to a `tmpfs`/`ramfs`
+mount (checked via `findmnt -T <dir> -o FSTYPE -n`; falls back to a longest-prefix match over
+`/proc/mounts` when `findmnt` is absent). A rejected candidate is skipped, not fatal. If every
+candidate is rejected, the base falls back to `~/.autopilot` (disk-backed) and prints exactly one
+warning line to stderr per process.
+
+**Files** (under `<base>/context/`, mode 0600, atomic same-dir temp+rename):
+
+- `<sid>.json` — main status line record:
+  ```json
+  {
+    "schema_version": 1,
+    "session_id": "<raw session_id>",
+    "written_at": "<RFC3339 UTC>",
+    "cc_version": "<version>",
+    "model": {"id": "...", "display_name": "..."},
+    "context_window": {
+      "context_window_size": 1000000,
+      "used_percentage": 26,
+      "total_input_tokens": 262707,
+      "current_usage": {"input_tokens": 32, "output_tokens": 4, "...": "..."}
+    }
+  }
+  ```
+- `<sid>.tasks.json` — subagent status line record (written by `codeforge subagent-statusline`):
+  ```json
+  {
+    "schema_version": 1,
+    "session_id": "<raw session_id>",
+    "written_at": "<RFC3339 UTC>",
+    "tasks": [
+      {"id": "...", "type": "...", "status": "...", "description": "...", "label": "...",
+       "startTime": 0, "model": "...", "cwd": "...", "contextWindowSize": 0, "tokenCount": 0}
+    ]
+  }
+  ```
+  Task fields (`name` included, when present) are copied only when present in the input — never
+  invented.
+
+`<sid>` is the raw stdin `session_id`, sanitized: every Unicode scalar not in `[A-Za-z0-9_-]` is
+replaced with `_`, then the result is truncated to the first 64 scalars; empty input becomes
+`unknown`.
+
+A write failure never changes statusline rendering or exit code — it's logged to stderr once per
+process and otherwise swallowed.
+
+**Opt-in install:** `codeforge install --subagent-statusline` (only takes effect alongside
+statusLine install, i.e. without `--hooks`/`--project-hooks`, or with `--all`) idempotently adds a
+`subagentStatusLine` entry to `settings.json` pointing at `<binary> subagent-statusline`. Default
+`install`/`install --all` behaviour is unchanged — this is opt-in only.
+
 ## Data & Privacy
 
 - All data stays on your machine in `.codeforge/` (per-project) or `$CODEFORGE_DIR` (global).

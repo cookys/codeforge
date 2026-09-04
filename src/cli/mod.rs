@@ -24,6 +24,7 @@ mod ship;
 mod snapshot;
 mod statusline;
 mod strategy;
+mod subagent_statusline;
 mod tui;
 mod use_item;
 mod world;
@@ -47,6 +48,9 @@ pub enum Commands {
         /// 同時安裝 statusLine 與 hooks（等同 --hooks 加 statusLine 預設）
         #[arg(long)]
         all: bool,
+        /// 額外安裝 subagentStatusLine（讀取子代理任務清單、寫 live context tasks 檔）；opt-in，不改變預設安裝行為
+        #[arg(long)]
+        subagent_statusline: bool,
         /// 安裝 codeforge-clone-only dev hooks（2 個：check-improvements SessionStart、check-dev-flow PreToolUse）到 $CWD/.claude/settings.json；只能在 codeforge clone 內執行
         #[arg(long)]
         project_hooks: bool,
@@ -141,6 +145,9 @@ pub enum Commands {
     Pet,
     /// 輸出 statusline（Claude Code 呼叫）
     Statusline,
+    /// 讀一行 subagent 任務清單 JSON，寫 live context tasks 檔（Claude Code subagentStatusLine hook 呼叫）；不印任何東西，解析失敗也 exit 0
+    #[command(name = "subagent-statusline")]
+    SubagentStatusline,
     /// 送一筆事件進 event_inbox（Claude Code hook 用）
     Emit {
         /// 事件名稱（如 session_start / file_saved / git_commit）
@@ -332,6 +339,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Install {
             hooks,
             all,
+            subagent_statusline,
             project_hooks,
             dry_run,
             force,
@@ -341,6 +349,7 @@ pub fn run(cli: Cli) -> Result<()> {
         } => install::run(install::InstallOpts {
             hooks,
             all,
+            subagent_statusline,
             project_hooks,
             dry_run,
             force,
@@ -381,6 +390,7 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Adopt => adopt::run(&ctx),
         Commands::Pet => pet::run(&ctx),
         Commands::Statusline => statusline::run(&ctx),
+        Commands::SubagentStatusline => subagent_statusline::run(),
         Commands::Emit {
             event,
             fields,
