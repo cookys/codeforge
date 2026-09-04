@@ -17,7 +17,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use unicode_width::UnicodeWidthStr;
 
 pub fn run(ctx: &db::Context) -> Result<()> {
-    let mut data = read_status_input();
+    let (mut data, raw) = read_status_input();
+    write_live_context(&raw);
     let conn = ctx.open_db()?;
     let has_pet = LiveState::exists(&conn).unwrap_or(false);
 
@@ -123,7 +124,11 @@ struct StatusInput {
     seven_day_resets_at: Option<i64>,
 }
 
-fn read_status_input() -> StatusInput {
+/// Returns the rendered `StatusInput` plus the raw parsed JSON (or
+/// `Value::Null` when stdin was empty/unparseable) — the live-context
+/// writer builds its record from the raw value, per plan §2.5, rather than
+/// from the display struct.
+fn read_status_input() -> (StatusInput, serde_json::Value) {
     use std::io::BufRead;
     let stdin = std::io::stdin();
     let mut line = String::new();
@@ -158,7 +163,7 @@ fn read_status_input() -> StatusInput {
             let update_available = matches!((&session_v, &latest_v),
                 (Some(s), Some(l)) if s != l);
 
-            return StatusInput {
+            let input = StatusInput {
                 model,
                 cwd: v["cwd"]
                     .as_str()
@@ -175,9 +180,80 @@ fn read_status_input() -> StatusInput {
                 seven_day_pct,
                 seven_day_resets_at,
             };
+            return (input, v);
         }
     }
-    StatusInput::default()
+    (StatusInput::default(), serde_json::Value::Null)
+}
+
+/// Build the main live-context record from the raw stdin JSON and write it
+/// to `<live-base>/context/<sid>.json`. Never touches rendering or exit
+/// code — write failures are logged to stderr once per process (see
+/// `crate::live::warn_once`-style behaviour inside `write_live_json`) and
+/// otherwise swallowed here.
+fn write_live_context(raw: &serde_json::Value) {
+    if raw.is_null() {
+        return;
+    }
+    let (base, _source) = crate::live::resolve_live_base();
+    let context_dir = base.join("context");
+    write_live_context_to(raw, &context_dir);
+}
+
+/// Build the main record from `raw` (built from the raw `serde_json::Value`,
+/// not the display struct — plan §2.5) and write it to
+/// `<context_dir>/<sid>.json`. Split out from `write_live_context` so tests
+/// can point at an isolated directory instead of the process-cached
+/// `resolve_live_base()` base.
+fn write_live_context_to(raw: &serde_json::Value, context_dir: &std::path::Path) {
+    let session_id = raw["session_id"].as_str().unwrap_or("");
+    let sid = crate::live::sanitize_session_id(session_id);
+    let record = build_main_record(raw, session_id);
+    if let Err(e) = crate::live::write_live_json(context_dir, &format!("{sid}.json"), &record) {
+        eprintln!("codeforge: failed to write live context file: {e}");
+    }
+}
+
+/// Build the main live-context record schema (`schema_version: 1`) from the
+/// raw stdin JSON. Fields are copied only when present in `raw` — never
+/// invented.
+fn build_main_record(raw: &serde_json::Value, session_id: &str) -> serde_json::Value {
+    let mut record = serde_json::json!({
+        "schema_version": 1,
+        "session_id": session_id,
+        "written_at": chrono::Utc::now().to_rfc3339(),
+    });
+    let obj = record.as_object_mut().expect("object literal");
+    if let Some(v) = raw.get("version") {
+        obj.insert("cc_version".to_string(), v.clone());
+    }
+    if let Some(model) = raw.get("model") {
+        let mut m = serde_json::Map::new();
+        if let Some(id) = model.get("id") {
+            m.insert("id".to_string(), id.clone());
+        }
+        if let Some(dn) = model.get("display_name") {
+            m.insert("display_name".to_string(), dn.clone());
+        }
+        obj.insert("model".to_string(), serde_json::Value::Object(m));
+    }
+    if let Some(cw) = raw.get("context_window") {
+        let mut c = serde_json::Map::new();
+        for key in [
+            "context_window_size",
+            "used_percentage",
+            "total_input_tokens",
+        ] {
+            if let Some(v) = cw.get(key) {
+                c.insert(key.to_string(), v.clone());
+            }
+        }
+        if let Some(v) = cw.get("current_usage") {
+            c.insert("current_usage".to_string(), v.clone());
+        }
+        obj.insert("context_window".to_string(), serde_json::Value::Object(c));
+    }
+    record
 }
 
 // ─── UX Pro color palette (ANSI256 → truecolor) ───────────────────────────────
@@ -1584,6 +1660,45 @@ mod tests {
 
     // Serialize env mutations across tests to avoid race conditions.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// (g) statusline fixture from p0/statusline.json ⇒ main file matches
+    /// schema, context_window_size == 1000000.
+    #[test]
+    fn live_context_from_p0_fixture_matches_schema() {
+        let fixture_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/statusline-p0.json"
+        );
+        let raw: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(fixture_path).unwrap()).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let context_dir = dir.path().join("context");
+        write_live_context_to(&raw, &context_dir);
+
+        let sid = crate::live::sanitize_session_id(raw["session_id"].as_str().unwrap());
+        let written: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(context_dir.join(format!("{sid}.json"))).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(written["schema_version"], 1);
+        assert_eq!(
+            written["session_id"],
+            "93196c52-25cb-47ca-821c-cec391832eed"
+        );
+        assert!(written["written_at"].as_str().unwrap().contains('T'));
+        assert_eq!(written["cc_version"], "2.1.260");
+        assert_eq!(written["model"]["id"], "claude-fable-5-1");
+        assert_eq!(written["model"]["display_name"], "Fable 5.1");
+        assert_eq!(written["context_window"]["context_window_size"], 1_000_000);
+        assert_eq!(written["context_window"]["used_percentage"], 26);
+        assert_eq!(written["context_window"]["total_input_tokens"], 262_707);
+        assert_eq!(
+            written["context_window"]["current_usage"]["input_tokens"],
+            32
+        );
+    }
 
     /// NO_COLOR env var causes tc/tc_bold/tcs to emit plain text (no ANSI).
     #[test]

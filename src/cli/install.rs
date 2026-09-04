@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 pub struct InstallOpts {
     pub hooks: bool,
     pub all: bool,
+    pub subagent_statusline: bool,
     pub project_hooks: bool,
     pub dry_run: bool,
     pub force: bool,
@@ -102,6 +103,13 @@ pub fn run(opts: InstallOpts) -> Result<()> {
         let action = patch_statusline(&mut settings, &cmd, opts.force)?;
         say(opts.quiet, &format!("✓ statusLine {}", action));
         say(opts.quiet, &format!("  command: {}", cmd));
+
+        if opts.subagent_statusline {
+            let sub_cmd = format!("{} subagent-statusline", exe_str);
+            let sub_action = patch_subagent_statusline(&mut settings, &sub_cmd, opts.force)?;
+            say(opts.quiet, &format!("✓ subagentStatusLine {}", sub_action));
+            say(opts.quiet, &format!("  command: {}", sub_cmd));
+        }
     }
 
     if install_hooks {
@@ -366,6 +374,33 @@ fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'st
         }
     }
     obj.insert("statusLine".to_string(), new_block.clone());
+    Ok(match prior {
+        None => "新增",
+        Some(p) if p == new_block => "已是最新（無變動）",
+        Some(_) => "更新",
+    })
+}
+
+/// Idempotently add `settings.json.subagentStatusLine` pointing at
+/// `<binary> subagent-statusline`. Opt-in only (`--subagent-statusline`),
+/// and only called when `statusLine.command` already ends with
+/// `codeforge statusline` (checked by the caller, which just wrote it).
+/// Mirrors `patch_statusline`'s merge/force semantics.
+fn patch_subagent_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'static str> {
+    require_object_root(settings)?;
+    let new_block = json!({
+        "type": "command",
+        "command": cmd,
+        MARKER_KEY: current_marker(),
+    });
+    let obj = settings.as_object_mut().expect("checked");
+    let prior = obj.get("subagentStatusLine").cloned();
+    if let Some(p) = &prior {
+        if !statusline_is_codeforge(p) && !force {
+            bail!("settings.json.subagentStatusLine 已被其他程式設定（不是 codeforge）；使用 --force 覆蓋");
+        }
+    }
+    obj.insert("subagentStatusLine".to_string(), new_block.clone());
     Ok(match prior {
         None => "新增",
         Some(p) if p == new_block => "已是最新（無變動）",
@@ -874,6 +909,57 @@ mod tests {
         let mut s = json!(["arr"]);
         let err = patch_statusline(&mut s, "/x", false).unwrap_err();
         assert!(err.to_string().contains("array"));
+    }
+
+    fn subagent_statusline_cmd(s: &Value) -> &str {
+        s["subagentStatusLine"]["command"].as_str().unwrap()
+    }
+
+    #[test]
+    fn subagent_statusline_merge_into_empty() {
+        let mut s = json!({});
+        let action =
+            patch_subagent_statusline(&mut s, "/abs/codeforge subagent-statusline", false).unwrap();
+        assert_eq!(action, "新增");
+        assert_eq!(
+            subagent_statusline_cmd(&s),
+            "/abs/codeforge subagent-statusline"
+        );
+        assert!(s["subagentStatusLine"][MARKER_KEY]
+            .as_str()
+            .unwrap()
+            .starts_with("codeforge@"));
+    }
+
+    #[test]
+    fn subagent_statusline_idempotent_on_own() {
+        let mut s = json!({});
+        patch_subagent_statusline(&mut s, "/x subagent-statusline", false).unwrap();
+        let action = patch_subagent_statusline(&mut s, "/x subagent-statusline", false).unwrap();
+        assert_eq!(action, "已是最新（無變動）");
+    }
+
+    #[test]
+    fn subagent_statusline_refuses_user_owned_without_force() {
+        let mut s = json!({"subagentStatusLine": {"type": "command", "command": "/user/script"}});
+        let err = patch_subagent_statusline(&mut s, "/x subagent-statusline", false).unwrap_err();
+        assert!(err.to_string().contains("subagentStatusLine"));
+    }
+
+    #[test]
+    fn install_only_adds_subagent_statusline_when_flag_passed() {
+        let mut s = json!({});
+        // Simulate the caller: statusLine patched first (always, when
+        // install_statusline is true), subagentStatusLine only when the
+        // opt-in flag is set.
+        patch_statusline(&mut s, "/abs/codeforge statusline", false).unwrap();
+        assert!(s.get("subagentStatusLine").is_none());
+
+        patch_subagent_statusline(&mut s, "/abs/codeforge subagent-statusline", false).unwrap();
+        assert_eq!(
+            subagent_statusline_cmd(&s),
+            "/abs/codeforge subagent-statusline"
+        );
     }
 
     #[test]
