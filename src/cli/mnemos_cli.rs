@@ -106,7 +106,7 @@ fn run_cite_detect(
         }
     };
 
-    let hits = cite_detect::detect(&transcript, &atoms);
+    let hits = detect_cites(&transcript, &atoms);
     if hits.is_empty() {
         println!("ℹ {}", rust_i18n::t!("mnemos.cite_detect_none"));
         return Ok(());
@@ -134,6 +134,16 @@ fn run_cite_detect(
         hits.len()
     );
     Ok(())
+}
+
+fn detect_cites(
+    transcript: &str,
+    atoms: &[context::ContextAtom],
+) -> Vec<cite_detect::DetectedCite> {
+    cite_detect::detect(
+        &cite_detect::citable_text_from_transcript(transcript),
+        atoms,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -321,5 +331,23 @@ mod tests {
         let q = context_query_params("t", None, None, false);
         assert!(q.iter().all(|(k, _)| *k != "include_themes"));
         assert_eq!(q, vec![("topic", "t".to_string())]);
+    }
+
+    #[test]
+    fn test_cite_detect_caller_seam() {
+        let atoms = vec![crate::mnemos::context::ContextAtom {
+            id: "atom1".to_string(),
+            kind: "lesson".to_string(),
+            title: "Notify drops wakeup signals".to_string(),
+            body: String::new(),
+            citation_count: 0,
+            pinned: false,
+        }];
+        let t1 = r#"{"type":"attachment","attachment":{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"Notify drops wakeup signals"}}}"#;
+        assert_eq!(super::detect_cites(t1, &atoms).len(), 0);
+        let t2 = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"Notify drops wakeup signals"}]}}"#;
+        assert_eq!(super::detect_cites(t2, &atoms).len(), 1);
+        let t3 = "Notify drops wakeup signals";
+        assert_eq!(super::detect_cites(t3, &atoms).len(), 1);
     }
 }
