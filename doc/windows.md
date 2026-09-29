@@ -2,7 +2,7 @@
 
 Verified end-to-end on Windows 11 (x86_64, MSVC toolchain), 2026-09-29: build → install →
 Claude Code wiring → `init` / `learn` / `adopt` / `dream` / `memory search` / `statusline` /
-`doctor` / `daemon start|status|stop`. The full test suite passes on `windows-latest` in CI.
+`doctor` / `daemon start|status|stop`. The full test suite passes locally on Windows (no Windows CI job).
 
 > **Not yet available on Windows:** the `curl … | sh` installer and `cargo binstall` (no Windows
 > release asset is published — `release.yml` builds Linux/macOS only). Build from source as below.
