@@ -82,7 +82,17 @@ Restart Claude Code (or `/clear`) to see the statusline.
 | Statusline session-version chip | Read from `claude --version`; the Linux `/proc` ancestor walk has no Windows equivalent. |
 | Hook shell | `codeforge dream --quiet 2>/dev/null \|\| true` etc. rely on Git Bash being what Claude Code uses on Windows (the default when Git for Windows is installed). |
 
-## 5. Where Windows-specific code lives
+## 5. Verifying changes locally (no GitHub CI)
+
+```bash
+./scripts/check-all.sh    # from Git Bash: Windows-native pass + Linux pass through WSL
+```
+
+It picks the MSVC toolchain automatically on Windows, uses a separate cargo target dir inside WSL
+(`~/.cache/codeforge-check-target`) and needs a Rust ≥ 1.88 + gcc in the WSL distro. Add
+`--install-hook` to run it before every `git push`. macOS cannot be covered locally.
+
+## 6. Where Windows-specific code lives
 
 All OS differences are isolated in [`src/platform.rs`](../src/platform.rs); the rest of the code
 calls its functions and contains no `cfg(windows)` / `cfg(unix)`:

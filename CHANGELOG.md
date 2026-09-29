@@ -17,7 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Unix keeps `nice`/`timeout`), and shell-safe path rendering for hook/statusLine commands
   (forward slashes + quoting, since Claude Code runs hooks through Git Bash). Home directory now
   comes from `dirs::home_dir()` instead of `$HOME`; `bootstrap` runs `fmt.sh` via Git for Windows'
-  bash; `.gitattributes` forces LF for scripts/sources. See [`doc/windows.md`](doc/windows.md).
+  bash; `.gitattributes` forces LF for scripts/sources. New `scripts/check-all.sh` (+ opt-in
+  `.githooks/pre-push`) runs every gate locally — Windows-native plus a Linux pass via WSL — in place of
+  GitHub CI. See [`doc/windows.md`](doc/windows.md).
 
 - **Live context files** (autopilot v2.36.1 P1) — `codeforge statusline` now also writes a small
   RAM-backed JSON snapshot (`<live-base>/context/<sid>.json`) after every render, and a new

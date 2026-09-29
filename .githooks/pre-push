@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Enabled by `./scripts/check-all.sh --install-hook`. Local stand-in for CI: refuse the push if
+# any gate fails. Skip once with `git push --no-verify`.
+exec "$(git rev-parse --show-toplevel)/scripts/check-all.sh"
