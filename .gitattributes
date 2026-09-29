@@ -5,3 +5,4 @@
 *.rs text eol=lf
 *.toml text eol=lf
 *.lock text eol=lf
+.githooks/* text eol=lf

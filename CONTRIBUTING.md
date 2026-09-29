@@ -31,7 +31,16 @@ cargo test
 
 ## Quality gate
 
-Before pushing or opening a PR, run:
+One command runs every gate locally (pinned fmt, clippy `-D warnings`, tests, cjk-safe, doc-drift; on
+Windows it also runs a Linux pass through WSL):
+
+```bash
+./scripts/check-all.sh                  # add --no-wsl to skip the Linux pass
+./scripts/check-all.sh --install-hook   # make `git push` run it automatically (bypass: --no-verify)
+```
+
+Note the project does not use GitHub Actions as its gate — run this yourself before pushing. What it
+runs, step by step:
 
 ```bash
 cargo fmt --all -- --check
