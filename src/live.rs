@@ -248,8 +248,10 @@ pub fn write_live_json(base: &Path, file_name: &str, value: &serde_json::Value) 
 
 #[cfg(unix)]
 fn create_dir_all_0700(dir: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::create_dir_all(dir)?;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    // mode(0o700) applies to every directory this call creates, not only the leaf —
+    // plain create_dir_all left new ancestors (e.g. `$XDG_RUNTIME_DIR/autopilot`) at 0775.
+    fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
     let perms = fs::Permissions::from_mode(0o700);
     fs::set_permissions(dir, perms)
 }
@@ -414,6 +416,20 @@ mod tests {
         std::env::remove_var("AUTOPILOT_LIVE_DIR");
         std::env::remove_var("XDG_RUNTIME_DIR");
         std::env::remove_var("CODEFORGE_PROC_MOUNTS");
+    }
+
+    /// (g) newly created ancestors are 0700 too, not just the leaf — the
+    /// `$XDG_RUNTIME_DIR/autopilot` parent used to come out 0775.
+    #[cfg(unix)]
+    #[test]
+    fn write_live_json_creates_ancestors_0700() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("autopilot");
+        let base = parent.join("context");
+        write_live_json(&base, "s.json", &serde_json::json!({"a": 1})).unwrap();
+        let mode = fs::metadata(&parent).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
     }
 
     /// (f) writer produces mode 0600 and atomic rename (no `.tmp` left).
