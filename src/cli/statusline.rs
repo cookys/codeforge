@@ -134,7 +134,7 @@ fn read_status_input() -> (StatusInput, serde_json::Value) {
     let mut line = String::new();
     if stdin.lock().read_line(&mut line).is_ok() && !line.trim().is_empty() {
         if std::env::var("CODEFORGE_DEBUG").is_ok() {
-            let _ = std::fs::write("/tmp/codeforge-sl.json", &line);
+            let _ = std::fs::write(std::env::temp_dir().join("codeforge-sl.json"), &line);
         }
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
             let model = v["model"]["display_name"]
@@ -527,6 +527,7 @@ fn fmt_remaining(resets_at: i64) -> String {
 
 /// Extract Claude version from a binary path like:
 ///   /home/user/.local/share/claude/versions/2.1.107
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))] // only the Linux /proc walk calls it
 fn extract_claude_ver(path: &str) -> Option<String> {
     let after = path.split("/versions/").nth(1)?;
     let ver = after.split('/').next()?;

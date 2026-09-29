@@ -79,7 +79,10 @@ fn resolve_live_base_uncached() -> (PathBuf, LiveBaseSource) {
         }
     }
 
-    warn_once("autopilot: no RAM-backed candidate for live context dir found; falling back to ~/.autopilot (disk-backed)");
+    // On Windows the disk-backed fallback is the expected case, not worth a warning per render.
+    if !cfg!(windows) {
+        warn_once("autopilot: no RAM-backed candidate for live context dir found; falling back to ~/.autopilot (disk-backed)");
+    }
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     (home.join(".autopilot"), LiveBaseSource::Fallback)
 }
@@ -113,6 +116,10 @@ fn current_uid() -> u32 {
 /// True if `dir` (or its nearest existing ancestor, if `dir` doesn't exist
 /// yet) sits on a `tmpfs`/`ramfs` mount.
 fn is_ram_backed(dir: &Path) -> bool {
+    // Windows has no tmpfs/ramfs (and no findmnt or /proc/mounts): never RAM-backed.
+    if cfg!(windows) {
+        return false;
+    }
     let probe_path = nearest_existing_ancestor(dir);
     match probe_fstype_findmnt(&probe_path) {
         Some(fstype) => is_ram_fstype(&fstype),
@@ -251,7 +258,10 @@ fn create_dir_all_0700(dir: &Path) -> io::Result<()> {
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     // mode(0o700) applies to every directory this call creates, not only the leaf —
     // plain create_dir_all left new ancestors (e.g. `$XDG_RUNTIME_DIR/autopilot`) at 0775.
-    fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)?;
     let perms = fs::Permissions::from_mode(0o700);
     fs::set_permissions(dir, perms)
 }
@@ -276,12 +286,15 @@ fn set_mode_0600(_path: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::sync::Mutex;
 
     // Serializes tests that mutate process-global env vars — `cargo test`
     // runs tests in threads within one process, and env vars are global.
+    #[cfg(unix)]
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    #[cfg(unix)]
     fn fake_findmnt_dir(script: &str) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("findmnt");
@@ -298,6 +311,7 @@ mod tests {
     /// system `findmnt` anywhere else on PATH would otherwise answer ahead
     /// of (or instead of) the fixture we're trying to simulate, since
     /// `Command::new("findmnt")` does a normal PATH search.
+    #[cfg(unix)]
     fn with_only_path<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
         let orig = std::env::var("PATH").unwrap_or_default();
         std::env::set_var("PATH", dir);
@@ -307,6 +321,7 @@ mod tests {
     }
 
     /// (a) fake findmnt returning tmpfs for the XDG candidate ⇒ chosen.
+    #[cfg(unix)]
     #[test]
     fn findmnt_tmpfs_selects_xdg_candidate() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -326,6 +341,7 @@ mod tests {
 
     /// (b) fake findmnt returning ext4 for every candidate ⇒ base is
     /// ~/.autopilot and exactly one warning line on stderr.
+    #[cfg(unix)]
     #[test]
     fn findmnt_ext4_everywhere_falls_back_and_warns_once() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -348,6 +364,7 @@ mod tests {
 
     /// (c) findmnt absent + CODEFORGE_PROC_MOUNTS fixture ⇒ /proc/mounts
     /// path works.
+    #[cfg(unix)]
     #[test]
     fn missing_findmnt_falls_back_to_proc_mounts() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -382,6 +399,7 @@ mod tests {
 
     /// (d) ext4 override + tmpfs XDG ⇒ XDG chosen (override rejected, not
     /// fatal — falls through to the next candidate).
+    #[cfg(unix)]
     #[test]
     fn ext4_override_falls_through_to_tmpfs_xdg() {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -506,6 +524,7 @@ mod tests {
     // (the real `resolve_live_base()` caches in a `OnceLock` for the life
     // of the process, which would make every test after the first see a
     // stale answer).
+    #[cfg(unix)]
     fn resolve_live_base_uncached_for_test() -> (PathBuf, LiveBaseSource) {
         resolve_live_base_uncached()
     }

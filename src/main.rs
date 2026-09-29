@@ -16,6 +16,7 @@ mod llm;
 mod memory;
 mod mnemos;
 mod pet;
+mod platform;
 mod power;
 mod snapshot;
 mod tui;

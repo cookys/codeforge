@@ -27,7 +27,7 @@
 
 use anyhow::{Context, Result};
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 /// digest/compile 用的 model alias。env `CODEFORGE_DIGEST_MODEL`,預設 `opus`(bake-off 最佳)。
 pub fn digest_model() -> String {
@@ -151,18 +151,16 @@ fn run_cli(label: &str, argv: &[&str], prompt: &str) -> Result<String> {
         anyhow::anyhow!("`{label}` 限流:已有 codeforge LLM 子程序在跑 → 退 fallback")
     })?;
 
-    // 限流閥 3:`nice -n 19` 包住 → 子程序永遠讓步給其他 CPU 工作(如本機長跑運算)。
-    let mut child = Command::new("nice")
-        .arg("-n")
-        .arg("19")
-        .arg("timeout")
-        .arg(timeout_secs().to_string())
-        .args(argv)
+    // 限流閥 3:最低優先權(Unix `nice -n 19`,Windows BELOW_NORMAL)→ 子程序永遠讓步給
+    // 其他 CPU 工作(如本機長跑運算);timeout 由 platform 包裝(Unix `timeout`、Windows watchdog)。
+    let mut child = crate::platform::low_priority_command(argv, timeout_secs())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("spawn `{label}` 失敗(CLI 不在 PATH?)"))?;
+    // 子程序被 wait 回收後才 drop(見下方 wait_with_output),避免對回收的 pid 動手。
+    let timeout_guard = crate::platform::guard_timeout(child.id(), timeout_secs());
 
     {
         // prompt 走 stdin;寫完 drop → EOF,子程序才開始處理。
@@ -173,6 +171,7 @@ fn run_cli(label: &str, argv: &[&str], prompt: &str) -> Result<String> {
     let out = child
         .wait_with_output()
         .with_context(|| format!("等 `{label}` 結束失敗"))?;
+    drop(timeout_guard);
     if !out.status.success() {
         anyhow::bail!(
             "`{label}` 失敗(code {:?}):{}",

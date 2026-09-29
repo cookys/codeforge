@@ -461,7 +461,6 @@ pub fn should_refresh(liveness: Option<&LivenessCache>, now: i64) -> bool {
 /// If all pass → spawn detached `codeforge mnemos-cli probe` child.
 /// Failures at any stage are silently swallowed — statusline must never block.
 pub fn maybe_spawn_probe() {
-    use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
 
     if !crate::mnemos::config::MnemosConfig::opted_in() {
@@ -486,13 +485,13 @@ pub fn maybe_spawn_probe() {
     // process_group(0): put probe in its own process group so Claude Code's
     // SIGTERM tree (sent to statusline's pgid) does not reach the probe child.
     // stdio all-null: prevents probe from inheriting the CC statusline pipe.
-    let _ = Command::new(exe)
-        .args(["mnemos-cli", "probe"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .process_group(0)
-        .spawn();
+    let _ = crate::platform::spawn_detached(
+        Command::new(exe)
+            .args(["mnemos-cli", "probe"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null()),
+    );
     // spawn failure is swallowed; lock stays until stale-reclaim (INFLIGHT_GRACE).
     // On success, probe child releases the lock when it finishes.
 }

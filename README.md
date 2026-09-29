@@ -52,6 +52,9 @@ git clone https://github.com/cookys/codeforge && cd codeforge && cargo install -
 Requires Rust stable (MSRV 1.88). The built binary lands in
 `~/.cargo/bin/codeforge`.
 
+**Windows:** build from source (Options 1–2 have no Windows binary yet). Needs the MSVC toolchain
+and VS Build Tools — full walkthrough in [`doc/windows.md`](doc/windows.md).
+
 **Updating** — once installed (by any option above), update in place from the
 latest GitHub release without re-running the installer or juggling binary paths:
 

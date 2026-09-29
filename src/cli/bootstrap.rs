@@ -158,7 +158,7 @@ pub fn run(opts: BootstrapOpts) -> Result<()> {
                 opts.quiet,
                 &format!("   running {} --check ...", script.display()),
             );
-            match std::process::Command::new(&script).arg("--check").status() {
+            match crate::platform::run_shell_script(&script, &["--check"]) {
                 Ok(status) if status.success() => {
                     say(opts.quiet, "   ✓ fmt pin toolchain ready, formatting clean")
                 }
