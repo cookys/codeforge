@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Windows support** (MSVC toolchain, verified on Windows 11) — the crate now builds, passes its
-  test suite and runs end-to-end on Windows; new CI job `windows (clippy + test)`. All OS
+  test suite and runs end-to-end on Windows. All OS
   differences are isolated in the new `src/platform.rs`: cross-platform process
   alive/terminate/identity via `sysinfo` (replaces `kill`, `/proc` and Linux-only identity check),
   detached spawn, SIGTERM/Ctrl-Break stop signal, low-priority + timeout wrapper for `claude -p`
