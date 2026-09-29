@@ -81,10 +81,9 @@ pub fn run(opts: InstallOpts) -> Result<()> {
     }
 
     let exe = std::env::current_exe().context("讀取 codeforge binary 路徑失敗")?;
-    let exe_str = exe
-        .to_str()
-        .ok_or_else(|| anyhow!("binary 路徑含非 UTF-8 字元：{}", exe.display()))?
-        .to_string();
+    exe.to_str()
+        .ok_or_else(|| anyhow!("binary 路徑含非 UTF-8 字元：{}", exe.display()))?;
+    let exe_str = crate::platform::shell_path(&exe);
 
     let settings_path = opts
         .settings_path
@@ -335,16 +334,16 @@ fn default_global_settings_path() -> Result<PathBuf> {
     if let Ok(p) = std::env::var("CODEFORGE_CLAUDE_SETTINGS") {
         return Ok(PathBuf::from(p));
     }
-    let home = std::env::var("HOME").context("環境變數 HOME 未設定")?;
-    Ok(PathBuf::from(home).join(".claude").join("settings.json"))
+    let home = dirs::home_dir().context("找不到使用者 home 目錄")?;
+    Ok(home.join(".claude").join("settings.json"))
 }
 
 fn default_data_local_dir() -> Result<PathBuf> {
     if let Some(p) = dirs::data_local_dir() {
         return Ok(p);
     }
-    let home = std::env::var("HOME").context("HOME 未設定且無 data_local_dir")?;
-    Ok(PathBuf::from(home).join(".local").join("share"))
+    let home = dirs::home_dir().context("找不到使用者 home 目錄且無 data_local_dir")?;
+    Ok(home.join(".local").join("share"))
 }
 
 // ─── statusLine block ─────────────────────────────────────────────────────
@@ -501,7 +500,7 @@ fn patch_hooks(
                 "SessionStart",
                 None,
                 vec![hook_entry(
-                    &format!("node {}", check_improvements.display()),
+                    &format!("node {}", crate::platform::shell_path(&check_improvements)),
                     10000,
                     &marker,
                 )],
@@ -510,7 +509,7 @@ fn patch_hooks(
                 "PreToolUse",
                 Some("Edit|Write|Bash"),
                 vec![hook_entry(
-                    &format!("node {}", check_dev_flow.display()),
+                    &format!("node {}", crate::platform::shell_path(&check_dev_flow)),
                     5000,
                     &marker,
                 )],
@@ -523,7 +522,7 @@ fn patch_hooks(
                 None,
                 vec![
                     hook_entry(
-                        &format!("node {} session_start", emit_path.display()),
+                        &format!("node {} session_start", crate::platform::shell_path(&emit_path)),
                         3000,
                         &marker,
                     ),
@@ -553,11 +552,11 @@ fn patch_hooks(
                 None,
                 vec![
                     hook_entry(
-                        &format!("node {} session_end", emit_path.display()),
+                        &format!("node {} session_end", crate::platform::shell_path(&emit_path)),
                         3000,
                         &marker,
                     ),
-                    hook_entry(&format!("node {}", digest_path.display()), 30000, &marker),
+                    hook_entry(&format!("node {}", crate::platform::shell_path(&digest_path)), 30000, &marker),
                     // Memory pipeline: dream distills L0→L1, ship forwards to Mnemos.
                     // Order matters — ship reads the L1 that dream just produced.
                     hook_entry(
@@ -576,7 +575,7 @@ fn patch_hooks(
                 "PreCompact",
                 None,
                 vec![hook_entry(
-                    &format!("node {}", digest_path.display()),
+                    &format!("node {}", crate::platform::shell_path(&digest_path)),
                     30000,
                     &marker,
                 )],

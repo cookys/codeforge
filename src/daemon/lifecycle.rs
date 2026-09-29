@@ -87,16 +87,7 @@ fn is_stale_pidfile(path: &Path) -> Result<bool> {
     Ok(!pid_alive(pid))
 }
 
-pub fn pid_alive(pid: u32) -> bool {
-    // kill -0: send signal 0, which only tests for existence
-    match std::process::Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .output()
-    {
-        Ok(out) => out.status.success(),
-        Err(_) => false,
-    }
-}
+pub use crate::platform::pid_alive;
 
 /// Send SIGTERM to the given pid; wait up to `timeout` for it to exit.
 /// Validates process identity first (fixes C2: PID-recycling race).
@@ -112,11 +103,8 @@ pub fn send_sigterm(pid: u32, timeout: Duration) -> Result<()> {
         ));
     }
 
-    let status = std::process::Command::new("kill")
-        .args(["-TERM", &pid.to_string()])
-        .status()?;
-    if !status.success() {
-        return Err(anyhow!("kill -TERM {} 失敗（pid 可能已不存在）", pid));
+    if !crate::platform::request_terminate(pid) {
+        return Err(anyhow!("終止 pid {} 失敗（pid 可能已不存在）", pid));
     }
 
     // Poll for exit (~100ms intervals)
@@ -133,28 +121,10 @@ pub fn send_sigterm(pid: u32, timeout: Duration) -> Result<()> {
     ))
 }
 
-/// Verify the process at `pid` is a codeforge daemon (not a recycled PID).
-/// Checks the command line contains "codeforge daemon start".
-/// Only works on Linux; returns true on other platforms (graceful degradation).
-#[cfg(target_os = "linux")]
+/// Verify the process at `pid` is a codeforge daemon (not a recycled PID):
+/// its command line must contain "codeforge" and "daemon".
 pub(crate) fn verify_daemon_identity(pid: u32) -> bool {
-    // Read /proc/<pid>/cmdline (null-separated)
-    let cmdline_path = format!("/proc/{}/cmdline", pid);
-    match std::fs::read_to_string(&cmdline_path) {
-        Ok(cmdline) => {
-            // cmdline is null-separated, look for our signature
-            cmdline.contains("codeforge") && cmdline.contains("daemon")
-        }
-        Err(_) => false,
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-pub(crate) fn verify_daemon_identity(_pid: u32) -> bool {
-    // On non-Linux platforms, /proc may not be available.
-    // We can't verify, so assume it's valid and let send_sigterm
-    // check aliveness for true verification.
-    true
+    crate::platform::cmdline_contains(pid, &["codeforge", "daemon"])
 }
 
 /// Shutdown guard combining AtomicBool (durable flag) + Notify (wakeup hint).
@@ -212,15 +182,9 @@ pub fn install_signal_handlers() -> ShutdownGuard {
     let notify = guard.notify.clone();
 
     tokio::spawn(async move {
-        use signal::unix::{signal as new_signal, SignalKind};
-        let mut sigterm = match new_signal(SignalKind::terminate()) {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        if sigterm.recv().await.is_some() {
-            should_stop.store(true, Ordering::SeqCst);
-            notify.notify_waiters();
-        }
+        crate::platform::stop_signal().await;
+        should_stop.store(true, Ordering::SeqCst);
+        notify.notify_waiters();
     });
 
     let should_stop = guard.should_stop.clone();

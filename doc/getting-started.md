@@ -30,6 +30,9 @@
 
 ## Step 1 — Build and install the binary
 
+> **Windows?** Follow [`windows.md`](windows.md) instead — it covers the MSVC toolchain, Build Tools and
+> the path/hook differences, then rejoins this guide at Step 3.
+
 ```bash
 git clone https://github.com/cookys/codeforge ~/projects/codeforge
 cd ~/projects/codeforge

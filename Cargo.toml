@@ -82,6 +82,7 @@ self_update = { version = "0.44.0", default-features = false, features = ["archi
 # dev-only; promoted to a normal dependency — no new crate added to the
 # graph, tempfile was already present as a transitive/dev dep.
 tempfile = "3"
+sysinfo = { version = "0.38.4", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 # test-util: tokio 虛擬時鐘(start_paused),讓 backoff retry 測試不真的等 1s/5s/30s。
