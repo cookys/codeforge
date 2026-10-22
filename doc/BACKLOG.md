@@ -271,3 +271,11 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 - **autopilot**：autopilot 模式 / DOA 狀態指示。
 **Trigger**: 當 hangar-bridge 或 autopilot indicator 有了明確語義 + 狀態來源時。現在不做（無狀態來源、純預留）。
 **注意**: 每加一個 indicator 中段 fill 變窄；窄終端要靠 ladder 的 drop 順序保證不溢出（已有 `bottom_border_narrow_no_overflow` 測試守著）。
+
+## B28 — `install --force` 是 all-or-nothing：想蓋掉別人的 `subagentStatusLine` 就得清光所有 hook
+
+**Area**: `src/cli/install.rs`（`--force` doc 約 L53、`patch_subagent_statusline` 的 bail 約 L399、`--force` 確認提示約 L68-74）
+**Premise**: `codeforge install --subagent-statusline` 在 `settings.json.subagentStatusLine` 已被其他程式擁有時 bail（「使用 --force 覆蓋」），但 `--force` 的語義同時是「清除所有 hook entries（含非 codeforge）」（無 `--yes` 會再確認）。要覆蓋一個 statusline 欄位的人被迫連帶刪掉不相干的 hook。2026-09-05 一個 hangar 端 session 因此取消安裝，寧可不裝也不願失去一個非 codeforge 的 broadcast-gate hook，結果 foreman-guard 看不到 subagent 用量。（來源：hangar session 038a71c8 2026-09-05；2026-10-23 對照 install.rs 仍成立。）
+**Proposed**: 加 per-surface override（例如 `--replace-subagent-statusline`），或把 `--force` 限縮到 statusline 欄位，hook 全清另開獨立旗標。需補一個「非 codeforge hook 在該 override 後仍存活」的測試（先紅後綠）。
+**Trigger**: 下次動 `install.rs` 的 `--force` / statusline patch 路徑，或再有使用者因 `--force` 範圍而放棄安裝。
+**Not done**: 純 bug note，沒有改程式；不要順手重構 install.rs。
