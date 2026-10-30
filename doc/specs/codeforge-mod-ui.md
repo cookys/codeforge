@@ -88,6 +88,9 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
 
 - **資料契約**：codeforge 寫 `<live_base>/codeforge/pet.json`（`codeforge.pet-view/1`，見 README
   「Live context files」），mod 只讀檔、不解析人類文字、不 spawn codeforge。新顯示需求優先擴充這份契約。
+- **像素寵物（2026-10-31 上線）**：`village.sprite`（調色盤 + 每幀字元列，24×24 兩幀，`src/pet/sprite.rs`）。
+  forge-stats 在 terminal surface 用 `Raster` 半格畫（一格 = 上下兩像素），`$.clock.every(500)` 換幀 `$.ui.blit`，
+  cells 沒變就不送；其他 surface 與沒有 sprite 的村落畫 ASCII。對應規則見 `doc/plans/2026-10-31-pixel-pet.md` §2.5。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、tok/s、縮圖）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 
