@@ -66,6 +66,8 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     // 儲存寵物
     let pet = PetState::new(village, &stats);
     pet.save(&conn)?;
+    // 給 UI 讀者（mod pane）的快照；statusline 之後每次 render 都會更新
+    crate::pet::view::publish(Some((&pet, village)), Default::default());
 
     // 顯示開場動畫
     render_pet_intro(village, &pet, bonus_stats)?;

@@ -93,8 +93,19 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             // window is one daemon cycle).
             let strategy = live.strategy.unwrap_or(DEFAULT_STRATEGY);
             render_full(&mut out, &data, &live.state, village, strategy, width, ctx)?;
+            crate::pet::view::publish(
+                Some((&live.state, village)),
+                crate::pet::view::Extras {
+                    mood: live.mood,
+                    strategy: Some(strategy.as_str()),
+                    message: live.last_message.as_deref(),
+                },
+            );
         }
-        None => render_no_pet(&mut out, &data, width)?,
+        None => {
+            render_no_pet(&mut out, &data, width)?;
+            crate::pet::view::publish(None, Default::default());
+        }
     }
 
     out.flush()?;
