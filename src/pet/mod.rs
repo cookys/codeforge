@@ -2,6 +2,7 @@ pub mod ability;
 pub mod badges;
 pub mod live_state;
 pub mod session;
+pub mod sprite;
 pub mod state;
 pub mod view;
 pub mod village;
