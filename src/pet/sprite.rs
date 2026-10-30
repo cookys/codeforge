@@ -17,6 +17,11 @@ pub struct Sprite {
     pub frame_ms: u32,
 }
 
+/// Sprite width and height in pixels (one cell = two vertical pixels, so 24x12 cells).
+pub const SIZE: usize = 24;
+/// The character that means "no pixel".
+pub const TRANSPARENT: char = '.';
+
 /// xterm-256 colour cube channel values.
 const CUBE: [u8; 6] = [0, 95, 135, 175, 215, 255];
 
@@ -101,15 +106,18 @@ pub fn for_village(id: &str) -> Option<&'static Sprite> {
 
 /// Check a sprite against the contract; the error names the first problem.
 pub fn validate(s: &Sprite) -> Result<(), String> {
-    if s.width == 0 || s.height == 0 {
-        return Err("width and height must be > 0".into());
+    // The contract fixes the size (readers lay out a 24-column, 12-row Raster).
+    if s.width != SIZE || s.height != SIZE {
+        return Err(format!(
+            "size {}x{} must be {SIZE}x{SIZE}",
+            s.width, s.height
+        ));
     }
-    // `is_multiple_of` needs Rust 1.87; MSRV is 1.85.
-    if s.height & 1 != 0 {
-        return Err(format!("height {} must be even", s.height));
-    }
-    if !s.transparent.is_ascii() {
-        return Err("transparent must be one ASCII char".into());
+    if s.transparent != TRANSPARENT {
+        return Err(format!(
+            "transparent must be {TRANSPARENT:?}, got {:?}",
+            s.transparent
+        ));
     }
     for (c, rgb) in s.palette {
         if !c.is_ascii() || *c == s.transparent {
@@ -208,42 +216,48 @@ mod tests {
         assert_ne!(FERRIS.frames[0], FERRIS.frames[1]);
     }
 
+    /// Ferris with one change applied; the result of validating it.
     fn broken(f: impl FnOnce(&mut Sprite)) -> Result<(), String> {
-        let mut s = Sprite {
-            width: 2,
-            height: 2,
-            transparent: '.',
-            palette: &[('o', [215, 95, 0])],
-            frames: &[&["o.", ".o"], &[".o", "o."]],
-            frame_ms: 500,
-        };
-        assert_eq!(validate(&s), Ok(()), "baseline sprite must be valid");
+        let mut s = Sprite { ..FERRIS };
         f(&mut s);
         validate(&s)
     }
 
+    /// Ferris's frames with row `row` of frame 1 replaced.
+    fn frames_with(row: usize, text: &str) -> &'static [&'static [&'static str]] {
+        let mut f1: Vec<&'static str> = FERRIS.frames[1].to_vec();
+        f1[row] = Box::leak(text.to_string().into_boxed_str());
+        let f1: &'static [&'static str] = Box::leak(f1.into_boxed_slice());
+        Box::leak(vec![FERRIS.frames[0], f1].into_boxed_slice())
+    }
+
     #[test]
     fn validate_rejects_each_contract_break() {
-        assert!(broken(|s| s.height = 3).unwrap_err().contains("even"));
-        assert!(broken(|s| s.width = 3).unwrap_err().contains("chars"));
-        assert!(broken(|s| s.frames = &[&["o.", ".o"]])
+        let err = |f: fn(&mut Sprite)| broken(f).unwrap_err();
+        assert!(err(|s| s.height = 22).contains("24x24"));
+        assert!(err(|s| s.width = 16).contains("24x24"));
+        assert!(err(|s| s.transparent = ' ').contains("transparent"));
+        assert!(err(|s| s.frames = &FERRIS.frames[..1]).contains("2 frames"));
+        assert!(err(|s| s.frame_ms = 100).contains("500"));
+        assert!(err(|s| s.palette = &[('o', [200, 95, 0])]).contains("cube"));
+        assert!(err(|s| s.palette = &[('é', [215, 95, 0])]).contains("ASCII"));
+        assert!(err(|s| s.palette = &[('.', [215, 95, 0])]).contains("ASCII"));
+        let mut extra: Vec<(char, [u8; 3])> = FERRIS.palette.to_vec();
+        extra.push(('z', [0, 0, 0]));
+        let extra: &'static [(char, [u8; 3])] = Box::leak(extra.into_boxed_slice());
+        assert!(broken(|s| s.palette = extra)
             .unwrap_err()
-            .contains("2 frames"));
-        assert!(broken(|s| s.frames = &[&["ox", ".o"], &[".o", "o."]])
+            .contains("never used"));
+        let short = frames_with(3, &".".repeat(23));
+        assert!(broken(|s| s.frames = short).unwrap_err().contains("chars"));
+        let alien = frames_with(3, &format!("x{}", ".".repeat(23)));
+        assert!(broken(|s| s.frames = alien)
             .unwrap_err()
             .contains("not in the palette"));
-        assert!(broken(|s| s.palette = &[('o', [200, 95, 0])])
-            .unwrap_err()
-            .contains("cube"));
-        assert!(
-            broken(|s| s.palette = &[('o', [215, 95, 0]), ('h', [255, 135, 0])])
-                .unwrap_err()
-                .contains("never used")
-        );
-        assert!(broken(|s| s.frame_ms = 100).unwrap_err().contains("500"));
-        assert!(broken(|s| s.transparent = 'o')
-            .unwrap_err()
-            .contains("transparent"));
+        let few = &FERRIS.frames[1][..23];
+        let few: &'static [&'static [&'static str]] =
+            Box::leak(vec![FERRIS.frames[0], few].into_boxed_slice());
+        assert!(broken(|s| s.frames = few).unwrap_err().contains("rows"));
     }
 
     #[test]
