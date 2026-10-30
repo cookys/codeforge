@@ -61,4 +61,7 @@
 
 | Phase | 內容 | 狀態 |
 |-------|------|------|
-| — | intent / proposal / plan / plan-review | 進行中 |
+| — | intent / proposal / plan / plan-review | ✅（G1 CONDITIONAL，4 條 non-blocking 全採納） |
+| P1 | codeforge `village.sprite` 契約 + Ferris 兩幀（`9c01100`） | ✅ 875 tests |
+| P2 | forge-stats Raster 半格 + 500 ms 待機動畫（mod，repo 外） | ✅ 11 mod tests |
+| P3 | 部署（`cargo install`，live pet.json `24 24 2`）+ owner 目視 | 等 owner 目視 |
