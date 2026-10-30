@@ -35,3 +35,10 @@ Declare MSRV via `rust-version = "1.88"` in `[package]` of Cargo.toml
 **Date**: 2026-04-16 | **Context**: `src/pet/state.rs` xp_to_next 計算
 **Problem**: `(xp_to_next as f32 * 1.5) as u32` — f32 在 ~16M 失去精度，u32 在 ~4.3B overflow，`as u32` 在 release build 會 wraps（非 panic），若 wraps 為 0 則 `while xp >= xp_to_next` 變無限迴圈。
 **Solution**: 用 f64 + 上限 cap：`((xp_to_next as f64 * 1.5) as u64).min(10_000_000) as u32`
+
+## 字串續行（行尾 `\`）會吃掉下一行開頭的空白 → ASCII art 默默對不齊
+
+**Date**: 2026-10-31 | **Context**: `src/pet/village.rs` 的 `ascii_small` / `ascii_full`
+**Problem**: 圖案寫成 `"\` 換行、每行 `...\n\` 的續行字面字串。Rust 的 `\`+換行會把**下一行開頭所有空白**一併略過，原始碼裡看起來對齊的縮排在執行時全部消失 → `pet` / `adopt` / statusline 右欄的寵物全歪。編譯不報錯、肉眼看原始碼也像是對的。
+**Solution**: 每行一個字面字串，用 `concat!(" _~^~^~_\n", "\\/  oo  \\/\n", ...)` 串起來（`concat!` 產出 `&'static str`，可放在 `static`）。`village.rs` 測試釘住縮排（例：rust `ascii_full` 第一行 == `"   _~^~^~_"`）與 `ascii_small` 寬度 ≤ ART_W。
+**Related**: `.claude/skills/ascii-pet-artist.md`（寫法段）、commit d2d3d97
