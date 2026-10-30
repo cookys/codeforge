@@ -279,3 +279,11 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 **Proposed**: 加 per-surface override（例如 `--replace-subagent-statusline`），或把 `--force` 限縮到 statusline 欄位，hook 全清另開獨立旗標。需補一個「非 codeforge hook 在該 override 後仍存活」的測試（先紅後綠）。
 **Trigger**: 下次動 `install.rs` 的 `--force` / statusline patch 路徑，或再有使用者因 `--force` 範圍而放棄安裝。
 **Not done**: 純 bug note，沒有改程式；不要順手重構 install.rs。
+
+## B29 — ascii-pet-artist 指南寫小圖「最多 4 行」，實際五村都是 6 行
+
+**Area**: `.claude/skills/ascii-pet-artist.md`（硬性約束段、新村莊 checklist）、`src/pet/village.rs` struct 註解（「6 行 × ≤10 字」）、`src/cli/statusline.rs` `render_full` 的 art 欄
+**Premise**: 指南說 `ascii_small` 最多 4 行（對應 render_full rows 0-3），但 struct 註解寫 6 行、現有五個村落的小圖都是 6 行，statusline 實際畫出 5 行。三處說法不一，新增村落時不知道該畫幾行。（來源：2026-10-31 pet-view-snapshot 收尾的 doc-sync 掃描。）
+**Proposed**: 先量 `render_full` 實際能放幾列 art，再把指南、struct 註解統一成那個數字，並在 `village.rs` 測試釘住上限。
+**Trigger**: 下次新增或重畫村落圖案，或動 statusline 的 art 欄。
+**Not done**: 只記錄落差；2026-10-31 只修了縮排、加了 `concat!` 寫法說明，沒有動行數規格。
