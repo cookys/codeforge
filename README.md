@@ -253,8 +253,8 @@ The liveness probe runs as a detached background process (`process_group` isolat
 
 `codeforge statusline` and the opt-in `codeforge subagent-statusline` each write a small JSON
 snapshot to a RAM-backed directory after every render, so other tools can poll session state
-without touching the transcript. Two files, one writer each, no merge — neither writer reads the
-other's file.
+without touching the transcript. One writer per file, no merge — no writer reads another's file.
+The statusline also writes a pet view snapshot (below).
 
 **Base-dir resolution** (fixed order, first accepted candidate wins):
 
@@ -305,6 +305,27 @@ warning line to stderr per process.
 `<sid>` is the raw stdin `session_id`, sanitized: every Unicode scalar not in `[A-Za-z0-9_-]` is
 replaced with `_`, then the result is truncated to the first 64 scalars; empty input becomes
 `unknown`.
+
+**Pet view** (under `<base>/codeforge/`, same mode and atomic write): `pet.json` is a
+display-ready copy of the pet for UI readers such as a Claude Code mod pane, so they can draw it
+without running `codeforge` or needing a `.codeforge/` in their cwd. `codeforge statusline` rewrites
+it after every render (any project) and `codeforge adopt` writes it as soon as a pet is created.
+Schema `codeforge.pet-view/1` (full shape in `src/pet/view.rs`):
+
+```json
+{
+  "schema": "codeforge.pet-view/1",
+  "written_at": "<RFC3339 UTC>",
+  "pet": {"name": "Ferris", "level": 1, "xp": 0, "xp_to_next": 100,
+          "hp": 16, "atk": 19, "def": 11, "sup": 18, "ver": 13,
+          "mood": null, "strategy": "explorer", "message": null},
+  "village": {"id": "rust", "display_name": "The Forge-Ruins", "language": "Rust",
+              "tagline": "...", "rgb": [215, 95, 0],
+              "art_small": ["..."], "art_full": ["..."]}
+}
+```
+
+`pet` and `village` are both `null` until a pet is adopted.
 
 A write failure never changes statusline rendering or exit code — it's logged to stderr once per
 process and otherwise swallowed.
