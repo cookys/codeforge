@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pet pixel sprite** — `pet.json` now carries `village.sprite`: a 24×24, two-frame (idle /
+  blink) pixel sprite for Ferris (Rust village) as a palette plus rows of palette characters, for
+  UI readers that draw terminal half blocks; `null` for villages without one yet. Sprites are
+  checked against the contract (`src/pet/sprite.rs`) before they are written.
 - **Pet view snapshot** — `codeforge statusline` (every render) and `codeforge adopt` write
   `<live_base>/codeforge/pet.json` (schema `codeforge.pet-view/1`: pet state, village, ASCII art)
   next to the live context files, so UI readers (e.g. a Claude Code mod pane) can draw the pet

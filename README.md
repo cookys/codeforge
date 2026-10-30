@@ -321,11 +321,18 @@ Schema `codeforge.pet-view/1` (full shape in `src/pet/view.rs`):
           "mood": null, "strategy": "explorer", "message": null},
   "village": {"id": "rust", "display_name": "The Forge-Ruins", "language": "Rust",
               "tagline": "...", "rgb": [215, 95, 0],
-              "art_small": ["..."], "art_full": ["..."]}
+              "art_small": ["..."], "art_full": ["..."],
+              "sprite": {"width": 24, "height": 24, "transparent": ".",
+                         "palette": {"o": [215, 95, 0], "...": "..."},
+                         "frames": [["24 rows of 24 palette chars"], ["..."]],
+                         "frame_ms": 500}}
 }
 ```
 
-`pet` and `village` are both `null` until a pet is adopted.
+`pet` and `village` are both `null` until a pet is adopted. `village.sprite` is always present
+for an adopted pet: a pixel sprite for UI readers that draw terminal half blocks (one cell = two
+vertical pixels, so `height` is even; colours stay inside the xterm-256 cube), or `null` when the
+village has no sprite yet (only Rust/Ferris has one) — readers then fall back to the ASCII art.
 
 A write failure never changes statusline rendering or exit code — it's logged to stderr once per
 process and otherwise swallowed.
