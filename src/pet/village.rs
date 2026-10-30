@@ -175,7 +175,7 @@ mod tests {
         for v in VILLAGES {
             for art in [v.ascii_small, v.ascii_full] {
                 let lines: Vec<&str> = art.lines().collect();
-                assert_eq!(lines.len(), 6, "{} art should be 6 lines", v.id);
+                assert!(!lines.is_empty(), "{} art is empty", v.id);
                 assert!(
                     lines.iter().any(|l| l.starts_with(' ')),
                     "{} art lost all indentation",

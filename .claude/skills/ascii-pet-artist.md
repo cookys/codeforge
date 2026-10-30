@@ -15,6 +15,19 @@ ascii_full (pet card / 未來 TUI 用)：
   - 每行寬度 ≤ 20
 ```
 
+**寫法：每行一個字面字串，用 `concat!` 串起來。** 不要用 Rust 字串續行（行尾 `\`），
+它會吃掉下一行開頭的空白，圖案就對不齊了（2026-10-31 修過一次）。
+
+```rust
+ascii_small: concat!(
+    " _~^~^~_\n",
+    "\\/  oo  \\/\n",
+    "   ~   ~"
+),
+```
+
+`village.rs` 的測試會檢查縮排還在、`ascii_small` 每行不超過 ART_W。
+
 ## 設計原則（從 ASCII art 社群整理）
 
 ### 1. Silhouette-first
