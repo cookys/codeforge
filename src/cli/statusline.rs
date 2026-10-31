@@ -235,7 +235,9 @@ fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> boo
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
         return false;
     };
-    let age = v["written_at_ms"].as_i64().map(|w| now_ms - w);
+    let age = v["written_at_ms"]
+        .as_i64()
+        .and_then(|w| now_ms.checked_sub(w));
     v["schema"] == MOD_ALIVE_SCHEMA
         && v["session_id"] == raw_sid
         && age.is_some_and(|a| (0..MOD_ALIVE_FRESH_MS).contains(&a))
@@ -1842,6 +1844,18 @@ mod tests {
         assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
         // empty stdin session id never matches
         assert!(!read_mod_heartbeat(base, "", HB_NOW));
+    }
+
+    #[test]
+    fn heartbeat_extreme_timestamps_never_compact_or_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        for w in [i64::MIN, i64::MAX] {
+            write_heartbeat(dir.path(), HB_SID, &heartbeat(HB_SID, w, true));
+            assert!(
+                !read_mod_heartbeat(dir.path(), HB_SID, HB_NOW),
+                "written_at_ms {w}"
+            );
+        }
     }
 
     #[test]
