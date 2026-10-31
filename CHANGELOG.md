@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The forge tab label is structured** — a row of Boxes keyed `speed`, `trend`, `sep`, `pet`, each holding one plain
+  Text, so autopilot colours each part by its key instead of splitting the string (a Text's key does not reach the
+  plugin above; a Box's does). Needs autopilot's matching change; until then autopilot shows no forge tab.
 - **forge-stats speed follows the last timed request** — a step too short to time (a lone tool call) no longer
   blanks the tab label to `ϟ — tok/s`; the label, the band's latest line and the sparklines use only requests that
   had a tok/s.
-
 - **forge-stats speaks speed with ϟ and colour** — the tab label is `ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1` (pet, then
   sparkline dropped to fit; `ϟ` is U+03DF, one cell, never an emoji). The expanded band colours by meaning: speed in
   the theme's success colour, the pet's name and XP in its village colour, a light before memory and brain coloured by

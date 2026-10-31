@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { bandLayout, displayWidth, halfBlockCells, rgbHex, tabLabel, parseSessionView, parseSprite, petShown, sanitizeSessionId } from '../hooks/model'
+import { bandLayout, displayWidth, halfBlockCells, rgbHex, tabLabel, tabParts, parseSessionView, parseSprite, petShown, sanitizeSessionId } from '../hooks/model'
 import { FERRIS_MINI } from './ferris-mini'
 import { FERRIS } from './ferris-sprite'
 import { VECTORS } from './session-id-vectors'
@@ -308,19 +308,38 @@ test('the band colours by meaning: speed in success, the pet in its village colo
   await m.unmount()
 })
 
-test('one row is a tab label: a single Text that shortens with the width', async ($, on) => {
+test('tabParts keys each part, a space going with the part after it', () => {
+  const parts = tabParts(30, 93, '▁▂▃▅▇', 'Ferris Lv.1')
+  expect(parts).toEqual([
+    { key: 'speed', text: 'ϟ 93 tok/s' },
+    { key: 'trend', text: ' ▁▂▃▅▇' },
+    { key: 'sep', text: ' · ' },
+    { key: 'pet', text: 'Ferris Lv.1' },
+  ])
+  expect(tabParts(16, 93, '▁▂▃▅▇', 'Ferris Lv.1').map(p => p.key)).toEqual(['speed', 'trend'])
+  expect(tabParts(30, 93, '', 'Ferris Lv.1').map(p => p.key)).toEqual(['speed', 'sep', 'pet'])
+  expect(tabParts(9, 93, '▁▂▃▅▇', 'Ferris Lv.1')).toEqual([{ key: 'speed', text: 'ϟ93' }])
+})
+
+test('one row is a tab label: a row of keyed Boxes, one plain Text each, shortening with the width', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   // no request timed yet: the speed is a dash and there is no sparkline
-  const cases: [number, RegExp][] = [
-    [30, /^ϟ — tok\/s · Ferris Lv\.3$/],
-    [16, /^ϟ — tok\/s$/],
-    [8, /^ϟ—$/],
+  const cases: [number, string[], string][] = [
+    [30, ['speed', 'sep', 'pet'], 'ϟ — tok/s · Ferris Lv.3'],
+    [16, ['speed'], 'ϟ — tok/s'],
+    [8, ['speed'], 'ϟ—'],
   ]
-  for (const [cols, want] of cases) {
+  for (const [cols, keys, text] of cases) {
     const ui = await $.ui.mount(band(cols, { maxRows: 1 }))
-    expect(want.test(await onlyText(ui))).toBe(true)
+    expect(await ui.find({ type: 'Raster' })).toBe(undefined)
+    const keyed = (await ui.findAll({ type: 'Box' })).map(b => b.props.key).filter(k => k !== undefined)
+    expect(keyed).toEqual(keys)
+    const texts = await ui.findAll({ type: 'Text' })
+    expect(texts.length).toBe(keys.length)
+    expect(texts.every(t => t.props.color === undefined)).toBe(true)
+    expect(texts.map(t => t.text).join('')).toBe(text)
     await ui.unmount()
   }
 })
