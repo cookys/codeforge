@@ -287,11 +287,37 @@ export const BAND_MIN_COLUMNS = 26
 export const BAND_SPEED_W = 34
 export const BAND_GAP = 2
 
-/** Which side columns fit beside Ferris: memory/pet from 90 cells, speed from 60, else Ferris alone. */
-export function bandColumns(bodyColumns: number, spriteWidth: number): { speed: boolean; memory: number } {
-  const withSpeed = spriteWidth + BAND_GAP + BAND_SPEED_W
-  const memory = bodyColumns - withSpeed - BAND_GAP
-  return { speed: bodyColumns >= withSpeed, memory: memory >= 28 ? memory : 0 }
+export const BAND_PET_W = 30
+export const BAND_RECENT_W = 40
+export const BAND_MEMORY_W = 28
+
+export type BandColumnId = 'ferris' | 'pet' | 'speed' | 'recent' | 'memory'
+export type BandColumn = { id: BandColumnId; width: number }
+
+/**
+ * The band's columns, left to right, in priority order: Ferris, pet, speed, recent requests, memory and brain
+ * (forge-columns plan §2.5). As many as fit in `bodyColumns`, a gap before each but the first; the first that does not
+ * fit ends the row. The spare width goes to the request table when it is shown.
+ */
+export function bandLayout(bodyColumns: number, spriteWidth: number): BandColumn[] {
+  const want: BandColumn[] = [
+    { id: 'ferris', width: spriteWidth },
+    { id: 'pet', width: BAND_PET_W },
+    { id: 'speed', width: BAND_SPEED_W },
+    { id: 'recent', width: BAND_RECENT_W },
+    { id: 'memory', width: BAND_MEMORY_W },
+  ]
+  const out: BandColumn[] = []
+  let used = 0
+  for (const c of want) {
+    const need = (out.length > 0 ? BAND_GAP : 0) + c.width
+    if (used + need > bodyColumns) break
+    out.push({ ...c })
+    used += need
+  }
+  const recent = out.find(c => c.id === 'recent')
+  if (recent !== undefined) recent.width += bodyColumns - used
+  return out
 }
 
 const LIGHTS_MEMORY = ['active', 'empty', 'hidden'] as const
