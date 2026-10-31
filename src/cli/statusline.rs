@@ -208,10 +208,11 @@ const MOD_ALIVE_FRESH_MS: i64 = 10_000;
 /// Heartbeats are one short line; anything larger is not one.
 const MOD_ALIVE_MAX_BYTES: u64 = 4096;
 
-/// True only when this session's forge-stats band is showing the pet right now:
-/// the heartbeat for `raw_sid` exists, parses, has the right schema and session id,
-/// is fresh (`0 <= now - written_at < 10 s`) and says `pet_shown`. Anything else → false,
-/// and the statusline draws its full form.
+/// True only when this session's forge-stats mod runs in its band layout: the
+/// heartbeat for `raw_sid` exists, parses, has the right schema and session id, is
+/// fresh (`0 <= now - written_at < 10 s`) and says `layout: band`. The pet then lives
+/// in the band (autopilot's forge tab), so the statusline keeps only the slow data
+/// (owner, 2026-10-31). Anything else → false, and the statusline draws its full form.
 fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> bool {
     if raw_sid.is_empty() {
         return false;
@@ -241,10 +242,10 @@ fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> boo
     v["schema"] == MOD_ALIVE_SCHEMA
         && v["session_id"] == raw_sid
         && age.is_some_and(|a| (0..MOD_ALIVE_FRESH_MS).contains(&a))
-        && v["pet_shown"] == true
+        && v["layout"] == "band"
 }
 
-/// The compact form drawn while the forge-stats band shows the pet: the no-pet
+/// The compact form drawn while the forge-stats band layout runs: the no-pet
 /// identity + usage strip (2 lines, no frame, no pet rows), without the adopt hint.
 fn render_compact<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
     render_strip(out, data, width, false)
@@ -1799,19 +1800,19 @@ mod tests {
         std::fs::write(dir.join(format!("{file_sid}.json")), body).unwrap();
     }
 
-    fn heartbeat(sid: &str, written_at_ms: i64, pet_shown: bool) -> String {
+    fn heartbeat(sid: &str, written_at_ms: i64, band: bool) -> String {
         serde_json::json!({
             "schema": "codeforge.mod-alive/1",
             "session_id": sid,
             "written_at_ms": written_at_ms,
-            "layout": "band",
-            "pet_shown": pet_shown,
+            "layout": if band { "band" } else { "pane" },
+            "pet_shown": false,
         })
         .to_string()
     }
 
     #[test]
-    fn heartbeat_fresh_and_shown_compacts() {
+    fn heartbeat_fresh_band_compacts_even_with_the_forge_tab_closed() {
         let dir = tempfile::tempdir().unwrap();
         write_heartbeat(dir.path(), HB_SID, &heartbeat(HB_SID, HB_NOW - 1_500, true));
         assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
@@ -1829,7 +1830,7 @@ mod tests {
         // from the future
         write_heartbeat(base, HB_SID, &heartbeat(HB_SID, HB_NOW + 1, true));
         assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
-        // band not showing the pet
+        // pane layout
         write_heartbeat(base, HB_SID, &heartbeat(HB_SID, HB_NOW - 100, false));
         assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
         // another session's id inside this session's file

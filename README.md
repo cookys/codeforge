@@ -344,9 +344,11 @@ ok|degraded|offline|pending|hidden}}`.
 
 **Compact statusline**: forge-stats writes a heartbeat `<base>/codeforge/mod-alive/<session_id>.json`
 (`codeforge.mod-alive/1`: `session_id`, `written_at_ms`, `layout`, `pet_shown`). When the heartbeat for the statusline's own
-`session_id` is under 10 seconds old and says the band is showing the pet, `codeforge statusline` prints a 2-line strip
-(identity + usage) instead of the pet panel, so nothing is shown twice. With no such heartbeat the output is unchanged.
-Claude Code runs the statusline only on UI events, so after the band goes away the full panel returns at the next event.
+`session_id` is under 10 seconds old and says `layout: band`, `codeforge statusline` prints a 2-line strip (identity +
+usage) instead of the pet panel: the pet lives in the band (autopilot's forge tab), the statusline keeps the slow data.
+`pet_shown` stays in the heartbeat but no longer decides. With no such heartbeat the output is unchanged. Set
+`statusLine.refreshInterval` (e.g. 2) so the strip follows within seconds; without it Claude Code runs the statusline only
+on UI events.
 
 The repo ships one reader: **forge-stats**, a Claude Code mod in `.claude/skills/forge-stats/`. Claude
 Code loads a project's `.claude/skills/<name>` mod on its own, so any `claude` started in this repo shows

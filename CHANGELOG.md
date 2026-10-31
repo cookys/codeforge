@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **forge-stats no longer pins a `tok/s` status entry** under the prompt: autopilot's forge tab label already shows
   the latest speed, so the `⚠ forge-stats: 93 tok/s` line was a duplicate.
+- **The statusline compacts whenever the forge-stats band layout runs**, not only while its Ferris is drawn: the pet
+  lives in the band (autopilot's forge tab), the statusline keeps the slow data (model, path, usage, context).
 
 ### Added
 
