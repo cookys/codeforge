@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **forge-stats no longer pins a `tok/s` status entry** under the prompt: autopilot's forge tab label already shows
+  the latest speed, so the `⚠ forge-stats: 93 tok/s` line was a duplicate.
+
 ### Added
 
 - **forge-stats band tiers** — the band draws by the rows it gets: 12+ full, 6–11 a 16×6 mini Ferris
