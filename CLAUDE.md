@@ -98,6 +98,8 @@ src/
     badges.rs       ← badge system (skeleton, not yet wired)
     live_state.rs   ← live-overlay read path (pet_snapshot + unseen event_inbox)
     village.rs      ← 5 hardcoded villages (rust/python/typescript/go/javascript)
+    view.rs         ← pet view snapshot `<live_base>/codeforge/pet.json` (codeforge.pet-view/1) for UI readers
+    sprite.rs       ← pixel sprites for pet.json `village.sprite` (Ferris 24×24, 2 frames) + contract validator
     ability.rs      ← ability unlock catalog (display-only; combat effects not yet wired)
   daemon/           ← Phase 2 MUD engine: tick loop, ECS, event_inbox, combat, mob_scanner, loot, strategy, mood, lifecycle
   combat (in daemon/) ← auto-combat resolution
@@ -283,6 +285,8 @@ The CodePower repo is the primary test environment for Phase 2 features:
 Do NOT import CodePower's codebase into CodeForge tests or vice versa. CodeForge must be self-contained. The interaction is at the **runtime level** (hooks + CLI invocation), not at the code level.
 
 ### Hook Path Note
+
+The **forge-stats pane mod** lives in `.claude/skills/forge-stats/` (Claude Code auto-loads a project skills-folder mod, hot-reloaded when interactive, so it is codeforge-clone-only too); it reads `pet.json` and never spawns codeforge. Test: `claude plugin test .claude/skills/forge-stats`. Spec: `doc/specs/codeforge-mod-ui.md`.
 
 Project `.claude/settings.json` carries **codeforge-clone-only DEV** hooks only: `check-improvements.js` (SessionStart), `check-dev-flow.js` (PreToolUse). The script paths use `${CLAUDE_PROJECT_DIR}/.claude/scripts/...` (Claude Code env var, expanded at hook spawn) — no per-clone hand-editing needed.
 

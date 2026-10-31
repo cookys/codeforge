@@ -10,6 +10,7 @@ _(none)_
 
 | Plan | Created | Moved to Project |
 |------|---------|-----------------|
+| [2026-10-31-pixel-pet](2026-10-31-pixel-pet.md) | 2026-10-31 | [_archive/2026-10-31-pixel-pet](../projects/_archive/2026-10-31-pixel-pet/README.md) |
 | [codeforge-bootstrap](2026-06-23-codeforge-bootstrap.md) | 2026-06-23 | ✅ shipped — BACKLOG B14 (no project dir; tooling enhancement) |
 | [public-readiness](2026-05-05-public-readiness.md) | 2026-05-05 | [2026-05-05-public-readiness](../projects/_archive/2026-05-05-public-readiness/) |
 | [zone-color-paint-layer](2026-04-21-zone-color-paint-layer.md) | 2026-04-21 | [2026-04-22-zone-color-paint-layer](../projects/_archive/2026-04-22-zone-color-paint-layer/) |
