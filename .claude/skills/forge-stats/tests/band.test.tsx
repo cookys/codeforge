@@ -276,6 +276,18 @@ test('tabLabel takes the longest form that fits: pet, then sparkline, then the b
   expect(tabLabel(26, 93, spark, '鐵匠 Lv.1')).toBe('ϟ 93 tok/s ▁▂▃▅▇')
 })
 
+test('the label splits at its first " · ": speed and sparkline before it, never a separator inside (autopilot colours the two parts)', () => {
+  const SPEED_PART = /^ϟ ?(\d+|—)( tok\/s( [▁▂▃▄▅▆▇█]+)?)?$/
+  for (const tps of [null, 0, 93, 12345.6, Infinity])
+    for (const spark of ['', '▁▂▃▅▇'])
+      for (const pet of [null, 'Ferris Lv.1', 'a · b Lv.2'])
+        for (const cols of [4, 9, 15, 16, 29, 30, 60]) {
+          const label = tabLabel(cols, tps, spark, pet)
+          const at = label.indexOf(' · ')
+          expect(SPEED_PART.test(at < 0 ? label : label.slice(0, at))).toBe(true)
+        }
+})
+
 test('rgbHex turns the village colour into #rrggbb and refuses anything else', () => {
   expect(rgbHex([215, 95, 0])).toBe('#d75f00')
   expect(rgbHex([0, 0, 0])).toBe('#000000')
