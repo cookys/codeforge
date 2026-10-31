@@ -61,4 +61,4 @@
 | P3 | 部署：`cargo install`（舊版備份 `~/.cargo/bin/codeforge.bak.1793437948`）；本 session 寫出 `session/<sid>.json`；全新 `claude -p` 寫出 `mod-alive/<sid>.json`（schema/欄位/live base 與 statusline 一致，`pet_shown:false`）。檔案權限 664（`$.fs.write` 無 mode；上層 `/run/user/1000` 為 700） | 部署 ✅；band 目視待 autopilot 疊加（X1） |
 | review | code review G1（sol low）：1 條 Major（心跳時間戳 i64 溢位 panic）→ `e455473` checked_sub + 回歸測試；G2 SHIP-AS-IS 無新意見；receipt exit 0。qc-gate 全綠（883 Rust + 23 mod 測試） | ✅ |
 | merge | `5fac514` 合併 main 並推送（QC-Verdict trailer） | ✅ |
-| 剩餘 | owner 目視（標準 1、6）：autopilot band 改成疊在下層之上（X1，fleet msg `01M68HGMJQF52M9MX1B1BMQ50N`；2026-10-31 依卡 d-e3c60ef0 跟進 `01M68MR4KDK47CWT3NG1XM952X`）後，在 Windows Terminal／WezTerm 看 band 三欄、Ferris 動、statusline 縮成 2 行、關掉 claude 後回完整版 | 待 X1 |
+| 剩餘 | owner 目視（標準 1、6）：autopilot band 改成疊在下層之上（X1，fleet msg `01M68HGMJQF52M9MX1B1BMQ50N`；2026-10-31 依卡 d-e3c60ef0 跟進 `01M68MR4KDK47CWT3NG1XM952X`；autopilot 已接，預計 2026-10-31 20:00 前合併 develop，給 maxRows 扣掉自己的列數）後，在 Windows Terminal／WezTerm 看 band 三欄、Ferris 動、statusline 縮成 2 行、關掉 claude 後回完整版 | 待 X1 |
