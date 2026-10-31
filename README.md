@@ -359,7 +359,7 @@ pane in either layout). The band shows as many columns as the width allows, in t
 stats), speed, recent requests, memory and brain — 2 columns from 56 cells, 3 from 92, 4 from 140, 5 from 170
 (Ferris alone below 56; under 26 cells the band is a one-line summary); spare width goes to the request table. Its size follows the rows it is given: 12 or more
 draw the full band, 6 to 11 the 16×6 mini Ferris, 2 to 5 (or under 26 columns) a one-line summary, and
-one row a single short label (`forge 93 tok/s`, shortened to fit) that a plugin above it, such as
+one row a single short label (`ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1`, dropping the pet, then the sparkline, to fit) that a plugin above it, such as
 autopilot's tab bar, can put on a button. Only one plugin draws the band slot: one that sits above
 forge-stats and draws its own band without passing the slot on hides it, and then the statusline stays
 full. Test it with `claude plugin test .claude/skills/forge-stats`.

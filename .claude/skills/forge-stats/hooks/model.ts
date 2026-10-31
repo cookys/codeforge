@@ -36,6 +36,8 @@ export const GLYPH = {
   empty: '—',
   meterOn: '▰',
   meterOff: '▱',
+  /** speed (U+03DF, one cell, never emoji presentation) */
+  speed: 'ϟ',
   spark: ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'],
 } as const
 
@@ -362,10 +364,25 @@ export function bandTier(maxRows: number, bodyColumns: number, hasMini: boolean)
   return 'full'
 }
 
-/** The forge tab's label, shortened to fit `cols`: `forge 93 tok/s`, `93 tok/s`, `93t/s`. */
-export function tabLabel(cols: number, tps: number | null): string {
+/**
+ * The forge tab's label: the longest form that fits `cols` cells — `ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1`, then without the
+ * pet, then without the sparkline, then `ϟ93`. `spark` is '' with under two timed requests, `pet` null with no pet.
+ */
+export function tabLabel(cols: number, tps: number | null, spark = '', pet: string | null = null): string {
   const n = fmtTps(tps)
-  if (cols >= 16) return `forge ${n} tok/s`
-  if (cols >= 10) return `${n} tok/s`
-  return `${n}t/s`
+  const head = `${GLYPH.speed} ${n} tok/s`
+  const tries = [
+    spark && pet ? `${head} ${spark} · ${pet}` : null,
+    !spark && pet ? `${head} · ${pet}` : null,
+    spark ? `${head} ${spark}` : null,
+    head,
+  ]
+  for (const t of tries) if (t !== null && displayWidth(t) <= cols) return t
+  return `${GLYPH.speed}${n}`
+}
+
+/** `village.rgb` as a `#rrggbb` text colour; null when it is not three 0–255 integers. */
+export function rgbHex(rgb: readonly number[]): string | null {
+  if (rgb.length !== 3 || !rgb.every(c => Number.isInteger(c) && c >= 0 && c <= 255)) return null
+  return '#' + rgb.map(c => c.toString(16).padStart(2, '0')).join('')
 }

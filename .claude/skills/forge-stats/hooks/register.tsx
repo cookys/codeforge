@@ -26,6 +26,7 @@ import {
   parseSnapshot,
   petShown,
   sessionViewPath,
+  rgbHex,
   tabLabel,
   shortModel,
   sparkline,
@@ -181,10 +182,13 @@ async function refreshPet($: EngineInterface) {
 // lines: a line is a list of segments; a segment's role is the only way colour enters the pane
 
 type Role = 'structure' | 'idle' | 'dim' | 'bold' | 'mono'
-type Seg = { text: string; role?: Role }
+type Seg = { text: string; role?: Role; color?: string }
 type Line = Seg[]
 
-const seg = (text: string, role?: Role): Seg => (role ? { text, role } : { text })
+// One colour per meaning in the band (forge-ux): SPEED for speed and for lights that are fine; the pet in its village colour.
+const SPEED = 'success'
+
+const seg = (text: string, role?: Role, color?: string): Seg => ({ text, ...(role ? { role } : {}), ...(color ? { color } : {}) })
 
 function rule(title: string, cols: number, note?: string): Line {
   const head = `${GLYPH.open} ${title}`
@@ -276,26 +280,27 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
 
 function bandSpeedLines(list: readonly Step[], tr: T): Line[] {
   const main = summarize(list.filter(s => !s.isSubagent))
-  const out: Line[] = [[seg(tr('speed'), 'bold'), seg('  tok/s', 'dim')]]
+  const out: Line[] = [[seg(GLYPH.speed + ' ', 'bold', SPEED), seg(tr('speed'), 'bold'), seg('  tok/s', 'dim')]]
   if (main.requests === 0) return [...out, [seg(`${GLYPH.empty} ${tr('noRequests')}`, 'dim')]]
   const unit = tr('reqUnit')
   const latest = [...list].reverse().find(s => !s.isSubagent)
-  out.push([seg(fmtTps(main.avgTps), 'bold'), seg(` ${tr('avg')}`, 'dim'), seg(`  ${tr('best')} `, 'dim'), seg(fmtTps(main.bestTps))])
+  out.push([seg(fmtTps(main.avgTps), 'bold', SPEED), seg(` ${tr('avg')}`, 'dim'), seg(`  ${tr('best')} `, 'dim'), seg(fmtTps(main.bestTps))])
   if (latest) out.push([seg(`${tr('latest')} `, 'dim'), seg(fmtTps(latest.tps)), seg(`  ${tr('firstToken')} `, 'dim'), seg(fmtMs(latest.ttftMs))])
   out.push([seg(`${tr('firstToken')} `, 'dim'), seg(fmtMs(main.medianTtft)), seg(` ${tr('median')}`, 'dim')])
   out.push([seg(`${main.requests}${unit ? ' ' + unit : ''} ${tr('requests')}`, 'dim')])
   const recent = list.filter(s => !s.isSubagent).slice(-(BAND_SPEED_W - 2))
-  if (recent.length >= 2) out.push([seg(sparkline(recent.map(s => s.tps)), 'mono')])
+  if (recent.length >= 2) out.push([seg(sparkline(recent.map(s => s.tps)), 'mono', SPEED)])
   return out
 }
 
 function bandPetLines(view: PetView, width: number, tr: T, short = false): Line[] {
   const { pet: p, village: v } = view
   if (view.status !== 'ok' || p === null || v === null) return [[seg(`${GLYPH.empty} ${tr('noPet')}`, 'dim')]]
-  const out: Line[] = [[seg(p.name, 'bold'), seg(`  Lv.${p.level}`)], [seg(v.display_name, 'dim')]]
+  const accent = rgbHex(v.rgb) ?? undefined
+  const out: Line[] = [[seg(p.name, 'bold', accent), seg(`  Lv.${p.level}`, undefined, accent)], [seg(v.display_name, 'dim')]]
   if (p.xp_to_next > 0) {
     const m = meter(p.xp / p.xp_to_next, Math.max(6, Math.min(20, width - 12)))
-    out.push([seg(tr('xp') + ' ', 'dim'), seg(m.on), seg(m.off, 'idle'), seg(padLeft(`${Math.floor((p.xp / p.xp_to_next) * 100)}%`, 5))])
+    out.push([seg(tr('xp') + ' ', 'dim'), seg(m.on, undefined, accent), seg(m.off, 'idle'), seg(padLeft(`${Math.floor((p.xp / p.xp_to_next) * 100)}%`, 5))])
   }
   const stat = (k: string, n: number) => [seg(k + ' ', 'dim'), seg(String(n))]
   const sep = seg(' · ', 'structure')
@@ -314,12 +319,20 @@ function bandMemoryLines(lights: SessionView | null, tr: T): Line[] {
     pending: tr('brainPending'),
     hidden: GLYPH.empty,
   }
+  // a light before each value: the colour says the state, the word says it again for whoever cannot tell the colour
+  const brainColor: Record<SessionView['brain'], string | undefined> = { ok: SPEED, degraded: 'warning', offline: 'error', pending: undefined, hidden: undefined }
   if (lights === null || lights.memory === 'hidden') {
     out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(GLYPH.empty, 'dim')])
   } else {
-    out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(String(lights.active)), seg(` ${tr('entries')}`, 'dim')])
+    const on = lights.memory === 'active'
+    out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(GLYPH.latest + ' ', on ? undefined : 'idle', on ? SPEED : undefined), seg(String(lights.active)), seg(` ${tr('entries')}`, 'dim')])
   }
-  out.push([seg(padRight(tr('brain'), 6), 'dim'), lights === null ? seg(GLYPH.empty, 'dim') : seg(brainWord[lights.brain], lights.brain === 'ok' ? undefined : 'dim')])
+  if (lights === null || lights.brain === 'hidden') {
+    out.push([seg(padRight(tr('brain'), 6), 'dim'), seg(GLYPH.empty, 'dim')])
+  } else {
+    const c = brainColor[lights.brain]
+    out.push([seg(padRight(tr('brain'), 6), 'dim'), seg(GLYPH.latest + ' ', c ? undefined : 'idle', c), seg(brainWord[lights.brain], lights.brain === 'ok' ? undefined : 'dim')])
+  }
   return out
 }
 
@@ -512,12 +525,11 @@ export const register: Register = on => {
       bandSprite = null
       const main = list.filter(s => !s.isSubagent)
       const latest = main.length ? main[main.length - 1]!.tps : null
-      let text = tabLabel(props.bodyColumns, latest)
-      if (tier === 'summary') {
-        const recent = main.slice(-8)
-        if (recent.length >= 2) text += ' ' + sparkline(recent.map(s => s.tps))
-        if (p.status === 'ok' && p.pet !== null) text += ` · ${p.pet.name} Lv.${p.pet.level}`
-      }
+      const recent = main.slice(tier === 'label' ? -5 : -8)
+      const spark = recent.length >= 2 ? sparkline(recent.map(s => s.tps)) : ''
+      const petTag = p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
+      // the summary has the row to itself and is cut at its end; the label must fit the tab autopilot gives it
+      const text = tabLabel(tier === 'label' ? props.bodyColumns : Number.MAX_SAFE_INTEGER, latest, spark, petTag)
       return <Text wrap="truncate-end">{text}</Text>
     }
     const tr = t()
@@ -530,20 +542,12 @@ export const register: Register = on => {
 
     const draw = (s: Seg, i: number) => {
       const k = 's' + i
-      switch (s.role) {
-        case 'structure':
-          return <Text key={k} color="subtle" wrap="truncate">{s.text}</Text>
-        case 'idle':
-          return <Text key={k} color="inactive" wrap="truncate">{s.text}</Text>
-        case 'dim':
-          return <Text key={k} dimColor wrap="truncate">{s.text}</Text>
-        case 'bold':
-          return <Text key={k} bold wrap="truncate">{s.text}</Text>
-        case 'mono':
-          return <Text key={k} mono wrap="truncate">{s.text}</Text>
-        default:
-          return <Text key={k} wrap="truncate">{s.text}</Text>
-      }
+      const color = s.color ?? (s.role === 'structure' ? 'subtle' : s.role === 'idle' ? 'inactive' : undefined)
+      return (
+        <Text key={k} wrap="truncate" {...(color ? { color } : {})} {...(s.role === 'dim' ? { dimColor: true } : {})} {...(s.role === 'bold' ? { bold: true } : {})} {...(s.role === 'mono' ? { mono: true } : {})}>
+          {s.text}
+        </Text>
+      )
     }
     const column = (ls: Line[], width: number, k: string) => (
       <Box key={k} flexDirection="column" width={width}>

@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { bandLayout, halfBlockCells, parseSessionView, parseSprite, petShown, sanitizeSessionId } from '../hooks/model'
+import { bandLayout, displayWidth, halfBlockCells, rgbHex, tabLabel, parseSessionView, parseSprite, petShown, sanitizeSessionId } from '../hooks/model'
 import { FERRIS_MINI } from './ferris-mini'
 import { FERRIS } from './ferris-sprite'
 import { VECTORS } from './session-id-vectors'
@@ -259,14 +259,52 @@ async function onlyText(ui: { find: (q: { type: string; text?: RegExp }) => Prom
   return t!.text
 }
 
+test('tabLabel takes the longest form that fits: pet, then sparkline, then the bare speed', () => {
+  const spark = '▁▂▃▅▇'
+  const full = tabLabel(30, 93, spark, 'Ferris Lv.1')
+  expect(full).toBe('ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1')
+  expect(displayWidth(full)).toBe(30)
+  expect(tabLabel(29, 93, spark, 'Ferris Lv.1')).toBe('ϟ 93 tok/s ▁▂▃▅▇')
+  expect(tabLabel(16, 93, spark, 'Ferris Lv.1')).toBe('ϟ 93 tok/s ▁▂▃▅▇')
+  expect(tabLabel(15, 93, spark, 'Ferris Lv.1')).toBe('ϟ 93 tok/s')
+  expect(tabLabel(10, 93, spark, 'Ferris Lv.1')).toBe('ϟ 93 tok/s')
+  expect(tabLabel(9, 93, spark, 'Ferris Lv.1')).toBe('ϟ93')
+  // no sparkline yet: the pet follows the speed directly
+  expect(tabLabel(30, 93, '', 'Ferris Lv.1')).toBe('ϟ 93 tok/s · Ferris Lv.1')
+  // a wide pet name counts two cells a character
+  expect(tabLabel(30, 93, spark, '鐵匠 Lv.1')).toBe('ϟ 93 tok/s ▁▂▃▅▇ · 鐵匠 Lv.1')
+  expect(tabLabel(26, 93, spark, '鐵匠 Lv.1')).toBe('ϟ 93 tok/s ▁▂▃▅▇')
+})
+
+test('rgbHex turns the village colour into #rrggbb and refuses anything else', () => {
+  expect(rgbHex([215, 95, 0])).toBe('#d75f00')
+  expect(rgbHex([0, 0, 0])).toBe('#000000')
+  expect(rgbHex([256, 0, 0])).toBe(null)
+  expect(rgbHex([1.5, 0, 0])).toBe(null)
+  expect(rgbHex([1, 2])).toBe(null)
+})
+
+test('the band colours by meaning: speed in success, the pet in its village colour, lights by state', async ($, on) => {
+  world(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const m = await $.ui.mount(band(170))
+  expect((await m.find({ type: 'Text', text: /^ϟ $/ }))?.props.color).toBe('success')
+  expect((await m.find({ type: 'Text', text: /^Ferris$/ }))?.props.color).toBe('#d75f00')
+  // memory active and brain ok: both lights green
+  const lights = await m.findAll({ type: 'Text', text: /^● $/ })
+  expect(lights.map(t => t.props.color)).toEqual(['success', 'success'])
+  await m.unmount()
+})
+
 test('one row is a tab label: a single Text that shortens with the width', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  // no request timed yet: the speed is a dash and there is no sparkline
   const cases: [number, RegExp][] = [
-    [16, /^forge \S+ tok\/s$/],
-    [12, /^\S+ tok\/s$/],
-    [8, /^\S+t\/s$/],
+    [30, /^ϟ — tok\/s · Ferris Lv\.3$/],
+    [16, /^ϟ — tok\/s$/],
+    [8, /^ϟ—$/],
   ]
   for (const [cols, want] of cases) {
     const ui = await $.ui.mount(band(cols, { maxRows: 1 }))
@@ -282,7 +320,7 @@ test('two to five rows, or a thin column, is a one-row summary Text', async ($, 
   for (const target of [band(100, { maxRows: 3 }), band(20, { maxRows: 12 })]) {
     const ui = await $.ui.mount(target)
     const text = await onlyText(ui)
-    expect(text.startsWith('forge')).toBe(true)
+    expect(text.startsWith('ϟ ')).toBe(true)
     await ui.unmount()
   }
   const wide = await $.ui.mount(band(100, { maxRows: 3 }))
