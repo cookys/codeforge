@@ -1,0 +1,61 @@
+# Statusline Band — forge-stats 三欄 band + statusline 探測切換
+
+> Size L · branch `feature/statusline-band` · started 2026-10-31
+
+## Project Goal
+
+> **Final goal**: forge-stats 在 prompt 正上方畫一條三欄 band（**tok/s｜像素 Ferris｜記憶/腦**），可用 `/forge-stats layout band|pane` 切換版面；`codeforge statusline` 偵測到同一 session 的 mod 心跳就縮成精簡版（不重複顯示寵物），沒有心跳就照舊印完整版。
+>
+> **Success criteria**（門檻 + 驗證方式）：
+> 1. **三欄 band**：terminal surface 的 `AbovePrompt` 畫出三欄——速度（最近 tok/s、TTFT）、Ferris `Raster`（24×24 px = 24 欄×12 列，沿用待機動畫，卡 d-5d96fcb1 研究結論）、記憶/腦燈與寵物數值；在 autopilot band 改成疊加之前，這條 band 只在沒有 autopilot band 的 session 出現。驗證：`claude plugin test` mount `AbovePrompt` 找到 Raster 與速度、記憶文字；`bodyColumns` 不夠三欄時依序降級（測試釘住降級規則）。
+> 2. **版面切換**：`/forge-stats layout band|pane`（預設 band），選擇存 `$.store`、重開保留；band 版面不自動開 pane，pane 版面不畫 band。驗證：mod 測試兩種版面各自只畫對應位置，store 讀回正確。
+> 3. **心跳**：band 版面時 mod 定期寫 `<live_base>/codeforge/mod-alive/<session_id>.json`（`$.session.id()`）。驗證：mod 測試推進時鐘後 `fs.write` 收到正確路徑與內容。
+> 4. **statusline 探測切換**：stdin `session_id` 有對應且新鮮（門檻在 plan 定）的心跳 → 精簡版（≤ 2 行、無寵物列與圖）；沒有心跳／過期／別的 session → 完整版。驗證：Rust 測試四種情況；無心跳時輸出與舊版 binary **逐 byte 相同**。
+> 5. **記憶/腦資料**：mod 第三欄的資料由 codeforge 寫進 `pet.json`（新選填欄位，schema 名不變）。驗證：Rust 測試欄位存在；mod 測試缺欄位時第三欄退成「—」不壞。
+> 6. **不退化**：既有 Rust 測試與 mod 測試全綠；owner 在 Windows Terminal 與 WezTerm 目視 band 正常、statusline 有縮、關掉 claude 後 statusline 回到完整版。
+>
+> **Scope boundary**:
+> - 包含：mod band 版面 + 版面切換 + 心跳；statusline 精簡版 + 探測；`pet.json` 加記憶/腦欄位；README/CHANGELOG/spec。
+> - 不包含：mod 改全域載入（仍只在 codeforge repo；所以 statusline 只在 codeforge repo 的 session 會縮）；其他村落 sprite（B30）；statusline 本身改三欄（卡 d-feb71b14 的 B 方案，未選）。
+
+## Decisions
+
+| 日期 | 決策 | 來源 |
+|------|------|------|
+| 2026-10-31 | 即時的（tok/s、動畫）放 mod；慢變的留 statusline；mod 畫 prompt 正上方三欄 band，statusline 偵測心跳自動縮 | 卡 d-feb71b14 → owner「A 好，開工」 |
+| 2026-10-31 | band 用 24×24（B）：研究顯示 32×32 是可辨識角色的最小尺寸、16×16 近 icon；A 的 16×12 太小 | owner 問「B 的大小是不是所有 pixel art 都會比較舒服」；divoom / sprite-ai / aseprite 社群 |
+| 2026-10-31 | 探針實測：AbovePrompt 鏈裡 autopilot live band 在 repo skills mod 之上且不呼叫 next → forge-stats 的 band hook 永遠輪不到；要合併必須 autopilot 那邊組合下層 | U4 spike，`.codeforge/research/statusline-band/band-probe-*.json`（loaded、hint 有，above 無） |
+| 2026-10-31 | 走 X1：autopilot band 改成疊在下層內容上面（autopilot 自己的任務，已用 fleet 請 `autopilot--claude` 排，msg `01M68HGMJQF52M9MX1B1BMQ50N`）；codeforge 做 24×24 三欄 band 在其下；表現層另開設計（BACKLOG B31） | 卡 d-c5f5c6fd →「先 X1，表現層另開設計」 |
+| 2026-10-31 | 同 session 判定：statusline 用 stdin `session_id`，mod 用 `$.session.id()`（transcript 檔名） | 型別文件 `claude-code.d.ts` session.id；`src/cli/statusline.rs` `raw["session_id"]` |
+
+## Scope completeness audit
+
+| Surface | 受影響 | 說明 |
+|---|---|---|
+| Rust code | 是 | `src/cli/statusline.rs`（探測 + 精簡版）、`src/pet/view.rs`（記憶/腦欄位）、可能新 `src/live` 讀心跳 helper |
+| mod code | 是 | `.claude/skills/forge-stats/`：band 版面、layout 指令、心跳、第三欄 |
+| User-facing docs | 是 | README（Live context files：pet.json 新欄位、mod-alive 心跳、statusline 精簡版）、CHANGELOG |
+| Specs | 是 | `doc/specs/codeforge-mod-ui.md` §7（band + 探測） |
+| API / interface | 是 | `pet.json` 加選填欄位（schema 名不變）；新檔案契約 `mod-alive/<sid>.json`（codeforge 讀、mod 寫） |
+| Config / settings | 否 | 不改 settings.json；版面選擇存 mod `$.store` |
+| Tests | 是 | Rust（探測四情況 + 逐 byte 不變）、mod（band、layout、心跳、降級） |
+| Dependent consumers | 是 | 全域 statusline 每個專案都跑：無心跳路徑必須與舊版逐 byte 相同 |
+| Migrations / data | 否 | 無 DB 變動 |
+
+## Requirements ledger（owner 原話）
+
+| # | 原話 | 對應 |
+|---|------|------|
+| R1 | 「取代目前 codeforge statusline 的位置但切成三塊」 | 標準 1、4 |
+| R2 | 「能夠切多個排列嗎」 | 標準 2 |
+| R3 | 「需要全部合併還是探測成功就切 mod」→ 選探測切換 | 標準 3、4 |
+| R4 | 「tok/s 比較及時好像放 mod 比較合適」 | 標準 1（速度欄在 mod） |
+
+## Progress
+
+| Phase | 內容 | 狀態 |
+|-------|------|------|
+| — | intent → plan → plan-review（G1+G2，receipt exit 0） | ✅ `52877c8` |
+| P1 | statusline 讀心跳、精簡 2 行、session view；無心跳時 stdout 與舊 binary 逐 byte 相同（3 輸入 × live base 可寫/不可寫） | ✅ `15be75a` |
+| P2 | forge-stats band、`layout band\|pane`、心跳；mod 23 測試、tsc 0、validate 通過；sid 向量 `.ts` 鏡像 + Rust 比對測試（改壞會紅） | ✅ `3aaab33` |
+| P3 | 部署：`cargo install`（舊版備份 `~/.cargo/bin/codeforge.bak.1793437948`）；本 session 寫出 `session/<sid>.json`；全新 `claude -p` 寫出 `mod-alive/<sid>.json`（schema/欄位/live base 與 statusline 一致，`pet_shown:false`）。檔案權限 664（`$.fs.write` 無 mode；上層 `/run/user/1000` 為 700） | 部署 ✅；band 目視待 autopilot 疊加（X1） |

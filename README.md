@@ -334,11 +334,26 @@ for an adopted pet: a pixel sprite for UI readers that draw terminal half blocks
 vertical pixels, so `height` is even; colours stay inside the xterm-256 cube), or `null` when the
 village has no sprite yet (only Rust/Ferris has one) — readers then fall back to the ASCII art.
 
+**Session view** (`<base>/codeforge/session/<session_id>.json`, written by every statusline run, same mode and atomic
+write): the lights for this session only — `pet.json` is shared by every session, so per-project state stays out of it.
+Schema `codeforge.session-view/1`: `{session_id, written_at, memory: {light: active|empty|hidden, active}, brain: {light:
+ok|degraded|offline|pending|hidden}}`.
+
+**Compact statusline**: forge-stats writes a heartbeat `<base>/codeforge/mod-alive/<session_id>.json`
+(`codeforge.mod-alive/1`: `session_id`, `written_at_ms`, `layout`, `pet_shown`). When the heartbeat for the statusline's own
+`session_id` is under 10 seconds old and says the band is showing the pet, `codeforge statusline` prints a 2-line strip
+(identity + usage) instead of the pet panel, so nothing is shown twice. With no such heartbeat the output is unchanged.
+Claude Code runs the statusline only on UI events, so after the band goes away the full panel returns at the next event.
+
 The repo ships one reader: **forge-stats**, a Claude Code mod in `.claude/skills/forge-stats/`. Claude
 Code loads a project's `.claude/skills/<name>` mod on its own, so any `claude` started in this repo shows
-a pane with model speed (tok/s, time to first token) and the pet — Ferris as an animated half-block
-pixel sprite in the terminal. Open it with `/forge-stats`; test it with
-`claude plugin test .claude/skills/forge-stats`.
+model speed (tok/s, time to first token) and the pet — Ferris as an animated half-block pixel sprite in the
+terminal. It has two layouts, kept across sessions: `/forge-stats layout band` (the default) draws a band
+right above the prompt — speed | Ferris | pet, memory and brain — and `/forge-stats layout pane` opens a
+side pane instead (`/forge-stats` alone opens the pane in either layout). The band leaves out the third
+column below 90 cells and the speed column below 60. Only one plugin draws the band slot: one that sits
+above forge-stats and draws its own band without passing the slot on hides it, and then the statusline
+stays full. Test it with `claude plugin test .claude/skills/forge-stats`.
 
 A write failure never changes statusline rendering or exit code — it's logged to stderr once per
 process and otherwise swallowed.
