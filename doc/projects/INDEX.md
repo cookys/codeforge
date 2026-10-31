@@ -6,7 +6,7 @@
 
 | Project | Description | Started |
 |---------|------------|---------|
-| [statusline-band](2026-10-31-statusline-band/README.md) | forge-stats 三欄 band（tok/s｜像素 Ferris｜記憶/腦）+ 版面切換 + 心跳；statusline 偵測同 session 心跳自動縮成精簡版 | 2026-10-31 |
+| [statusline-band](2026-10-31-statusline-band/README.md) | forge-stats 三欄 band（tok/s｜像素 Ferris｜記憶/腦）+ 版面切換 + 心跳；statusline 偵測同 session 心跳自動縮成精簡版。已合併 `5fac514`；剩 owner 目視，等 autopilot band 疊加（X1） | 2026-10-31 |
 
 ## Archived
 
