@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **forge-stats band columns follow the width** — 1 to 5 columns in priority order (Ferris, pet, speed, recent
+  requests, memory and brain): from 26, 56, 92, 140 and 170 cells; the request table takes the spare width.
 - **forge-stats no longer pins a `tok/s` status entry** under the prompt: autopilot's forge tab label already shows
   the latest speed, so the `⚠ forge-stats: 93 tok/s` line was a duplicate.
 - **The statusline compacts whenever the forge-stats band layout runs**, not only while its Ferris is drawn: the pet
