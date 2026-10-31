@@ -80,6 +80,7 @@ pub fn build(pet: Option<(&PetState, &Village)>, extras: Extras<'_>, written_at:
             "art_small": v.ascii_small.lines().collect::<Vec<_>>(),
             "art_full": v.ascii_full.lines().collect::<Vec<_>>(),
             "sprite": crate::pet::sprite::to_json(crate::pet::sprite::for_village(v.id)),
+            "sprite_mini": crate::pet::sprite::mini_to_json(crate::pet::sprite::mini_for_village(v.id)),
         },
     })
 }
@@ -224,6 +225,11 @@ mod tests {
         );
         let s = &v["village"]["sprite"];
         assert!(s.is_object(), "rust village should carry a sprite, got {s}");
+        let m = &v["village"]["sprite_mini"];
+        assert_eq!(
+            m["width"], 16,
+            "rust village should carry a 16x12 mini sprite, got {m}"
+        );
         assert_eq!(s["width"], 24);
         assert_eq!(s["height"], 24);
         assert_eq!(s["transparent"], ".");
@@ -258,6 +264,11 @@ mod tests {
             "sprite key must always be written"
         );
         assert!(v["village"]["sprite"].is_null());
+        assert!(
+            village.contains_key("sprite_mini"),
+            "sprite_mini key must always be written"
+        );
+        assert!(v["village"]["sprite_mini"].is_null());
     }
 
     #[test]
