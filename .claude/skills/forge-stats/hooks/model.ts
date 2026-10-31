@@ -364,22 +364,34 @@ export function bandTier(maxRows: number, bodyColumns: number, hasMini: boolean)
   return 'full'
 }
 
+/** A part of the forge tab label; autopilot colours it by `key` (speed, trend, sep, pet). */
+export type LabelPart = { key: 'speed' | 'trend' | 'sep' | 'pet'; text: string }
+
 /**
- * The forge tab's label: the longest form that fits `cols` cells — `ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1`, then without the
- * pet, then without the sparkline, then `ϟ93`. `spark` is '' with under two timed requests, `pet` null with no pet.
+ * The forge tab's label as keyed parts: the longest form that fits `cols` cells — `ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1`,
+ * then without the pet, then without the sparkline, then `ϟ93`. A space belongs to the part after it. `spark` is ''
+ * with under two timed requests, `pet` null with no pet.
  */
-export function tabLabel(cols: number, tps: number | null, spark = '', pet: string | null = null): string {
+export function tabParts(cols: number, tps: number | null, spark = '', pet: string | null = null): LabelPart[] {
   const n = fmtTps(tps)
-  const head = `${GLYPH.speed} ${n} tok/s`
-  const tries = [
-    spark && pet ? `${head} ${spark} · ${pet}` : null,
-    !spark && pet ? `${head} · ${pet}` : null,
-    spark ? `${head} ${spark}` : null,
-    head,
+  const speed: LabelPart = { key: 'speed', text: `${GLYPH.speed} ${n} tok/s` }
+  const trend: LabelPart | null = spark ? { key: 'trend', text: ' ' + spark } : null
+  const petParts: LabelPart[] = pet ? [{ key: 'sep', text: ' · ' }, { key: 'pet', text: pet }] : []
+  const tries: (LabelPart[] | null)[] = [
+    trend && pet ? [speed, trend, ...petParts] : null,
+    !trend && pet ? [speed, ...petParts] : null,
+    trend ? [speed, trend] : null,
+    [speed],
   ]
-  for (const t of tries) if (t !== null && displayWidth(t) <= cols) return t
-  return `${GLYPH.speed}${n}`
+  for (const t of tries) if (t !== null && displayWidth(t.map(p => p.text).join('')) <= cols) return t
+  return [{ key: 'speed', text: `${GLYPH.speed}${n}` }]
 }
+
+/** The label as one string (the one-row summary, and tests). */
+export const tabLabel = (cols: number, tps: number | null, spark = '', pet: string | null = null): string =>
+  tabParts(cols, tps, spark, pet)
+    .map(p => p.text)
+    .join('')
 
 /** `village.rgb` as a `#rrggbb` text colour; null when it is not three 0–255 integers. */
 export function rgbHex(rgb: readonly number[]): string | null {

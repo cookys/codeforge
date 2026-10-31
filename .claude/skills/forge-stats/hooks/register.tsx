@@ -28,6 +28,7 @@ import {
   sessionViewPath,
   rgbHex,
   tabLabel,
+  tabParts,
   shortModel,
   sparkline,
   staleMinutes,
@@ -531,9 +532,21 @@ export const register: Register = on => {
       const recent = timed.slice(tier === 'label' ? -5 : -8)
       const spark = recent.length >= 2 ? sparkline(recent.map(s => s.tps)) : ''
       const petTag = p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
-      // the summary has the row to itself and is cut at its end; the label must fit the tab autopilot gives it
-      const text = tabLabel(tier === 'label' ? props.bodyColumns : Number.MAX_SAFE_INTEGER, latest, spark, petTag)
-      return <Text wrap="truncate-end">{text}</Text>
+      if (tier === 'label') {
+        // keyed Boxes, one Text of plain strings each: autopilot reads the keys and colours the parts (a Text's key
+        // does not reach the plugin above; a Box's does)
+        return (
+          <Box flexDirection="row">
+            {tabParts(props.bodyColumns, latest, spark, petTag).map(part => (
+              <Box key={part.key}>
+                <Text>{part.text}</Text>
+              </Box>
+            ))}
+          </Box>
+        )
+      }
+      // the summary has the row to itself and is cut at its end
+      return <Text wrap="truncate-end">{tabLabel(Number.MAX_SAFE_INTEGER, latest, spark, petTag)}</Text>
     }
     const tr = t()
     const lights = await read($, session)
