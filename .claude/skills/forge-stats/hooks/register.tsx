@@ -505,7 +505,7 @@ export const register: Register = on => {
         if (recent.length >= 2) text += ' ' + sparkline(recent.map(s => s.tps))
         if (p.status === 'ok' && p.pet !== null) text += ` · ${p.pet.name} Lv.${p.pet.level}`
       }
-      return <Text wrap="truncate">{text}</Text>
+      return <Text wrap="truncate-end">{text}</Text>
     }
     const tr = t()
     const lights = await read($, session)
