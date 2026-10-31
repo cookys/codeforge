@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { bandColumns, halfBlockCells, parseSessionView, parseSprite, petShown, sanitizeSessionId } from '../hooks/model'
+import { bandLayout, halfBlockCells, parseSessionView, parseSprite, petShown, sanitizeSessionId } from '../hooks/model'
 import { FERRIS_MINI } from './ferris-mini'
 import { FERRIS } from './ferris-sprite'
 import { VECTORS } from './session-id-vectors'
@@ -94,12 +94,34 @@ test('sanitizeSessionId matches codeforge on the shared vectors', () => {
   for (const v of VECTORS) expect(sanitizeSessionId(v.input)).toBe(v.expected)
 })
 
-test('bandColumns hides memory first, then speed', () => {
-  expect(bandColumns(100, 24)).toEqual({ speed: true, memory: 38 })
-  expect(bandColumns(90, 24)).toEqual({ speed: true, memory: 28 })
-  expect(bandColumns(89, 24)).toEqual({ speed: true, memory: 0 })
-  expect(bandColumns(60, 24)).toEqual({ speed: true, memory: 0 })
-  expect(bandColumns(59, 24)).toEqual({ speed: false, memory: 0 })
+test('bandLayout adds columns in priority order as the width allows, 1 to 5', () => {
+  const ids = (cols: number, sprite = 24) => bandLayout(cols, sprite).map(c => c.id).join(' ')
+  // each threshold and one cell below it (24-wide Ferris: 24, 56, 92, 134, 164)
+  expect(ids(23)).toBe('')
+  expect(ids(24)).toBe('ferris')
+  expect(ids(55)).toBe('ferris')
+  expect(ids(56)).toBe('ferris pet')
+  expect(ids(91)).toBe('ferris pet')
+  expect(ids(92)).toBe('ferris pet speed')
+  expect(ids(133)).toBe('ferris pet speed')
+  expect(ids(134)).toBe('ferris pet speed recent')
+  expect(ids(163)).toBe('ferris pet speed recent')
+  expect(ids(164)).toBe('ferris pet speed recent memory')
+  // the 16-wide mini Ferris moves every threshold down by 8
+  expect(ids(156, 16)).toBe('ferris pet speed recent memory')
+  expect(ids(155, 16)).toBe('ferris pet speed recent')
+})
+
+test('bandLayout gives the spare width to the request table only, and always fills to the edge with it', () => {
+  const total = (cols: ReturnType<typeof bandLayout>) => cols.reduce((n, c) => n + c.width, 0) + 2 * (cols.length - 1)
+  const five = bandLayout(200, 24)
+  expect(five.map(c => c.width)).toEqual([24, 30, 34, 76, 28])
+  expect(total(five)).toBe(200)
+  const four = bandLayout(150, 24)
+  expect(four.find(c => c.id === 'recent')?.width).toBe(56)
+  expect(total(four)).toBe(150)
+  // without the table the columns keep their widths
+  expect(bandLayout(120, 24).map(c => c.width)).toEqual([24, 30, 34])
 })
 
 test('petShown needs the band layout and an ok blit under 2 s old', () => {
@@ -142,31 +164,37 @@ test('the stored pane layout opens the pane at session start', async ($, on) => 
   expect(w.opened).toBe(1)
 })
 
-test('the band draws speed | Ferris | memory, dropping columns as it narrows', async ($, on) => {
+test('the band draws 1 to 5 columns by width: Ferris, pet, speed, recent requests, memory', async ($, on) => {
   world(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const cells0 = halfBlockCells(parseSprite(FERRIS)!, 0).cells
+  // one marker Text per column
+  const MARK = { pet: /^Ferris$/, speed: /^Speed$/, recent: /^Recent requests$/, memory: /^memory/ } as const
+  const shows = async (cols: number) => {
+    const m = await $.ui.mount(band(cols))
+    const r = await m.find({ type: 'Raster' })
+    expect(r?.props.columns).toBe(24)
+    expect(r?.props.rows).toBe(12)
+    expect(r?.props.cells).toBe(cells0)
+    const seen: string[] = []
+    for (const [k, re] of Object.entries(MARK)) if ((await m.find({ type: 'Text', text: re })) !== undefined) seen.push(k)
+    await m.unmount()
+    return seen.join(' ')
+  }
+  expect(await shows(170)).toBe('pet speed recent memory')
+  expect(await shows(140)).toBe('pet speed recent')
+  expect(await shows(100)).toBe('pet speed')
+  expect(await shows(60)).toBe('pet')
+  expect(await shows(30)).toBe('')
+})
 
-  const wide = await $.ui.mount(band(100))
-  const r = await wide.find({ type: 'Raster' })
-  expect(r?.props.columns).toBe(24)
-  expect(r?.props.rows).toBe(12)
-  expect(r?.props.cells).toBe(cells0)
-  expect((await wide.find({ type: 'Text', text: /tok\/s/ })) !== undefined).toBe(true)
-  expect((await wide.find({ type: 'Text', text: /^Ferris$/ })) !== undefined).toBe(true)
-  expect((await wide.find({ type: 'Text', text: /12/ })) !== undefined).toBe(true)
-  await wide.unmount()
-
-  const mid = await $.ui.mount(band(70))
-  expect((await mid.find({ type: 'Raster' })) !== undefined).toBe(true)
-  expect((await mid.find({ type: 'Text', text: /tok\/s/ })) !== undefined).toBe(true)
-  expect(await mid.find({ type: 'Text', text: /^Ferris$/ })).toBe(undefined)
-  await mid.unmount()
-
-  const narrow = await $.ui.mount(band(40))
-  expect((await narrow.find({ type: 'Raster' })) !== undefined).toBe(true)
-  expect(await narrow.find({ type: 'Text', text: /tok\/s/ })).toBe(undefined)
-  await narrow.unmount()
+test('the pet column carries all five stats and the memory column the session lights', async ($, on) => {
+  world(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const m = await $.ui.mount(band(170))
+  for (const k of ['ATK ', 'DEF ', 'HP ', 'SUP ', 'VER ']) expect((await m.find({ type: 'Text', text: k })) !== undefined).toBe(true)
+  expect((await m.find({ type: 'Text', text: /^12$/ })) !== undefined).toBe(true)
+  await m.unmount()
 })
 
 test('the band passes on a survey, desktop, or the pane layout', async ($, on) => {
