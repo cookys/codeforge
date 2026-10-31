@@ -296,10 +296,19 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 **Trigger**: owner 領養非 Rust 村落的寵物，或要求其他村落也有像素圖。
 **Not done**: 範圍刻意只做 Ferris（plan `doc/plans/2026-10-31-pixel-pet.md` §7）。
 
-## B31 — 表現層設計：codeforge 統一畫 autopilot / fleet / codeforge 的畫面？
+## B31 — codeforge 成為 autopilot 的 extension（autopilot 3.0.0-alpha.8 起）
 
-**Area**: 跨專案架構（autopilot `mods/live`、codeforge `.claude/skills/forge-stats`、fleet）；產出 ADR（`doc/specs/` 或 autopilot `docs/adr/`）
-**Premise**: 三邊已經是「資料檔 + 只讀 mod」（codeforge `pet.json` / `codeforge.pet-view/1`；autopilot 背景程式寫 `runs/<project>.json` 等 `autopilot.runs-live/1`、live mod 只讀），但 prompt 上方等畫面位置由多個 mod 各自搶著畫。statusline-band 先走 X1（autopilot band 疊在下層上面）。owner 卡 d-c5f5c6fd：「先 X1，表現層另開設計」。
-**Proposed**: 用 autopilot:think-tank（架構、維運、UX 角色）比較：(a) 疊加（各畫各的，外層排序）、(b) 單一表現層（forge-stats 讀所有資料、統一排版：流動四欄、優先隱藏；autopilot 讓位）、(c) 共享版面協定（各 mod 只交出「段落 + 優先度 + 最小寬度」，一個 host 排版）。要回答：資料格式版本怎麼綁、互動（按鈕開 autopilot 面板）怎麼保留、全域載入、fleet 資料來源。結論寫 ADR。
-**Trigger**: autopilot X1（band 疊加）落地並實際用過幾天後（卡 d-619deb67，2026-10-31：合併當下不開，先累積疊加是否夠用的第一手證據）；或 owner 要求流動四欄／依優先度隱藏欄位。
-**Not done**: 只記錄方向；目前 X1 不擋這三條路。
+**Area**: 跨專案架構（autopilot extension 契約、codeforge 的 hooks / forge-stats mod / statusline 接法）；Rust 本體不搬
+**Decision**: owner 2026-11-01（卡 d-0e2e6e0d）：codeforge 走 autopilot 的 extension 契約、不併進 autopilot repo，從 autopilot
+3.0.0-alpha.8 起分段做（band 分頁 → hooks → status 片段 → 設定鍵 → binary 需求），在 3.0.0 正式版前完成，使用者只裝 autopilot。
+兩邊共識（fleet msg `01M69B3CY03VMC41QQJ1CEGWQ1`、`01M69B89Z5GRJE5Z9NHBDM19N4`）：
+- Rust 本體（記憶、ship、MUD）留在 codeforge repo；autopilot 是 Node、跨 harness、已公開，不帶進 Rust build 與 SQLite schema。
+- 契約第一塊就是 forge 分頁標籤：一列 `Box`，子 `Box` 以 key 標角色（speed / trend / sep / pet），顏色由 host 決定
+  （codeforge 分支 `feature/label-parts`，等 autopilot 的讀取端一起上）。
+- hooks 改由 autopilot 的 opt-in 清單註冊、不再寫全域 settings。ship 失敗責任：autopilot 只負責有呼叫、記結束碼、失敗看得到；
+  重試與補送仍是 codeforge 的。
+- 降級：每一項都要能沒有 autopilot 單獨跑（forge-stats 沒有 host 時照現在自己畫；Solo Smith 定位不變）。
+- 取代原 B31（表現層由誰統一畫）：答案是 autopilot 當 host，各 extension 照契約交內容；fleet 分頁（卡 d-d99e2d99）也走這條。
+**Trigger**: autopilot `v3.0.0-alpha.7`（repo 重整 P1–P5）發布之後；開工前 autopilot 先寫 extension 機制 plan 並過 plan review，
+codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責任這四塊）。
+**Not done**: 契約與實作都還沒開始；alpha.7 搬家期間不定掛載點（路徑會變好幾次）。
