@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **forge-stats pane** — a Claude Code mod shipped in `.claude/skills/forge-stats/` (loaded by any
+  `claude` started in this repo): model speed (tok/s, time to first token) and the pet, with Ferris drawn
+  as an animated half-block pixel sprite in the terminal (ASCII elsewhere).
 - **Pet pixel sprite** — `pet.json` now carries `village.sprite`: a 24×24, two-frame (idle /
   blink) pixel sprite for Ferris (Rust village) as a palette plus rows of palette characters, for
   UI readers that draw terminal half blocks; `null` for villages without one yet. Sprites are
