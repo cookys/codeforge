@@ -99,10 +99,76 @@ pub fn publish(pet: Option<(&PetState, &Village)>, extras: Extras<'_>) {
     }
 }
 
+/// Schema of the per-session view (`<live_base>/codeforge/session/<sid>.json`).
+pub const SESSION_SCHEMA: &str = "codeforge.session-view/1";
+/// Directory under [`DIR`] that holds one session view per session id.
+pub const SESSION_DIR: &str = "session";
+
+/// The per-session view: memory and brain lights for UI readers of this session only
+/// (`pet.json` is shared by every session, so per-project state must not go there).
+pub fn build_session_view(
+    raw_sid: &str,
+    memory_light: &str,
+    active: usize,
+    brain_light: &str,
+    written_at: &str,
+) -> Value {
+    json!({
+        "schema": SESSION_SCHEMA,
+        "session_id": raw_sid,
+        "written_at": written_at,
+        "memory": { "light": memory_light, "active": active },
+        "brain": { "light": brain_light },
+    })
+}
+
+/// Write the session view atomically; the file name never contains a slash.
+pub fn write_session_view_to(base: &Path, value: &Value) -> io::Result<()> {
+    let raw_sid = value["session_id"].as_str().unwrap_or("");
+    let name = format!("{}.json", crate::live::sanitize_session_id(raw_sid));
+    crate::live::write_live_json(&base.join(DIR).join(SESSION_DIR), &name, value)
+}
+
+/// Best-effort: failure prints one stderr line, like [`publish`].
+pub fn write_session_view(raw_sid: &str, memory_light: &str, active: usize, brain_light: &str) {
+    let (base, _source) = crate::live::resolve_live_base();
+    let value = build_session_view(
+        raw_sid,
+        memory_light,
+        active,
+        brain_light,
+        &chrono::Utc::now().to_rfc3339(),
+    );
+    if let Err(e) = write_session_view_to(&base, &value) {
+        eprintln!("codeforge: failed to write session view: {e}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pet::village::VILLAGES;
+
+    #[test]
+    fn session_view_carries_lights_and_raw_sid() {
+        let v = build_session_view("a/b:c d", "active", 12, "ok", "2026-10-31T00:00:00Z");
+        assert_eq!(v["schema"], SESSION_SCHEMA);
+        assert_eq!(v["session_id"], "a/b:c d");
+        assert_eq!(v["written_at"], "2026-10-31T00:00:00Z");
+        assert_eq!(v["memory"]["light"], "active");
+        assert_eq!(v["memory"]["active"], 12);
+        assert_eq!(v["brain"]["light"], "ok");
+    }
+
+    #[test]
+    fn session_view_lands_under_sanitized_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let v = build_session_view("a/b:c d", "empty", 0, "hidden", "2026-10-31T00:00:00Z");
+        write_session_view_to(dir.path(), &v).unwrap();
+        let path = dir.path().join(DIR).join(SESSION_DIR).join("a_b_c_d.json");
+        let back: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(back["memory"]["light"], "empty");
+    }
 
     fn ferris() -> PetState {
         PetState {

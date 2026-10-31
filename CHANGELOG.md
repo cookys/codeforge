@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Compact statusline while the forge-stats band shows the pet** — `codeforge statusline` reads the forge-stats
+  heartbeat (`<live_base>/codeforge/mod-alive/<session_id>.json`); when it is this session's, under 10 s old and says the
+  pet is shown, the statusline prints a 2-line identity + usage strip instead of the pet panel. Without it the output is
+  byte-identical to before.
+- **Session view** — every statusline run writes `<live_base>/codeforge/session/<session_id>.json`
+  (`codeforge.session-view/1`: memory and brain lights for this session only).
 - **forge-stats pane** — a Claude Code mod shipped in `.claude/skills/forge-stats/` (loaded by any
   `claude` started in this repo): model speed (tok/s, time to first token) and the pet, with Ferris drawn
   as an animated half-block pixel sprite in the terminal (ASCII elsewhere).

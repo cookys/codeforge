@@ -19,6 +19,16 @@ use unicode_width::UnicodeWidthStr;
 pub fn run(ctx: &db::Context) -> Result<()> {
     let (mut data, raw) = read_status_input();
     write_live_context(&raw);
+    let raw_sid = raw["session_id"].as_str().unwrap_or("");
+    // forge-stats band showing the pet for THIS session → compact form (plan §2.5).
+    let compact = {
+        let (live_base, _source) = crate::live::resolve_live_base();
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        read_mod_heartbeat(&live_base, raw_sid, now_ms)
+    };
     let conn = ctx.open_db()?;
     let has_pet = LiveState::exists(&conn).unwrap_or(false);
 
@@ -70,6 +80,8 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     // Window is closed — next statusline call sees a fresh baseline.
     let _ = update_last_seen(&conn, now_unix);
 
+    let (brain, active_l1) = brain_health(ctx);
+
     match loaded {
         Some(live) => {
             // Phase 3c P5: commentary bubble. Priority order when picking
@@ -92,7 +104,19 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             // DEFAULT_STRATEGY when the snapshot predates v6 — wait-for-tick
             // window is one daemon cycle).
             let strategy = live.strategy.unwrap_or(DEFAULT_STRATEGY);
-            render_full(&mut out, &data, &live.state, village, strategy, width, ctx)?;
+            if compact {
+                render_compact(&mut out, &data, width)?;
+            } else {
+                render_full(
+                    &mut out,
+                    &data,
+                    &live.state,
+                    village,
+                    strategy,
+                    width,
+                    &brain,
+                )?;
+            }
             crate::pet::view::publish(
                 Some((&live.state, village)),
                 crate::pet::view::Extras {
@@ -103,18 +127,125 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             );
         }
         None => {
-            render_no_pet(&mut out, &data, width)?;
+            if compact {
+                render_compact(&mut out, &data, width)?;
+            } else {
+                render_no_pet(&mut out, &data, width)?;
+            }
             crate::pet::view::publish(None, Default::default());
         }
     }
 
     out.flush()?;
 
+    let (memory_light, brain_light) = light_words(&brain);
+    crate::pet::view::write_session_view(raw_sid, memory_light, active_l1, brain_light);
+
     // Task 8: fire-and-forget detached probe spawn (after render, non-blocking).
     // Conditions: opted_in && should_refresh && lock acquired → spawn child.
     crate::mnemos::health::maybe_spawn_probe();
 
     Ok(())
+}
+
+// ─── Brain health (Task 13): local + central lights ─────────────────────────
+
+/// The local (L1 memory) and central (Mnemos) lights plus the active L1 count,
+/// computed once per statusline run for the bottom border and the session view.
+fn brain_health(ctx: &db::Context) -> (crate::mnemos::health::BrainHealth, usize) {
+    use crate::memory::l1;
+    use crate::mnemos::config::MnemosConfig;
+    use crate::mnemos::health::{
+        central_light, fresh_enough, local_light, queue_degraded, read_liveness, read_ship,
+        BrainHealth,
+    };
+
+    let store_dir = ctx.project_dir.join("store");
+    let active_l1 = l1::count_active(&store_dir);
+    let has_store_history = store_dir.join("concepts").exists();
+    let local = local_light(active_l1, has_store_history);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let lv = read_liveness();
+    let lv_fresh = lv.as_ref().filter(|l| fresh_enough(l, now));
+    let central = central_light(
+        MnemosConfig::opted_in(),
+        lv_fresh,
+        read_ship().as_ref(),
+        queue_degraded(),
+        now,
+    );
+    (BrainHealth { local, central }, active_l1)
+}
+
+/// Session-view words for the lights (`codeforge.session-view/1`).
+fn light_words(b: &crate::mnemos::health::BrainHealth) -> (&'static str, &'static str) {
+    use crate::mnemos::health::{CentralLight, LocalLight};
+    let memory = match b.local {
+        LocalLight::Active => "active",
+        LocalLight::Empty => "empty",
+        LocalLight::Hidden => "hidden",
+    };
+    let brain = match b.central {
+        CentralLight::Ok => "ok",
+        CentralLight::Degraded => "degraded",
+        CentralLight::Offline => "offline",
+        CentralLight::Pending => "pending",
+        CentralLight::Hidden => "hidden",
+    };
+    (memory, brain)
+}
+
+// ─── forge-stats band heartbeat (doc/plans/2026-10-31-statusline-band.md §2.5) ─
+
+/// Schema of the heartbeat forge-stats writes to `<live_base>/codeforge/mod-alive/<sid>.json`.
+const MOD_ALIVE_SCHEMA: &str = "codeforge.mod-alive/1";
+/// A heartbeat older than this no longer counts (the mod rewrites it every 2 s).
+const MOD_ALIVE_FRESH_MS: i64 = 10_000;
+/// Heartbeats are one short line; anything larger is not one.
+const MOD_ALIVE_MAX_BYTES: u64 = 4096;
+
+/// True only when this session's forge-stats band is showing the pet right now:
+/// the heartbeat for `raw_sid` exists, parses, has the right schema and session id,
+/// is fresh (`0 <= now - written_at < 10 s`) and says `pet_shown`. Anything else → false,
+/// and the statusline draws its full form.
+fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> bool {
+    if raw_sid.is_empty() {
+        return false;
+    }
+    let path = base
+        .join(crate::pet::view::DIR)
+        .join("mod-alive")
+        .join(format!(
+            "{}.json",
+            crate::live::sanitize_session_id(raw_sid)
+        ));
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return false;
+    };
+    if meta.len() > MOD_ALIVE_MAX_BYTES {
+        return false;
+    }
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return false;
+    };
+    let age = v["written_at_ms"].as_i64().map(|w| now_ms - w);
+    v["schema"] == MOD_ALIVE_SCHEMA
+        && v["session_id"] == raw_sid
+        && age.is_some_and(|a| (0..MOD_ALIVE_FRESH_MS).contains(&a))
+        && v["pet_shown"] == true
+}
+
+/// The compact form drawn while the forge-stats band shows the pet: the no-pet
+/// identity + usage strip (2 lines, no frame, no pet rows), without the adopt hint.
+fn render_compact<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
+    render_strip(out, data, width, false)
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -694,6 +825,17 @@ fn render_rows<W: Write>(out: &mut W, rows: &[Row], info_w: usize) -> Result<()>
 }
 
 fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
+    render_strip(out, data, width, true)
+}
+
+/// The 2-line identity + usage strip shared by the no-pet form (with the adopt
+/// hint) and the compact form (without it).
+fn render_strip<W: Write>(
+    out: &mut W,
+    data: &StatusInput,
+    width: usize,
+    adopt_hint: bool,
+) -> Result<()> {
     // Row 0 — identity strip (no box, no chip wrappers).
     // Composition: model ── cwd ⇡⇣ branch ─────── version
     // Cross-mode anchor: same model/cwd/branch/version order as render_full's
@@ -782,7 +924,9 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
     let hint_short = "→ adopt";
     let min_gap = 3; // breathing room between usage and hint
     let avail_for_hint = width.saturating_sub(1 + usage_left_vis + min_gap + 1); // leading space + content + gap + trailing
-    let hint_render = if avail_for_hint >= vis(hint_long) {
+    let hint_render = if !adopt_hint {
+        None
+    } else if avail_for_hint >= vis(hint_long) {
         Some((hint_long, vis(hint_long)))
     } else if avail_for_hint >= vis(hint_short) {
         Some((hint_short, vis(hint_short)))
@@ -854,7 +998,7 @@ fn render_full<W: Write>(
     village: &crate::pet::village::Village,
     strategy: Strategy,
     width: usize,
-    ctx: &db::Context,
+    brain_health: &crate::mnemos::health::BrainHealth,
 ) -> Result<()> {
     const ART_W: usize = 10;
     const ART_THRESHOLD: usize = 90; // drop art column below this width
@@ -997,39 +1141,8 @@ fn render_full<W: Write>(
 
     // ── Brain health (Task 13): local + central lights for bottom border ──────
 
-    let brain = {
-        use crate::memory::l1;
-        use crate::mnemos::config::MnemosConfig;
-        use crate::mnemos::health::{
-            central_light, fresh_enough, local_light, queue_degraded, read_liveness, read_ship,
-            BrainHealth,
-        };
-
-        let store_dir = ctx.project_dir.join("store");
-        let active_l1 = l1::count_active(&store_dir);
-        let has_store_history = store_dir.join("concepts").exists();
-        let local = local_light(active_l1, has_store_history);
-
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        let lv = read_liveness();
-        let lv_fresh = lv.as_ref().filter(|l| fresh_enough(l, now));
-        let central = central_light(
-            MnemosConfig::opted_in(),
-            lv_fresh,
-            read_ship().as_ref(),
-            queue_degraded(),
-            now,
-        );
-
-        // Probe tc() to decide plain vs. color path — see stdout_is_plain() for rationale.
-        let no_color = stdout_is_plain();
-
-        (BrainHealth { local, central }, no_color)
-    };
-    let (brain_health, no_color) = brain;
+    // Probe tc() to decide plain vs. color path — see stdout_is_plain() for rationale.
+    let no_color = stdout_is_plain();
 
     // ── Art helper: pad art line to ART_W, colored with village rgb ──────────
     // When art_visible is false, every helper returns None so render_rows
@@ -1141,7 +1254,7 @@ fn render_full<W: Write>(
             delim_c,
             ver_str.clone(),
             ver_vis,
-            &brain_health,
+            brain_health,
             no_color,
         );
         if art_visible {
@@ -1221,7 +1334,7 @@ fn render_full<W: Write>(
 
         // ── Row 4 (was 5): bottom border with memory ● active + version ─────
 
-        let row4_info = bottom_border(panel_w, delim_c, ver_str, ver_vis, &brain_health, no_color);
+        let row4_info = bottom_border(panel_w, delim_c, ver_str, ver_vis, brain_health, no_color);
 
         let rows = vec![
             Row {
@@ -1672,6 +1785,96 @@ mod tests {
 
     // Serialize env mutations across tests to avoid race conditions.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    // ── forge-stats heartbeat → compact form ─────────────────────────────
+
+    const HB_SID: &str = "93196c52-25cb-47ca-821c-cec391832eed";
+    const HB_NOW: i64 = 1_793_400_000_000;
+
+    fn write_heartbeat(base: &std::path::Path, file_sid: &str, body: &str) {
+        let dir = base.join("codeforge").join("mod-alive");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{file_sid}.json")), body).unwrap();
+    }
+
+    fn heartbeat(sid: &str, written_at_ms: i64, pet_shown: bool) -> String {
+        serde_json::json!({
+            "schema": "codeforge.mod-alive/1",
+            "session_id": sid,
+            "written_at_ms": written_at_ms,
+            "layout": "band",
+            "pet_shown": pet_shown,
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn heartbeat_fresh_and_shown_compacts() {
+        let dir = tempfile::tempdir().unwrap();
+        write_heartbeat(dir.path(), HB_SID, &heartbeat(HB_SID, HB_NOW - 1_500, true));
+        assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
+    }
+
+    #[test]
+    fn heartbeat_rejects_every_other_case() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        // no file
+        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
+        // stale (exactly 10 s old)
+        write_heartbeat(base, HB_SID, &heartbeat(HB_SID, HB_NOW - 10_000, true));
+        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
+        // from the future
+        write_heartbeat(base, HB_SID, &heartbeat(HB_SID, HB_NOW + 1, true));
+        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
+        // band not showing the pet
+        write_heartbeat(base, HB_SID, &heartbeat(HB_SID, HB_NOW - 100, false));
+        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
+        // another session's id inside this session's file
+        write_heartbeat(base, HB_SID, &heartbeat("someone-else", HB_NOW - 100, true));
+        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
+        // wrong schema
+        let other = heartbeat(HB_SID, HB_NOW - 100, true).replace("mod-alive/1", "mod-alive/9");
+        write_heartbeat(base, HB_SID, &other);
+        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
+        // half-written / not JSON
+        write_heartbeat(base, HB_SID, "{\"schema\":\"codeforge.mod");
+        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
+        // empty stdin session id never matches
+        assert!(!read_mod_heartbeat(base, "", HB_NOW));
+    }
+
+    #[test]
+    fn heartbeat_found_under_sanitized_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = "a/b:c d";
+        write_heartbeat(dir.path(), "a_b_c_d", &heartbeat(raw, HB_NOW - 100, true));
+        assert!(read_mod_heartbeat(dir.path(), raw, HB_NOW));
+    }
+
+    #[test]
+    fn compact_form_is_two_lines_without_frame_or_hint() {
+        let data = StatusInput {
+            model: Some("Opus 5.5".into()),
+            context_pct: Some(0.45),
+            five_hour_pct: Some(0.32),
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        render_compact(&mut buf, &data, 100).unwrap();
+        let text = strip_ansi(&String::from_utf8(buf).unwrap());
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(
+            lines.len() <= 2,
+            "compact form must be at most 2 lines: {lines:?}"
+        );
+        assert!(
+            !text.contains('╭') && !text.contains('│'),
+            "no box frame: {text}"
+        );
+        assert!(!text.contains("adopt"), "no adopt hint: {text}");
+        assert!(text.contains("ctx"), "usage row kept: {text}");
+    }
 
     /// (g) statusline fixture from p0/statusline.json ⇒ main file matches
     /// schema, context_window_size == 1000000.
