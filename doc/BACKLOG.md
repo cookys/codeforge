@@ -308,7 +308,7 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 - hooks 改由 autopilot 的 opt-in 清單註冊、不再寫全域 settings。ship 失敗責任：autopilot 只負責有呼叫、記結束碼、失敗看得到；
   重試與補送仍是 codeforge 的。
 - 降級：每一項都要能沒有 autopilot 單獨跑（forge-stats 沒有 host 時照現在自己畫；Solo Smith 定位不變）。
-- 取代原 B31（表現層由誰統一畫）：答案是 autopilot 當 host，各 extension 照契約交內容；fleet 分頁（卡 d-d99e2d99）也走這條。
+- 取代原 B31（表現層由誰統一畫）：答案是 autopilot 當 host，各 extension 照契約交內容；fleet 分頁也走這條：owner 決定由 autopilot 畫（卡 d-d99e2d99 已關），autopilot 登記為 BL-0358，alpha.7 之後做、不放核准按鈕。
 **Trigger**: autopilot `v3.0.0-alpha.7`（repo 重整 P1–P5）發布之後；開工前 autopilot 先寫 extension 機制 plan 並過 plan review，
 codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責任這四塊）。
 **Not done**: 契約與實作都還沒開始；alpha.7 搬家期間不定掛載點（路徑會變好幾次）。
