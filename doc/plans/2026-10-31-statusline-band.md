@@ -61,7 +61,8 @@ statusline 是事件觸發（閒置 45 秒只跑 2 次），做不到即時 tok/
 | `.claude/skills/forge-stats/types/index.d.ts` | `SessionView`、`Layout` 型別 |
 | `.claude/skills/forge-stats/hooks/model.ts` | `sanitizeSessionId`、`bandColumns(bodyColumns)`、`parseSessionView` |
 | `.claude/skills/forge-stats/hooks/register.tsx` | layout 指令與 store；AbovePrompt band；心跳計時器；band 動畫 |
-| `.claude/skills/forge-stats/tests/forge-stats.test.tsx` | band／layout／心跳／降級測試 |
+| `.claude/skills/forge-stats/tests/band.test.tsx` | band／layout／心跳／降級測試（P2 實作時另開檔；原寫 `forge-stats.test.tsx`） |
+| `.claude/skills/forge-stats/tests/session-id-vectors.ts` | 共用 sid 向量的 `.ts` 鏡像：mod 測試不能 import 外掛資料夾外的檔，也不能 import JSON（P2 實測）；`src/live.rs` 的 `forge_stats_vectors_mirror_the_fixture` 保證與 `tests/fixtures/session-id-vectors.json` 相同 |
 
 ## 4. Phases
 

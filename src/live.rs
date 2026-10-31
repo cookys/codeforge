@@ -507,6 +507,24 @@ mod tests {
         }
     }
 
+    /// The forge-stats mod tests the same sanitiser in TypeScript from a `.ts` mirror of the
+    /// fixture (a mod test can import neither JSON nor files outside the mod's folder).
+    #[test]
+    fn forge_stats_vectors_mirror_the_fixture() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let fixture: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(format!("{root}/tests/fixtures/session-id-vectors.json")).unwrap(),
+        )
+        .unwrap();
+        let mirror = fs::read_to_string(format!(
+            "{root}/.claude/skills/forge-stats/tests/session-id-vectors.ts"
+        ))
+        .unwrap();
+        let start = mirror.find(" = [").expect("mirror has `= [`") + 3;
+        let mirrored: serde_json::Value = serde_json::from_str(mirror[start..].trim()).unwrap();
+        assert_eq!(mirrored, fixture, "regenerate the mirror from the fixture");
+    }
+
     #[test]
     fn sanitize_session_id_basic_cases() {
         assert_eq!(sanitize_session_id(""), "unknown");

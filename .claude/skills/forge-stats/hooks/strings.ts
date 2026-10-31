@@ -37,6 +37,16 @@ const EN = {
   staleNote: 'snapshot from {n} min ago',
   opened: 'Forge stats pane opened.',
   cmdDesc: 'Open the tok/s + codeforge pet pane',
+  latest: 'latest',
+  memory: 'memory',
+  entries: 'entries',
+  brain: 'brain',
+  brainOk: 'connected',
+  brainDegraded: 'degraded',
+  brainOffline: 'offline',
+  brainPending: 'pending',
+  layoutSet: 'Forge stats layout: {layout}.',
+  layoutUsage: 'Usage: /forge-stats layout band|pane (now: {layout}).',
 } as const
 
 export type StringId = keyof typeof EN
@@ -75,6 +85,16 @@ const ZH_TW: Record<StringId, string> = {
   staleNote: '快照是 {n} 分鐘前的',
   opened: 'Forge stats 面板已開啟。',
   cmdDesc: '開啟 tok/s 與 codeforge 寵物面板',
+  latest: '最新',
+  memory: '記憶',
+  entries: '條',
+  brain: '大腦',
+  brainOk: '已連線',
+  brainDegraded: '降級',
+  brainOffline: '離線',
+  brainPending: '等待中',
+  layoutSet: 'Forge stats 版面：{layout}。',
+  layoutUsage: '用法：/forge-stats layout band|pane（目前：{layout}）。',
 }
 
 export type T = (id: StringId, vars?: Record<string, string | number>) => string

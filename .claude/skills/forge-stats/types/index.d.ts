@@ -69,11 +69,23 @@ export type PetView = {
   village: VillageData | null
 }
 
+/** Where forge-stats draws: the band above the prompt, or the pane. Kept in `$.store` (`layout`). */
+export type Layout = 'band' | 'pane'
+
+/** This session's lights, from codeforge's `codeforge/session/<sid>.json` (`codeforge.session-view/1`). */
+export type SessionView = {
+  memory: 'active' | 'empty' | 'hidden'
+  /** Active L1 entries in this project's memory. */
+  active: number
+  brain: 'ok' | 'degraded' | 'offline' | 'pending' | 'hidden'
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'forge-stats': {
       steps: Shaped<Step[]>
       pet: Shaped<PetView>
+      session: Shaped<SessionView | null>
     }
   }
 }

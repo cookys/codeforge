@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **forge-stats band** — `/forge-stats layout band|pane` (kept in the mod's store, band by default): the band
+  layout draws speed | Ferris | pet, memory and brain above the prompt instead of opening the pane, and writes the
+  heartbeat the compact statusline reads (`pet_shown` only while the band's Ferris blits succeed).
 - **Compact statusline while the forge-stats band shows the pet** — `codeforge statusline` reads the forge-stats
   heartbeat (`<live_base>/codeforge/mod-alive/<session_id>.json`); when it is this session's, under 10 s old and says the
   pet is shown, the statusline prints a 2-line identity + usage strip instead of the pet panel. Without it the output is

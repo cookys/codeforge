@@ -3,7 +3,7 @@
 // (~/projects/autopilot/docs/plans/2026-10-13-live-pane-design-system.md): grid 0/2/4/12,
 // semantic colour only, verified single-cell glyphs only, no emoji-presentation glyphs.
 
-import type { PetData, PetView, SpriteData, Step, VillageData } from '../types'
+import type { Layout, PetData, PetView, SessionView, SpriteData, Step, VillageData } from '../types'
 
 // ---------------------------------------------------------------------------------------------
 // display width (copied from autopilot mods/live/ui.ts: a plugin cannot import another plugin)
@@ -237,4 +237,82 @@ export function halfBlockCells(sprite: SpriteData, frameIndex: number): { column
     }
   }
   return { columns, rows, cells: base64(new Uint8Array(buf.buffer)) }
+}
+
+// ---------------------------------------------------------------------------------------------
+// band, heartbeat and session view (doc/plans/2026-10-31-statusline-band.md §2.5)
+
+/** codeforge's `crate::live::sanitize_session_id`: `[A-Za-z0-9_-]` kept, every other Unicode scalar → `_`, at most 64, empty → `unknown`. */
+export function sanitizeSessionId(raw: string): string {
+  let out = ''
+  let n = 0
+  for (const ch of raw) {
+    if (n === 64) break
+    out += /^[A-Za-z0-9_-]$/.test(ch) ? ch : '_'
+    n += 1
+  }
+  return out === '' ? 'unknown' : out
+}
+
+export const HEARTBEAT_SCHEMA = 'codeforge.mod-alive/1'
+export const HEARTBEAT_MS = 2000
+/** A band blit older than this no longer counts as the pet being shown. */
+export const SHOWN_MS = 2000
+
+export const SESSION_SCHEMA = 'codeforge.session-view/1'
+
+/** The live base a snapshot path sits in (`<base>/codeforge/pet.json` → `<base>`); null when it is not one. */
+export function liveBaseOf(petPath: string | null): string | null {
+  const tail = '/codeforge/pet.json'
+  return petPath !== null && petPath.endsWith(tail) ? petPath.slice(0, -tail.length) : null
+}
+
+export const heartbeatPath = (base: string, sid: string) => `${base}/codeforge/mod-alive/${sanitizeSessionId(sid)}.json`
+export const sessionViewPath = (base: string, sid: string) => `${base}/codeforge/session/${sanitizeSessionId(sid)}.json`
+
+export type BandBlit = { at: number; ok: boolean }
+
+/** True only in the band layout with a successful band blit in the last 2 s. */
+export const petShown = (layout: Layout, last: BandBlit | null, now: number): boolean =>
+  layout === 'band' && last !== null && last.ok && now - last.at >= 0 && now - last.at < SHOWN_MS
+
+/** The heartbeat line, as `codeforge statusline` reads it. */
+export function heartbeatText(sid: string, now: number, layout: Layout, shown: boolean): string {
+  return JSON.stringify({ schema: HEARTBEAT_SCHEMA, session_id: sid, written_at_ms: now, layout, pet_shown: layout === 'band' && shown })
+}
+
+export const BAND_MIN_ROWS = 12
+export const BAND_MIN_COLUMNS = 26
+export const BAND_SPEED_W = 34
+export const BAND_GAP = 2
+
+/** Which side columns fit beside Ferris: memory/pet from 90 cells, speed from 60, else Ferris alone. */
+export function bandColumns(bodyColumns: number, spriteWidth: number): { speed: boolean; memory: number } {
+  const withSpeed = spriteWidth + BAND_GAP + BAND_SPEED_W
+  const memory = bodyColumns - withSpeed - BAND_GAP
+  return { speed: bodyColumns >= withSpeed, memory: memory >= 28 ? memory : 0 }
+}
+
+const LIGHTS_MEMORY = ['active', 'empty', 'hidden'] as const
+const LIGHTS_BRAIN = ['ok', 'degraded', 'offline', 'pending', 'hidden'] as const
+
+/** Parse `codeforge/session/<sid>.json`; null when missing, unreadable, another schema or another session. */
+export function parseSessionView(text: string | null, sid: string): SessionView | null {
+  if (text === null) return null
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (!isObj(raw) || raw.schema !== SESSION_SCHEMA || raw.session_id !== sid) return null
+  const memory = isObj(raw.memory) ? raw.memory : {}
+  const brain = isObj(raw.brain) ? raw.brain : {}
+  const ml = str(memory.light)
+  const bl = str(brain.light)
+  return {
+    memory: (LIGHTS_MEMORY as readonly string[]).includes(ml) ? (ml as SessionView['memory']) : 'hidden',
+    active: Math.max(0, Math.floor(num(memory.active))),
+    brain: (LIGHTS_BRAIN as readonly string[]).includes(bl) ? (bl as SessionView['brain']) : 'hidden',
+  }
 }
