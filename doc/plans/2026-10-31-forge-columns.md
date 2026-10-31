@@ -16,10 +16,11 @@ owner（2026-10-31，卡 d-7ca99c54 後的訊息）：「你可以做偵測寬�
   1. `ferris`：sprite 寬（完整 24、迷你 16）
   2. `pet` 30：名字 Lv、村莊、XP 條、`ATK · DEF · HP`、`SUP · VER`、牠的一句話（迷你級不畫這句）
   3. `speed` 34：沿用現有速度欄
-  4. `recent` ≥ 40：最近請求表，沿用 pane 的 `recentLines`（表頭＋每列 tok/s、首字、輸出、模型，子代理標 `sub`），列數＝可用列數−1
+  4. `recent` ≥ 46：最近請求表，沿用 pane 的 `recentLines`（表頭＋每列 tok/s、首字、輸出、模型，子代理標 `sub`），列數＝可用列數−1
   5. `memory` 28：記憶、大腦兩盞燈
 - **排法**：`bandLayout(bodyColumns, spriteWidth)` 依序加欄，每欄前（第一欄除外）加 `BAND_GAP` 2；下一欄放不下就停（嚴格依優先序，不跳欄）。
-  多出來的寬度只給 `recent`（有它時），其他欄固定寬。24 寬 sprite 的門檻：1 欄 24、2 欄 56、3 欄 92、4 欄 134、5 欄 164。
+  多出來的寬度只給 `recent`（有它時），其他欄固定寬。24 寬 sprite 的門檻：1 欄 24（實際 26 起，`bandTier` 不到 26 欄是一列摘要）、2 欄 56、3 欄 92、4 欄 140、5 欄 170。
+  `recent` 46：子代理列是 33 格＋模型名，46 放得下 13 字元的模型名（review R1 Minor）。
 - 分級（`bandTier`）、blit、`pet_shown`、標籤與摘要文字級都不變；`bodyColumns < 26` 仍是一列摘要。
 - 不用 emoji 呈現字元；格式化只走 `./scripts/fmt.sh`（本次只動 mod，無 Rust 改動）。
 

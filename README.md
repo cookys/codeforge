@@ -356,8 +356,8 @@ model speed (tok/s, time to first token) and the pet — Ferris as an animated h
 terminal. It has two layouts, kept across sessions: `/forge-stats layout band` (the default) draws a band
 right above the prompt and `/forge-stats layout pane` opens a side pane instead (`/forge-stats` alone opens the
 pane in either layout). The band shows as many columns as the width allows, in this order: Ferris, pet (level, XP,
-stats), speed, recent requests, memory and brain — 1 column from 24 cells, 2 from 56, 3 from 92, 4 from 134, 5 from
-164; spare width goes to the request table. Its size follows the rows it is given: 12 or more
+stats), speed, recent requests, memory and brain — 2 columns from 56 cells, 3 from 92, 4 from 140, 5 from 170
+(Ferris alone below 56; under 26 cells the band is a one-line summary); spare width goes to the request table. Its size follows the rows it is given: 12 or more
 draw the full band, 6 to 11 the 16×6 mini Ferris, 2 to 5 (or under 26 columns) a one-line summary, and
 one row a single short label (`forge 93 tok/s`, shortened to fit) that a plugin above it, such as
 autopilot's tab bar, can put on a button. Only one plugin draws the band slot: one that sits above
