@@ -79,6 +79,7 @@ pub fn build(pet: Option<(&PetState, &Village)>, extras: Extras<'_>, written_at:
             "rgb": [r, g, b],
             "art_small": v.ascii_small.lines().collect::<Vec<_>>(),
             "art_full": v.ascii_full.lines().collect::<Vec<_>>(),
+            "sprite": crate::pet::sprite::to_json(crate::pet::sprite::for_village(v.id)),
         },
     })
 }
@@ -145,6 +146,52 @@ mod tests {
         assert_eq!(v["village"]["rgb"], json!([0xD7, 0x5F, 0x00]));
         assert_eq!(v["village"]["art_full"][0], "   _~^~^~_");
         assert_eq!(v["village"]["art_small"].as_array().unwrap().len(), 6);
+    }
+
+    #[test]
+    fn rust_village_carries_a_valid_sprite() {
+        let rust = VILLAGES.iter().find(|v| v.id == "rust").unwrap();
+        let v = build(
+            Some((&ferris(), rust)),
+            Extras::default(),
+            "2026-10-31T00:00:00Z",
+        );
+        let s = &v["village"]["sprite"];
+        assert!(s.is_object(), "rust village should carry a sprite, got {s}");
+        assert_eq!(s["width"], 24);
+        assert_eq!(s["height"], 24);
+        assert_eq!(s["transparent"], ".");
+        assert_eq!(s["frame_ms"], 500);
+        assert_eq!(s["palette"]["o"], json!([215, 95, 0]));
+        let frames = s["frames"].as_array().unwrap();
+        assert_eq!(frames.len(), 2);
+        for f in frames {
+            let rows = f.as_array().unwrap();
+            assert_eq!(rows.len(), 24);
+            assert!(rows
+                .iter()
+                .all(|r| r.as_str().unwrap().chars().count() == 24));
+        }
+    }
+
+    #[test]
+    fn village_without_sprite_writes_null_sprite_key() {
+        let python = VILLAGES.iter().find(|v| v.id == "python").unwrap();
+        let p = PetState {
+            village: "python".into(),
+            ..ferris()
+        };
+        let v = build(
+            Some((&p, python)),
+            Extras::default(),
+            "2026-10-31T00:00:00Z",
+        );
+        let village = v["village"].as_object().unwrap();
+        assert!(
+            village.contains_key("sprite"),
+            "sprite key must always be written"
+        );
+        assert!(v["village"]["sprite"].is_null());
     }
 
     #[test]

@@ -4,7 +4,9 @@
 
 ## Active
 
-_(none)_
+| Project | Description | Started |
+|---------|------------|---------|
+| [pixel-pet](2026-10-31-pixel-pet/README.md) | forge-stats 面板 Ferris 24×24 像素 sprite（Raster 半格）+ 兩幀待機動畫；codeforge 在 `pet.json` 加 `village.sprite` 契約。plan `doc/plans/2026-10-31-pixel-pet.md` | 2026-10-31 |
 
 ## Archived
 
