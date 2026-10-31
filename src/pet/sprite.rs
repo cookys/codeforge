@@ -19,6 +19,10 @@ pub struct Sprite {
 
 /// Sprite width and height in pixels (one cell = two vertical pixels, so 24x12 cells).
 pub const SIZE: usize = 24;
+/// The small sprite (`village.sprite_mini`): 16x12 pixels = 16 columns x 6 rows, for a band
+/// with 6 to 11 rows (`doc/plans/2026-10-31-forge-tabs.md` §2.5).
+pub const MINI_WIDTH: usize = 16;
+pub const MINI_HEIGHT: usize = 12;
 /// The character that means "no pixel".
 pub const TRANSPARENT: char = '.';
 
@@ -96,6 +100,46 @@ pub static FERRIS: Sprite = Sprite {
     frame_ms: 500,
 };
 
+// Ferris, 16×12 (the band's small tier): same palette, claws up / eyes blink.
+const FERRIS_MINI_IDLE: &[&str] = &[
+    ".hh..........hh.",
+    "hoo.o......o.ooh",
+    ".ooo........ooo.",
+    "..o..ww..ww..o..",
+    "...o.wk..kw.o...",
+    "....oooooooo....",
+    "..oooooooooooo..",
+    ".oohoooookoooho.",
+    ".oooooooooooooo.",
+    "..dooooooooood..",
+    "..o.o.o..o.o.o..",
+    ".o.o.o....o.o.o.",
+];
+
+const FERRIS_MINI_BLINK: &[&str] = &[
+    ".hh..........hh.",
+    ".ooo........ooo.",
+    "..oo........oo..",
+    "..o..........o..",
+    "...o.kk..kk.o...",
+    "....oooooooo....",
+    "..oooooooooooo..",
+    ".oohoooookoooho.",
+    ".oooooooooooooo.",
+    "..dooooooooood..",
+    "..o.o.o..o.o.o..",
+    ".o.o.o....o.o.o.",
+];
+
+pub static FERRIS_MINI: Sprite = Sprite {
+    width: MINI_WIDTH,
+    height: MINI_HEIGHT,
+    transparent: '.',
+    palette: FERRIS.palette,
+    frames: &[FERRIS_MINI_IDLE, FERRIS_MINI_BLINK],
+    frame_ms: 500,
+};
+
 /// The sprite for a village, if it has one. Villages without one draw ASCII art.
 pub fn for_village(id: &str) -> Option<&'static Sprite> {
     match id {
@@ -104,12 +148,26 @@ pub fn for_village(id: &str) -> Option<&'static Sprite> {
     }
 }
 
-/// Check a sprite against the contract; the error names the first problem.
+/// The small sprite for a village, if it has one (`village.sprite_mini`).
+pub fn mini_for_village(id: &str) -> Option<&'static Sprite> {
+    match id {
+        "rust" => Some(&FERRIS_MINI),
+        _ => None,
+    }
+}
+
+/// Check a `village.sprite` against the contract (24x24); the error names the first problem.
+#[cfg(test)]
 pub fn validate(s: &Sprite) -> Result<(), String> {
-    // The contract fixes the size (readers lay out a 24-column, 12-row Raster).
-    if s.width != SIZE || s.height != SIZE {
+    validate_size(s, SIZE, SIZE)
+}
+
+/// Check a sprite against the contract with a fixed size (readers lay out a
+/// `width`-column, `height / 2`-row Raster).
+pub fn validate_size(s: &Sprite, width: usize, height: usize) -> Result<(), String> {
+    if s.width != width || s.height != height {
         return Err(format!(
-            "size {}x{} must be {SIZE}x{SIZE}",
+            "size {}x{} must be {width}x{height}",
             s.width, s.height
         ));
     }
@@ -174,10 +232,19 @@ pub fn validate(s: &Sprite) -> Result<(), String> {
 /// JSON for `village.sprite`, or `null` when the village has none — or when
 /// its sprite breaks the contract, so a bad sprite never reaches a reader.
 pub fn to_json(sprite: Option<&Sprite>) -> Value {
+    to_json_sized(sprite, SIZE, SIZE)
+}
+
+/// JSON for `village.sprite_mini` (16x12), `null` when absent or off-contract.
+pub fn mini_to_json(sprite: Option<&Sprite>) -> Value {
+    to_json_sized(sprite, MINI_WIDTH, MINI_HEIGHT)
+}
+
+fn to_json_sized(sprite: Option<&Sprite>, width: usize, height: usize) -> Value {
     let Some(s) = sprite else {
         return Value::Null;
     };
-    if validate(s).is_err() {
+    if validate_size(s, width, height).is_err() {
         return Value::Null;
     }
     let mut palette = Map::new();
@@ -214,6 +281,40 @@ mod tests {
     #[test]
     fn frames_differ() {
         assert_ne!(FERRIS.frames[0], FERRIS.frames[1]);
+        assert_ne!(FERRIS_MINI.frames[0], FERRIS_MINI.frames[1]);
+    }
+
+    /// The forge-stats mod tests draw from `.ts` copies of these sprites (a mod test can
+    /// import neither JSON nor files outside the mod); keep them equal to what codeforge writes.
+    #[test]
+    fn forge_stats_sprite_fixtures_match() {
+        let dir = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/.claude/skills/forge-stats/tests"
+        );
+        let read = |name: &str| -> Value {
+            let text = std::fs::read_to_string(format!("{dir}/{name}")).unwrap();
+            let start = text.find(" = {").expect("fixture has `= {`") + 3;
+            serde_json::from_str(text[start..].trim()).unwrap()
+        };
+        assert_eq!(read("ferris-sprite.ts"), to_json(Some(&FERRIS)));
+        assert_eq!(read("ferris-mini.ts"), mini_to_json(Some(&FERRIS_MINI)));
+    }
+
+    #[test]
+    fn ferris_mini_meets_the_mini_contract() {
+        assert_eq!(validate_size(&FERRIS_MINI, MINI_WIDTH, MINI_HEIGHT), Ok(()));
+        assert!(validate(&FERRIS_MINI).unwrap_err().contains("24x24"));
+        for v in VILLAGES {
+            assert_eq!(mini_for_village(v.id).is_some(), v.id == "rust", "{}", v.id);
+        }
+        let j = mini_to_json(Some(&FERRIS_MINI));
+        assert_eq!(j["width"], 16);
+        assert_eq!(j["height"], 12);
+        assert_eq!(j["frames"][0].as_array().unwrap().len(), 12);
+        // a full-size sprite is not a mini one
+        assert!(mini_to_json(Some(&FERRIS)).is_null());
+        assert!(mini_to_json(None).is_null());
     }
 
     /// Ferris with one change applied; the result of validating it.

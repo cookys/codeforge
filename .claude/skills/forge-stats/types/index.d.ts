@@ -54,6 +54,8 @@ export type VillageData = {
   art_full: string[]
   /** null: no sprite, or one that breaks the contract → draw the ASCII art. */
   sprite: SpriteData | null
+  /** The 16x12 sprite for a 6–11 row band; null when absent or off-contract. */
+  sprite_mini: SpriteData | null
 }
 
 /** What the pane last read from `<live_base>/codeforge/pet.json`. */

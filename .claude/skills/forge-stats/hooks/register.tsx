@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Layout, PetView, SessionView, Step } from '../types'
+import type { Layout, PetView, SessionView, SpriteData, Step } from '../types'
 import {
   BAND_GAP,
   BAND_MIN_COLUMNS,
@@ -14,6 +14,7 @@ import {
   fmtMs,
   fmtTps,
   bandColumns,
+  bandTier,
   halfBlockCells,
   heartbeatPath,
   heartbeatText,
@@ -25,6 +26,7 @@ import {
   parseSnapshot,
   petShown,
   sessionViewPath,
+  tabLabel,
   shortModel,
   sparkline,
   staleMinutes,
@@ -62,6 +64,8 @@ let liveBase: string | null = null
 // The band instance the AbovePrompt hook last drew (its `e.requestId`); null when it passed.
 let bandId: string | null = null
 let bandLastCells: string | null = null
+// The sprite the band drew last (full or mini): its blits must match the mounted Raster's size.
+let bandSprite: SpriteData | null = null
 let lastBandBlit: BandBlit | null = null
 const BAND_KEY = 'pet-band'
 const t = (): T => makeT(locale)
@@ -116,11 +120,15 @@ async function stepSprite($: EngineInterface) {
     await $.ui.blit({ requestId: 'forge-stats', key: 'pet-sprite', cells })
   }
   // The band's Raster: its site is the band instance the render hook received (statusline-band
-  // plan §2.5). Its result decides whether the heartbeat says the pet is shown.
+  // plan §2.5), its size the sprite the band drew (forge-tabs plan §2.5). Its result decides
+  // whether the heartbeat says the pet is shown.
   const id = bandId
-  if (layout !== 'band' || id === null || cells === bandLastCells) return
-  bandLastCells = cells
-  const result = await $.ui.blit({ requestId: id, key: 'pet-band', cells })
+  const drawn = bandSprite
+  if (layout !== 'band' || id === null || drawn === null) return
+  const bandCells = halfBlockCells(drawn, spriteFrame % drawn.frames.length).cells
+  if (bandCells === bandLastCells) return
+  bandLastCells = bandCells
+  const result = await $.ui.blit({ requestId: id, key: 'pet-band', cells: bandCells })
   const ok = !('deny' in result)
   if (!ok) bandLastCells = null
   lastBandBlit = { at: await $.clock.now(), ok }
@@ -274,7 +282,7 @@ function bandSpeedLines(list: readonly Step[], tr: T): Line[] {
   return out
 }
 
-function bandMemoryLines(view: PetView, lights: SessionView | null, width: number, tr: T): Line[] {
+function bandMemoryLines(view: PetView, lights: SessionView | null, width: number, tr: T, short = false): Line[] {
   const out: Line[] = []
   const { pet: p, village: v } = view
   if (view.status === 'ok' && p !== null && v !== null) {
@@ -284,9 +292,9 @@ function bandMemoryLines(view: PetView, lights: SessionView | null, width: numbe
       out.push([seg(tr('xp') + ' ', 'dim'), seg(m.on), seg(m.off, 'idle'), seg(padLeft(`${Math.floor((p.xp / p.xp_to_next) * 100)}%`, 5))])
     }
     out.push([seg('ATK ', 'dim'), seg(String(p.atk)), seg(' · ', 'structure'), seg('DEF ', 'dim'), seg(String(p.def)), seg(' · ', 'structure'), seg('HP ', 'dim'), seg(String(p.hp))])
-    if (p.message) out.push([seg(p.message, 'dim')])
+    if (p.message && !short) out.push([seg(p.message, 'dim')])
   }
-  out.push([seg(' ')])
+  if (!short) out.push([seg(' ')])
   const brainWord: Record<SessionView['brain'], string> = {
     ok: tr('brainOk'),
     degraded: tr('brainDegraded'),
@@ -470,24 +478,41 @@ export const register: Register = on => {
   // The band above the prompt: speed | Ferris | memory and pet (statusline-band plan §2.5).
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const props = e.props
-    if (e.surface !== 'terminal' || layout !== 'band' || props.hasSurvey || props.maxRows < BAND_MIN_ROWS || props.bodyColumns < BAND_MIN_COLUMNS) {
+    if (e.surface !== 'terminal' || layout !== 'band' || props.hasSurvey || props.maxRows < 1) {
       bandId = null
       return next(e)
     }
     const els = $.ui.resolve(e)
+    const { Box, Text } = els
     const p = await read($, pet)
-    const sprite = p.status === 'ok' ? (p.village?.sprite ?? null) : null
-    if (!('Raster' in els) || sprite === null) {
-      bandId = null
-      return next(e)
-    }
-    const { Box, Text, Raster } = els
-    const tr = t()
     const list = await read($, steps)
+    const full = p.status === 'ok' ? (p.village?.sprite ?? null) : null
+    const mini = p.status === 'ok' ? (p.village?.sprite_mini ?? null) : null
+    const Raster = 'Raster' in els ? els.Raster : undefined
+    let tier = bandTier(props.maxRows, props.bodyColumns, mini !== null)
+    if (tier === 'full' && (full === null || Raster === undefined)) tier = 'summary'
+    if (tier === 'mini' && (mini === null || Raster === undefined)) tier = 'summary'
+    const sprite = tier === 'full' ? full : tier === 'mini' ? mini : null
+    if (sprite === null || Raster === undefined) {
+      // text tiers: one Text (strings and nested Text only), so autopilot can wrap it in its Button
+      bandId = null
+      bandSprite = null
+      const main = list.filter(s => !s.isSubagent)
+      const latest = main.length ? main[main.length - 1]!.tps : null
+      let text = tabLabel(props.bodyColumns, latest)
+      if (tier === 'summary') {
+        const recent = main.slice(-8)
+        if (recent.length >= 2) text += ' ' + sparkline(recent.map(s => s.tps))
+        if (p.status === 'ok' && p.pet !== null) text += ` · ${p.pet.name} Lv.${p.pet.level}`
+      }
+      return <Text wrap="truncate">{text}</Text>
+    }
+    const tr = t()
     const lights = await read($, session)
     const fit = bandColumns(props.bodyColumns, sprite.width)
-    const frame = halfBlockCells(sprite, spriteFrame)
+    const frame = halfBlockCells(sprite, spriteFrame % sprite.frames.length)
     bandId = e.requestId
+    bandSprite = sprite
     bandLastCells = frame.cells
 
     const draw = (s: Seg, i: number) => {
@@ -521,7 +546,7 @@ export const register: Register = on => {
       <Box flexDirection="row" gap={BAND_GAP}>
         {fit.speed ? column(bandSpeedLines(list, tr), BAND_SPEED_W, 'speed') : null}
         <Raster key={BAND_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
-        {fit.memory > 0 ? column(bandMemoryLines(p, lights, fit.memory, tr), fit.memory, 'memory') : null}
+        {fit.memory > 0 ? column(bandMemoryLines(p, lights, fit.memory, tr, tier === 'mini'), fit.memory, 'memory') : null}
       </Box>
     )
   })
