@@ -4,14 +4,13 @@
 
 ## Active
 
-| Project | Description | Started |
-|---------|------------|---------|
-| [pixel-pet](2026-10-31-pixel-pet/README.md) | forge-stats 面板 Ferris 24×24 像素 sprite（Raster 半格）+ 兩幀待機動畫；codeforge 在 `pet.json` 加 `village.sprite` 契約。plan `doc/plans/2026-10-31-pixel-pet.md` | 2026-10-31 |
+_(none)_
 
 ## Archived
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [pixel-pet](_archive/2026-10-31-pixel-pet/README.md) | Ferris 24×24 兩幀像素 sprite（`pet.json` `village.sprite`）+ forge-stats 面板 Raster 半格待機動畫；mod 收進 `.claude/skills/forge-stats/` | 2026-10-31 |
 | [brain-indicators](_archive/2026-06-23-brain-indicators/README.md) | statusline 兩顆真實狀態燈（本地腦 L1 + 央腦 Mnemos liveness/readiness）+ `codeforge doctor` + `mnemos-cli probe`。雙軸健康（probe/ship，防 OR 假綠）、per-machine 雙快取、detached probe（process_group 隔離 + O_EXCL rename-steal 鎖防 herd）、NO_COLOR 雙路徑 + 6 級降級階梯、ship 順風車 readiness 快取。3 輪設計 review（R1 翻盤前提：Mnemos /health 早已存在）+ 6 phase per-task review + whole-branch review。817 tests、clippy --all-targets 綠、零新 dep。BACKLOG B21-24 | 2026-06-23 ✅ |
 | [doc-drift-system](_archive/2026-06-18-doc-drift-system/README.md) | 文件↔code drift 全套 — `doc/concepts.md` + API-key fallback 修正 → 7 輪 LLM audit 修 ~120 條 drift（48+4+22+11+13+14+8+10）→ 做成可重用 Workflow + dev-flow 觸發 → 升級成可攜 `autopilot:doc-sync` skill（v2.19→v2.20，兩層模型）→ **確定性 gate** `scripts/check-doc-drift.py`（links/fences/version-sync/cli-surface/roadmap，5 檢查）+ CI job。核心發現：LLM sweep 是**探勘非 gate**，loop-to-zero 不收斂（非確定 finder + 修復自引入錯，commentary 真錯潛伏 6 輪）；可靠性來自確定性檢查（記於 `.claude/doc-audit-state.json`）。兩 repo gate 全綠（codeforge 5/5、autopilot preflight 16/16）；spec design-target → BACKLOG B18 | 2026-06-22 ✅ |
 | [session-digest-landing-a-prime](_archive/2026-06-17-session-digest-landing-a-prime/README.md) | session-digest hook 落地重設計 A′ + per-repo ship opt-out — hook 不再倒全 session 進全域 `~/.claude/session-digests/`(明文、歸屬錯),改從 cwd 往上找 `.codeforge`(像 git 找 `.git`)落 per-repo `<repo>/.codeforge/digests/`,**找不到即 skip 不寫**(非 codeforge 專案的 session 零明文落盤=隱私根本解);`ingest-digests` 改 per-repo dir + 移 cwd filter + **吸完刪檔**(明文不長存)+ 過渡同讀舊全域路徑;`<repo>/.codeforge/no-ship` per-repo opt-out(ingest skip + ship 硬 no-op)。P0-P3 + §6 獨立 review(0 Critical、2 Major 修/駁 + Minor)+ 原子寫+刪檔競態 mtime guard,770 tests 綠 | 2026-06-17 ✅ |
