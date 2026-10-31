@@ -287,3 +287,11 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 **Proposed**: 先量 `render_full` 實際能放幾列 art，再把指南、struct 註解統一成那個數字，並在 `village.rs` 測試釘住上限。
 **Trigger**: 下次新增或重畫村落圖案，或動 statusline 的 art 欄。
 **Not done**: 只記錄落差；2026-10-31 只修了縮排、加了 `concat!` 寫法說明，沒有動行數規格。
+
+## B30 — 其他四個村落的像素 sprite（目前只有 Ferris）
+
+**Area**: `src/pet/sprite.rs`（`for_village`、新 sprite 常數）、`.claude/skills/ascii-pet-artist.md`（補 sprite 畫法）
+**Premise**: pixel-pet（2026-10-31）只做了 Rust/Ferris 的 24×24 兩幀 sprite；python/typescript/go/javascript 的 `village.sprite` 是 `null`，forge-stats 面板對這些寵物退回 ASCII。sprite 格式與驗證已定（`validate()`：24×24、`.` 透明、xterm-256 cube 色、≥2 幀、500 ms）。
+**Proposed**: 每村畫一組 24×24 兩幀 sprite 加進 `for_village`；`validate` 測試自動涵蓋。畫法說明寫進 ascii-pet-artist skill。
+**Trigger**: owner 領養非 Rust 村落的寵物，或要求其他村落也有像素圖。
+**Not done**: 範圍刻意只做 Ferris（plan `doc/plans/2026-10-31-pixel-pet.md` §7）。

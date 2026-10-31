@@ -28,3 +28,19 @@ EOF
 Bash 不觸發此 hook。後續用 Edit 修改也不會觸發（Edit ≠ Write）。
 **When this fires**: 第一次寫入或從零重寫 `.github/workflows/*.yml`。
 **Note**: hook 的 advisory 內容（command injection / `${{ github.event.* }}` patterns）值得讀一次，但已知乾淨的 workflow 直接 heredoc bypass，不要因為它而 reroute / 改 design。
+
+## pixel sprite format / half-block raster animation / terminal pixel art palette（Claude Code mod `Raster`）
+**Date**: 2026-10-31 | **Context**: pixel-pet — Ferris 像素寵物畫進 forge-stats 面板（U1 consult grok-4.6 xhigh，run `consult-20261030T231425Z-1202686`；實作 `src/pet/sprite.rs` + `.claude/skills/forge-stats/hooks/model.ts`）
+**Problem**: mod `Image`（kitty 佔位圖／iTerm2）在 Windows Terminal 與 WezTerm 都只畫 alt；要在終端畫彩色像素又要會動。
+**Solution**:
+- **格式**：調色盤（字元 → `[r,g,b]`）+ 每幀定寬字元列，`.` = 透明。可讀、可 diff，資料只放 sprite，不放 Raster cells（cells 由讀者算）。24×24 px → `Raster columns=24 rows=12`。
+- **半格對應**：一格 = 像素列 2y（上）與 2y+1（下）。上下都有色 → `▀` U+2580，fg = 上、bg = 下；只有上 → `▀`，bg = `0x01000000`（預設色）；只有下 → `▄` U+2584，fg = 下；都透明 → 空白，fg = bg = `0x01000000`。cells = little-endian u32 三元組 `[codePoint, 0x00RRGGBB, bg]` 的 base64（`new Uint8Array(u32.buffer).toBase64()`）。
+- **調色盤**：每個 channel 只用 xterm-256 cube 值 {0,95,135,175,215,255}；tmux 把 WT client 降到 256 色時不跑色。
+- **動畫**：`$.clock.every(500, …)`（字面參數）算下一幀 → cells 沒變就不送 → `$.ui.blit({ requestId: '<pane>', key: '<raster key>', cells })`。幀索引放**模組變數**、`session.start` 歸零：寫 `$.state` 會讓整個 pane 重畫，blit 就是為了不重畫。
+- **surface**：`'Raster' in $.ui.resolve(e)` 在 desktop 也是 true → 要用 `e.surface === 'terminal'` 判斷，否則 desktop 沒有 ASCII 退路。
+**Related**: `doc/specs/codeforge-mod-ui.md`、`doc/plans/2026-10-31-pixel-pet.md` §2.5
+
+## Claude Code mod 放哪才每次都載得到：專案 `.claude/skills/<name>/`
+**Date**: 2026-10-31 | **Context**: forge-stats 在 `--resume` 後變成 `Unknown command: /forge-stats`
+**Problem**: session 自己的 mods 資料夾（`~/.claude/dev-mods/<session-id>/`）綁 session id，`claude --resume` 換新 id 後就不再載入；`claude plugin test` 照樣綠，看不出來。`CLAUDE_CODE_PLUGIN_DIRS` 只讀環境變數或 `~/.claude/settings.json`，**不讀專案 settings**。
+**Solution**: mod 放 repo 的 `.claude/skills/<name>/`（含 `.claude-plugin/plugin.json`）——Claude Code 自動載入專案 skills 資料夾的 mod，互動模式熱重載；只在該 repo 開的 claude 生效。驗證：在 repo 跑 `claude -p "/<command>"` 有回應、把資料夾移走後變成一般 prompt。引擎產生的 `.claude-plugin/types/` 自帶 `.gitignore`（`*`）。判斷某 mod 有沒有被載入：引擎每次載入會重寫 `<mod>/.claude-plugin/types/`（互動 session），mtime 很舊 = 沒人在載。
