@@ -60,6 +60,13 @@ user-facing 文字用 **agent-neutral 語言**：「你的 coding agent」而非
 
 屆時順序：先實作**接縫 1（transcript reader）** —— 它最深、價值最高、是「自動累積」的源頭；其餘接縫按需跟上。
 
+## 8. 2026-11-01 增補：接縫 2～4 交給 autopilot extension 契約
+
+owner 決定（卡 d-0e2e6e0d）codeforge 從 autopilot 3.0.0-alpha.8 起成為 autopilot 的 extension：hook wiring（接縫 2）、
+session 事件（接縫 3）、statusline 與 band（接縫 4）改由 autopilot 依契約註冊與排版，codeforge 只交 manifest 與內容；Rust 本體與
+接縫 1（transcript reader）不動。這不是 §7 的 B 化（沒有第二個 agent），而是同一個 CC 宿主上把「接到 CC 的那一層」集中到 autopilot。
+每一項都要能在沒有 autopilot 時單獨運作。細節與觸發條件見 `doc/BACKLOG.md` B31。
+
 ## 相關
 
 - [`doc/concepts.md`](../concepts.md) §2.5 absorb —— transcript → L0 的 CC 現況（接縫 1 的白話版）
