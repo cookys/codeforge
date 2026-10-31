@@ -94,6 +94,13 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
 - **mod 位置**：`.claude/skills/forge-stats/`（repo 內）。專案 skills 資料夾裡的 mod 由 Claude Code 自動載入、互動模式熱重載，
   所以在 codeforge repo 開的 claude 都有面板。`CLAUDE_CODE_PLUGIN_DIRS` 不能寫在專案 settings（只讀環境變數或使用者設定）；
   session 自己的 mods 資料夾綁 session id，`--resume` 後就不載入，不要放那裡。驗證：`claude plugin test .claude/skills/forge-stats`。
+- **band 版面（statusline-band，2026-10-31）**：`/forge-stats layout band|pane`（存 `$.store`，預設 band）。band 在
+  prompt 正上方畫三欄：速度 34｜Ferris 24×12 Raster｜寵物、記憶、大腦（讀 `codeforge/session/<sid>.json`）；不到 90 欄
+  先收第三欄、不到 60 欄再收速度。mod 每 2 秒寫 `codeforge/mod-alive/<sid>.json` 心跳，只在 band 的 Ferris blit 成功
+  且未滿 2 秒時說 `pet_shown`；statusline 讀到自己 session 的新鮮心跳才縮成 2 行。規則見
+  `doc/plans/2026-10-31-statusline-band.md` §2.5。**依賴**：AbovePrompt 一次只有一個實例，鏈上排在上面的 plugin
+  不呼叫 `next(e)` 就輪不到 forge-stats（2026-10-31 探針：autopilot live band 在上）。autopilot 改成疊在下層之上前，
+  有 autopilot band 的 session 看不到 forge-stats band，statusline 也維持完整版（安全方向）。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、tok/s、縮圖）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 

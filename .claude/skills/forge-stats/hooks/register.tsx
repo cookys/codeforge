@@ -1,25 +1,37 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { PetView, Step } from '../types'
+import type { Layout, PetView, SessionView, Step } from '../types'
 import {
+  BAND_GAP,
+  BAND_MIN_COLUMNS,
+  BAND_MIN_ROWS,
+  BAND_SPEED_W,
   GLYPH,
   KEY_W,
   displayWidth,
   fmtCount,
   fmtMs,
   fmtTps,
+  bandColumns,
   halfBlockCells,
+  heartbeatPath,
+  heartbeatText,
+  liveBaseOf,
   meter,
   padLeft,
   padRight,
+  parseSessionView,
   parseSnapshot,
+  petShown,
+  sessionViewPath,
   shortModel,
   sparkline,
   staleMinutes,
   summarize,
 } from './model'
 import { localeFrom, makeT } from './strings'
+import type { BandBlit } from './model'
 import type { Locale, T } from './strings'
 
 const PANE = 'forge-stats'
@@ -33,6 +45,7 @@ const pet = atom(
   { status: 'missing', readAt: 0, writtenAt: null, path: null, pet: null, village: null } as PetView,
   { shape: 'pet-3' },
 )
+const session = atom({ plugin: 'forge-stats', key: 'session' } as const, null as SessionView | null, { shape: 'session-1' })
 
 // Module variables: recomputed on every session.start (a reload runs it again).
 let locale: Locale = 'en'
@@ -41,6 +54,16 @@ let locale: Locale = 'en'
 let spriteFrame = 0
 let lastCells: string | null = null
 const SPRITE_KEY = 'pet-sprite'
+// Band and heartbeat (statusline-band plan §2.5). `layout` comes from $.store at session.start.
+let layout: Layout = 'band'
+let sid = ''
+// The live base codeforge wrote pet.json into: heartbeats go there, so the statusline finds them.
+let liveBase: string | null = null
+// The band instance the AbovePrompt hook last drew (its `e.requestId`); null when it passed.
+let bandId: string | null = null
+let bandLastCells: string | null = null
+let lastBandBlit: BandBlit | null = null
+const BAND_KEY = 'pet-band'
 const t = (): T => makeT(locale)
 
 async function resolveLocale($: EngineInterface): Promise<Locale> {
@@ -61,7 +84,7 @@ async function resolveLocale($: EngineInterface): Promise<Locale> {
 // Where codeforge may have written the snapshot, in the order codeforge resolves its live base
 // (`src/live.rs`: AUTOPILOT_LIVE_DIR, XDG_RUNTIME_DIR/autopilot, …, ~/.autopilot), with the
 // pointer autopilot's own mods read slotted in after the override. The first readable file wins.
-async function snapshotCandidates($: EngineInterface): Promise<string[]> {
+async function liveBases($: EngineInterface): Promise<string[]> {
   const home = (await $.env.get('HOME').catch(() => undefined)) || undefined
   const over = (await $.env.get('AUTOPILOT_LIVE_DIR').catch(() => undefined)) || undefined
   const xdg = (await $.env.get('XDG_RUNTIME_DIR').catch(() => undefined)) || undefined
@@ -76,7 +99,7 @@ async function snapshotCandidates($: EngineInterface): Promise<string[]> {
     }
   }
   const bases = [over, pointed, xdg ? xdg + '/autopilot' : undefined, home ? home + '/.autopilot' : undefined]
-  return [...new Set(bases.filter((x): x is string => typeof x === 'string'))].map(b => b + '/codeforge/pet.json')
+  return [...new Set(bases.filter((x): x is string => typeof x === 'string'))]
 }
 
 // Next idle frame → $.ui.blit, only when the cells change. A deny (pane closed, Raster not
@@ -87,14 +110,36 @@ async function stepSprite($: EngineInterface) {
   if (sprite === null) return
   spriteFrame = (spriteFrame + 1) % sprite.frames.length
   const { cells } = halfBlockCells(sprite, spriteFrame)
-  if (cells === lastCells) return
-  lastCells = cells
-  // literal routing at the call site (pixel-pet plan §2.5); must match PANE and SPRITE_KEY
-  await $.ui.blit({ requestId: 'forge-stats', key: 'pet-sprite', cells })
+  if (cells !== lastCells) {
+    lastCells = cells
+    // literal routing at the call site (pixel-pet plan §2.5); must match PANE and SPRITE_KEY
+    await $.ui.blit({ requestId: 'forge-stats', key: 'pet-sprite', cells })
+  }
+  // The band's Raster: its site is the band instance the render hook received (statusline-band
+  // plan §2.5). Its result decides whether the heartbeat says the pet is shown.
+  const id = bandId
+  if (layout !== 'band' || id === null || cells === bandLastCells) return
+  bandLastCells = cells
+  const result = await $.ui.blit({ requestId: id, key: 'pet-band', cells })
+  const ok = !('deny' in result)
+  if (!ok) bandLastCells = null
+  lastBandBlit = { at: await $.clock.now(), ok }
+}
+
+// One line codeforge statusline reads: is this session's band showing the pet right now?
+async function writeHeartbeat($: EngineInterface) {
+  if (liveBase === null || sid === '') return
+  try {
+    const now = await $.clock.now()
+    await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout, petShown(layout, lastBandBlit, now)))
+  } catch {
+    // best effort: no heartbeat means the statusline stays full
+  }
 }
 
 async function refreshPet($: EngineInterface) {
-  const candidates = await snapshotCandidates($)
+  const bases = await liveBases($)
+  const candidates = bases.map(b => b + '/codeforge/pet.json')
   let text: string | null = null
   let path: string | null = candidates[0] ?? null
   for (const c of candidates) {
@@ -111,6 +156,17 @@ async function refreshPet($: EngineInterface) {
   }
   const next = parseSnapshot(text, path, Date.now())
   await update($, pet, () => next)
+  liveBase = liveBaseOf(text === null ? null : path) ?? bases[0] ?? null
+  if (liveBase === null || sid === '') return
+  let viewText: string | null = null
+  try {
+    const v = await $.fs.read(sessionViewPath(liveBase, sid))
+    viewText = typeof v === 'string' ? v : null
+  } catch {
+    viewText = null
+  }
+  const view = parseSessionView(viewText, sid)
+  await update($, session, () => view)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -201,6 +257,52 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
   return out
 }
 
+// band columns: at most 12 rows each, beside the 12-row Ferris
+
+function bandSpeedLines(list: readonly Step[], tr: T): Line[] {
+  const main = summarize(list.filter(s => !s.isSubagent))
+  const out: Line[] = [[seg(tr('speed'), 'bold'), seg('  tok/s', 'dim')]]
+  if (main.requests === 0) return [...out, [seg(`${GLYPH.empty} ${tr('noRequests')}`, 'dim')]]
+  const unit = tr('reqUnit')
+  const latest = [...list].reverse().find(s => !s.isSubagent)
+  out.push([seg(fmtTps(main.avgTps), 'bold'), seg(` ${tr('avg')}`, 'dim'), seg(`  ${tr('best')} `, 'dim'), seg(fmtTps(main.bestTps))])
+  if (latest) out.push([seg(`${tr('latest')} `, 'dim'), seg(fmtTps(latest.tps)), seg(`  ${tr('firstToken')} `, 'dim'), seg(fmtMs(latest.ttftMs))])
+  out.push([seg(`${tr('firstToken')} `, 'dim'), seg(fmtMs(main.medianTtft)), seg(` ${tr('median')}`, 'dim')])
+  out.push([seg(`${main.requests}${unit ? ' ' + unit : ''} ${tr('requests')}`, 'dim')])
+  const recent = list.filter(s => !s.isSubagent).slice(-(BAND_SPEED_W - 2))
+  if (recent.length >= 2) out.push([seg(sparkline(recent.map(s => s.tps)), 'mono')])
+  return out
+}
+
+function bandMemoryLines(view: PetView, lights: SessionView | null, width: number, tr: T): Line[] {
+  const out: Line[] = []
+  const { pet: p, village: v } = view
+  if (view.status === 'ok' && p !== null && v !== null) {
+    out.push([seg(p.name, 'bold'), seg(`  Lv.${p.level}`), seg(` · ${v.display_name}`, 'dim')])
+    if (p.xp_to_next > 0) {
+      const m = meter(p.xp / p.xp_to_next, Math.max(6, Math.min(20, width - 12)))
+      out.push([seg(tr('xp') + ' ', 'dim'), seg(m.on), seg(m.off, 'idle'), seg(padLeft(`${Math.floor((p.xp / p.xp_to_next) * 100)}%`, 5))])
+    }
+    out.push([seg('ATK ', 'dim'), seg(String(p.atk)), seg(' · ', 'structure'), seg('DEF ', 'dim'), seg(String(p.def)), seg(' · ', 'structure'), seg('HP ', 'dim'), seg(String(p.hp))])
+    if (p.message) out.push([seg(p.message, 'dim')])
+  }
+  out.push([seg(' ')])
+  const brainWord: Record<SessionView['brain'], string> = {
+    ok: tr('brainOk'),
+    degraded: tr('brainDegraded'),
+    offline: tr('brainOffline'),
+    pending: tr('brainPending'),
+    hidden: GLYPH.empty,
+  }
+  if (lights === null || lights.memory === 'hidden') {
+    out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(GLYPH.empty, 'dim')])
+  } else {
+    out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(String(lights.active)), seg(` ${tr('entries')}`, 'dim')])
+  }
+  out.push([seg(padRight(tr('brain'), 6), 'dim'), lights === null ? seg(GLYPH.empty, 'dim') : seg(brainWord[lights.brain], lights.brain === 'ok' ? undefined : 'dim')])
+  return out
+}
+
 // ---------------------------------------------------------------------------------------------
 
 export const register: Register = on => {
@@ -209,18 +311,40 @@ export const register: Register = on => {
     // a new session starts its animation from frame 0 with nothing sent yet
     spriteFrame = 0
     lastCells = null
+    bandId = null
+    bandLastCells = null
+    lastBandBlit = null
+    sid = await $.session.id().catch(() => '')
+    const stored = await $.store.get('layout').catch(() => undefined)
+    layout = stored === 'pane' ? 'pane' : 'band'
     await $.command.register({ name: 'forge-stats', description: t()('cmdDesc') })
-    void $.ui.open({ id: PANE, title: t()('title') })
-    void refreshPet($)
+    // the band layout draws above the prompt instead of opening the pane (plan KR5)
+    if (layout === 'pane') void $.ui.open({ id: PANE, title: t()('title') })
+    await refreshPet($)
+    // first heartbeat before any timer (plan §2.5), then every 2 s
+    await writeHeartbeat($)
     // statusline rewrites the snapshot every render; a slow poll keeps the pane current
     // between turns (a reload cancels the timer).
     $.clock.every(15_000, () => void refreshPet($))
     // idle animation: 2 fps, interval written as a literal (pixel-pet plan §2.5)
     $.clock.every(500, () => void stepSprite($))
+    $.clock.every(2000, () => void writeHeartbeat($))
     return next(e)
   })
 
-  on('command.run', { command: 'forge-stats' }, async $ => {
+  on('command.run', { command: 'forge-stats' }, async ($, e) => {
+    const [verb, arg] = e.args.trim().split(/\s+/)
+    if (verb === 'layout') {
+      if (arg !== 'band' && arg !== 'pane') return { text: t()('layoutUsage', { layout }) }
+      layout = arg
+      await $.store.set('layout', arg)
+      bandLastCells = null
+      lastBandBlit = null
+      if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title') })
+      $.ui.invalidate('ui.render')
+      await writeHeartbeat($)
+      return { text: t()('layoutSet', { layout: arg }) }
+    }
     await $.ui.open({ id: PANE, title: t()('title') })
     void refreshPet($)
     return { text: t()('opened') }
@@ -340,6 +464,64 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {lines.map((l, i) => row(l, 'l' + i))}
         {petBlock}
+      </Box>
+    )
+  })
+  // The band above the prompt: speed | Ferris | memory and pet (statusline-band plan §2.5).
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const props = e.props
+    if (e.surface !== 'terminal' || layout !== 'band' || props.hasSurvey || props.maxRows < BAND_MIN_ROWS || props.bodyColumns < BAND_MIN_COLUMNS) {
+      bandId = null
+      return next(e)
+    }
+    const els = $.ui.resolve(e)
+    const p = await read($, pet)
+    const sprite = p.status === 'ok' ? (p.village?.sprite ?? null) : null
+    if (!('Raster' in els) || sprite === null) {
+      bandId = null
+      return next(e)
+    }
+    const { Box, Text, Raster } = els
+    const tr = t()
+    const list = await read($, steps)
+    const lights = await read($, session)
+    const fit = bandColumns(props.bodyColumns, sprite.width)
+    const frame = halfBlockCells(sprite, spriteFrame)
+    bandId = e.requestId
+    bandLastCells = frame.cells
+
+    const draw = (s: Seg, i: number) => {
+      const k = 's' + i
+      switch (s.role) {
+        case 'structure':
+          return <Text key={k} color="subtle" wrap="truncate">{s.text}</Text>
+        case 'idle':
+          return <Text key={k} color="inactive" wrap="truncate">{s.text}</Text>
+        case 'dim':
+          return <Text key={k} dimColor wrap="truncate">{s.text}</Text>
+        case 'bold':
+          return <Text key={k} bold wrap="truncate">{s.text}</Text>
+        case 'mono':
+          return <Text key={k} mono wrap="truncate">{s.text}</Text>
+        default:
+          return <Text key={k} wrap="truncate">{s.text}</Text>
+      }
+    }
+    const column = (ls: Line[], width: number, k: string) => (
+      <Box key={k} flexDirection="column" width={width}>
+        {ls.slice(0, frame.rows).map((l, i) => (
+          <Box key={'r' + i} flexDirection="row">
+            {l.map(draw)}
+          </Box>
+        ))}
+      </Box>
+    )
+
+    return (
+      <Box flexDirection="row" gap={BAND_GAP}>
+        {fit.speed ? column(bandSpeedLines(list, tr), BAND_SPEED_W, 'speed') : null}
+        <Raster key={BAND_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
+        {fit.memory > 0 ? column(bandMemoryLines(p, lights, fit.memory, tr), fit.memory, 'memory') : null}
       </Box>
     )
   })
