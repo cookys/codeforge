@@ -1,0 +1,15 @@
+# Rubric — 2026-10-31-statusline-band.md
+
+> Source plan: doc/plans/2026-10-31-statusline-band.md
+
+R1: Heartbeat file: `<live_base>/codeforge/mod-alive/<sid>.json`, `<sid>` = the session id passed through the sanitizer of `crate::live::sanitize_session_id` (keep `[A-Za-z0-9_-]`, every other char → `_`, at most 64 chars, empty → `unknown`); the mod implements the identical rule in TypeScript.
+R2: Heartbeat JSON (one line, < 512 bytes): `{"schema":"codeforge.mod-alive/1","session_id":<raw sid>,"written_at_ms":<unix ms>,"layout":"band"|"pane","pet_shown":<bool>}`. Written by the mod at `session.start` (before any timer) and then every 2000 ms; never deleted by the mod.
+R3: `pet_shown` is true only when the layout is `band` AND the most recent `$.ui.blit` to the band Raster returned no `deny` within the last 2000 ms.
+R4: Statusline compacts only when ALL hold: heartbeat file for the stdin `session_id` exists, parses, `schema` matches, `session_id` equals the stdin one, `now_ms - written_at_ms` is in `[0, 10000)`, and `pet_shown == true`. Any read/parse failure or mismatch → the full render, unchanged.
+R5: With no qualifying heartbeat, `codeforge statusline` stdout is byte-identical to the build before this plan, for every input.
+R6: Session view file: `<live_base>/codeforge/session/<sid>.json` = `{"schema":"codeforge.session-view/1","session_id","written_at","memory":{"light":"active"|"empty"|"hidden","active":<n>},"brain":{"light":"ok"|"degraded"|"offline"|"pending"|"hidden"}}`, written best-effort by every statusline run (same atomic writer as `pet.json`); `pet.json` is not changed by this plan.
+R7: Compact render: at most 2 lines, no box frame, no pet rows, no ASCII art; line 0 = model (window) ── cwd ⇡⇣ branch ── version, line 1 = the usage bars (5h / 7d / ctx). Built from the same helpers as `render_no_pet`, without its `codeforge adopt` hint.
+R8: Band: drawn only on the `terminal` surface, only when the layout is `band`, `!hasSurvey`, `maxRows >= 12`, `bodyColumns >= 26`, and the snapshot has a valid sprite; otherwise `return next(e)`. Columns: speed 34, Ferris = sprite width (24), memory/pet the rest; gap 2. Hide order when narrow: memory/pet column first (needs `bodyColumns >= 24+2+34+2+28 = 90` for all three), then speed (`>= 24+2+34 = 60` for Ferris + speed); below 60 only Ferris.
+R9: Band Raster key `pet-band`; pane Raster key stays `pet-sprite`. The pane blit keeps its literal `requestId: 'forge-stats'`. The band blit's `requestId` is the band instance id the AbovePrompt render hook received as `e.requestId` (`RasterBlitArgs.requestId`: "one of its panes' ids, a tool row's tool_use_id, the band's"), kept in a module variable by the render hook — the one `$` argument in this plan that is a runtime value, by the engine's design; `key` stays the literal `'pet-band'`. No band rendered yet (no stored id) → no band blit, `pet_shown=false`.
+R10: Mod code: every other `$` call keeps literal routing arguments at the call site; no `$.process`; ≤ 4 fps; skip unchanged cells.
+R11: Formatting only through `./scripts/fmt.sh`; never bare `cargo fmt`.
