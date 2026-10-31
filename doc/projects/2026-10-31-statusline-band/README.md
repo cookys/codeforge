@@ -55,4 +55,7 @@
 
 | Phase | 內容 | 狀態 |
 |-------|------|------|
-| — | intent | 進行中 |
+| — | intent → plan → plan-review（G1+G2，receipt exit 0） | ✅ `52877c8` |
+| P1 | statusline 讀心跳、精簡 2 行、session view；無心跳時 stdout 與舊 binary 逐 byte 相同（3 輸入 × live base 可寫/不可寫） | ✅ `15be75a` |
+| P2 | forge-stats band、`layout band\|pane`、心跳；mod 23 測試、tsc 0、validate 通過；sid 向量 `.ts` 鏡像 + Rust 比對測試（改壞會紅） | ✅ `3aaab33` |
+| P3 | 部署：`cargo install`（舊版備份 `~/.cargo/bin/codeforge.bak.1793437948`）；本 session 寫出 `session/<sid>.json`；全新 `claude -p` 寫出 `mod-alive/<sid>.json`（schema/欄位/live base 與 statusline 一致，`pet_shown:false`）。檔案權限 664（`$.fs.write` 無 mode；上層 `/run/user/1000` 為 700） | 部署 ✅；band 目視待 autopilot 疊加（X1） |
