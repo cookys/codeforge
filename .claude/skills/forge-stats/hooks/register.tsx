@@ -283,12 +283,14 @@ function bandSpeedLines(list: readonly Step[], tr: T): Line[] {
   const out: Line[] = [[seg(GLYPH.speed + ' ', 'bold', SPEED), seg(tr('speed'), 'bold'), seg('  tok/s', 'dim')]]
   if (main.requests === 0) return [...out, [seg(`${GLYPH.empty} ${tr('noRequests')}`, 'dim')]]
   const unit = tr('reqUnit')
-  const latest = [...list].reverse().find(s => !s.isSubagent)
+  // a request too short to time (a lone tool call) has no tok/s: speak of the last one that had one
+  const timed = list.filter(s => !s.isSubagent && s.tps !== null)
+  const latest = timed[timed.length - 1]
   out.push([seg(fmtTps(main.avgTps), 'bold', SPEED), seg(` ${tr('avg')}`, 'dim'), seg(`  ${tr('best')} `, 'dim'), seg(fmtTps(main.bestTps))])
   if (latest) out.push([seg(`${tr('latest')} `, 'dim'), seg(fmtTps(latest.tps)), seg(`  ${tr('firstToken')} `, 'dim'), seg(fmtMs(latest.ttftMs))])
   out.push([seg(`${tr('firstToken')} `, 'dim'), seg(fmtMs(main.medianTtft)), seg(` ${tr('median')}`, 'dim')])
   out.push([seg(`${main.requests}${unit ? ' ' + unit : ''} ${tr('requests')}`, 'dim')])
-  const recent = list.filter(s => !s.isSubagent).slice(-(BAND_SPEED_W - 2))
+  const recent = timed.slice(-(BAND_SPEED_W - 2))
   if (recent.length >= 2) out.push([seg(sparkline(recent.map(s => s.tps)), 'mono', SPEED)])
   return out
 }
@@ -523,9 +525,10 @@ export const register: Register = on => {
       // text tiers: one Text (strings and nested Text only), so autopilot can wrap it in its Button
       bandId = null
       bandSprite = null
-      const main = list.filter(s => !s.isSubagent)
-      const latest = main.length ? main[main.length - 1]!.tps : null
-      const recent = main.slice(tier === 'label' ? -5 : -8)
+      // only requests long enough to time: most steps of a working turn are a lone tool call with no tok/s
+      const timed = list.filter(s => !s.isSubagent && s.tps !== null)
+      const latest = timed.length ? timed[timed.length - 1]!.tps : null
+      const recent = timed.slice(tier === 'label' ? -5 : -8)
       const spark = recent.length >= 2 ? sparkline(recent.map(s => s.tps)) : ''
       const petTag = p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
       // the summary has the row to itself and is cut at its end; the label must fit the tab autopilot gives it
