@@ -295,3 +295,11 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 **Proposed**: 每村畫一組 24×24 兩幀 sprite 加進 `for_village`；`validate` 測試自動涵蓋。畫法說明寫進 ascii-pet-artist skill。
 **Trigger**: owner 領養非 Rust 村落的寵物，或要求其他村落也有像素圖。
 **Not done**: 範圍刻意只做 Ferris（plan `doc/plans/2026-10-31-pixel-pet.md` §7）。
+
+## B31 — 表現層設計：codeforge 統一畫 autopilot / fleet / codeforge 的畫面？
+
+**Area**: 跨專案架構（autopilot `mods/live`、codeforge `.claude/skills/forge-stats`、fleet）；產出 ADR（`doc/specs/` 或 autopilot `docs/adr/`）
+**Premise**: 三邊已經是「資料檔 + 只讀 mod」（codeforge `pet.json` / `codeforge.pet-view/1`；autopilot 背景程式寫 `runs/<project>.json` 等 `autopilot.runs-live/1`、live mod 只讀），但 prompt 上方等畫面位置由多個 mod 各自搶著畫。statusline-band 先走 X1（autopilot band 疊在下層上面）。owner 卡 d-c5f5c6fd：「先 X1，表現層另開設計」。
+**Proposed**: 用 autopilot:think-tank（架構、維運、UX 角色）比較：(a) 疊加（各畫各的，外層排序）、(b) 單一表現層（forge-stats 讀所有資料、統一排版：流動四欄、優先隱藏；autopilot 讓位）、(c) 共享版面協定（各 mod 只交出「段落 + 優先度 + 最小寬度」，一個 host 排版）。要回答：資料格式版本怎麼綁、互動（按鈕開 autopilot 面板）怎麼保留、全域載入、fleet 資料來源。結論寫 ADR。
+**Trigger**: statusline-band 合併後；或 owner 要求流動四欄／依優先度隱藏欄位。
+**Not done**: 只記錄方向；目前 X1 不擋這三條路。
