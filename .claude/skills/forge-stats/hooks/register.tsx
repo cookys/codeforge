@@ -323,6 +323,8 @@ export const register: Register = on => {
     bandLastCells = null
     lastBandBlit = null
     sid = await $.session.id().catch(() => '')
+    // an older version pinned a tok/s status entry; autopilot's forge tab label shows it now
+    $.ui.status(undefined)
     const stored = await $.store.get('layout').catch(() => undefined)
     layout = stored === 'pane' ? 'pane' : 'band'
     await $.command.register({ name: 'forge-stats', description: t()('cmdDesc') })
@@ -388,7 +390,6 @@ export const register: Register = on => {
         tps: decodeMs !== null && decodeMs >= MIN_DECODE_MS && outTokens > 0 ? outTokens / (decodeMs / 1000) : null,
       }
       await update($, steps, list => [...list, step].slice(-KEEP))
-      if (!step.isSubagent && step.tps !== null) $.ui.status(`${fmtTps(step.tps)} tok/s`)
     }
     return result
   })
