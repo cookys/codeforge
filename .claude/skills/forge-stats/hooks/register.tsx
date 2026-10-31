@@ -13,7 +13,7 @@ import {
   fmtCount,
   fmtMs,
   fmtTps,
-  bandColumns,
+  bandLayout,
   bandTier,
   halfBlockCells,
   heartbeatPath,
@@ -235,6 +235,13 @@ function recentLines(list: readonly Step[], rows: number, tr: T): Line[] {
   return [header, ...body]
 }
 
+/** The band's request table: a title, then the pane's table cut to the rows left. */
+function recentRows(list: readonly Step[], rows: number, tr: T): Line[] {
+  const title: Line = [seg(tr('recent'), 'bold')]
+  const table = recentLines(list, Math.max(1, rows - 2), tr)
+  return table.length ? [title, ...table] : [title, [seg(`${GLYPH.empty} ${tr('noRequests')}`, 'dim')]]
+}
+
 function petLines(view: PetView, cols: number, tr: T, now: number, withArt = true): Line[] {
   const { pet: p, village: v } = view
   if (view.status !== 'ok' || p === null || v === null) {
@@ -282,19 +289,24 @@ function bandSpeedLines(list: readonly Step[], tr: T): Line[] {
   return out
 }
 
-function bandMemoryLines(view: PetView, lights: SessionView | null, width: number, tr: T, short = false): Line[] {
-  const out: Line[] = []
+function bandPetLines(view: PetView, width: number, tr: T, short = false): Line[] {
   const { pet: p, village: v } = view
-  if (view.status === 'ok' && p !== null && v !== null) {
-    out.push([seg(p.name, 'bold'), seg(`  Lv.${p.level}`), seg(` · ${v.display_name}`, 'dim')])
-    if (p.xp_to_next > 0) {
-      const m = meter(p.xp / p.xp_to_next, Math.max(6, Math.min(20, width - 12)))
-      out.push([seg(tr('xp') + ' ', 'dim'), seg(m.on), seg(m.off, 'idle'), seg(padLeft(`${Math.floor((p.xp / p.xp_to_next) * 100)}%`, 5))])
-    }
-    out.push([seg('ATK ', 'dim'), seg(String(p.atk)), seg(' · ', 'structure'), seg('DEF ', 'dim'), seg(String(p.def)), seg(' · ', 'structure'), seg('HP ', 'dim'), seg(String(p.hp))])
-    if (p.message && !short) out.push([seg(p.message, 'dim')])
+  if (view.status !== 'ok' || p === null || v === null) return [[seg(`${GLYPH.empty} ${tr('noPet')}`, 'dim')]]
+  const out: Line[] = [[seg(p.name, 'bold'), seg(`  Lv.${p.level}`)], [seg(v.display_name, 'dim')]]
+  if (p.xp_to_next > 0) {
+    const m = meter(p.xp / p.xp_to_next, Math.max(6, Math.min(20, width - 12)))
+    out.push([seg(tr('xp') + ' ', 'dim'), seg(m.on), seg(m.off, 'idle'), seg(padLeft(`${Math.floor((p.xp / p.xp_to_next) * 100)}%`, 5))])
   }
-  if (!short) out.push([seg(' ')])
+  const stat = (k: string, n: number) => [seg(k + ' ', 'dim'), seg(String(n))]
+  const sep = seg(' · ', 'structure')
+  out.push([...stat('ATK', p.atk), sep, ...stat('DEF', p.def), sep, ...stat('HP', p.hp)])
+  out.push([...stat('SUP', p.sup), sep, ...stat('VER', p.ver)])
+  if (p.message && !short) out.push([seg(' ')], [seg(p.message, 'dim')])
+  return out
+}
+
+function bandMemoryLines(lights: SessionView | null, tr: T): Line[] {
+  const out: Line[] = []
   const brainWord: Record<SessionView['brain'], string> = {
     ok: tr('brainOk'),
     degraded: tr('brainDegraded'),
@@ -510,7 +522,7 @@ export const register: Register = on => {
     }
     const tr = t()
     const lights = await read($, session)
-    const fit = bandColumns(props.bodyColumns, sprite.width)
+    const layoutCols = bandLayout(props.bodyColumns, sprite.width)
     const frame = halfBlockCells(sprite, spriteFrame % sprite.frames.length)
     bandId = e.requestId
     bandSprite = sprite
@@ -545,9 +557,20 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="row" gap={BAND_GAP}>
-        {fit.speed ? column(bandSpeedLines(list, tr), BAND_SPEED_W, 'speed') : null}
-        <Raster key={BAND_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
-        {fit.memory > 0 ? column(bandMemoryLines(p, lights, fit.memory, tr, tier === 'mini'), fit.memory, 'memory') : null}
+        {layoutCols.map(c => {
+          switch (c.id) {
+            case 'ferris':
+              return <Raster key={BAND_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
+            case 'pet':
+              return column(bandPetLines(p, c.width, tr, tier === 'mini'), c.width, 'pet')
+            case 'speed':
+              return column(bandSpeedLines(list, tr), c.width, 'speed')
+            case 'recent':
+              return column(recentRows(list, frame.rows, tr), c.width, 'recent')
+            case 'memory':
+              return column(bandMemoryLines(lights, tr), c.width, 'memory')
+          }
+        })}
       </Box>
     )
   })
