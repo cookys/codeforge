@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **forge-stats band tiers** — the band draws by the rows it gets: 12+ full, 6–11 a 16×6 mini Ferris
+  (`village.sprite_mini` in `pet.json`, 16×12 px), 2–5 or under 26 columns a one-line summary, one row a single
+  `Text` label (`forge 93 tok/s` / `93 tok/s` / `93t/s`) for autopilot's tab bar to wrap in its button.
 - **forge-stats band** — `/forge-stats layout band|pane` (kept in the mod's store, band by default): the band
   layout draws speed | Ferris | pet, memory and brain above the prompt instead of opening the pane, and writes the
   heartbeat the compact statusline reads (`pet_shown` only while the band's Ferris blits succeed).

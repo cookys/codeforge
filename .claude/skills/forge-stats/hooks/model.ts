@@ -147,6 +147,7 @@ export function parseSnapshot(text: string | null, path: string | null, now: num
     art_small: lines(v.art_small),
     art_full: lines(v.art_full),
     sprite: parseSprite(v.sprite),
+    sprite_mini: parseSprite(v.sprite_mini, MINI_WIDTH, MINI_HEIGHT),
   }
   return { status: 'ok', readAt: now, writtenAt, path, pet, village }
 }
@@ -172,11 +173,11 @@ export const LOWER_HALF = 0x2584
 export const SPACE = 0x20
 
 /** A valid sprite, or null (missing, null, or any contract break → the pane draws ASCII). */
-export function parseSprite(raw: unknown): SpriteData | null {
+export function parseSprite(raw: unknown, w: number = SPRITE_SIZE, h: number = SPRITE_SIZE): SpriteData | null {
   if (!isObj(raw)) return null
   const { width, height, transparent, palette, frames, frame_ms } = raw
   if (typeof width !== 'number' || typeof height !== 'number' || !Number.isInteger(width) || !Number.isInteger(height)) return null
-  if (width !== SPRITE_SIZE || height !== SPRITE_SIZE) return null
+  if (width !== w || height !== h) return null
   if (transparent !== SPRITE_TRANSPARENT) return null
   if (frame_ms !== SPRITE_FRAME_MS) return null
   if (!isObj(palette)) return null
@@ -315,4 +316,29 @@ export function parseSessionView(text: string | null, sid: string): SessionView 
     active: Math.max(0, Math.floor(num(memory.active))),
     brain: (LIGHTS_BRAIN as readonly string[]).includes(bl) ? (bl as SessionView['brain']) : 'hidden',
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// tiers by maxRows for the autopilot tab band (doc/plans/2026-10-31-forge-tabs.md §2.5)
+
+export const MINI_WIDTH = 16
+export const MINI_HEIGHT = 12
+export const MINI_MIN_ROWS = 6
+
+export type BandTier = 'label' | 'summary' | 'mini' | 'full'
+
+/** One row → a tab label; 2–5 rows or a thin column → a one-row summary; 6–11 → mini Ferris; 12+ → full. */
+export function bandTier(maxRows: number, bodyColumns: number, hasMini: boolean): BandTier {
+  if (maxRows <= 1) return 'label'
+  if (maxRows < MINI_MIN_ROWS || bodyColumns < BAND_MIN_COLUMNS) return 'summary'
+  if (maxRows < BAND_MIN_ROWS) return hasMini ? 'mini' : 'summary'
+  return 'full'
+}
+
+/** The forge tab's label, shortened to fit `cols`: `forge 93 tok/s`, `93 tok/s`, `93t/s`. */
+export function tabLabel(cols: number, tps: number | null): string {
+  const n = fmtTps(tps)
+  if (cols >= 16) return `forge ${n} tok/s`
+  if (cols >= 10) return `${n} tok/s`
+  return `${n}t/s`
 }

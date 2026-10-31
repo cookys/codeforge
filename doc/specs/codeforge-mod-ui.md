@@ -101,6 +101,11 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   `doc/plans/2026-10-31-statusline-band.md` §2.5。**依賴**：AbovePrompt 一次只有一個實例，鏈上排在上面的 plugin
   不呼叫 `next(e)` 就輪不到 forge-stats（2026-10-31 探針：autopilot live band 在上）。autopilot 改成疊在下層之上前，
   有 autopilot band 的 session 看不到 forge-stats band，statusline 也維持完整版（安全方向）。
+- **分頁版 band（forge-tabs，2026-10-31）**：owner 定案 band 一列＝autopilot indicator＋分頁（現況／待決／派工／審查／forge），
+  autopilot 以 `maxRows`/`bodyColumns` 分配空間給下層。forge-stats 依 `maxRows` 分級：1 列＝單一 `Text` 標籤（給 autopilot
+  的 `Button` 包住；Button 的 children 只收字串與 Text）、2–5 列或不到 26 欄＝一列摘要、6–11 列＝16×6 迷你 Ferris
+  （`village.sprite_mini`）、12 列以上＝完整三欄。band 的 blit 尺寸跟著畫上去的那一版。規則見
+  `doc/plans/2026-10-31-forge-tabs.md` §2.5。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、tok/s、縮圖）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 
