@@ -1,0 +1,6 @@
+{
+  "name": "forge-stats",
+  "version": "0.1.0",
+  "description": "Pane with per-request tok/s, time-to-first-token, and the codeforge pet status",
+  "types": "./types/index.d.ts"
+}

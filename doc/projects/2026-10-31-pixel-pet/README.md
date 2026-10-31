@@ -64,4 +64,5 @@
 | — | intent / proposal / plan / plan-review | ✅（G1 CONDITIONAL，4 條 non-blocking 全採納） |
 | P1 | codeforge `village.sprite` 契約 + Ferris 兩幀（`9c01100`） | ✅ 875 tests |
 | P2 | forge-stats Raster 半格 + 500 ms 待機動畫（mod，repo 外） | ✅ 11 mod tests |
-| P3 | 部署（`cargo install`，live pet.json `24 24 2`）+ owner 目視 | 等 owner 目視 |
+| P3 | 部署（`cargo install`，live pet.json `24 24 2`）+ owner 目視；mod 收進 `.claude/skills/forge-stats/`（卡 d-959cf107） | ✅ WT 與 WezTerm 皆正常（卡 d-1331c201） |
+| review | hetero code loop 3 代（gpt-6.1-sol）：G1 2 條、G2 1 條全修，G3 0 條；receipt exit 0 | ✅ |

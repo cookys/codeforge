@@ -91,6 +91,9 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
 - **像素寵物（2026-10-31 上線）**：`village.sprite`（調色盤 + 每幀字元列，24×24 兩幀，`src/pet/sprite.rs`）。
   forge-stats 在 terminal surface 用 `Raster` 半格畫（一格 = 上下兩像素），`$.clock.every(500)` 換幀 `$.ui.blit`，
   cells 沒變就不送；其他 surface 與沒有 sprite 的村落畫 ASCII。對應規則見 `doc/plans/2026-10-31-pixel-pet.md` §2.5。
+- **mod 位置**：`.claude/skills/forge-stats/`（repo 內）。專案 skills 資料夾裡的 mod 由 Claude Code 自動載入、互動模式熱重載，
+  所以在 codeforge repo 開的 claude 都有面板。`CLAUDE_CODE_PLUGIN_DIRS` 不能寫在專案 settings（只讀環境變數或使用者設定）；
+  session 自己的 mods 資料夾綁 session id，`--resume` 後就不載入，不要放那裡。驗證：`claude plugin test .claude/skills/forge-stats`。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、tok/s、縮圖）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 

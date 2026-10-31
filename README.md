@@ -334,6 +334,12 @@ for an adopted pet: a pixel sprite for UI readers that draw terminal half blocks
 vertical pixels, so `height` is even; colours stay inside the xterm-256 cube), or `null` when the
 village has no sprite yet (only Rust/Ferris has one) — readers then fall back to the ASCII art.
 
+The repo ships one reader: **forge-stats**, a Claude Code mod in `.claude/skills/forge-stats/`. Claude
+Code loads a project's `.claude/skills/<name>` mod on its own, so any `claude` started in this repo shows
+a pane with model speed (tok/s, time to first token) and the pet — Ferris as an animated half-block
+pixel sprite in the terminal. Open it with `/forge-stats`; test it with
+`claude plugin test .claude/skills/forge-stats`.
+
 A write failure never changes statusline rendering or exit code — it's logged to stderr once per
 process and otherwise swallowed.
 
