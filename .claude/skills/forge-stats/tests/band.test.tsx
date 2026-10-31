@@ -2,6 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import { bandColumns, halfBlockCells, parseSessionView, parseSprite, petShown, sanitizeSessionId } from '../hooks/model'
+import { FERRIS_MINI } from './ferris-mini'
 import { FERRIS } from './ferris-sprite'
 import { VECTORS } from './session-id-vectors'
 
@@ -23,6 +24,7 @@ const SNAP = {
     art_small: [' _~^~^~_'],
     art_full: ['   _~^~^~_'],
     sprite: FERRIS,
+    sprite_mini: FERRIS_MINI,
   },
 }
 const SESSION = { schema: 'codeforge.session-view/1', session_id: SID, written_at: '2026-10-31T00:00:00Z', memory: { light: 'active', active: 12 }, brain: { light: 'ok' } }
@@ -167,11 +169,11 @@ test('the band draws speed | Ferris | memory, dropping columns as it narrows', a
   await narrow.unmount()
 })
 
-test('the band passes on a survey, a short slot, a thin column, desktop, or the pane layout', async ($, on) => {
+test('the band passes on a survey, desktop, or the pane layout', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  for (const target of [band(100, { hasSurvey: true }), band(100, { maxRows: 11 }), band(25), { ...band(100), surface: 'desktop' }] as const) {
+  for (const target of [band(100, { hasSurvey: true }), { ...band(100), surface: 'desktop' }] as const) {
     const ui = await $.ui.mount(target)
     expect(await ui.find({ type: 'Raster' })).toBe(undefined)
     await ui.unmount()
@@ -215,4 +217,95 @@ test('/forge-stats layout switches, persists, and the beat follows', async ($, o
   const bad = await $.command.run(cmd('layout sideways'))
   expect(bad.text?.includes('band|pane')).toBe(true)
   expect(w.store.layout).toBe('pane')
+})
+
+// ---------------------------------------------------------------------------------------------
+// tiers by maxRows: the autopilot tab band (doc/plans/2026-10-31-forge-tabs.md §2.5)
+
+// a drawing with exactly one Text and nothing else is what autopilot can wrap in its Button
+async function onlyText(ui: { find: (q: { type: string; text?: RegExp }) => Promise<{ text: string } | undefined> }) {
+  expect(await ui.find({ type: 'Box' })).toBe(undefined)
+  expect(await ui.find({ type: 'Raster' })).toBe(undefined)
+  const t = await ui.find({ type: 'Text' })
+  expect(t !== undefined).toBe(true)
+  return t!.text
+}
+
+test('one row is a tab label: a single Text that shortens with the width', async ($, on) => {
+  world(on)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const cases: [number, RegExp][] = [
+    [16, /^forge \S+ tok\/s$/],
+    [12, /^\S+ tok\/s$/],
+    [8, /^\S+t\/s$/],
+  ]
+  for (const [cols, want] of cases) {
+    const ui = await $.ui.mount(band(cols, { maxRows: 1 }))
+    expect(want.test(await onlyText(ui))).toBe(true)
+    await ui.unmount()
+  }
+})
+
+test('two to five rows, or a thin column, is a one-row summary Text', async ($, on) => {
+  world(on)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  for (const target of [band(100, { maxRows: 3 }), band(20, { maxRows: 12 })]) {
+    const ui = await $.ui.mount(target)
+    const text = await onlyText(ui)
+    expect(text.startsWith('forge')).toBe(true)
+    await ui.unmount()
+  }
+  const wide = await $.ui.mount(band(100, { maxRows: 3 }))
+  expect((await onlyText(wide)).includes('Ferris Lv.3')).toBe(true)
+  await wide.unmount()
+})
+
+test('six to eleven rows draw the 16x6 mini Ferris, and its blits are mini-sized', async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const mini = parseSprite(FERRIS_MINI, 16, 12)!
+  const ui = await $.ui.mount(band(100, { maxRows: 8 }))
+  const r = await ui.find({ type: 'Raster' })
+  expect(r?.props.columns).toBe(16)
+  expect(r?.props.rows).toBe(6)
+  expect(r?.props.cells).toBe(halfBlockCells(mini, 0).cells)
+  await clock.advance(2000)
+  const bandBlits = w.blits.filter(b => b.key === 'pet-band')
+  expect(bandBlits.length > 0).toBe(true)
+  expect(bandBlits.every(b => b.cells.length === halfBlockCells(mini, 0).cells.length)).toBe(true)
+  expect(lastBeat(w)?.pet_shown).toBe(true)
+  await ui.unmount()
+})
+
+test('a label alone never blits the band, so the pet is not shown', async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount(band(16, { maxRows: 1 }))
+  await clock.advance(2000)
+  expect(w.blits.filter(b => b.key === 'pet-band').length).toBe(0)
+  expect(lastBeat(w)?.pet_shown).toBe(false)
+  await ui.unmount()
+})
+
+test('label then expanded in one render: the expanded call decides the band blits', async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  // the engine runs both calls under the one band instance; the harness mounts one at a time
+  const label = await $.ui.mount(band(16, { maxRows: 1 }))
+  await label.unmount()
+  const full = await $.ui.mount(band(100, { maxRows: 12 }))
+  await clock.advance(2000)
+  const bandBlits = w.blits.filter(b => b.key === 'pet-band')
+  expect(bandBlits.length > 0).toBe(true)
+  expect(bandBlits.every(b => b.requestId === 'band-1' && b.cells.length === halfBlockCells(parseSprite(FERRIS)!, 0).cells.length)).toBe(true)
+  expect(lastBeat(w)?.pet_shown).toBe(true)
+  await full.unmount()
 })

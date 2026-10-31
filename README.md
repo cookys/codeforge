@@ -325,7 +325,8 @@ Schema `codeforge.pet-view/1` (full shape in `src/pet/view.rs`):
               "sprite": {"width": 24, "height": 24, "transparent": ".",
                          "palette": {"o": [215, 95, 0], "...": "..."},
                          "frames": [["24 rows of 24 palette chars"], ["..."]],
-                         "frame_ms": 500}}
+                         "frame_ms": 500},
+              "sprite_mini": {"width": 16, "height": 12, "...": "same fields"}}
 }
 ```
 
@@ -333,6 +334,8 @@ Schema `codeforge.pet-view/1` (full shape in `src/pet/view.rs`):
 for an adopted pet: a pixel sprite for UI readers that draw terminal half blocks (one cell = two
 vertical pixels, so `height` is even; colours stay inside the xterm-256 cube), or `null` when the
 village has no sprite yet (only Rust/Ferris has one) — readers then fall back to the ASCII art.
+`village.sprite_mini` is the same contract at a fixed 16×12 (16 columns × 6 rows), for a band with 6 to
+11 rows; `null` likewise.
 
 **Session view** (`<base>/codeforge/session/<session_id>.json`, written by every statusline run, same mode and atomic
 write): the lights for this session only — `pet.json` is shared by every session, so per-project state stays out of it.
@@ -351,9 +354,12 @@ model speed (tok/s, time to first token) and the pet — Ferris as an animated h
 terminal. It has two layouts, kept across sessions: `/forge-stats layout band` (the default) draws a band
 right above the prompt — speed | Ferris | pet, memory and brain — and `/forge-stats layout pane` opens a
 side pane instead (`/forge-stats` alone opens the pane in either layout). The band leaves out the third
-column below 90 cells and the speed column below 60. Only one plugin draws the band slot: one that sits
-above forge-stats and draws its own band without passing the slot on hides it, and then the statusline
-stays full. Test it with `claude plugin test .claude/skills/forge-stats`.
+column below 90 cells and the speed column below 60. Its size follows the rows it is given: 12 or more
+draw the full band, 6 to 11 the 16×6 mini Ferris, 2 to 5 (or under 26 columns) a one-line summary, and
+one row a single short label (`forge 93 tok/s`, shortened to fit) that a plugin above it, such as
+autopilot's tab bar, can put on a button. Only one plugin draws the band slot: one that sits above
+forge-stats and draws its own band without passing the slot on hides it, and then the statusline stays
+full. Test it with `claude plugin test .claude/skills/forge-stats`.
 
 A write failure never changes statusline rendering or exit code — it's logged to stderr once per
 process and otherwise swallowed.
