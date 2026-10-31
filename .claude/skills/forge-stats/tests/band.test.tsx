@@ -96,20 +96,20 @@ test('sanitizeSessionId matches codeforge on the shared vectors', () => {
 
 test('bandLayout adds columns in priority order as the width allows, 1 to 5', () => {
   const ids = (cols: number, sprite = 24) => bandLayout(cols, sprite).map(c => c.id).join(' ')
-  // each threshold and one cell below it (24-wide Ferris: 24, 56, 92, 134, 164)
+  // each threshold and one cell below it (24-wide Ferris: 24, 56, 92, 140, 170)
   expect(ids(23)).toBe('')
   expect(ids(24)).toBe('ferris')
   expect(ids(55)).toBe('ferris')
   expect(ids(56)).toBe('ferris pet')
   expect(ids(91)).toBe('ferris pet')
   expect(ids(92)).toBe('ferris pet speed')
-  expect(ids(133)).toBe('ferris pet speed')
-  expect(ids(134)).toBe('ferris pet speed recent')
-  expect(ids(163)).toBe('ferris pet speed recent')
-  expect(ids(164)).toBe('ferris pet speed recent memory')
+  expect(ids(139)).toBe('ferris pet speed')
+  expect(ids(140)).toBe('ferris pet speed recent')
+  expect(ids(169)).toBe('ferris pet speed recent')
+  expect(ids(170)).toBe('ferris pet speed recent memory')
   // the 16-wide mini Ferris moves every threshold down by 8
-  expect(ids(156, 16)).toBe('ferris pet speed recent memory')
-  expect(ids(155, 16)).toBe('ferris pet speed recent')
+  expect(ids(162, 16)).toBe('ferris pet speed recent memory')
+  expect(ids(161, 16)).toBe('ferris pet speed recent')
 })
 
 test('bandLayout gives the spare width to the request table only, and always fills to the edge with it', () => {
@@ -182,7 +182,7 @@ test('the band draws 1 to 5 columns by width: Ferris, pet, speed, recent request
     return seen.join(' ')
   }
   expect(await shows(170)).toBe('pet speed recent memory')
-  expect(await shows(140)).toBe('pet speed recent')
+  expect(await shows(145)).toBe('pet speed recent')
   expect(await shows(100)).toBe('pet speed')
   expect(await shows(60)).toBe('pet')
   expect(await shows(30)).toBe('')

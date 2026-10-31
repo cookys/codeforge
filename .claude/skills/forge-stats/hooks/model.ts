@@ -288,7 +288,8 @@ export const BAND_SPEED_W = 34
 export const BAND_GAP = 2
 
 export const BAND_PET_W = 30
-export const BAND_RECENT_W = 40
+// a sub-agent row is 33 cells + the model name; 46 holds a 13-character name
+export const BAND_RECENT_W = 46
 export const BAND_MEMORY_W = 28
 
 export type BandColumnId = 'ferris' | 'pet' | 'speed' | 'recent' | 'memory'

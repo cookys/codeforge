@@ -108,8 +108,8 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   （`village.sprite_mini`）、12 列以上＝完整版。band 的 blit 尺寸跟著畫上去的那一版。規則見
   `doc/plans/2026-10-31-forge-tabs.md` §2.5。
 - **依寬度排欄（forge-columns，2026-10-31）**：迷你與完整版依 `bodyColumns` 排 1～5 欄，左到右即優先序：Ferris｜寵物 30
-  （名字等級、村莊、XP、ATK/DEF/HP、SUP/VER）｜速度 34｜最近請求 ≥40（吃掉多的寬度）｜記憶與大腦 28；24 寬 Ferris 的門檻
-  24／56／92／134／164 欄。取代上面「三欄、不到 90 欄先收第三欄」的舊規則。規則見 `doc/plans/2026-10-31-forge-columns.md` §2.5。
+  （名字等級、村莊、XP、ATK/DEF/HP、SUP/VER）｜速度 34｜最近請求 ≥46（吃掉多的寬度）｜記憶與大腦 28；24 寬 Ferris 的門檻
+  24／56／92／140／170 欄（不到 26 欄仍是一列摘要）。取代上面「三欄、不到 90 欄先收第三欄」的舊規則。規則見 `doc/plans/2026-10-31-forge-columns.md` §2.5。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、tok/s、縮圖）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 
