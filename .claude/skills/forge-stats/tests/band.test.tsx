@@ -387,3 +387,38 @@ test('label then expanded in one render: the expanded call decides the band blit
   expect(lastBeat(w)?.pet_shown).toBe(true)
   await full.unmount()
 })
+
+test('the label speaks of the last request long enough to time, not a lone tool call after it', async ($, on) => {
+  world(on)
+  const spin = (ms: number) => {
+    const until = performance.now() + ms
+    while (performance.now() < until) {}
+  }
+  let n = 0
+  on('turn.step', async function* () {
+    n += 1
+    const timed = n === 1 // the first step decodes for 250 ms; the second is a lone tool call, too short to time
+    yield { kind: 'text', index: 0, text: 'a' } as const
+    if (timed) spin(250)
+    yield { kind: 'text', index: 0, text: 'b' } as const
+    return {
+      turnId: 't' + n,
+      index: 0,
+      answer: 'ab',
+      toolUses: [],
+      stopReason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: timed ? 50 : 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' },
+    } as const
+  })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  for (const i of [1, 2]) {
+    const stream = $.turn.step({ turnId: 't' + i, index: 0, model: 'opus', messageCount: 1 })
+    for await (const _ of stream) {
+    }
+    await stream.result
+  }
+  const ui = await $.ui.mount(band(30, { maxRows: 1 }))
+  const texts = await ui.findAll({ type: 'Text' })
+  expect(/^ϟ \d+ tok\/s/.test(texts.map(t => t.text).join(''))).toBe(true)
+  await ui.unmount()
+})
