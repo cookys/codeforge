@@ -94,22 +94,22 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
 - **mod 位置**：`.claude/skills/forge-stats/`（repo 內）。專案 skills 資料夾裡的 mod 由 Claude Code 自動載入、互動模式熱重載，
   所以在 codeforge repo 開的 claude 都有面板。`CLAUDE_CODE_PLUGIN_DIRS` 不能寫在專案 settings（只讀環境變數或使用者設定）；
   session 自己的 mods 資料夾綁 session id，`--resume` 後就不載入，不要放那裡。驗證：`claude plugin test .claude/skills/forge-stats`。
-- **band 版面（statusline-band，2026-10-31）**：`/forge-stats layout band|pane`（存 `$.store`，預設 band）。band 在
-  prompt 正上方畫三欄：速度 34｜Ferris 24×12 Raster｜寵物、記憶、大腦（讀 `codeforge/session/<sid>.json`）；不到 90 欄
-  先收第三欄、不到 60 欄再收速度。mod 每 2 秒寫 `codeforge/mod-alive/<sid>.json` 心跳，只在 band 的 Ferris blit 成功
-  且未滿 2 秒時說 `pet_shown`；statusline 讀到自己 session 的新鮮心跳才縮成 2 行。**2026-10-31 owner 改規則**：
-  心跳說 `layout: band` 就縮（不看 `pet_shown`），寵物歸 band（autopilot 的 forge 分頁），statusline 只留不必即時更新的資料。原規則見
-  `doc/plans/2026-10-31-statusline-band.md` §2.5。**依賴**：AbovePrompt 一次只有一個實例，鏈上排在上面的 plugin
-  不呼叫 `next(e)` 就輪不到 forge-stats（2026-10-31 探針：autopilot live band 在上）。autopilot 改成疊在下層之上前，
-  有 autopilot band 的 session 看不到 forge-stats band，statusline 也維持完整版（安全方向）。
+- **band 版面（statusline-band，2026-10-31）**：`/forge-stats layout band|pane`（存 `$.store`，預設 band）。band 畫在
+  prompt 正上方（AbovePrompt），分級與排欄見下面兩條；記憶與大腦讀 `codeforge/session/<sid>.json`。mod 每 2 秒寫
+  `codeforge/mod-alive/<sid>.json` 心跳（`schema`、`session_id`、`written_at_ms`、`layout`）；statusline 讀到自己
+  session、未滿 10 秒、`layout: band` 的心跳就縮成 2 行：寵物歸 band（autopilot 的 forge 分頁），statusline 只留不必即時
+  更新的資料（owner 2026-10-31 定案；原本另看 blit 是否成功的 `pet_shown`，已拿掉）。**依賴**：AbovePrompt 一次只有一個
+  實例，鏈上排在上面的 plugin 不呼叫 `next(e)` 就輪不到 forge-stats；心跳看不到這件事，那種情況下 statusline 仍會縮、寵物
+  哪裡都不顯示（BACKLOG B34）。autopilot 的分頁列用 `await next(e)` 疊在 forge-stats 之上（BL-0352），不受影響。
 - **分頁版 band（forge-tabs，2026-10-31）**：owner 定案 band 一列＝autopilot indicator＋分頁（現況／待決／派工／審查／forge），
-  autopilot 以 `maxRows`/`bodyColumns` 分配空間給下層。forge-stats 依 `maxRows` 分級：1 列＝單一 `Text` 標籤（給 autopilot
-  的 `Button` 包住；Button 的 children 只收字串與 Text）、2–5 列或不到 26 欄＝一列摘要、6–11 列＝16×6 迷你 Ferris
-  （`village.sprite_mini`）、12 列以上＝完整版。band 的 blit 尺寸跟著畫上去的那一版。規則見
+  autopilot 以 `maxRows`/`bodyColumns` 分配空間給下層。forge-stats 依 `maxRows` 分級：1 列＝分頁標籤（一列以 key 標角色的 `Box`：
+  speed／trend／sep／pet，各包一個純文字 `Text`，autopilot 依 key 上色，`c5165cf`）、2–5 列或不到 26 欄＝一列摘要、6–11 列＝16×6 迷你 Ferris
+  （`village.sprite_mini`）、12 列以上＝完整版。band 的 blit 尺寸跟著畫上去的那一版。autopilot 只問 1 列（標籤）與總列數 −2（≥12
+  才展開），所以迷你與摘要兩級只在沒有 autopilot 時出現（B31 的降級原則：每一項都要能單獨跑）。規則見
   `doc/plans/2026-10-31-forge-tabs.md` §2.5。
 - **依寬度排欄（forge-columns，2026-10-31）**：迷你與完整版依 `bodyColumns` 排 1～5 欄，左到右即優先序：Ferris｜寵物 30
   （名字等級、村莊、XP、ATK/DEF/HP、SUP/VER）｜速度 34｜最近請求 ≥46（吃掉多的寬度）｜記憶與大腦 28；24 寬 Ferris 的門檻
-  24／56／92／140／170 欄（不到 26 欄仍是一列摘要）。取代上面「三欄、不到 90 欄先收第三欄」的舊規則。規則見 `doc/plans/2026-10-31-forge-columns.md` §2.5。
+  24／56／92／140／170 欄（不到 26 欄仍是一列摘要）。規則見 `doc/plans/2026-10-31-forge-columns.md` §2.5。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、tok/s、縮圖）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 

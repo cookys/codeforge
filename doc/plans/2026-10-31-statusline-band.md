@@ -1,7 +1,7 @@
 # Plan — Statusline Band（forge-stats 三欄 band + statusline 探測切換）
 
 > logical_plan_id: `codeforge-statusline-band-2026-10-31` · size L · branch `feature/statusline-band`
-> Project: `doc/projects/2026-10-31-statusline-band/README.md`
+> Project: `doc/projects/_archive/2026-10-31-statusline-band/README.md`
 
 ## 0. Context / thesis
 
@@ -119,6 +119,6 @@ Script-gated：cargo test / clippy -D warnings / fmt --check / check-doc-drift�
 ## Review log
 
 - R0 author：depth-0（claude-opus-5-5），2026-10-31。
-- Manifest `doc/projects/2026-10-31-statusline-band/plan-review-manifest.json`；rubric `plan-rubric.md`（R1–R11 = §2.5）。機器狀態放 gitignored `.codeforge/research/statusline-band/plan-review/`。
+- Manifest `doc/projects/_archive/2026-10-31-statusline-band/plan-review-manifest.json`；rubric `plan-rubric.md`（R1–R11 = §2.5）。機器狀態放 gitignored `.codeforge/research/statusline-band/plan-review/`。
 - G1（sol low + grok xhigh，兩席完成）：7 條。R6 accepted_blocker（session view 契約：written_at 型別、memory 條數、檔名不得含斜線）；R8 rejected（把 24 欄×12 列的半格 Raster 誤讀成要縮圖；措辭已釐清）；R4/R1/R2/R3/R11 accepted_nonblocking。
 - G2（終局）：5 條。R10 accepted_blocker（band「沒變也 blit」與 skip-unchanged 衝突 → 改成兩個 Raster 都 skip，`pet_shown` 看最後一次成功 blit）；grok R10 rejected（反向建議，被上條取代）；R1/R5/R6 accepted_nonblocking（沿用既有 `tests/fixtures/session-id-vectors.json` 且 TS 逐 Unicode scalar；寫檔失敗一行 stderr、cmp 含不可寫；函式收已映射值）。receipt（g2 + dispositions）exit 0，之後才把 G2 修正寫入本文。

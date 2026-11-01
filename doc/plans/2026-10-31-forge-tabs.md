@@ -2,7 +2,7 @@
 
 - **logical_plan_id**: `codeforge-forge-tabs-2026-10-31`
 - **Size**: M · branch `feature/forge-tabs` · base `2ae4d00`
-- **上層專案**: `doc/projects/2026-10-31-statusline-band/`（「分頁協定」一列）
+- **上層專案**: `doc/projects/_archive/2026-10-31-statusline-band/`（「分頁協定」一列）
 
 ## 0. 背景
 

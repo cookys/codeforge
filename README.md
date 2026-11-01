@@ -343,10 +343,10 @@ Schema `codeforge.session-view/1`: `{session_id, written_at, memory: {light: act
 ok|degraded|offline|pending|hidden}}`.
 
 **Compact statusline**: forge-stats writes a heartbeat `<base>/codeforge/mod-alive/<session_id>.json`
-(`codeforge.mod-alive/1`: `session_id`, `written_at_ms`, `layout`, `pet_shown`). When the heartbeat for the statusline's own
+(`codeforge.mod-alive/1`: `session_id`, `written_at_ms`, `layout`). When the heartbeat for the statusline's own
 `session_id` is under 10 seconds old and says `layout: band`, `codeforge statusline` prints a 2-line strip (identity +
 usage) instead of the pet panel: the pet lives in the band (autopilot's forge tab), the statusline keeps the slow data.
-`pet_shown` stays in the heartbeat but no longer decides. With no such heartbeat the output is unchanged. Set
+With no such heartbeat the output is unchanged. Set
 `statusLine.refreshInterval` (e.g. 2) so the strip follows within seconds; without it Claude Code runs the statusline only
 on UI events.
 
@@ -362,8 +362,8 @@ draw the full band, 6 to 11 the 16×6 mini Ferris, 2 to 5 (or under 26 columns) 
 one row a short label (`ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1`, dropping the pet, then the sparkline, to fit) drawn as a row of
 Boxes keyed `speed` / `trend` / `sep` / `pet`, one plain Text each, so a plugin above it, such as autopilot's tab
 bar, can put the label on a button and colour each part by its key. Only one plugin draws the band slot: one that sits above
-forge-stats and draws its own band without passing the slot on hides it, and then the statusline stays
-full. Test it with `claude plugin test .claude/skills/forge-stats`.
+forge-stats and draws its own band without passing the slot on hides it. The heartbeat does not see that, so the statusline
+still compacts in band layout; autopilot's tab bar passes the slot on, so it is not affected. Test it with `claude plugin test .claude/skills/forge-stats`.
 
 A write failure never changes statusline rendering or exit code — it's logged to stderr once per
 process and otherwise swallowed.
