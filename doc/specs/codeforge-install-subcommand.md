@@ -235,6 +235,8 @@ codeforge install [OPTIONS]
                         no writes
   --force            → overwrite non-codeforge entries (prompts unless
                         --yes)
+  --replace-statusline → overwrite a non-codeforge statusLine /
+                        subagentStatusLine only; hooks untouched (B28)
   --yes              → skip confirmation prompts
   --settings-path P  → target settings.json other than the default
   --quiet            → exit-code-only, no stdout
@@ -276,7 +278,7 @@ v1.
   pre-install snapshot — byte-equal modulo JSON key order.
 - Edge: settings.json missing → create; malformed JSON → error with
   line number, no writes; `statusLine` already set to user's own
-  command → refuse without `--force` (safer than backup).
+  command → refuse without `--replace-statusline` or `--force` (safer than backup).
 
 **Manual smoke**: `cargo install --path . && codeforge install --all &&
 claude` — verify hooks fire in a fresh Claude Code session.
