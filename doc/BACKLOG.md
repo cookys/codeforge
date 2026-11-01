@@ -321,3 +321,11 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 不回 maxRows=1 的標籤；沒有 autopilot 時 forge-stats 也不再顯示速度。現行算法已交給 autopilot（fleet msg `01M6A95050YK4D480QJXK54QDW`）。
 **Trigger**: autopilot 回報速度上線的 sha；在那之前 forge-stats 照舊回 keyed Box 標籤，避免兩邊都沒有速度的空窗。
 **Not done**: 移除程式與測試、改文件。autopilot 端登記為 BL-0359（develop `bca35c405`，交接文件 `docs/backlog/live-speed-handover-from-forge-stats.md`），排在 alpha.7 發布之後（同 BL-0358，避開 mods 路徑搬家），量法先照抄現行口徑；分頁標籤放不放寵物由 autopilot 做預覽給 owner 選。
+
+## B33 — 專案範圍知識的正本改放 pm（跟著 repo 走、跨機器同步）
+
+**Area**: 記憶管線（`src/dream/`、`src/memory/`、`memory context` recall、`ship` 選條目）；L1 atom schema（`doc/specs/codeforge-memory-contract.md`）
+**Premise**: `.codeforge/` 整個被 gitignore，L1 只存在本機，多機開發彼此看不到。fleet 規劃中的 pm CLI（Rust，單一專案的 backlog/決策/ADR 鏈/專案事實，正本是 commit 進 repo 的 JSONL、sqlite 只當本機索引、id 用 ULID）要收專案範圍的 lesson/gotcha；codeforge 的 learn/dream 繼續從對話萃取，專案範圍產出改經 pm CLI 寫入，跨專案、L2 ledger、語意檢索照舊歸 codeforge/mnemos。
+**codeforge 開出的限制**（fleet msg `01M6BASVM2RS9CY36Y2V61FFR9`，fleet 回覆會原樣寫進正式計畫）：(a) dream 產出先標 candidate，經 identifier-scan + 人工把關才升正式；(b) dream 只寫本機，由 finish 決定何時匯出並 commit；(c) 一條目一檔或 union merge；(d) refs/last_ref/strength 等使用統計留本機不進 commit；(e) pm 不在時降級寫本機 store，SessionEnd 不可失敗，recall 統一讀 pm＋本機；(f) ship 以 ULID 去重。另需新增 atom `scope: project | cross` 與來源 repo 欄位（現在只有存放位置與 `origin` 可粗分）。
+**Trigger**: operator 對 pm 計畫拍板、fleet 通知 codeforge 寫遷移計畫；計畫寫好後開決策卡給 owner，不先動 code。
+**Not done**: 遷移計畫、schema 增欄、寫入與 recall 路徑改動，全部未開始。
