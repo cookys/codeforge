@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-_(none)_
+| Plan | Created | Project |
+|------|---------|---------|
+| [2026-11-02-autopilot-hook-bridge](2026-11-02-autopilot-hook-bridge.md) | 2026-11-02 | [2026-11-02-autopilot-hook-bridge](../projects/2026-11-02-autopilot-hook-bridge/README.md) |
 
 ---
 

@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "B31-hooks",
+  "logical_plan_id": "autopilot-hook-bridge-2026-11-02",
+  "session_id": "e6514bd9-6849-44e5-81a8-8036ac718696",
+  "session_key": "9b16a781107468cbe73df25b3706d853f7813d592e9acfaea83abf8a1917bf50",
+  "generation": 1,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": false,
+  "policy_reason": "depth_0_adjudication_required",
+  "rubric_sha256": "69f4662cc4c610fcf89535a4dcd71e87babc847dd922074e7da508688cc0642b",
+  "manifest_sha256": "66ddbdf9b37e74543eb9fbbfa891d449d0b9bb73db7dda2f694cd638f20cdae1",
+  "plan_sha256": "48cc012cd820f9e3e56d11f7e9318a1f920c3b1fce44525466d5e3eef7bbba5e",
+  "growth_ratio": {
+    "numerator": 1,
+    "denominator": 1
+  },
+  "growth_warning": false,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "astra_plan_chair",
+      "target_id": "astra_plan_chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6-astra",
+          "operation": "plan-review",
+          "request_digest": "4651d8db07b5f66ad0f7e2571bf77d7276193d3e97f30b6b2e03181b80d8e1c7"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "56059bc9942eb8730fc8bbfda37cfd3edd041bc702d68f6e41ec024be52cf09e",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-codex-u2PJxn/stdout",
+          "digest": "56059bc9942eb8730fc8bbfda37cfd3edd041bc702d68f6e41ec024be52cf09e"
+        },
+        "receipt_digest": "f38f07a262a76d8f534403be64d225e7707a83fbe2e3e09f681475cd998ac3de"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "grok",
+          "model": "grok-4.7",
+          "operation": "plan-review",
+          "request_digest": "63dacad96884f7a1aaca56e166c228a7f8a7e7ebc0daf2ef0499d4b48c786f8c"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "45ac9fbb84fcafa5f10e2e7c071b86941b0650fa796a8780fbdd1fd23cf0435e",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-log-IZOEiB",
+          "digest": "45ac9fbb84fcafa5f10e2e7c071b86941b0650fa796a8780fbdd1fd23cf0435e"
+        },
+        "receipt_digest": "2a77aa1d00875a3b74bd676dbaeda306d7756cbfdd0df476f825165094583d7f"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "astra_plan_chair",
+      "target_id": "astra_plan_chair",
+      "family": "openai",
+      "verdict": "STOP"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "family": "xai",
+      "verdict": "STOP"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "§3.1 stdin 讀取與子指令轉送",
+      "claim": "1 MiB 讀取上限與每個子指令收到原樣 stdin bytes 的要求衝突。",
+      "evidence": "§3.1 明定 stdin 上限 1 MiB，隨後將讀取結果轉送給所有子指令；超過上限的輸入無法完整轉送。讀不到就當空字串也未區分非 UTF-8 bytes 與真正的讀取失敗。",
+      "evidence_reference": "R4；計畫 §3.1",
+      "repair": "將原始輸入以 bytes 保存，JSON 解析另行處理；取消會截斷轉送內容的上限，或以完整暫存檔轉送。加入超過 1 MiB 與非 UTF-8 輸入的逐 byte 驗證。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "astra_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6-astra"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "8d3e94b8a172f674021133ef2d2f4d0610673edd80590208e0d4c4a119d1cf3f"
+    },
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "§3.3 detached payload 檔生命週期與 §3.4 stamp TTL",
+      "claim": "固定 payload 檔名會讓後一次事件覆寫前一次仍在使用的輸入，並可能被前一次工作刪除。",
+      "evidence": "payload 路徑只含 session_id 與 event；stamp 在 60 秒後允許同一事件再次執行，但 session-end 鏈可執行 210 秒，另有最多 120 秒排隊。後一次呼叫因此可在前一次完成前寫入相同路徑；session lock 只序列化 detached 工作，未保護父行程建立 payload，前一次完成時還會刪除該共用路徑。",
+      "evidence_reference": "R4；計畫 §3.3 payload 路徑、截止時間與刪除規則；§3.4 60s TTL",
+      "repair": "每次被接受的呼叫使用獨立且排他建立的 payload 檔，完整寫入後才啟動 worker；worker 僅讀取及刪除自己擁有的檔案。session lock 與事件 payload 身分分開。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "astra_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6-astra"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "be38bec521f85b6842d964ae14f1839026bef53d57b02c2b4838b11edf592472"
+    },
+    {
+      "rubric_id": "R5",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "§3.2–3.3 子行程逾時回收與 session lock 釋放",
+      "claim": "需要驗證逾時會終止實際工作及其後代，否則直接子行程退出後仍可能有工作與 ship 或下一條 session 工作重疊。",
+      "evidence": "§3.2 只指定 kill 並 wait 子行程，§3.3 未定義逾時時的後代回收。提供的 hook.rs 顯示 codeforge hook session-digest 還會啟動 node；因此回收 codeforge wrapper 本身不足以證明 digest 已停止。",
+      "evidence_reference": "R5；計畫 §3.2–3.3；src/cli/hook.rs::exec_script",
+      "repair": "在 P2 spike 使用會留下長時間執行後代的假指令鏈，驗證逾時後所有工作均停止才推進鏈或釋放 lock；據此實作工作程序樹的終止與回收。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "astra_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6-astra"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "e4dd869d7cfbd561dad84b465adf59960a4d2d04fe2c0459ca5939b83dafe7a8"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "codeforge hook on 的行程結束碼，插入點是 src/cli/hook.rs 的 hook::run",
+      "claim": "計畫把 hook on 插進現有 hook::run，卻沒有推翻該函式的結束碼契約。Err 會由呼叫端印出並以 exit 1 結束；Ok 會把子行程結束碼原樣退出。資料目錄不可寫時 materialize_in 回傳 Err；子指令若以 2 結束且被包成 Ok，整個行程就會 exit 2。兩者都違反 R1 的一律 exit 0。",
+      "evidence": "hook.rs 模組說明寫明 forwarder 自身失敗一律 exit 1，並且絕不以 2 作為 forwarder 自己的結束碼。run 的說明寫明 Ok(code) 是腳本自己的結束碼，未知名稱則是 1，Err 由呼叫端印出並 exit 1。materialize_in 在目錄不可寫時回傳錯誤。計畫 3.1 只規定在 hook::run 開頭把名稱 on 轉給 hook::on::run，沒有規定這條路徑必須吞掉錯誤與子行程結束碼。2.5 與 KR5 要求任何情況都 exit 0，但被點名的插入點契約相反。若 clap 在進入 on::run 之前就因未知旗標結束，預設結束碼也是 2。",
+      "evidence_reference": "src/cli/hook.rs 模組說明、pub fn run 與 materialize_in；計畫 §3.1、§2.5、KR5",
+      "repair": "寫明 hook on 的所有入口，包含 --help、--detached、未知事件與未知旗標，都不得讓 clap 或現有 caller 以非 0 結束。on::run 必須捕捉全部錯誤，stderr 只用正體中文，然後固定讓行程 exit 0；子行程結束碼只寫 log，不得回傳。P1 的 binary 測試要覆蓋資料目錄不可寫、stdin 非 JSON、子指令 exit 2、未知事件，並斷言結束碼為 0。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "73ee0aafa56deaaad3649afa8f58b5e8b8732f58edf2f26e486d8b34547d8231"
+    },
+    {
+      "rubric_id": "R2",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "hook on session-end 的同步 emit-session，以及 session-start 的 stdout 合併",
+      "claim": "session-end 同步執行的 hook emit-session session_end 沒有把子行程 stdout 移出 hook stdout。現有 exec_script 繼承 stdout，該子行程只要寫出任何位元組，session-end 的 stdout 就不是空的。session-start 只說把 additionalContext 用空白行接起來，沒有規定重編成恰好一個 JSON 物件；各段原始 stdout 若被串接，就會變成多個 JSON 值。",
+      "evidence": "exec_script 對 stdout 與 stderr 都使用繼承。計畫 3.3 只為 detach 出去的子行程把 stdout 與 stderr 導到 hook-on.log；同步的 emit-session 只有 2 秒截止，沒有 stdio 轉向。3.2 的合併是 trim 後取出 additionalContext，再以空白行連接，空集合則不輸出；沒有寫用 JSON 函式庫重包，也沒有寫把 hookEventName 重設為 SessionStart。2.5 要求 session-end 與 pre-compact 的 stdout 一律為空，session-start 只能是空或恰好一個指定物件。",
+      "evidence_reference": "src/cli/hook.rs 的 exec_script；計畫 §3.2、§3.3、§2.5",
+      "repair": "規定 session-end 與 pre-compact 的父行程不對 stdout 寫任何位元組。同步 emit-session 的 stdout 必須導向 log 或丟棄，禁止走繼承版 exec_script。session-start 只接合已解析出的 additionalContext 字串，再用 serde_json 輸出恰好一個物件，且 hookEventName 為 SessionStart；沒有任何一段成功就不寫 stdout。禁止把子行程原始 stdout 拼進父 stdout。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "01c87b992b16f10a6ee24cbccce2765a2f00d5a5964b207836e918117f862dcb"
+    },
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "hook on 讀取並轉交 stdin 的路徑（計畫 3.1）；cwd 不切換的部分符合 R4",
+      "claim": "計畫把 stdin 讀成最多 1 MiB 的字串，讀不到就改餵空字串。超過上限的位元組會被截掉；無效 UTF-8 或讀取失敗時，子指令收不到原始 stdin。這違反 R4 的原樣轉交。",
+      "evidence": "計畫 3.1 寫讀 stdin 一次、上限 1 MiB、讀不到就當空字串，同一節又要求把同一份 bytes 餵給每個子指令。R4 要求每個子指令收到原樣的 stdin bytes，條文沒有長度上限或字串轉碼例外。以 String 讀取時，無效 UTF-8 會失敗，隨後依該句變成空輸入。子指令因此拿到的不是 hook 收到的原始位元組。",
+      "evidence_reference": "計畫 §3.1；凍結評分 R4",
+      "repair": "改為讀到 EOF 的位元組緩衝，不設 1 MiB 上限，也不要先轉成 String。每個子指令的 stdin 都寫入這份原始緩衝。只有作業系統讀取本身失敗才允許改餵空 stdin，並以正體中文寫 stderr，同時仍 exit 0。解析 session_id 失敗不得改寫要轉交的位元組。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "1b09e4987ebeb4d4ba499d6c8fb66b0436289aba626be0e8a9e8a2c9966babc4"
+    },
+    {
+      "rubric_id": "R5",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "同一 session 的 session-end 與 pre-compact detached 鏈（計畫 3.3 的 lock、3.4 的 stamp）",
+      "claim": "不重疊目前同時依賴 60 秒 stamp 與 lock，但 stamp 短於 dream 的 120 秒截止，所以第二趟在 dream 尚未結束時就會再啟動一條 detached 鏈。是否真的不重疊，取決於 lock 是否從 session-digest 之前一直持有到 ship 被回收；這個持有區間沒有寫死。",
+      "evidence": "3.4 規定 stamp 的 mtime 在 60 秒內才 no-op，超過 60 秒就覆寫並執行。3.3 規定 digest、dream、ship 的截止分別是 30 秒、120 秒、60 秒；序列化用 O_CREAT 加 O_EXCL 的 lock，超過 10 分鐘視為殘留可搶，最多等 120 秒否則放棄。60 秒小於 dream 的 120 秒，因此 stamp 本身擋不住第二條鏈。計畫寫了等不到鎖就放棄、不重疊執行，但沒有寫鎖必須涵蓋整條 digest 到 ship 的鏈，也沒有寫可搶門檻必須大於各段硬截止的總和。",
+      "evidence_reference": "計畫 §3.3 與 §3.4；凍結評分 R5",
+      "repair": "寫明同一 session 的 lock 由 detached 行程取得，並從啟動 session-digest 之前持有到 ship 被回收才釋放。可搶門檻必須大於各段硬截止之和。stamp 只負責短時間 no-op，不得被當成不重疊的機制。P2 要有兩次重疊呼叫的測試，斷言第二條鏈在第一條 dream 或 ship 尚未結束時不會開始執行。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "5c4e95a42084d6b826a9f7940d69db2e6f17d1501520ebea2a91234aa1331b0c"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "session-start 的 10 秒截止與 session-end 同步段的 2 秒截止；detach 後存活的設計不在此項判失敗",
+      "claim": "session-start 的 10 秒與 session-end 同步段的 2 秒都是到點後 kill 再 wait，wait 沒有上限，也沒有在 SIGTERM 之後改送 SIGKILL。子行程忽略 SIGTERM 時，父行程會超過 bridge 的 15 秒或 5 秒。讀 stdin 被放在子行程截止之外，stdin 不關閉時同樣會卡住父行程。",
+      "evidence": "計畫 3.2 寫整體截止 10 秒，到點尚未結束的子行程一律 kill 並 wait 回收。3.3 的同步 emit-session 只有 2 秒截止。3.1 的讀 stdin 沒有納入這個截止。platform.rs 的 request_terminate 使用 Signal::Term；Term 有送出時不會再呼叫 kill。Node 腳本可以忽略 SIGTERM，於是 wait 不返回。R6 要求的是父行程在 15 秒與 5 秒內返回。detach 使用新 process group、stdio 不繼承父 pipe，與現有 spawn_detached 一致，這一部分可以滿足訊號隔離。",
+      "evidence_reference": "計畫 §3.1、§3.2、§3.3；src/platform.rs 的 request_terminate 與 spawn_detached",
+      "repair": "把截止改成父行程從開始讀 stdin 到結束的牆鐘預算：session-start 含回收必須早於 15 秒，session-end 與 pre-compact 的同步段含回收必須早於 5 秒。到點先 SIGTERM，短寬限後 SIGKILL，wait 本身也要有上限；超過預算就停止等待並 exit 0。120 秒的 lock 等待只能在已 detach 的子行程內。P2 要用會忽略 SIGTERM 的假子指令，斷言父行程仍在時限內返回。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "4838762306be695e3e7ec8ea93f06de974e62dc87ef3c21e9f11b000f392c48e"
+    }
+  ],
+  "backlog_candidates": [
+    {
+      "fingerprint": "e4dd869d7cfbd561dad84b465adf59960a4d2d04fe2c0459ca5939b83dafe7a8",
+      "rubric_id": "R5",
+      "affected_surface": "§3.2–3.3 子行程逾時回收與 session lock 釋放",
+      "claim": "需要驗證逾時會終止實際工作及其後代，否則直接子行程退出後仍可能有工作與 ship 或下一條 session 工作重疊。",
+      "evidence_reference": "R5；計畫 §3.2–3.3；src/cli/hook.rs::exec_script",
+      "disposition": null
+    },
+    {
+      "fingerprint": "5c4e95a42084d6b826a9f7940d69db2e6f17d1501520ebea2a91234aa1331b0c",
+      "rubric_id": "R5",
+      "affected_surface": "同一 session 的 session-end 與 pre-compact detached 鏈（計畫 3.3 的 lock、3.4 的 stamp）",
+      "claim": "不重疊目前同時依賴 60 秒 stamp 與 lock，但 stamp 短於 dream 的 120 秒截止，所以第二趟在 dream 尚未結束時就會再啟動一條 detached 鏈。是否真的不重疊，取決於 lock 是否從 session-digest 之前一直持有到 ship 被回收；這個持有區間沒有寫死。",
+      "evidence_reference": "計畫 §3.3 與 §3.4；凍結評分 R5",
+      "disposition": null
+    }
+  ],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": 2,
+  "reviewed_at": "2026-11-01T20:58:30.294Z"
+}
