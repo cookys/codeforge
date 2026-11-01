@@ -1,7 +1,7 @@
 # Plan — install／bootstrap 對共用 settings.json 安全（v0.0.7）
 
-> Status: frozen（hetero plan review g1+g2 完成，2026-11-02）· Owner: cookys · Branch: `feature/install-stable-paths` · Size: L
-> BACKLOG: B35 · Project: [`doc/projects/2026-11-01-install-stable-paths/`](../projects/2026-11-01-install-stable-paths/README.md)
+> Status: shipped v0.0.7（2026-11-02，merge `adb3b58`）；plan review g1+g2 凍結· Owner: cookys · Branch: `feature/install-stable-paths` · Size: L
+> BACKLOG: B35 · Project: [`doc/projects/2026-11-01-install-stable-paths/`](../projects/_archive/2026-11-01-install-stable-paths/README.md)
 
 ## 0. Context
 

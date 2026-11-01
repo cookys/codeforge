@@ -2,9 +2,7 @@
 
 ## Active Plans
 
-| Plan | Created | Project |
-|------|---------|---------|
-| [2026-11-01-install-stable-paths](2026-11-01-install-stable-paths.md) | 2026-11-01 | [2026-11-01-install-stable-paths](../projects/2026-11-01-install-stable-paths/README.md) |
+_(none)_
 
 ---
 
@@ -12,6 +10,7 @@
 
 | Plan | Created | Moved to Project |
 |------|---------|-----------------|
+| [2026-11-01-install-stable-paths](2026-11-01-install-stable-paths.md) | 2026-11-01 | [_archive/2026-11-01-install-stable-paths](../projects/_archive/2026-11-01-install-stable-paths/README.md) |
 | [2026-10-31-statusline-band](2026-10-31-statusline-band.md) | 2026-10-31 | [_archive/2026-10-31-statusline-band](../projects/_archive/2026-10-31-statusline-band/README.md) |
 | [2026-10-31-forge-tabs](2026-10-31-forge-tabs.md) | 2026-10-31 | [_archive/2026-10-31-statusline-band](../projects/_archive/2026-10-31-statusline-band/README.md)（分頁協定） |
 | [2026-10-31-forge-columns](2026-10-31-forge-columns.md) | 2026-10-31 | [_archive/2026-10-31-statusline-band](../projects/_archive/2026-10-31-statusline-band/README.md)（依寬度排欄） |
