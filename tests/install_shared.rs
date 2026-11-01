@@ -155,3 +155,44 @@ fn dry_run_on_symlinked_settings_warns_and_writes_portable_commands() {
         "{}"
     );
 }
+
+#[test]
+fn cleanup_flag_applies_without_hooks() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let settings = tmp.path().join("settings.json");
+    std::fs::write(&settings, "{}").unwrap();
+    let out = codeforge()
+        .args(["install", "--cleanup-period-days", "90", "--dry-run"])
+        .env("CODEFORGE_CLAUDE_SETTINGS", &settings)
+        .env("CODEFORGE_DATA_DIR", tmp.path().join("data"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"cleanupPeriodDays\": 90"),
+        "an explicit flag must not be dropped on a statusLine-only install: {stdout}"
+    );
+}
+
+#[test]
+fn cleanup_flag_conflicts_with_project_hooks() {
+    let out = codeforge()
+        .args([
+            "install",
+            "--project-hooks",
+            "--cleanup-period-days",
+            "90",
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "the flag must not be silently ignored on --project-hooks"
+    );
+}

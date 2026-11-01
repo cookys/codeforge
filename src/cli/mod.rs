@@ -71,7 +71,7 @@ pub enum Commands {
         #[arg(long)]
         quiet: bool,
         /// 保留 session transcript 的天數（cleanupPeriodDays）。共用的 settings.json（symlink 或在 git 版控中）只有加這個旗標才會寫入
-        #[arg(long, value_name = "DAYS", value_parser = clap::value_parser!(u64).range(1..))]
+        #[arg(long, value_name = "DAYS", value_parser = clap::value_parser!(u64).range(1..), conflicts_with = "project_hooks")]
         cleanup_period_days: Option<u64>,
     },
     /// 執行 codeforge 內建的 hook 腳本（供 settings.json 呼叫；不帶本機路徑與版號）
