@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "B31-hooks",
+  "logical_plan_id": "autopilot-hook-bridge-2026-11-02",
+  "session_id": "e6514bd9-6849-44e5-81a8-8036ac718696",
+  "session_key": "9b16a781107468cbe73df25b3706d853f7813d592e9acfaea83abf8a1917bf50",
+  "generation": 2,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": null,
+  "terminal": true,
+  "policy_reason": "required_seat_transport_exhausted",
+  "rubric_sha256": "69f4662cc4c610fcf89535a4dcd71e87babc847dd922074e7da508688cc0642b",
+  "manifest_sha256": "66ddbdf9b37e74543eb9fbbfa891d449d0b9bb73db7dda2f694cd638f20cdae1",
+  "plan_sha256": "23297b29d43be4d2486c55d6cc836b09ae545ff0ef91ff3d7de3239d49e6a5ab",
+  "growth_ratio": {
+    "numerator": 17984,
+    "denominator": 13563
+  },
+  "growth_warning": true,
+  "transport_status": "transport_exhausted",
+  "attempts": [
+    {
+      "seat_id": "astra_plan_chair",
+      "target_id": "astra_plan_chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6-astra",
+          "operation": "plan-review",
+          "request_digest": "e8456da296198debe24df3a245ddc7ad2c982d198d77a7705c2769df2d6ab736"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "5c5b2131d93f745ad8c42b0a5a79e1793da15745d7b64fdf36c47a4ddca9e1e9",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-codex-VyQrKJ/stdout",
+          "digest": "5c5b2131d93f745ad8c42b0a5a79e1793da15745d7b64fdf36c47a4ddca9e1e9"
+        },
+        "receipt_digest": "32cb13ab3a5faee9cd9f6c14cb5e9fe58b78e43f4e8378f8b6ee34f0e9376f3e"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "grok",
+          "model": "grok-4.7",
+          "operation": "plan-review",
+          "request_digest": "850f7cbb2502cf6c556bff65af6c47e43047060fd4982f417baa6c8702adc5ec"
+        },
+        "outcome": {
+          "classification": "exit_failure",
+          "exit_status": 3,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": null,
+        "receipt_digest": "538cf43e2bf0ff8074d8f125daafa3cebba59cf28d9b6bfd9826dde4ad817fc4"
+      },
+      "transport_status": "exit_failure",
+      "parser_status": "not_attempted",
+      "semantic_status": "unavailable",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "auto-fb-grok_deep_reviewer-1",
+      "attempt": 2,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "kimi",
+          "model": "kimi-code-k3",
+          "operation": "plan-review",
+          "request_digest": "16512894e611d81df8c8bfdadadae06de953634f2ac1a9124ee9cc938c78bfd7"
+        },
+        "outcome": {
+          "classification": "exit_failure",
+          "exit_status": 3,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "aa8f8ec0cbe749e3ef2d545d87afb9d30fc144de57cc2ff840f85822be87b9f0",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-log-iK1b2H",
+          "digest": "aa8f8ec0cbe749e3ef2d545d87afb9d30fc144de57cc2ff840f85822be87b9f0"
+        },
+        "receipt_digest": "30ea6f1bbac005875212de897cd0629ac10c645392cfb991a2529f7d7d9c35f2"
+      },
+      "transport_status": "exit_failure",
+      "parser_status": "not_attempted",
+      "semantic_status": "unavailable",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [
+    {
+      "seat_id": "grok_deep_reviewer",
+      "from_id": "grok_deep_reviewer",
+      "to_id": "auto-fb-grok_deep_reviewer-1",
+      "attempt": 2,
+      "reason": "retry_substitution"
+    }
+  ],
+  "reviewer_verdicts": [],
+  "findings": [],
+  "backlog_candidates": [],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": null,
+  "reviewed_at": "2026-11-01T21:12:41.745Z",
+  "unratified_observations": [
+    {
+      "kind": "completed_seat_review",
+      "seat_id": "astra_plan_chair",
+      "target_id": "astra_plan_chair",
+      "family": "openai",
+      "verdict": "STOP",
+      "findings": [
+        {
+          "rubric_id": "R4",
+          "class": "decision-now",
+          "severity": "blocking",
+          "affected_surface": "§3.1 stdin 讀取失敗與逾時分支",
+          "claim": "讀取失敗或逾時後仍啟動子指令並餵空 stdin，直接違反每個子指令收到原始 stdin bytes 的契約。",
+          "evidence": "§3.1 明定讀取到部分資料後逾時，或發生作業系統讀取錯誤時，子指令改餵空 stdin；因此已收到非空資料的呼叫也可能讓子指令收到不同內容。",
+          "evidence_reference": "R4；§3.1 stdin；KR5",
+          "repair": "完整讀到 EOF 才允許啟動事件子指令；讀取失敗或超過牆鐘預算時，記錄 stderr、跳過整條事件鏈並 exit 0。完整讀取成功的資料即使不是 JSON 或 UTF-8，也逐 byte 原樣轉交。",
+          "blocks_next_slice_or_immediate_integrity": true,
+          "cannot_defer_to_spike": true
+        },
+        {
+          "rubric_id": "R5",
+          "class": "decision-now",
+          "severity": "blocking",
+          "affected_surface": "§3.1 逾時回收與 §3.3 worker 順序、session lock 釋放",
+          "claim": "計畫允許放棄等待回收，卻同時要求 dream 回收完成才執行 ship，以及整條鏈回收完成才釋放 session lock；尚未定義無法確認終止時的安全分支。",
+          "evidence": "§3.1 在 SIGKILL 後有上限地等待，超過 500 ms 即放棄等待。§3.3 又規定前一步失敗或逾時不擋後一步，但回收完成前不得開始下一步，且 lock 持有到最後一個子行程回收。當回收未確認完成時，繼續 ship 或釋放 lock 都可能造成重疊；僅因 lock 超過 15 分鐘就搶占也不能證明舊工作已停止。",
+          "evidence_reference": "R5；§3.1 逾時回收；§3.3 序列化及 worker 步驟",
+          "repair": "明定回收未確認完成時中止後續步驟，尤其不得啟動 ship；保留阻止同 session 新鏈啟動的狀態。殘留 lock 的接管必須確認舊 worker 與其受管理工作已終止，不能僅依檔案年齡。將此分支納入不重疊驗證。",
+          "blocks_next_slice_or_immediate_integrity": true,
+          "cannot_defer_to_spike": true
+        }
+      ]
+    }
+  ]
+}

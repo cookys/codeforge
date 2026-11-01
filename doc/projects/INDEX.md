@@ -6,6 +6,7 @@
 
 | Project | Description | Started |
 |---------|------------|---------|
+| [autopilot-hook-bridge](2026-11-02-autopilot-hook-bridge/README.md) | B31 hooks 段提前：`codeforge hook on <event>` 給 autopilot bridge 呼叫，install 偵測到 bridge 時不寫 hooks 並清掉舊項目。v0.0.8 | 2026-11-02 |
 
 ## Archived
 
