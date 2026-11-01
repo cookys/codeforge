@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { bandLayout, displayWidth, halfBlockCells, rgbHex, tabLabel, tabParts, parseSessionView, parseSprite, petShown, sanitizeSessionId } from '../hooks/model'
+import { bandLayout, displayWidth, halfBlockCells, rgbHex, tabLabel, tabParts, parseSessionView, parseSprite, sanitizeSessionId } from '../hooks/model'
 import { FERRIS_MINI } from './ferris-mini'
 import { FERRIS } from './ferris-sprite'
 import { VECTORS } from './session-id-vectors'
@@ -124,14 +124,6 @@ test('bandLayout gives the spare width to the request table only, and always fil
   expect(bandLayout(120, 24).map(c => c.width)).toEqual([24, 30, 34])
 })
 
-test('petShown needs the band layout and an ok blit under 2 s old', () => {
-  expect(petShown('band', { at: 1000, ok: true }, 2999)).toBe(true)
-  expect(petShown('band', { at: 1000, ok: true }, 3000)).toBe(false)
-  expect(petShown('band', { at: 1000, ok: false }, 1500)).toBe(false)
-  expect(petShown('band', null, 1500)).toBe(false)
-  expect(petShown('pane', { at: 1000, ok: true }, 1500)).toBe(false)
-})
-
 test('parseSessionView reads this session only', () => {
   expect(parseSessionView(JSON.stringify(SESSION), SID)).toEqual({ memory: 'active', active: 12, brain: 'ok' })
   expect(parseSessionView(JSON.stringify(SESSION), 'other')).toBe(null)
@@ -146,7 +138,7 @@ test('the heartbeat is written at session start, before any tick, and every 2 s'
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const first = lastBeat(w)
-  expect(first).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_000_000, layout: 'band', pet_shown: false })
+  expect(first).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_000_000, layout: 'band' })
   expect(w.writes.filter(x => x.path === HB)[0]!.text.length < 512).toBe(true)
   await clock.advance(2000)
   expect(lastBeat(w)?.written_at_ms).toBe(1_002_000)
@@ -212,7 +204,7 @@ test('the band passes on a survey, desktop, or the pane layout', async ($, on) =
   await ui.unmount()
 })
 
-test('band blits go to the band instance and drive pet_shown', async ($, on) => {
+test('band blits go to the band instance', async ($, on) => {
   const w = world(on)
   const clock = mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
@@ -222,12 +214,6 @@ test('band blits go to the band instance and drive pet_shown', async ($, on) => 
   const bandBlits = w.blits.filter(b => b.key === 'pet-band')
   expect(bandBlits.length > 0).toBe(true)
   expect(bandBlits.every(b => b.requestId === 'band-1')).toBe(true)
-  expect(lastBeat(w)?.pet_shown).toBe(true)
-
-  // the band stops being mounted: blits are denied, and the next beat says so
-  w.deny = true
-  await clock.advance(2000)
-  expect(lastBeat(w)?.pet_shown).toBe(false)
   await ui.unmount()
 })
 
@@ -241,7 +227,7 @@ test('/forge-stats layout switches, persists, and the beat follows', async ($, o
   expect(w.store.layout).toBe('pane')
   expect(w.opened).toBe(1)
   await clock.advance(2000)
-  expect(lastBeat(w)).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_002_000, layout: 'pane', pet_shown: false })
+  expect(lastBeat(w)).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_002_000, layout: 'pane' })
   const bad = await $.command.run(cmd('layout sideways'))
   expect(bad.text?.includes('band|pane')).toBe(true)
   expect(w.store.layout).toBe('pane')
@@ -405,11 +391,10 @@ test('six to eleven rows draw the 16x6 mini Ferris, and its blits are mini-sized
   const bandBlits = w.blits.filter(b => b.key === 'pet-band')
   expect(bandBlits.length > 0).toBe(true)
   expect(bandBlits.every(b => b.cells.length === halfBlockCells(mini, 0).cells.length)).toBe(true)
-  expect(lastBeat(w)?.pet_shown).toBe(true)
   await ui.unmount()
 })
 
-test('a label alone never blits the band, so the pet is not shown', async ($, on) => {
+test('a label alone never blits the band', async ($, on) => {
   const w = world(on)
   const clock = mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
@@ -417,7 +402,6 @@ test('a label alone never blits the band, so the pet is not shown', async ($, on
   const ui = await $.ui.mount(band(16, { maxRows: 1 }))
   await clock.advance(2000)
   expect(w.blits.filter(b => b.key === 'pet-band').length).toBe(0)
-  expect(lastBeat(w)?.pet_shown).toBe(false)
   await ui.unmount()
 })
 
@@ -434,7 +418,6 @@ test('label then expanded in one render: the expanded call decides the band blit
   const bandBlits = w.blits.filter(b => b.key === 'pet-band')
   expect(bandBlits.length > 0).toBe(true)
   expect(bandBlits.every(b => b.requestId === 'band-1' && b.cells.length === halfBlockCells(parseSprite(FERRIS)!, 0).cells.length)).toBe(true)
-  expect(lastBeat(w)?.pet_shown).toBe(true)
   await full.unmount()
 })
 

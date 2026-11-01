@@ -4,8 +4,6 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Layout, PetView, SessionView, SpriteData, Step } from '../types'
 import {
   BAND_GAP,
-  BAND_MIN_COLUMNS,
-  BAND_MIN_ROWS,
   BAND_SPEED_W,
   GLYPH,
   KEY_W,
@@ -24,7 +22,6 @@ import {
   padRight,
   parseSessionView,
   parseSnapshot,
-  petShown,
   sessionViewPath,
   rgbHex,
   tabLabel,
@@ -35,7 +32,6 @@ import {
   summarize,
 } from './model'
 import { localeFrom, makeT } from './strings'
-import type { BandBlit } from './model'
 import type { Locale, T } from './strings'
 
 const PANE = 'forge-stats'
@@ -68,7 +64,6 @@ let bandId: string | null = null
 let bandLastCells: string | null = null
 // The sprite the band drew last (full or mini): its blits must match the mounted Raster's size.
 let bandSprite: SpriteData | null = null
-let lastBandBlit: BandBlit | null = null
 const BAND_KEY = 'pet-band'
 const t = (): T => makeT(locale)
 
@@ -122,8 +117,7 @@ async function stepSprite($: EngineInterface) {
     await $.ui.blit({ requestId: 'forge-stats', key: 'pet-sprite', cells })
   }
   // The band's Raster: its site is the band instance the render hook received (statusline-band
-  // plan §2.5), its size the sprite the band drew (forge-tabs plan §2.5). Its result decides
-  // whether the heartbeat says the pet is shown.
+  // plan §2.5), its size the sprite the band drew (forge-tabs plan §2.5).
   const id = bandId
   const drawn = bandSprite
   if (layout !== 'band' || id === null || drawn === null) return
@@ -131,17 +125,16 @@ async function stepSprite($: EngineInterface) {
   if (bandCells === bandLastCells) return
   bandLastCells = bandCells
   const result = await $.ui.blit({ requestId: id, key: 'pet-band', cells: bandCells })
-  const ok = !('deny' in result)
-  if (!ok) bandLastCells = null
-  lastBandBlit = { at: await $.clock.now(), ok }
+  // denied (the band is not mounted right now): resend the frame on the next tick
+  if ('deny' in result) bandLastCells = null
 }
 
-// One line codeforge statusline reads: is this session's band showing the pet right now?
+// One line codeforge statusline reads: is forge-stats alive in this session, and in which layout?
 async function writeHeartbeat($: EngineInterface) {
   if (liveBase === null || sid === '') return
   try {
     const now = await $.clock.now()
-    await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout, petShown(layout, lastBandBlit, now)))
+    await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout))
   } catch {
     // best effort: no heartbeat means the statusline stays full
   }
@@ -351,10 +344,7 @@ export const register: Register = on => {
     lastCells = null
     bandId = null
     bandLastCells = null
-    lastBandBlit = null
     sid = await $.session.id().catch(() => '')
-    // an older version pinned a tok/s status entry; autopilot's forge tab label shows it now
-    $.ui.status(undefined)
     const stored = await $.store.get('layout').catch(() => undefined)
     layout = stored === 'pane' ? 'pane' : 'band'
     await $.command.register({ name: 'forge-stats', description: t()('cmdDesc') })
@@ -379,7 +369,6 @@ export const register: Register = on => {
       layout = arg
       await $.store.set('layout', arg)
       bandLastCells = null
-      lastBandBlit = null
       if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title') })
       $.ui.invalidate('ui.render')
       await writeHeartbeat($)

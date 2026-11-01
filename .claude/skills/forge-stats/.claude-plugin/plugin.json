@@ -1,6 +1,6 @@
 {
   "name": "forge-stats",
   "version": "0.1.0",
-  "description": "Pane with per-request tok/s, time-to-first-token, and the codeforge pet status",
+  "description": "The codeforge pet (pixel Ferris), memory and brain lights, and model speed, as a band above the prompt or a side pane",
   "types": "./types/index.d.ts"
 }
