@@ -344,6 +344,37 @@ test('one row is a tab label: a row of keyed Boxes, one plain Text each, shorten
   }
 })
 
+// What a plugin above receives from next(e) is the tree it parses; this replays autopilot's forgeSegments shape check
+// (mods/live/ui.ts, develop 3ecd193af): a row Box whose children array holds only Boxes, each with exactly one Text
+// whose children array holds only strings. A JSX child list from .map() left nested would fail it.
+test('the plugin above gets the label as a flat row of part Boxes, the shape autopilot parses', async ($, on) => {
+  world(on)
+  mock.clock(on, { now: 1_000_000 })
+  type N = { type?: string; props?: { key?: unknown }; children?: unknown }
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount(band(30, { maxRows: 1 }))
+  // drawn() is what the ui.render chain returned, validated, as plain data: what next(e) hands the plugin above
+  const root = (await ui.drawn()) as N
+  expect(root?.type).toBe('Box')
+  const kids = root?.children
+  expect(Array.isArray(kids)).toBe(true)
+  const parts = (kids as N[]).map(c => {
+    expect(c.type).toBe('Box')
+    expect(Array.isArray(c.children) && (c.children as unknown[]).length === 1).toBe(true)
+    const t = (c.children as N[])[0]!
+    expect(t.type).toBe('Text')
+    const strs = t.children
+    expect(Array.isArray(strs) && (strs as unknown[]).every(x => typeof x === 'string')).toBe(true)
+    return [c.props?.key, (strs as string[]).join('')]
+  })
+  expect(parts).toEqual([
+    ['speed', 'ϟ — tok/s'],
+    ['sep', ' · '],
+    ['pet', 'Ferris Lv.3'],
+  ])
+  await ui.unmount()
+})
+
 test('two to five rows, or a thin column, is a one-row summary Text', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
