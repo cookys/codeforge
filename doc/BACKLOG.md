@@ -199,7 +199,8 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 - 取代原 B31（表現層由誰統一畫）：答案是 autopilot 當 host，各 extension 照契約交內容；fleet 分頁也走這條：owner 決定由 autopilot 畫（卡 d-d99e2d99 已關），autopilot 登記為 BL-0358，alpha.7 之後做、不放核准按鈕。
 **Trigger**: autopilot `v3.0.0-alpha.7`（repo 重整 P1–P5）發布之後；開工前 autopilot 先寫 extension 機制 plan 並過 plan review，
 codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責任這四塊）。
-**Not done**: 契約與實作都還沒開始；alpha.7 搬家期間不定掛載點（路徑會變好幾次）。
+**hooks 段**: 2026-11-02 提前定好介面契約（7840hs 請求；owner 卡 d-0ce83828 選 C：只定契約）：`codeforge hook on <session-start|session-end|pre-compact>`，autopilot 用通用提供者清單 `hooks/hook-providers.json` 呼叫（autopilot 卡 d-92a2231d），codeforge install 依五項條件偵測、共用檔不自動清。契約：[`doc/plans/2026-11-02-autopilot-hook-bridge.md`](plans/2026-11-02-autopilot-hook-bridge.md)；專案：`doc/projects/2026-11-02-autopilot-hook-bridge/`。兩邊實作都等 alpha.7 之後，開工時再跑一次兩席 plan review。
+**Not done**: hooks 段只有契約、沒有 code；其他段的契約與實作都還沒開始；alpha.7 搬家期間不定掛載點（路徑會變好幾次）。
 
 ## B32 — 速度（tok/s）整包移給 autopilot，forge-stats 拿掉速度與分頁標籤
 

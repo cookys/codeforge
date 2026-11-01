@@ -1,0 +1,29 @@
+{
+  "verdict": "STOP",
+  "findings": [
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "§3.1 stdin 讀取失敗與逾時分支",
+      "claim": "讀取失敗或逾時後仍啟動子指令並餵空 stdin，直接違反每個子指令收到原始 stdin bytes 的契約。",
+      "evidence": "§3.1 明定讀取到部分資料後逾時，或發生作業系統讀取錯誤時，子指令改餵空 stdin；因此已收到非空資料的呼叫也可能讓子指令收到不同內容。",
+      "evidence_reference": "R4；§3.1 stdin；KR5",
+      "repair": "完整讀到 EOF 才允許啟動事件子指令；讀取失敗或超過牆鐘預算時，記錄 stderr、跳過整條事件鏈並 exit 0。完整讀取成功的資料即使不是 JSON 或 UTF-8，也逐 byte 原樣轉交。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true
+    },
+    {
+      "rubric_id": "R5",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "§3.1 逾時回收與 §3.3 worker 順序、session lock 釋放",
+      "claim": "計畫允許放棄等待回收，卻同時要求 dream 回收完成才執行 ship，以及整條鏈回收完成才釋放 session lock；尚未定義無法確認終止時的安全分支。",
+      "evidence": "§3.1 在 SIGKILL 後有上限地等待，超過 500 ms 即放棄等待。§3.3 又規定前一步失敗或逾時不擋後一步，但回收完成前不得開始下一步，且 lock 持有到最後一個子行程回收。當回收未確認完成時，繼續 ship 或釋放 lock 都可能造成重疊；僅因 lock 超過 15 分鐘就搶占也不能證明舊工作已停止。",
+      "evidence_reference": "R5；§3.1 逾時回收；§3.3 序列化及 worker 步驟",
+      "repair": "明定回收未確認完成時中止後續步驟，尤其不得啟動 ship；保留阻止同 session 新鏈啟動的狀態。殘留 lock 的接管必須確認舊 worker 與其受管理工作已終止，不能僅依檔案年齡。將此分支納入不重疊驗證。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true
+    }
+  ]
+}
