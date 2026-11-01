@@ -1,0 +1,43 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "install-stable-paths-2026-11-01",
+ "generation": 2,
+ "findings": [
+  {
+   "fingerprint": "6a1f309ce130e4cb565bb9cbb2c2e36c8da938fbfb2d25c82cf57ab5da2def9c",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Correct: R11 has no exception for malformed invocations. Folded P2 step 2: main uses Cli::try_parse(); a parse failure whose argv[1] is 'hook' prints a Traditional Chinese usage line and exits 1; binary integration tests for missing and unknown names."
+  },
+  {
+   "fingerprint": "5c5c82b1228bfd4f699fb66442efbd8ec3a574da7d5225a63f95893656a748ee",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Correct: Command inherits stdio by default, so a non-git settings file would leak git's English 'fatal:' to the user on the default path. Folded P1 step 3: stdin/stderr null, ls-files reads exit status only, rev-parse via output(); spawn errors and non-zero map to None; test asserts no 'fatal:' on install --dry-run stderr."
+  },
+  {
+   "fingerprint": "9613446bfd85805e8f16e4cc0761751a2fb767a773a11e9f21134ad760cad92b",
+   "candidate_blocker": false,
+   "disposition": "accepted_nonblocking",
+   "rationale": "Correct: run_uninstall returns early on !exists(), which is true for a dangling link. Folded P1 step 2: check_settings_path runs before the exists() check in run_uninstall; test covers uninstall on a dangling link."
+  },
+  {
+   "fingerprint": "5467308dfa06abf7d584e2b2d4f4fd13c34c01852dd96d7a78891f784ad07796",
+   "candidate_blocker": false,
+   "disposition": "accepted_nonblocking",
+   "rationale": "Correct: dirs::data_local_dir ignores XDG_DATA_HOME on macOS. Folded P2 step 1: CODEFORGE_DATA_LOCAL_DIR override in default_data_local_dir; unit tests call materialize_in(base, name) with a tempdir instead of setting env (set_var races under cargo test); §5 e2e uses the new override."
+  },
+  {
+   "fingerprint": "b11c5f4eabf6a0d4d2e0c18fa0f024568e4d44a8f882bce384dbdb579937ad92",
+   "candidate_blocker": false,
+   "disposition": "accepted_nonblocking",
+   "rationale": "Correct: inherited stdin cannot be fed in a unit test. Folded: exec_script takes a Stdio for stdin; production passes Stdio::inherit and never reads stdin; tests pass Stdio::from(File) with a JSON temp file and assert stdin/argv byte-equal plus exit 7 and 2 pass through."
+  },
+  {
+   "fingerprint": "c47cc6f7dcdc456f2e79f05bcc37071172d9087d28445c97923b51be56ca3eab",
+   "candidate_blocker": false,
+   "disposition": "accepted_nonblocking",
+   "rationale": "Correct and important: in a shared file a 0.0.6 machine would hit clap's unknown-subcommand exit 2 (PreCompact blocks). Folded §2.6, §6, P4 step 5 and CHANGELOG: every machine self-updates to 0.0.7 before the rewritten settings.json enters the shared source; no dual-writing of old node paths."
+  }
+ ]
+}
