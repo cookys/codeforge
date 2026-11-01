@@ -1,8 +1,6 @@
 # CodeForge UI strings — Traditional Chinese (zh-TW)
 # Only keys that differ from en.yaml need to be listed here.
 
-# UI chrome
-
 # Stat labels — V2 style: 去冒號，靠顏色/字重對比閱讀為「標籤 數值」
 stat.atk: "攻"
 stat.def: "防"
