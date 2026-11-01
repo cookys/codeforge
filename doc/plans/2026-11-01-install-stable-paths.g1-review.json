@@ -1,0 +1,317 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "B35",
+  "logical_plan_id": "install-stable-paths-2026-11-01",
+  "session_id": "e6514bd9-6849-44e5-81a8-8036ac718696",
+  "session_key": "b1a03682250ce80ca63cfcaff86c0c1cdcd627de2b9457810aa8cf9dedfb3d07",
+  "generation": 1,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": false,
+  "policy_reason": "depth_0_adjudication_required",
+  "rubric_sha256": "b0e8323dd7e40fa434b8a987260644d57d60df294484415ea920870d50e3c946",
+  "manifest_sha256": "dcb1d43a090d4714caa25ce1d135478c132dfbedfb0aa415adf5dae766e3d94b",
+  "plan_sha256": "9896d38bef5179cdbe4e139a4078c4d882624d2b2cfc7ea948412465ad5f1e4c",
+  "growth_ratio": {
+    "numerator": 1,
+    "denominator": 1
+  },
+  "growth_warning": false,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "sol_plan_chair",
+      "target_id": "sol_plan_chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6.1-sol",
+          "operation": "plan-review",
+          "request_digest": "ab450b52ab3960b78df7d2c8da1658e450bef286a21b2988c25ec5703a3332d0"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "b0cba4dbc1288803b58519a21b02ca4c28047c607252096b14cea0555aee474f",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-codex-4ttIRl/stdout",
+          "digest": "b0cba4dbc1288803b58519a21b02ca4c28047c607252096b14cea0555aee474f"
+        },
+        "receipt_digest": "19feaf9c60ac3028dca4e1b1747b1152cccae57d8d7f86f6ce33365568afe342"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "grok",
+          "model": "grok-4.6",
+          "operation": "plan-review",
+          "request_digest": "8ecbdae9e4552ed151122e0fe93ff03c8120b19734cd97670eca726c22ac87ae"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "ab7120ff632355a8a723e842513bc4a537daf843d3233fc45e952b0ce3e1e5af",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-log-4AsDCd",
+          "digest": "ab7120ff632355a8a723e842513bc4a537daf843d3233fc45e952b0ce3e1e5af"
+        },
+        "receipt_digest": "2831bb3992c2e9adcb1131f3cbdf2cbf0dcc23a9838be65fcfe4247aa92a157c"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "sol_plan_chair",
+      "target_id": "sol_plan_chair",
+      "family": "openai",
+      "verdict": "CONDITIONAL"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "family": "xai",
+      "verdict": "STOP"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R3",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "P2 step 4; --project-hooks generated settings",
+      "claim": "Changing the shared current_marker() to codeforge@1 changes --project-hooks output, contradicting the requirement that its behavior and output remain unchanged.",
+      "evidence": "The supplied patch_hooks implementation calls current_marker() before selecting global or project entries and passes that marker into both branches. P2 changes that function unconditionally, while the plan declares all --project-hooks changes out of scope.",
+      "evidence_reference": "Plan §2.5, P2 step 4, §7; src/cli/install.rs::patch_hooks and current_marker",
+      "repair": "Explicitly scope the fixed install-contract marker to global installation and preserve the existing project marker generation and output. Add a project-output regression assertion covering the marker as well as command strings.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "sol_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "d0ae8955ecef2a095c8b2ae5fefc84cb84a8912d1fb30a931d1c798ffbaaca30"
+    },
+    {
+      "rubric_id": "R11",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "P2 step 2; hook CLI argument parsing and process exit handling",
+      "claim": "The proposed hook handler does not establish that argument-parsing failures avoid exit code 2.",
+      "evidence": "P2 declares a required name through clap attributes and specifies exit handling only after hook::run returns. A missing name can fail during clap parsing before that handler executes; clap's ordinary argument-error exit is 2. The proposed tests cover unknown names and child exit 7, but omit this boundary.",
+      "evidence_reference": "Plan P2 steps 1, 2 and 8; frozen rubric R11",
+      "repair": "During implementation, explicitly map parsing failures for the hook invocation to exit 1 and test the compiled binary with a missing hook name, malformed invocation, materialization failure, and child exit 2. Preserve exit 2 only when it originates from the child script.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "sol_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "2b091de53c35629c9712a1e381fc04430f1acca0be0b4570c63af62eca701116"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "plan KR1 and P2.8 assertions over patch_hooks(global) command strings",
+      "claim": "KR1／P2.8 把 R1 的驗收寫成每條 global hook command 都不含斜線，與 P2.3 既有 entry 原樣保留衝突，P2 無法同時綠。",
+      "evidence": "現行 global SessionEnd／SessionStart 已寫入 codeforge dream --quiet 2>/dev/null || true、codeforge ship --no-hook 2>/dev/null || true、codeforge memory context --hook 2>/dev/null || true、codeforge mnemos-cli context --hook ... 2>/dev/null || true，command 字串含斜線。P2.3 規定這些 entry 不變。R1 禁止的是絕對路徑、$HOME、~ 與版號，並要求新 hook 與既有 PATH 形式一致；P2.8 卻寫逐條斷言不含 / 也不含 CARGO_PKG_VERSION。照字面實作不是驗收紅，就是去改不該動的 dream／ship 字串。",
+      "evidence_reference": "plan KR1, §2.5 R1, P2.3, P2.8; src/cli/install.rs patch_hooks global SessionStart/SessionEnd hook_entry strings",
+      "repair": "改寫 KR1／P2.8：只斷言 emit-session／session-digest 為 codeforge hook … 且不含絕對路徑、$HOME、~、版號；既有 dream／ship／memory／mnemos-cli 字串維持現況（含 2>/dev/null）。禁止對全部 command 做 contains('/')。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "f27944a98bafb552b6ef971a73b6320c2b0e93eee5f6bec4dbea41a5639bc659"
+    },
+    {
+      "rubric_id": "R3",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "current_marker() shared by --project-hooks and global install; _installed_by in project .claude/settings.json",
+      "claim": "P2.4 改共用 current_marker() 會改掉 --project-hooks 寫出的 _installed_by，與 R3 輸出完全不變及 §7 不改 project-hooks 直接衝突；R2 又要求 marker 固定為 codeforge@1。",
+      "evidence": "src/cli/install.rs 的 current_marker() 現在是 MARKER_PREFIX 加 CARGO_PKG_VERSION，patch_hooks 在 project=true 與 false 都用同一顆 marker；patch_statusline 亦然。P2.4 把它改成常數 codeforge@1，沒有 project／global 分流。R3 與 §7 寫 --project-hooks 行為與輸出完全不變。若不在計畫裡切開範圍，實作 P2 無法同時滿足 R2 與 R3。",
+      "evidence_reference": "plan R3 in §2.5, P2.4, §7 Out of scope; src/cli/install.rs current_marker, patch_hooks, run_install_project_hooks",
+      "repair": "二選一寫進 P2／§7：(a) R3 只鎖 command 與 ${CLAUDE_PROJECT_DIR} 形式，_installed_by 改為 codeforge@1 是 R2 允許例外（sweep 仍 starts_with('codeforge@')）；(b) marker 改為參數，project 模式繼續寫 codeforge@<CARGO_PKG_VERSION>。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "f9e7eec55497dbfb0943babaf96959207f441f27442379cb1a1e6b05dc3d9549"
+    },
+    {
+      "rubric_id": "R9",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "run() statusLine/subagentStatusLine command selection for shared vs local settings",
+      "claim": "共用檔 statusLine 必須跨機器／版本都是 codeforge statusline，但選擇邏輯放在 run()，KR2 測試只打 patch_statusline 的既給 cmd，鎖不住 R9。",
+      "evidence": "現況 run() 固定 format('{} statusline', exe_str) 寫入絕對路徑。P2.5 才依 is_shared() 與 PATH 是否命中 current_exe 改短形式。P2.8 的 KR2 是同一輸入連跑兩次 patch_hooks + patch_statusline；測不到 chooser。P2 e2e 只要求 hook command 以 codeforge 開頭，未斷言 statusLine。",
+      "evidence_reference": "plan P2.5, P2.8, KR2, KR1 e2e; src/cli/install.rs run() install_statusline block",
+      "repair": "抽出純函式選擇 statusLine／subagentStatusLine command：共用檔一律 codeforge statusline（subagent-statusline 同理）；單機 PATH 命中現行 binary 寫短形式，否則維持絕對路徑。用單元測試釘這三支。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "2fb1205a54176278d545da7c7e15972842ab0e804c1a5993cb7f31a02683bc39"
+    },
+    {
+      "rubric_id": "R8",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "install/bootstrap --dry-run path through load_settings + write_settings_atomic",
+      "claim": "dangling symlink 的回錯寫在 write_settings_atomic，dry-run 在寫入前回傳，會把斷連結當成空檔並印將寫入 JSON，給出假成功。",
+      "evidence": "load_settings 用 path.exists()；dangling symlink 時 exists 為 false，回空物件 {}。run() 在 dry_run 分支於 write_settings_atomic 之前 return Ok。P1.2 規定 canonicalize 失敗要回錯且不 rename 連結本身，這條在 --dry-run（含 bootstrap --dry-run）不會走到。",
+      "evidence_reference": "plan P1.2, P1.4; src/cli/install.rs load_settings path.exists branch, run() dry_run return, write_settings_atomic",
+      "repair": "run() 在 load 之後、dry-run 或實寫之前，對 symlink_metadata 為 symlink 且 canonicalize 失敗的路徑直接回錯，訊息含連結路徑與 read_link 目標；dry-run 與實寫走同一檢查。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "8722faf524aaf280e7fd91d2e6c47c485844cbddec9a6e7b86041478476ef7ed"
+    },
+    {
+      "rubric_id": "R11",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "src/cli/hook.rs run() Result plus src/main.rs Hook subcommand exit mapping",
+      "claim": "腳本 exit code 原樣轉發已寫清，但轉發器自身 Result::Err 與 clap 解析失敗如何變成行程碼未釘死，仍可能走出 2。",
+      "evidence": "P2.1 規定未知名稱、找不到 node、signal 中止回 1，且轉發器自身絕不回 2；main 只寫 std::process::exit(code)。run 簽名是 Result<i32>，Err 若走 anyhow 預設多為 1，但 clap 缺 name／用法錯誤預設是 2。Claude Code 呼叫路徑有 name，仍應把 materialize／spawn／wait 失敗測成 1 而不是 2。",
+      "evidence_reference": "plan P2.1, P2.2, KR6, R11 in §2.5",
+      "repair": "P2 補 main 對 Hook 的 match：Ok(code) 則 exit(code)；Err 一律印正體中文後 exit(1)。對 exec_script 測 stdin／argv／exit 7；另測 node 不存在與未知名稱為 1。clap 用法錯誤可維持 2，並註明不在 hook 執行路徑。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "fa6e0c4d4a7ad8f04c1fc29445931b5b9b3776a5e8ca44183a0f7648947e873c"
+    }
+  ],
+  "backlog_candidates": [
+    {
+      "fingerprint": "2b091de53c35629c9712a1e381fc04430f1acca0be0b4570c63af62eca701116",
+      "rubric_id": "R11",
+      "affected_surface": "P2 step 2; hook CLI argument parsing and process exit handling",
+      "claim": "The proposed hook handler does not establish that argument-parsing failures avoid exit code 2.",
+      "evidence_reference": "Plan P2 steps 1, 2 and 8; frozen rubric R11",
+      "disposition": null
+    },
+    {
+      "fingerprint": "2fb1205a54176278d545da7c7e15972842ab0e804c1a5993cb7f31a02683bc39",
+      "rubric_id": "R9",
+      "affected_surface": "run() statusLine/subagentStatusLine command selection for shared vs local settings",
+      "claim": "共用檔 statusLine 必須跨機器／版本都是 codeforge statusline，但選擇邏輯放在 run()，KR2 測試只打 patch_statusline 的既給 cmd，鎖不住 R9。",
+      "evidence_reference": "plan P2.5, P2.8, KR2, KR1 e2e; src/cli/install.rs run() install_statusline block",
+      "disposition": null
+    },
+    {
+      "fingerprint": "8722faf524aaf280e7fd91d2e6c47c485844cbddec9a6e7b86041478476ef7ed",
+      "rubric_id": "R8",
+      "affected_surface": "install/bootstrap --dry-run path through load_settings + write_settings_atomic",
+      "claim": "dangling symlink 的回錯寫在 write_settings_atomic，dry-run 在寫入前回傳，會把斷連結當成空檔並印將寫入 JSON，給出假成功。",
+      "evidence_reference": "plan P1.2, P1.4; src/cli/install.rs load_settings path.exists branch, run() dry_run return, write_settings_atomic",
+      "disposition": null
+    },
+    {
+      "fingerprint": "fa6e0c4d4a7ad8f04c1fc29445931b5b9b3776a5e8ca44183a0f7648947e873c",
+      "rubric_id": "R11",
+      "affected_surface": "src/cli/hook.rs run() Result plus src/main.rs Hook subcommand exit mapping",
+      "claim": "腳本 exit code 原樣轉發已寫清，但轉發器自身 Result::Err 與 clap 解析失敗如何變成行程碼未釘死，仍可能走出 2。",
+      "evidence_reference": "plan P2.1, P2.2, KR6, R11 in §2.5",
+      "disposition": null
+    }
+  ],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": 2,
+  "reviewed_at": "2026-11-01T15:49:40.893Z"
+}

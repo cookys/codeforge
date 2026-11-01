@@ -1,0 +1,293 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "B35",
+  "logical_plan_id": "install-stable-paths-2026-11-01",
+  "session_id": "e6514bd9-6849-44e5-81a8-8036ac718696",
+  "session_key": "b1a03682250ce80ca63cfcaff86c0c1cdcd627de2b9457810aa8cf9dedfb3d07",
+  "generation": 2,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": true,
+  "policy_reason": "generation_cap_requires_depth_0_adjudication",
+  "rubric_sha256": "b0e8323dd7e40fa434b8a987260644d57d60df294484415ea920870d50e3c946",
+  "manifest_sha256": "dcb1d43a090d4714caa25ce1d135478c132dfbedfb0aa415adf5dae766e3d94b",
+  "plan_sha256": "fd3dad23da0e56c91e284908292adef91307b8e62ee9340a50d30c0ab28512b1",
+  "growth_ratio": {
+    "numerator": 2513,
+    "denominator": 2283
+  },
+  "growth_warning": false,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "sol_plan_chair",
+      "target_id": "sol_plan_chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6.1-sol",
+          "operation": "plan-review",
+          "request_digest": "de46a46091039bdcfa94a039a62054b1cc0a9c0ccf9790ee1289324b15ccc685"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "519aac34938c98b2f36f9543c30c142a26fcecc4d11db75e0bd7ffccc4982996",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-codex-eT9SAX/stdout",
+          "digest": "519aac34938c98b2f36f9543c30c142a26fcecc4d11db75e0bd7ffccc4982996"
+        },
+        "receipt_digest": "5bd0f74c6673d1c4ce58387ba25ec58a6447dad8ac8563a57c390fe8fa4955b8"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "grok",
+          "model": "grok-4.6",
+          "operation": "plan-review",
+          "request_digest": "c4252f7dd260b2aa0b1ce404fae70f15486e5d3d99261b3d55fd839f2c261342"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "4582ca2b5031c256936a0c1f0dbd3ac134bd621545f0935e0782dacd519eb675",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-log-6nqpXL",
+          "digest": "4582ca2b5031c256936a0c1f0dbd3ac134bd621545f0935e0782dacd519eb675"
+        },
+        "receipt_digest": "343d9e81ad9040b7c21541f01cbe4178c4c7b90e3032d8c3528ec47efc4ccac7"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "sol_plan_chair",
+      "target_id": "sol_plan_chair",
+      "family": "openai",
+      "verdict": "STOP"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "family": "xai",
+      "verdict": "STOP"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R11",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "P2 step 2: codeforge hook argument parsing and exit-code mapping",
+      "claim": "The plan explicitly permits the forwarder's own argument errors to exit 2, contradicting R11's unconditional requirement that forwarder errors never return 2.",
+      "evidence": "P2 step 2 preserves clap's default exit 2 when the hook name is missing and justifies this because generated settings commands include a name. R11 contains no exception for malformed invocations; only the script's exit code may be forwarded unchanged.",
+      "evidence_reference": "Frozen rubric R11; plan §4 P2 step 2.",
+      "repair": "Handle parsing errors for the hook subcommand so they print a Traditional Chinese diagnostic and exit 1, while preserving script exit codes, including a script-originated 2. Add CLI integration checks for a missing hook name, an unknown hook name, and a script that exits 2.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "sol_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "6a1f309ce130e4cb565bb9cbb2c2e36c8da938fbfb2d25c82cf57ab5da2def9c"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "src/cli/install.rs shared_settings 的 git 子行程 stdio",
+      "claim": "P1 每次 global install／bootstrap 都會對 settings 路徑跑 git ls-files 與（成功時）rev-parse，但只規定清 GIT_* 環境、用 exit code 判斷，沒規定 stdin／stdout／stderr。Command 預設繼承三路。一般單機檔不是 git 追蹤物，ls-files --error-unmatch 失敗時 stderr 會打出英文 fatal／pathspec error；成功時 stdout 還會印 basename。這是預設路徑，不是邊角。使用者看得到的輸出會夾英文 git 訊息，違反 R6。",
+      "evidence": "計畫 P1 第 3 步：對 canonical 路徑跑 git -C <parent> ls-files --error-unmatch -- <basename>，exit 0 再跑 rev-parse --show-toplevel；git 不存在或失敗則 git_repo=None。沒有 Stdio::null、也沒有規定用 output() 只取 captured stdout。現況 src/cli/install.rs 的 run() 以 say() 把訊息打到 stdout，繼承的 git stdout／stderr 會直接混進同一條使用者可見輸出。",
+      "evidence_reference": "plan §4 P1.3 shared_settings git -C ls-files / rev-parse; plan §4 P1.4 共用檔警告印在目標 settings.json 之後; rubric R6; std::process::Command default inherit",
+      "repair": "兩個 git Command：stdin 與 stderr 都 Stdio::null()；ls-files 只讀 ExitStatus；rev-parse 用 output() 只解析 captured stdout 的 toplevel。spawn NotFound 與任何非 0 都當 git_repo=None，禁止用 ? 把 os error 英文往上傳。單元測試斷言呼叫 shared_settings 時測試行程的 stderr 不含 fatal: not a git repository。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "5c5c82b1228bfd4f699fb66442efbd8ec3a574da7d5225a63f95893656a748ee"
+    },
+    {
+      "rubric_id": "R8",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "src/cli/install.rs run_uninstall 的 exists() 短路徑",
+      "claim": "dangling symlink 在 Unix 上 Path::exists() 為 false。run_uninstall 先走「不存在、沒事可做」return Ok，P1.2 把 check_settings_path 放在 load_settings 前仍繞不過這段。write_settings_atomic 對真寫入仍會回錯且不覆蓋連結，所以不會把連結改成普通檔；uninstall 這條路徑卻不會回錯。",
+      "evidence": "現行程式 run_uninstall：if !settings_path.exists() { say settings.json 不存在；return Ok(()) }，然後才 load_settings。計畫 P1.2 只寫 run()／run_uninstall() 在 load_settings 前呼叫 check_settings_path，沒有把檢查移到 exists() 之前，也沒有 uninstall+dangling 測試。",
+      "evidence_reference": "src/cli/install.rs run_uninstall exists() early return before load_settings; plan §4 P1.2 check_settings_path; rubric R8 dangling 回錯",
+      "repair": "check_settings_path 放在 run_uninstall 的 exists() 之前；dangling 回錯且不走「不存在、沒事可做」。加測試：uninstall 對 dangling 連結回錯、連結本身仍在。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "9613446bfd85805e8f16e4cc0761751a2fb767a773a11e9f21134ad760cad92b"
+    },
+    {
+      "rubric_id": "R5",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "hook::materialize 快取目錄與 e2e 環境變數",
+      "claim": "codeforge hook 會把腳本落到 dirs::data_local_dir()/codeforge/hooks/<ver>/。§5 只要求 CODEFORGE_CLAUDE_SETTINGS 與 XDG_DATA_HOME。現有 default_data_local_dir() 沒有專用覆寫；macOS 上 dirs::data_local_dir() 不讀 XDG_DATA_HOME，e2e 若只照 §5 會把 hook 腳本寫進作者本機 Application Support，違反 R5。",
+      "evidence": "default_data_local_dir 只呼叫 dirs::data_local_dir()，沒有對等 CODEFORGE_CLAUDE_SETTINGS 的覆寫。P2.1 materialize 路徑是 <data_local_dir>/codeforge/hooks/<CARGO_PKG_VERSION>/。P2 驗收寫 scratch HOME，§5 全域 e2e 規則沒寫 HOME。cargo test 若對合法 hook 名呼叫 materialize／hook::run，同樣會落地到本機 data dir。",
+      "evidence_reference": "src/cli/install.rs default_data_local_dir; plan §5 e2e XDG_DATA_HOME; plan §4 P2.1 materialize; plan P2 acceptance scratch HOME; rubric R5",
+      "repair": "§5 與所有會呼叫 materialize 或 hook::run(合法名稱) 的測試改為 scratch HOME，或新增 CODEFORGE_DATA_LOCAL_DIR（名稱可再定）覆寫 default_data_local_dir。禁止只靠 XDG_DATA_HOME。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "5467308dfa06abf7d584e2b2d4f4fd13c34c01852dd96d7a78891f784ad07796"
+    },
+    {
+      "rubric_id": "R11",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "src/cli/hook.rs exec_script 的 stdin 接法",
+      "claim": "R11 要原樣轉發 stdin，轉發器自身錯誤不得回 2。P2.1 與風險表要求三路 inherit、轉發器不讀 stdin；P2.8 卻抽出 exec_script(path, args) 並在單元測試裡餵 stdin。cargo test 在 inherit 下塞不進測資，實作會被推向 piped + 轉發器內 copy。複製迴圈若未關閉寫端、先讀完再 spawn、或把 copy／wait 錯誤映成 clap／exit 2，就破壞原樣轉發或違反自身不回 2。",
+      "evidence": "P2.1：Command::new(node).arg(path).args(args)，stdin／stdout／stderr 全部繼承；落地／spawn／wait 失敗走 Err 再 exit(1)；找不到 node、未知名稱、signal 都回 1。P2.8：抽出 exec_script(path, args) 以 tempdir 小 js 測 stdin 原樣轉發、argv、exit 7。§6：轉發器不讀 stdin。兩段對 stdio 的要求不一致。",
+      "evidence_reference": "plan §4 P2.1 inherit stdio and exit mapping; plan §4 P2.8 exec_script stdin unit test; plan §6 轉發器不讀 stdin; rubric R11",
+      "repair": "生產路徑固定 Stdio::inherit，轉發器禁止讀 stdin。stdin／argv／exit code 測試改為由測試端 spawn 子行程並 piped stdin。若 exec_script 要可測，只加 Into<Stdio> 參數：測試傳 piped、生產傳 inherit。落地、spawn、wait、未知名稱、找不到 node、signal 一律 1，不得為 2。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "b11c5f4eabf6a0d4d2e0c18fa0f024568e4d44a8f882bce384dbdb579937ad92"
+    },
+    {
+      "rubric_id": "R11",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "共用 settings.json 寫出的 codeforge hook command 與尚未升級的 PATH binary",
+      "claim": "共用檔被任一台 0.0.7 install 改寫成 codeforge hook … 並 sweep 掉 hooks/<ver>/ node 路徑後，PATH 上仍是 0.0.6 的機器會打到未知子命令。clap 預設 exit 2，Claude Code 當成 blocking。這是 R11 要避免的 exit 2，只是發生在舊 binary 而非新轉發器。§2.6 寫沒重跑 install 的機器繼續用舊 versioned 腳本，在共用檔情境為假。",
+      "evidence": "本計畫 OKR 就是同一份共用檔。P2.3 把 global emit-session／session-digest 改成 codeforge hook …；P2.6 重跑後舊 codeforge@0.0.x 與 hooks/<ver>/ 不留。0.0.6 沒有 hook 子命令。§2.6 仍稱 published-compatible、沒重跑的機器照常運作。P4.5 只提醒舊 entry 會被換掉，沒要求其他機器先 self-update 再拉改寫後的 settings。",
+      "evidence_reference": "plan §2.6 Compatibility impact; plan §4 P2.3 global hook commands; plan §4 P2.6 sweep; plan §4 P4.5 7840hs reply; rubric R11 轉發器自身錯誤不回 2",
+      "repair": "改寫 §2.6：共用檔沒有「舊機器繼續用舊腳本」這條路。CHANGELOG 與 P4.5 寫升級順序：每台先 self-update 到 0.0.7，再讓改寫後的 settings.json 進共用來源。不雙寫舊 node 路徑（那會違反 R9 不重複觸發）。clap 漏 name 的 exit 2 維持現有註明即可。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.6"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "c47cc6f7dcdc456f2e79f05bcc37071172d9087d28445c97923b51be56ca3eab"
+    }
+  ],
+  "backlog_candidates": [
+    {
+      "fingerprint": "9613446bfd85805e8f16e4cc0761751a2fb767a773a11e9f21134ad760cad92b",
+      "rubric_id": "R8",
+      "affected_surface": "src/cli/install.rs run_uninstall 的 exists() 短路徑",
+      "claim": "dangling symlink 在 Unix 上 Path::exists() 為 false。run_uninstall 先走「不存在、沒事可做」return Ok，P1.2 把 check_settings_path 放在 load_settings 前仍繞不過這段。write_settings_atomic 對真寫入仍會回錯且不覆蓋連結，所以不會把連結改成普通檔；uninstall 這條路徑卻不會回錯。",
+      "evidence_reference": "src/cli/install.rs run_uninstall exists() early return before load_settings; plan §4 P1.2 check_settings_path; rubric R8 dangling 回錯",
+      "disposition": null
+    },
+    {
+      "fingerprint": "5467308dfa06abf7d584e2b2d4f4fd13c34c01852dd96d7a78891f784ad07796",
+      "rubric_id": "R5",
+      "affected_surface": "hook::materialize 快取目錄與 e2e 環境變數",
+      "claim": "codeforge hook 會把腳本落到 dirs::data_local_dir()/codeforge/hooks/<ver>/。§5 只要求 CODEFORGE_CLAUDE_SETTINGS 與 XDG_DATA_HOME。現有 default_data_local_dir() 沒有專用覆寫；macOS 上 dirs::data_local_dir() 不讀 XDG_DATA_HOME，e2e 若只照 §5 會把 hook 腳本寫進作者本機 Application Support，違反 R5。",
+      "evidence_reference": "src/cli/install.rs default_data_local_dir; plan §5 e2e XDG_DATA_HOME; plan §4 P2.1 materialize; plan P2 acceptance scratch HOME; rubric R5",
+      "disposition": null
+    },
+    {
+      "fingerprint": "b11c5f4eabf6a0d4d2e0c18fa0f024568e4d44a8f882bce384dbdb579937ad92",
+      "rubric_id": "R11",
+      "affected_surface": "src/cli/hook.rs exec_script 的 stdin 接法",
+      "claim": "R11 要原樣轉發 stdin，轉發器自身錯誤不得回 2。P2.1 與風險表要求三路 inherit、轉發器不讀 stdin；P2.8 卻抽出 exec_script(path, args) 並在單元測試裡餵 stdin。cargo test 在 inherit 下塞不進測資，實作會被推向 piped + 轉發器內 copy。複製迴圈若未關閉寫端、先讀完再 spawn、或把 copy／wait 錯誤映成 clap／exit 2，就破壞原樣轉發或違反自身不回 2。",
+      "evidence_reference": "plan §4 P2.1 inherit stdio and exit mapping; plan §4 P2.8 exec_script stdin unit test; plan §6 轉發器不讀 stdin; rubric R11",
+      "disposition": null
+    },
+    {
+      "fingerprint": "c47cc6f7dcdc456f2e79f05bcc37071172d9087d28445c97923b51be56ca3eab",
+      "rubric_id": "R11",
+      "affected_surface": "共用 settings.json 寫出的 codeforge hook command 與尚未升級的 PATH binary",
+      "claim": "共用檔被任一台 0.0.7 install 改寫成 codeforge hook … 並 sweep 掉 hooks/<ver>/ node 路徑後，PATH 上仍是 0.0.6 的機器會打到未知子命令。clap 預設 exit 2，Claude Code 當成 blocking。這是 R11 要避免的 exit 2，只是發生在舊 binary 而非新轉發器。§2.6 寫沒重跑 install 的機器繼續用舊 versioned 腳本，在共用檔情境為假。",
+      "evidence_reference": "plan §2.6 Compatibility impact; plan §4 P2.3 global hook commands; plan §4 P2.6 sweep; plan §4 P4.5 7840hs reply; rubric R11 轉發器自身錯誤不回 2",
+      "disposition": null
+    }
+  ],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": null,
+  "reviewed_at": "2026-11-01T16:06:16.980Z"
+}

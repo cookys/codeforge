@@ -74,11 +74,27 @@ codeforge install
 ```
 
 This patches `~/.claude/settings.json` to use `codeforge statusline` as
-Claude Code's statusLine hook — with the binary's absolute path, so it
-works even when `~/.cargo/bin` isn't on the spawned shell's PATH (common
-when `rustup` was installed with `--no-modify-path`). Re-run after
-upgrading codeforge to refresh the path. Other keys in settings.json are
-preserved.
+Claude Code's statusLine hook. When `codeforge` on your PATH is this same
+binary the command is just `codeforge statusline`; otherwise it uses the
+binary's absolute path, so it still works when `~/.cargo/bin` isn't on the
+spawned shell's PATH (common when `rustup` was installed with
+`--no-modify-path`). Other keys in settings.json are preserved.
+
+**Shared settings.json (dotfiles).** If `~/.claude/settings.json` is a symlink
+(e.g. into a dotfiles repo) or the file is tracked by git, install says so and
+writes *through* the link into the real file, so the link stays a link. What it
+writes is the same on every machine and every version: hook commands are
+`codeforge hook <name>` / `codeforge <subcommand>` with no paths or version
+numbers, the statusLine is always `codeforge statusline` (so `codeforge` must be
+on PATH there), and the entries carry the fixed marker `codeforge@1`.
+`cleanupPeriodDays` is not written into a shared file unless you pass
+`--cleanup-period-days <DAYS>`. Detection covers symlinks and git-tracked files;
+a copy-based setup (chezmoi copy mode, Syncthing) is not detected, so pass the
+flag or check the result yourself there. **Upgrade order for a shared file:**
+update every machine (`codeforge self-update`) to the same version first, then
+run `codeforge bootstrap` on one machine and commit/sync the rewritten
+settings.json — a machine still on an older codeforge does not have the
+`codeforge hook` subcommand.
 
 `codeforge install` has more granular flags too (all shipped) — see
 [`doc/specs/codeforge-install-subcommand.md`](doc/specs/codeforge-install-subcommand.md)
@@ -88,6 +104,7 @@ and the "First-time Claude Code hook setup" section below:
 - `codeforge install --all` — statusline + global hooks
 - `codeforge install --project-hooks` — codeforge-clone-only dev hooks (SessionStart + PreToolUse)
 - `--dry-run` previews the settings.json changes without writing.
+- `--cleanup-period-days <DAYS>` sets `cleanupPeriodDays` (also on `bootstrap`); needed for a shared settings.json, see above.
 
 **Setting up a new machine?** Use the one-command bootstrap instead of running
 the steps by hand:
@@ -172,12 +189,14 @@ codeforge install --project-hooks --force --yes
 
 **Layer 2 — Product-wide hooks** (installed globally to `~/.claude/settings.json`):
 
-- `emit-session.js` (SessionStart + SessionEnd) — session boundary signals
-- `session-digest.js` (PreCompact + SessionEnd) — captures errors/corrections to per-repo `.codeforge/digests/`
+- `codeforge hook emit-session` (SessionStart + SessionEnd) — session boundary signals
+- `codeforge hook session-digest` (PreCompact + SessionEnd) — captures errors/corrections to per-repo `.codeforge/digests/`
+
+`codeforge hook <name> [args…]` runs a hook script embedded in the binary (copied to a private per-version cache under the codeforge data dir, honouring `CODEFORGE_DATA_DIR`) with `node`, passing stdin and the script's exit code through. Its own failures exit 1, never 2 (Claude Code treats 2 as blocking). The scripts update with the binary, so `self-update` needs no reinstall.
 - `codeforge memory context --hook` (SessionStart) — injects a lean ranked L1 index as additionalContext (local recall; no-op when the project has no active L1)
 - `codeforge dream --quiet` → `codeforge ship --no-hook` (SessionEnd) — the memory pipeline: distill L0 → L1 in every project, then ship to Mnemos if opted in (clean no-op otherwise). See [`doc/concepts.md`](doc/concepts.md).
 
-Across SessionStart / SessionEnd / PreCompact (3 hook types). `--hooks`/`--all` also set the top-level `cleanupPeriodDays = 3650` in settings.json (unless you already set a non-null value) so Claude Code doesn't reclaim session transcripts before dream/ship distil them.
+Across SessionStart / SessionEnd / PreCompact (3 hook types). On a local (non-shared) settings.json, `--hooks`/`--all` also set the top-level `cleanupPeriodDays = 3650` (unless you already set a non-null value) so Claude Code doesn't reclaim session transcripts before dream/ship distil them; on a shared one only `--cleanup-period-days <DAYS>` writes it.
 
 These fire in **every** Claude Code session (any project), not just inside the codeforge clone. Install once after first build:
 
@@ -185,7 +204,7 @@ These fire in **every** Claude Code session (any project), not just inside the c
 codeforge install --all
 ```
 
-Idempotent. Re-run after upgrading codeforge to refresh the path.
+Idempotent: re-running it writes byte-identical entries. Installs from v0.0.6 and earlier wrote versioned `node …/hooks/<version>/….js` commands; re-run `codeforge install --all` (or `bootstrap`) once after upgrading to replace them.
 
 **Why split**: keeping Layer 2 globally avoids the dual-fire problem — if both project + global settings carry the same script entries, hooks run twice per event. Each layer owns a distinct responsibility, single-source-of-truth.
 

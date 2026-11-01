@@ -6,6 +6,7 @@
 
 | Project | Description | Started |
 |---------|------------|---------|
+| [install-stable-paths](2026-11-01-install-stable-paths/README.md) | B35 — install／bootstrap 對共用 settings.json 安全：`codeforge hook` 轉發、不帶本機路徑與版號的 command、固定 marker、寫入穿透 symlink、共用檔偵測與 `cleanupPeriodDays` 規則；發 v0.0.7 給 7840hs | 2026-11-01 |
 
 ## Archived
 

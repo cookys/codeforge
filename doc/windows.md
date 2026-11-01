@@ -53,10 +53,13 @@ codeforge bootstrap          # optional: install --all + pinned rustfmt check + 
 ```
 
 This edits `%USERPROFILE%\.claude\settings.json` (other keys are preserved; back it up first if you
-like). Written commands use **forward slashes** (`C:/Users/you/.cargo/bin/codeforge.exe statusline`)
-because Claude Code hands them to Git Bash, where a backslash is an escape character; paths with
-spaces are quoted automatically. `--all` also sets `cleanupPeriodDays = 3650` so session transcripts
-survive until `dream` distils them.
+like). Hook commands are `codeforge hook <name>` / `codeforge <subcommand>`, resolved through PATH.
+When the statusLine needs an absolute path (PATH's `codeforge` is not this binary) it is written with
+**forward slashes** (`C:/Users/you/.cargo/bin/codeforge.exe statusline`) because Claude Code hands
+it to Git Bash, where a backslash is an escape character; paths with spaces are quoted automatically.
+`--all` also sets `cleanupPeriodDays = 3650` so session transcripts survive until `dream` distils
+them — unless settings.json is shared (a symlink or git-tracked), where only
+`--cleanup-period-days <DAYS>` writes it.
 
 Then per project:
 
