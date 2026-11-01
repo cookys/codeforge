@@ -58,7 +58,7 @@
 | — | intent → plan → plan-review（G1+G2，receipt exit 0） | ✅ `52877c8` |
 | P1 | statusline 讀心跳、精簡 2 行、session view；無心跳時 stdout 與舊 binary 逐 byte 相同（3 輸入 × live base 可寫/不可寫） | ✅ `15be75a` |
 | P2 | forge-stats band、`layout band\|pane`、心跳；mod 23 測試、tsc 0、validate 通過；sid 向量 `.ts` 鏡像 + Rust 比對測試（改壞會紅） | ✅ `3aaab33` |
-| P3 | 部署：`cargo install`（舊版備份 `~/.cargo/bin/codeforge.bak.1793437948`）；本 session 寫出 `session/<sid>.json`；全新 `claude -p` 寫出 `mod-alive/<sid>.json`（schema/欄位/live base 與 statusline 一致，`pet_shown:false`）。檔案權限 664（`$.fs.write` 無 mode；上層 `/run/user/1000` 為 700） | 部署 ✅；band 目視待 autopilot 疊加（X1） |
+| P3 | 部署：`cargo install`（舊版備份 `~/.cargo/bin/codeforge.bak.1793437948`）；本 session 寫出 `session/<sid>.json`；全新 `claude -p` 寫出 `mod-alive/<sid>.json`（schema/欄位/live base 與 statusline 一致，`pet_shown:false`）。檔案權限 664（`$.fs.write` 無 mode；上層 `/run/user/1000` 為 700） | 部署 ✅；owner 2026-11-01 目視通過（autopilot 分頁列 + forge 展開區五欄） |
 | review | code review G1（sol low）：1 條 Major（心跳時間戳 i64 溢位 panic）→ `e455473` checked_sub + 回歸測試；G2 SHIP-AS-IS 無新意見；receipt exit 0。qc-gate 全綠（883 Rust + 23 mod 測試） | ✅ |
 | merge | `5fac514` 合併 main 並推送（QC-Verdict trailer） | ✅ |
 | 版面協同 | 2026-10-31 owner 看過疊放截圖後，X1 的版面暫停（疊放 1+12 列太佔版面），兩邊協同設計（autopilot msg `01M68QD9QJMKNG387EMB3TKDCV`）；「讓下層畫」的機制照常審查。codeforge 回覆 `01M68QE6B4W0ERPECHRZN6K6CB`：Ferris 分三級（24×12／迷你 16×6／一列摘要）依 maxRows 決定；由 autopilot 透過 maxRows/bodyColumns 分配空間、持有摺疊鍵；傾向預設摺疊一列。另：`statusLine.refreshInterval=2` 已寫入全域設定（C，備份 `~/.claude/settings.json.bak.1793441222`）；分類改版待卡 d-a3748a8c | 進行中 |
