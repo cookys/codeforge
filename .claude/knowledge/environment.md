@@ -156,3 +156,9 @@ git -c user.name=cookys -c user.email=cookys@stranity.com commit -m "..."
 **Solution**: **不要為了文件一致性打 release tag**。改用 doc 揭露 pending 狀態（CHANGELOG `[Unreleased]` 註明「Cargo.toml 已 bump 到 X.Y.Z、未 tag」）。tag 留給真正發版的刻意動作。autopilot 同理（也 release-on-tag）。
 **When this fires**: 任何「想打 tag 對齊版號 / 補歷史 tag」的念頭 —— 先 `grep -A3 "^on:" .github/workflows/release.yml` 確認觸發條件。
 **Related**: doc-drift system（auto-memory `reference_doc_drift_system.md`）；`version-sync` 是 `scripts/check-doc-drift.py` 的檢查項
+
+## settings.json symlink atomic write / hook command forwarder subcommand / shared dotfiles settings
+**Date**: 2026-11-02 | **Context**: B35 — 一台機器的 `~/.claude/settings.json` 是 symlink 指到進版控、多機共用的 dotfiles；v0.0.6 的 install 對它不安全
+**Problem**: (1) tmp + `rename(2)` 寫到 symlink 路徑會把**連結本身**換成一般檔：dotfiles 沒更新、本機悄悄脫鉤（沒有任何錯誤）。(2) hook command 寫 `node <data_local_dir>/codeforge/hooks/<ver>/x.js` → 每台機器（macOS 是 `~/Library/Application Support`）、每個版本都不同；marker `codeforge@<ver>` 讓每次升版都改動共用檔。(3) `Path::exists()` 對 dangling symlink 回 false → dry-run 當空檔印假成功、uninstall 說「沒事可做」。(4) `git ls-files --error-unmatch` 沒設 `Stdio::null()` 會把英文 `fatal:` 漏給使用者；繼承的 `GIT_DIR` 等會讓 `-C` 指錯 repo。
+**Solution**: 寫入先 `canonicalize` 到最終 target，tmp 放 target 同目錄、`sync_all`、rename 到 target、失敗刪 tmp；dangling 在讀取前就報錯。hook 改 `codeforge hook <name>` 子命令：binary 內嵌腳本、落地到私有版本快取再 `node` 執行，stdin/exit code 原樣轉發，轉發器自身錯誤一律 exit 1（clap 用法錯誤也要攔，否則是 2 = Claude Code blocking）。global marker 改契約版號 `codeforge@1`（`--project-hooks` 保持帶版號）。共用檔（symlink 或 git 追蹤）不寫 `cleanupPeriodDays`，要 `--cleanup-period-days`。共用檔升級順序：每台先 self-update，再提交改寫後的設定（舊 binary 沒有 `hook` 子命令 → exit 2 會擋 PreCompact）。
+**Related**: `src/cli/install.rs`、`src/cli/hook.rs`、`doc/plans/2026-11-01-install-stable-paths.md`
