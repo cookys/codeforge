@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The forge tab label is structured** — a row of Boxes keyed `speed`, `trend`, `sep`, `pet`, each holding one plain
   Text, so autopilot colours each part by its key instead of splitting the string (a Text's key does not reach the
-  plugin above; a Box's does). Needs autopilot's matching change; until then autopilot shows no forge tab.
+  plugin above; a Box's does). autopilot reads it since its `3ecd193af`.
 - **forge-stats speed follows the last timed request** — a step too short to time (a lone tool call) no longer
   blanks the tab label to `ϟ — tok/s`; the label, the band's latest line and the sparklines use only requests that
   had a tok/s.
@@ -23,20 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requests, memory and brain): from 26, 56, 92, 140 and 170 cells; the request table takes the spare width.
 - **forge-stats no longer pins a `tok/s` status entry** under the prompt: autopilot's forge tab label already shows
   the latest speed, so the `⚠ forge-stats: 93 tok/s` line was a duplicate.
-- **The statusline compacts whenever the forge-stats band layout runs**, not only while its Ferris is drawn: the pet
-  lives in the band (autopilot's forge tab), the statusline keeps the slow data (model, path, usage, context).
 
 ### Added
 
 - **forge-stats band tiers** — the band draws by the rows it gets: 12+ full, 6–11 a 16×6 mini Ferris
-  (`village.sprite_mini` in `pet.json`, 16×12 px), 2–5 or under 26 columns a one-line summary, one row a single
-  `Text` label (`forge 93 tok/s` / `93 tok/s` / `93t/s`) for autopilot's tab bar to wrap in its button.
+  (`village.sprite_mini` in `pet.json`, 16×12 px), 2–5 or under 26 columns a one-line summary, one row the forge tab label (see Changed). autopilot asks
+  only for 1 row and for 12+, so the mini and summary tiers show only without autopilot.
 - **forge-stats band** — `/forge-stats layout band|pane` (kept in the mod's store, band by default): the band
-  layout draws speed | Ferris | pet, memory and brain above the prompt instead of opening the pane, and writes the
-  heartbeat the compact statusline reads (`pet_shown` only while the band's Ferris blits succeed).
-- **Compact statusline while the forge-stats band shows the pet** — `codeforge statusline` reads the forge-stats
-  heartbeat (`<live_base>/codeforge/mod-alive/<session_id>.json`); when it is this session's, under 10 s old and says the
-  pet is shown, the statusline prints a 2-line identity + usage strip instead of the pet panel. Without it the output is
+  layout draws Ferris, pet, speed, recent requests, memory and brain above the prompt (columns by width, see
+  Changed) instead of opening the pane, and writes the heartbeat the compact statusline reads.
+- **Compact statusline while the forge-stats band runs** — `codeforge statusline` reads the forge-stats
+  heartbeat (`<live_base>/codeforge/mod-alive/<session_id>.json`); when it is this session's, under 10 s old and says
+  `layout: band`, the statusline prints a 2-line identity + usage strip instead of the pet panel: the pet lives in the
+  band (autopilot's forge tab), the statusline keeps the slow data. Without it the output is
   byte-identical to before.
 - **Session view** — every statusline run writes `<live_base>/codeforge/session/<session_id>.json`
   (`codeforge.session-view/1`: memory and brain lights for this session only).

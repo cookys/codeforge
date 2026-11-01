@@ -229,3 +229,11 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **codeforge 開出的限制**（fleet msg `01M6BASVM2RS9CY36Y2V61FFR9`，fleet 回覆會原樣寫進正式計畫）：(a) dream 產出先標 candidate，經 identifier-scan + 人工把關才升正式；(b) dream 只寫本機，由 finish 決定何時匯出並 commit；(c) 一條目一檔或 union merge；(d) refs/last_ref/strength 等使用統計留本機不進 commit；(e) pm 不在時降級寫本機 store，SessionEnd 不可失敗，recall 統一讀 pm＋本機；(f) ship 以 ULID 去重。另需新增 atom `scope: project | cross` 與來源 repo 欄位（現在只有存放位置與 `origin` 可粗分）。
 **Trigger**: operator 對 pm 計畫拍板、fleet 通知 codeforge 寫遷移計畫；計畫寫好後開決策卡給 owner，不先動 code。
 **Not done**: 遷移計畫、schema 增欄、寫入與 recall 路徑改動，全部未開始。
+
+## B34 — 上層 plugin 吃掉 band 時，statusline 仍縮成精簡版、寵物哪裡都不顯示
+
+**Area**: `.claude/skills/forge-stats/hooks/register.tsx`（心跳每 2 秒無條件寫）、`src/cli/statusline.rs` `read_mod_heartbeat`
+**Premise**: statusline 只看心跳的 `layout: band` 就縮（owner 2026-10-31 定案，拿掉 `pet_shown`）。心跳由計時器寫，不知道 AbovePrompt 的 render hook 有沒有輪到 forge-stats：若鏈上有 plugin 自己畫 band、不呼叫 `next(e)`，forge-stats 的 band 不出現，statusline 卻照樣縮，寵物兩邊都看不到。現在 autopilot 的分頁列用 `await next(e)` 疊在上面（BL-0352），不會發生。
+**Proposed**: 心跳加「最近 N 秒內 AbovePrompt hook 有被呼叫」的條件（只看有沒有輪到，不看 blit 是否成功，不回到舊的 `pet_shown` 規則）。
+**Trigger**: autopilot 新增會拿掉 forge 分頁或不呼叫下層的模式，或使用者裝了別的會畫 band 的 plugin。
+**Not done**: 只記錄；2026-11-01 清理時順手發現，不在那次範圍。

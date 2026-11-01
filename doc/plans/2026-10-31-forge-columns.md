@@ -2,7 +2,7 @@
 
 - **logical_plan_id**: `codeforge-forge-columns-2026-10-31`
 - **Size**: M · branch `feature/forge-columns` · base `6f7f8d4`
-- **上層專案**: `doc/projects/2026-10-31-statusline-band/`
+- **上層專案**: `doc/projects/_archive/2026-10-31-statusline-band/`
 
 ## 0. 背景
 
