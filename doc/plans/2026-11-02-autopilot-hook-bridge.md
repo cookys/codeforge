@@ -28,7 +28,7 @@
 |---|---|---|
 | KR1 | `codeforge hook on --help` exit 0；`hook on <未知事件>` exit 0 且無 stdout、stderr 列出三個事件名 | binary 測試 |
 | KR2 | `hook on session-start` 在 12 秒內返回（含子行程忽略 SIGTERM），stdout 是空的或恰好一個 JSON 物件，`hookEventName == "SessionStart"`，additionalContext 是兩條 context 文字的合併，長度 ≤ 9500 chars | 單元測試（合併純函式：0/1/2 段、超長、非 JSON、欄位不是字串）+ binary 測試 |
-| KR3 | `hook on session-end` 在 3 秒內、`hook on pre-compact` 在 1 秒內返回，stdout 為空（含同步子指令忽略 SIGTERM 的情況）；detach 出去的 worker 在父行程結束、且父行程的 process group 收到 SIGHUP／SIGTERM 後仍跑完（寫出完成標記）；逾時會收掉該步的整個 process group（含孫行程）；同一 session 兩次重疊呼叫時，第二條鏈在第一條的 ship 回收前不開始 | binary 測試用假的子指令鏈（測試 seam）量時間、等標記、查孫行程 pid |
+| KR3 | `hook on session-end` 在 3 秒內、`hook on pre-compact` 在 2 秒內返回，stdout 為空（含同步子指令忽略 SIGTERM 的情況）；stdin 未完整讀到 EOF 時不啟動任何子指令；detach 出去的 worker 在父行程結束、且父行程的 process group 收到 SIGHUP／SIGTERM 後仍跑完（寫出完成標記）；逾時會收掉該步的整個 process group（含孫行程）；同一 session 兩次重疊呼叫時，第二條鏈在第一條的 ship 回收前不開始 | binary 測試用假的子指令鏈（測試 seam）量時間、等標記、查孫行程 pid |
 | KR4 | 同一 session_id + event 在 TTL 內第二次呼叫是 no-op（不重跑、session-start 不再輸出） | 單元測試（stamp 純函式）+ binary 測試 |
 | KR5 | `hook on` 任何情況 exit 0（含 stdin 不是 JSON、stdin 非 UTF-8 或超過 1 MiB、子指令 exit 2、資料目錄不可寫、未知事件、未知旗標）；每個子指令收到的 stdin 與 hook 收到的逐 byte 相同 | binary 測試 |
 | KR6 | 單機 settings.json 偵測到 autopilot bridge（§3.5 五項條件），或帶 `--hooks-via autopilot`（任何檔）時：不新增 hook，清掉所有 codeforge 擁有的 hook 項目（marker `codeforge@*` 與舊的 node 形式），非 codeforge 的 hook 原樣保留；statusLine、cleanupPeriodDays 規則不變；印出一行說明。共用檔偵測到 bridge 但沒帶旗標時：hooks 照 0.0.7 處理並印警告，不清任何項目 | 單元測試（偵測純函式：五項條件各缺一項、schema 不是 1、config 形狀不合 → 不成立；單機／共用／旗標三種 patch 結果）+ e2e dry-run（單機、symlink 兩種） |
@@ -59,9 +59,9 @@
 
 - 分派：`hook on` 不走 `hook::run` 的既有契約（`Err` → exit 1、`Ok(code)` → 子行程結束碼）。`mod.rs` 在呼叫 `hook::run` 之前就把 `name == "on"` 轉給 `hook::on::run(args)`，回來後一律 `exit(0)`。`on::run` 自己解析 `args`（`--help`、`--detached <event> <payload>`、事件名、未知旗標），不交給 clap；所有錯誤、子行程結束碼只寫 stderr 與 log（正體中文），絕不影響結束碼。`hook --help` 的用法說明加一行 `on`。
 - 牆鐘預算：從行程啟動開始計時，包含讀 stdin、子行程執行與回收。session-start 全程 ≤ 12s（bridge 15s）；session-end、pre-compact 的同步段全程 ≤ 3s（bridge 5s）。預算到點就停止等待、照規則輸出（或不輸出）並 exit 0。
-- stdin：在背景執行緒讀到 EOF，保存原始 bytes，不設上限、不轉 String；讀取受上面的預算約束（到點還沒讀完就用已讀到的部分當作「讀取失敗」處理：子指令改餵空 stdin，stderr 記一行）。只有作業系統讀取錯誤或逾時才改餵空 stdin。`session_id` 另外從這份 bytes 做 JSON 解析，解析失敗不改動要轉交的 bytes。
+- stdin：在背景執行緒讀到 EOF，保存原始 bytes，不設上限、不轉 String。**完整讀到 EOF 才啟動該事件的任何子指令**；作業系統讀取錯誤，或讀取超過預算的一半（session-start 6s、其他 1.5s）仍未到 EOF，就 stderr 記一行、整個事件跳過並 exit 0，絕不以空的或殘缺的 stdin 啟動子指令。完整讀到的資料即使不是 JSON 或 UTF-8，也逐 byte 原樣轉交。`session_id` 另外從這份 bytes 做 JSON 解析，解析失敗不改動要轉交的 bytes。
 - 子指令：一律是 `current_exe()` 加參數的子行程，cwd 繼承，stdin 寫入同一份原始 bytes，每個子行程自成一個 process group（`process_group(0)`）。**沒有任何子行程繼承父行程的 stdout**：要用輸出的就 pipe 擷取，其餘導到 log。
-- 逾時回收：對子行程的 process group 送 SIGTERM，等 300 ms，仍在就送 SIGKILL，再有上限地 wait（≤ 500 ms）；超過就放棄等待（不阻塞返回）。這樣 wrapper 底下的 node 等後代也一起收掉。Windows 沿用 `platform.rs` 現有的終止方式。
+- 逾時回收：對子行程的 process group 送 SIGTERM，等 300 ms，仍在就送 SIGKILL，再有上限地 wait（≤ 500 ms）。這樣 wrapper 底下的 node 等後代也一起收掉。Windows 沿用 `platform.rs` 現有的終止方式。wait 上限到了仍無法確認結束，稱為「回收未確認」：父行程（同步段）照樣停止等待並返回；worker 的處理見 §3.3。
 
 ### 3.2 session-start
 
@@ -75,8 +75,10 @@
 - pre-compact 父行程：不跑同步子指令，直接寫 payload 檔並 spawn worker（`--detached pre-compact`）。
 - payload 檔：每次被接受的呼叫各自一個，路徑 `<data dir>/hooks/pending/<session_id>-<event>-<pid>-<nanos>.json`，以 `O_CREAT|O_EXCL`、0600 建立，完整寫入並關閉後才 spawn worker；spawn 失敗由父行程刪除。worker 只讀、只刪自己那一個。
 - worker（detached）：`process_group(0)`，stdin 為 null，stdout/stderr 導到 `<data dir>/logs/hook-on.log`（附加寫入、超過 1 MiB 時改名成 `.1`），不繼承父行程任何 pipe。新 process group 不是終端的前景 group，終端關閉時的 SIGHUP 不會送到它。
-- 序列化：worker 先取 session lock `<data dir>/hooks/pending/<session_id>.lock`（`O_CREAT|O_EXCL`，內容寫 pid 與時間），從 session-digest 之前一直持有到最後一個子行程被回收才刪除。取不到就每秒重試，最多 120s，仍取不到就記 log 並放棄（刪自己的 payload）。lock 超過 15 分鐘視為殘留可搶（大於各步硬截止總和 30+120+60=210s 加回收寬限）。缺 session_id 時 lock 名用 `nosession`。
-- worker 步驟：session-end 依序 `hook session-digest`（stdin 餵 payload 檔）→ `dream --quiet` → `ship --no-hook`；pre-compact 只有 `hook session-digest`。各步截止 30s／120s／60s，逾時依 §3.1 回收整個 process group。前一步失敗或逾時不擋後一步，但前一步回收完成前不開始下一步（dream 結束後才跑 ship）。
+- 序列化：worker 先取 session lock `<data dir>/hooks/pending/<session_id>.lock`（`O_CREAT|O_EXCL`，內容寫 worker pid、目前子行程的 pgid 與時間，每換一步就改寫），從 session-digest 之前一直持有到最後一個子行程確認回收才刪除。取不到就每秒重試，最多 120s，仍取不到就記 log 並放棄（刪自己的 payload）。缺 session_id 時 lock 名用 `nosession`。
+- 殘留 lock 的接管不看檔案年齡：只有在 lock 裡記的 worker pid 與子行程 pgid 都已不存在（`platform::pid_alive` 為否；pid 仍在但 `platform::cmdline_contains` 不含 `codeforge` 視為 pid 已被重用）時才可接管，接管用 rename 搶（沿用 brain-indicators 的 O_EXCL rename-steal 做法）。lock 內容無法解析時，超過 1 小時才接管並記 log。
+- 回收未確認（§3.1）時，worker 不啟動後續任何步驟（特別是不跑 ship），也不刪 lock，記 log 後結束；同 session 的下一條鏈會在接管檢查時看到舊 pgid 仍在而等待或放棄，直到它真的結束。
+- worker 步驟：session-end 依序 `hook session-digest`（stdin 餵 payload 檔）→ `dream --quiet` → `ship --no-hook`；pre-compact 只有 `hook session-digest`。各步截止 30s／120s／60s，逾時依 §3.1 回收整個 process group。前一步失敗、或逾時且已確認回收，都不擋後一步；前一步回收未確認就中止整條鏈（dream 確認結束後才跑 ship）。
 - 可觀察：每一步的開始、結束碼或逾時各寫一行到 hook-on.log（含 session_id、event、耗時）。殘留超過 7 天的 payload、lock、stamp 由下一次 `hook on` 清掉。`codeforge doctor` 顯示這份 log 不在本計畫範圍。
 
 ### 3.4 冪等
@@ -130,5 +132,6 @@
 ## 7. Review log
 
 - g1（2026-11-02，gpt-6-astra low STOP、grok-4.7 high STOP）：8 條全採納（6 blocker、2 non-blocking），處置見 `2026-11-02-autopilot-hook-bridge.g1-dispositions.json`。改動：§3.1 結束碼一律 0 且不經 `hook::run`、stdin 原始 bytes 不設上限、單一牆鐘預算、TERM→KILL 回收整個 process group；§3.2 只用解析出的字串重新輸出一個物件；§3.3 子行程絕不繼承 stdout、每次呼叫獨立 payload 檔、lock 涵蓋 digest 到 ship、可搶門檻 15 分鐘；§3.4 stamp 只擋重送。
-- 同一輪併入 autopilot 定案的偵測契約（不是 review 意見）：§3.5 由「hooks.json 含 `codeforge hook on`」改成提供者清單 `hooks/hook-providers.json` 加 `~/.autopilot/config.json` 停用設定，共五項。
+- g2（2026-11-02）：gpt-6-astra low 給 STOP，2 條 blocker（stdin 未讀完不得餵空或殘缺的 stdin；回收未確認時不得繼續 ship 或釋放 lock，殘留 lock 不能只看年齡接管）。grok-4.7 這輪傳輸失敗（exit 3、無輸出），備援 kimi 前置條件不符，rail 以 `required_seat_transport_exhausted` 結束，所以 astra 的兩條沒進 artifact，原文存在 `2026-11-02-autopilot-hook-bridge.g2-astra-raw.json`。兩條都成立，depth-0 裁定採納並併入 §3.1、§3.3、KR3。凍結檢查對送審快照 exit 0。**g2 只有一個模型家族實際審過**；實作開工時（autopilot alpha.7 之後）以這份契約為底，再跑一次兩席的 plan review。
+- 同一輪（g1 後）併入 autopilot 定案的偵測契約（不是 review 意見）：§3.5 由「hooks.json 含 `codeforge hook on`」改成提供者清單 `hooks/hook-providers.json` 加 `~/.autopilot/config.json` 停用設定，共五項。
 

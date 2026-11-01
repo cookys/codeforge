@@ -12,7 +12,7 @@
 
 | Phase | Size | Status |
 |---|---|---|
-| Plan + hetero plan review | — | 進行中 |
+| Plan + hetero plan review | — | ✅ 2026-11-02 凍結成介面契約（g1 8 條、g2 2 條全採納；g2 grok 傳輸失敗，只有 astra 審過）。owner 卡 d-0ce83828 選 C：實作等 autopilot alpha.7 之後，開工時再跑一次兩席 plan review |
 | P1 `hook on` 骨架 + session-start 合併 | M | — |
 | P2 session-end／pre-compact detach + 冪等 | M | — |
 | P3 install 偵測 bridge + `--hooks-via` | M | — |
