@@ -1813,7 +1813,6 @@ mod tests {
             "session_id": sid,
             "written_at_ms": written_at_ms,
             "layout": if band { "band" } else { "pane" },
-            "pet_shown": false,
         })
         .to_string()
     }

@@ -1,4 +1,4 @@
-// Pure helpers for the forge-stats pane: no `$`, so tests and the renderer share them.
+// Pure helpers for the forge-stats band and pane: no `$`, so tests and the renderer share them.
 // Visual vocabulary follows autopilot's live pane design system
 // (~/projects/autopilot/docs/plans/2026-10-13-live-pane-design-system.md): grid 0/2/4/12,
 // semantic colour only, verified single-cell glyphs only, no emoji-presentation glyphs.
@@ -258,9 +258,6 @@ export function sanitizeSessionId(raw: string): string {
 }
 
 export const HEARTBEAT_SCHEMA = 'codeforge.mod-alive/1'
-export const HEARTBEAT_MS = 2000
-/** A band blit older than this no longer counts as the pet being shown. */
-export const SHOWN_MS = 2000
 
 export const SESSION_SCHEMA = 'codeforge.session-view/1'
 
@@ -273,15 +270,9 @@ export function liveBaseOf(petPath: string | null): string | null {
 export const heartbeatPath = (base: string, sid: string) => `${base}/codeforge/mod-alive/${sanitizeSessionId(sid)}.json`
 export const sessionViewPath = (base: string, sid: string) => `${base}/codeforge/session/${sanitizeSessionId(sid)}.json`
 
-export type BandBlit = { at: number; ok: boolean }
-
-/** True only in the band layout with a successful band blit in the last 2 s. */
-export const petShown = (layout: Layout, last: BandBlit | null, now: number): boolean =>
-  layout === 'band' && last !== null && last.ok && now - last.at >= 0 && now - last.at < SHOWN_MS
-
 /** The heartbeat line, as `codeforge statusline` reads it. */
-export function heartbeatText(sid: string, now: number, layout: Layout, shown: boolean): string {
-  return JSON.stringify({ schema: HEARTBEAT_SCHEMA, session_id: sid, written_at_ms: now, layout, pet_shown: layout === 'band' && shown })
+export function heartbeatText(sid: string, now: number, layout: Layout): string {
+  return JSON.stringify({ schema: HEARTBEAT_SCHEMA, session_id: sid, written_at_ms: now, layout })
 }
 
 export const BAND_MIN_ROWS = 12
