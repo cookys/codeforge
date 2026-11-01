@@ -1546,6 +1546,13 @@ fn bottom_border(
     // ╰─ (3) + content + ──╯ (4) = 7 overhead
     let overhead = vis("╰─ ") + vis(" ──╯"); // 3 + 4 = 7
 
+    // Narrower than the frame itself: no level fits (the no-color local-only level and the
+    // ultimate fallback would both emit the 7-cell frame), so draw a plain rule of exactly
+    // panel_w dashes and never overflow.
+    if panel_w < overhead {
+        return tcs("─".repeat(panel_w), delim_c);
+    }
+
     // Helper: assemble the full border from measured components.
     // Layout: ╰─ <left content> <fill dashes> <right> ──╯
     // `right` (version chip) is right-aligned; the middle fill is reserved空間 —
@@ -2047,6 +2054,39 @@ mod tests {
             );
             let actual = ansi_vis(&s);
             assert!(actual <= w, "w={w} 溢出：actual={actual}, content={:?}", s);
+        }
+    }
+
+    /// Every width from 0 to past the widest level, for every light combination, with and
+    /// without colour and version chip — so each ladder breakpoint is hit exactly and at ±1.
+    #[test]
+    fn bottom_border_never_overflows_at_any_width() {
+        use crate::mnemos::health::{CentralLight, LocalLight};
+        let locals = [LocalLight::Hidden, LocalLight::Active, LocalLight::Empty];
+        let centrals = [
+            CentralLight::Hidden,
+            CentralLight::Ok,
+            CentralLight::Degraded,
+            CentralLight::Offline,
+            CentralLight::Pending,
+        ];
+        for no_color in [true, false] {
+            for (ver, ver_vis) in [("v0.0.5", 6usize), ("", 0)] {
+                for &l in &locals {
+                    for &c in &centrals {
+                        for w in 0..=120usize {
+                            let s =
+                                bottom_border(w, DELIM, ver.into(), ver_vis, &bh(l, c), no_color);
+                            let actual = ansi_vis(&s);
+                            assert!(
+                                actual <= w,
+                                "w={w} no_color={no_color} ver={ver:?} local={l:?} central={c:?} \
+                                 溢出：actual={actual}, content={s:?}"
+                            );
+                        }
+                    }
+                }
+            }
         }
     }
 

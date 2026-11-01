@@ -1,6 +1,6 @@
 # CodeForge Backlog
 
-Last audited: 2026-06-18
+Last audited: 2026-11-01
 
 Items confirmed low-priority or blocked by external dependencies. Each item has a trigger condition for when to pick it up.
 
@@ -29,16 +29,8 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 ## B3 — Badge System Implementation (Phase 1 stub)
 
 **Area**: `src/pet/badges.rs`, `src/db/schema.sql` (badges table)
-**Premise**: Badge table exists in schema but `badges.rs` contains only struct definitions. No badge award logic exists.
-**Trigger**: Pick up in Phase 2b (loot system) — badges are natural loot drops from MOB kills.
-
----
-
-## B4 — dream decay + track Operations (Stub)
-
-**Area**: `src/dream/` (decay.rs, track.rs assumed)
-**Premise**: `codeforge dream` supports `decay` and `track` ops in the runner but the actual decay/track logic may be minimal or stub.
-**Trigger**: Pick up when L1 knowledge base grows to >200 entries and signal age becomes meaningful.
+**Premise**: Badge table exists in schema and `badges.rs` has `award()` / `list()`, but nothing calls `award()` — no game event grants a badge (only `codeforge pet` lists them).
+**Trigger**: Pick up when deciding which events grant badges (MOB kills, zone mastery, milestones); Phase 2b shipped without wiring it.
 
 ---
 
@@ -47,40 +39,6 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 **Area**: `src/cli/ingest.rs`
 **Premise**: `ingest --source chatgpt` is declared in CLI but parser may not handle all ChatGPT export variants (JSON vs markdown).
 **Trigger**: Pick up if user requests ChatGPT migration or if a second user adopts CodeForge.
-
----
-
-## B6 — `.env.example` Auto-validation on Init
-
-**Area**: `src/cli/init.rs`
-**Premise**: `codeforge init` creates directory structure but doesn't validate that `ANTHROPIC_API_KEY` is set. Dream compile will silently fail without it.
-**Trigger**: Pick up in any Phase 1 polish pass. Small S-size task.
-
----
-
-## ~~B7 — Memory Projection to AGENTS.md~~ ✅ Done 2026-07-02 (fuchikoma P1.2)
-
-**Area**: `src/memory/projection.rs` (new), `codeforge memory project`, dream refresh
-**Premise**: The architecture mentions `projection/` for writing memory context to `AGENTS.md`, but the write logic was unimplemented (init.rs created the dir only).
-**Shipped**: `src/memory/projection.rs` — reuses the SAME `recall::rank` + `recall::render_index` as the SessionStart local recall (so the two READ surfaces never drift) and materializes `.codeforge/projections/AGENTS.md` (banner + preamble + ranked lean index) for **non-Claude agents** (Cursor/aider/Codex-CLI read `AGENTS.md`, not Claude Code hooks). Runnable via `codeforge memory project`; auto-refreshed at the end of every full `codeforge dream` (best-effort, never fails the SessionEnd hook). Validated: produced a real 86-active-L1 AGENTS.md against the live store. Unit tests in the module.
-
----
-
-## ~~B8 — Phase 2 Planning: Daemon Framework~~ ✅ Done 2026-04-17
-
-Shipped as Phase 2a (`_archive/2026-04-17-phase2a-daemon`). Final design
-diverged from initial scope: IPC is SQLite `event_inbox` (Option D) +
-tick-driven drain; real-time UX comes from a live read path
-(`pet::live_state::LiveState` overlays unseen `event_inbox` XP on top
-of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
-
----
-
-## ~~B9 — Clippy Lint: Forbid `&s[..N]` on User Strings~~ ✅ Done 2026-06-23
-
-**Area**: Build tooling / `src/` conventions
-**Premise**: CJK truncation bug hit 4 files in Phase 1. A custom clippy lint or grep CI check would prevent recurrence.
-**Shipped** (`615562b`→`bfa349e`, S-size): `scripts/check-cjk-safe.sh` deterministic gate + CI `cjk-safe` job (sibling of `check-doc-drift.py`). Chose a bash/awk grep-style gate over a custom clippy lint (no `dylint` toolchain dependency; matches the existing deterministic-gate pattern). Flags start-anchored integer-literal byte slices `[..N]` / `[..=N]` (the documented `&s[..N]` form) — precision-over-recall, zero current false positives. Escape hatch `// cjk-ok:`. **Known gap** (by design, would need type info to disambiguate from safe Vec idioms): open-end `[N..]`, range `[N..M]`, and variable-bound `[..n]` forms are NOT flagged — string slicing with those still relies on the `.chars().take(N)` convention + review.
 
 ---
 
@@ -93,43 +51,12 @@ of `pet_snapshot`), not IPC wake. TUI rendering deferred to Phase 2c.
 
 ---
 
-## B12 — `.claude/settings.json` Path Templating + Setup Script
-
-**Area**: `.claude/settings.json`, new `scripts/setup-hooks.sh` or `codeforge init --hooks`
-**Premise**: `.claude/settings.json` ships with absolute hook paths (e.g. `/home/codepower/projects/codeforge/.claude/scripts/check-improvements.js`). Claude Code does not yet support relative paths in hook configuration, so every cloner must manually edit 6 paths after cloning. README documents this in "First-time Claude Code hook setup" but it's friction. Two solutions discussed: (a) ship `settings.json.template` with `<REPO_ROOT>` placeholder + a `scripts/setup-hooks.sh` (or `codeforge init --hooks`) that rewrites paths on first run; (b) wait for Claude Code to support relative paths and switch.
-**Trigger**: Pick up when (1) a contributor reports broken hooks after clone, OR (2) Claude Code adds relative-path support (then this becomes a sub-task of switching to relative paths), OR (3) > 5 stars on the public repo (signals contributor influx).
-**Status 2026-05-05**: Identified during public-readiness audit (`doc/projects/_archive/2026-05-05-public-readiness/`). Deferred out of scope per that L-task's Design Decision 3 to keep scope focused. S-size if option (a), trivial if option (b).
-
----
-
 ## B13 — 真實 production ship e2e（對 live Mnemos server）
 
 **Area**: runtime（`codeforge ship --no-hook` SessionEnd + `~/.mnemos/data/mnemos.db`）
 **Premise**: ship-online 專案的 e2e 只在隔離 test DB(`/tmp/ship-e2e`)驗過 → 200。真正對使用者 production Mnemos brain 的 session-end ship（global hook 鏈)尚未端到端跑過一次。已 opt-in（`~/.config/mnemos.env`），但驗證當下 Mnemos server 沒跑 → 本機 session-end ship 會 queue 到 `~/.codeforge/ship-failed/`。
 **Trigger**: 下次 Mnemos server 在跑時 —— 確認一次真實 session-end 的 ledger 落進 production brain（查 `documents`/`atoms`），並 `codeforge ship --resend` 清掉累積的 ship-failed/ queue。
 **Status 2026-06-15**: ship-online 上線後立即產生;設計上 ship --no-hook 失敗只 queue 不阻塞,故非 blocker。
-
----
-
-## ~~B14 — 其他機器部署 ship-online（new binary + install --hooks）~~ ✅ 一鍵命令 Done 2026-06-23
-
-**Area**: 各機器 `~/.local/bin/codeforge` + `~/.claude/settings.json` + `~/.config/mnemos.env`
-**Premise**: ship-online 的跨專案 dream→ship 鏈 + cleanupPeriodDays 只在本機(twgs-revival)部署。settings.json 是 per-machine,使用者有多台機器（cleanupPeriodDays 原始問題就是「每台都要」）。每台需:(1) 裝 0.0.4+ binary 到 `~/.local/bin`;(2) 跑 `codeforge install --hooks`（寫 global dream→ship 鏈 + cleanupPeriodDays);(3) 用 Mnemos 的機器建 `~/.config/mnemos.env` opt-in。
-**Shipped** (`codeforge bootstrap`, L-size 2026-06-23): trigger 的「一鍵命令」方案完成 —— `src/cli/bootstrap.rs` 薄 orchestrator 收斂 install --all + fmt pin toolchain（B19）+ Mnemos opt-in 報告。best-effort、idempotent、`--dry-run`/`--quiet`。
-
-**Per-machine runbook**（每台其他機器執行）:
-```bash
-# 1. 裝/更新 binary（在該機器的 codeforge clone 內）
-cargo install --path .            # → ~/.cargo/bin/codeforge
-# 2. 一鍵設定（取代舊三步手動流程）
-codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀態
-#    或先預覽： codeforge bootstrap --dry-run
-# 3. （只有用 Mnemos 的機器）opt-in —— bootstrap 只會「報告」不自動建：
-#    建 ~/.config/mnemos.env（或設 MNEMOS_INGEST_URL）後重跑 bootstrap 確認 ✓
-# 4. 之後維護：在該 clone `git pull && codeforge bootstrap`（fmt pin 隨 pull 走、toolchain self-install）
-```
-注意：bootstrap 不自動裝 binary 本身（你得先有 binary 才能跑它）、不自動建 mnemos.env（opt-in 刻意手動）。既有非-codeforge statusLine 不會被 clobber（會警示，要接管用 `install --all --force`）。
-**Status 2026-06-23**: 一鍵命令上線（本機驗證 dry-run 正確）。各機器仍需逐台執行上述 runbook（CLI 只能本機跑，無法遠端代部署）—— 但已從「記三步」收斂成「一行」。
 
 ---
 
@@ -140,6 +67,7 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 - CodeForge 只 surface 自己的項(已修,正確)。
 - **其他專案(CodePower 等)寫進共享 queue 的項,沒有任何地方會在該專案 surface** —— 它們帶了 `project` tag 卻無 surfacing hook 消費。
 參考 dream/ship 的做法:把 surfacing 從 clone-only 改成可跨專案(global 或可裝進任一專案的 SessionStart hook),用 hook CWD/`CLAUDE_PROJECT_DIR` 當 `PROJECT_ROOT`,各專案 SessionStart 只報屬於自己(`project === <該專案根>`)的 pending 項。
+**Audit 2026-11-01**: 併入 B31 —— 納編後 hooks 改由 autopilot 的 opt-in 清單註冊，跨專案 surfacing 跟著那次一起設計，不單獨做。
 **Trigger**: 當 (1) 想讓 CodePower(或其他專案)session 也能在 SessionStart 看到自己的 pending improvements,或 (2) 把 check-improvements 納入 global hook 安裝鏈(類似 ship-online 把 dream/ship 移 global)時。需處理 `PROJECT_ROOT` 來源從 `__filename` 改成 hook 提供的 project dir。
 **Status 2026-06-15**: project 歸屬(寫端)+ CodeForge 自身 scoping(讀端)已完成;跨專案 surfacing 一般化未做,記為 enhancement。
 
@@ -154,7 +82,7 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 - **Phase C(Tier 3,評估後選)**:本地語意 recall(FastEmbed+HNSW,取代/增補 FTS5 keyword)、失敗/卡關為一等記憶、typed observation/relation schema、矛盾偵測 + 兩段式信心衰減。
 **Trigger**:
 - **T2.1(async worker)**:當 dream/ship 在 SessionEnd 開始有感卡頓時開新 L。設計已收斂(留檔在 phase-b plan「OUT OF SCOPE」段):conditional enqueue + 同步 fallback —— 有 live daemon 才 `dream --background` emit `dream_scheduled` event 快速返回,無 daemon inline 同步跑(維持「永遠會 distill」、不回歸 ship-online)。2026-06-17 user decision defer:觸發條件未成立 + 紅利範圍窄(多數專案無 daemon)+ 動剛上線熱路徑風險不划算。
-- **Phase C**:當 keyword recall 品質證實不足(語意)、或想捕捉失敗 pattern 時。
+- **Phase C**:當 keyword recall 品質證實不足(語意)、或想捕捉失敗 pattern 時。**Audit 2026-11-01**:語意檢索依 pm 分工(B33)歸 mnemos,本地 FastEmbed+HNSW 開做前先確認不和 mnemos 重做。
 **Status 2026-06-17**:Phase A done;Phase B 的 T2.2+T2.3 開做;T2.1 + Phase C 記為 enhancement,有 design spec 母本與 credits。
 
 ---
@@ -186,19 +114,6 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 
 ---
 
-## ~~B19 — 全 repo rustfmt drift（工具鏈版本不一致，CI fmt job 疑似紅燈）~~ ✅ Done 2026-06-23
-
-**Area**: `src/cli/*.rs`、`src/dream/*.rs`、`src/memory/*.rs`、`src/mnemos/*.rs`（14 檔）
-**Premise**: 2026-06-23 B9 開發時 `cargo fmt --all -- --check` 報 14 個檔有 fmt diff（`daemon.rs` `install.rs` `mnemos_cli.rs` `ship.rs` `statusline.rs` `compile.rs` `ingest_digests.rs` `l0.rs` `recall.rs` `cite_detect.rs` `config.rs` `context.rs` `digest.rs` `state.rs`）。全是長行被 rustfmt 1.8.0-stable（2026-03-25）重排（`format!` / 長 `assert_eq!` / 長 `say()` 呼叫被拆多行），**非 B9 改動引入**（B9 的 `compile.rs:112` trailing comment 不在 diff 內）。根因疑似 committed code 是在較舊 rustfmt 下 fmt-clean，本機/CI 升到 1.8.0 後規則改變。CI 的 `fmt` job 用 `dtolnay/rust-toolchain@stable`（不 pin 版本），故下次 CI run 的 fmt job 很可能紅燈。
-**Shipped** (`feature/rustfmt-pin`, L-size): 治本 —— 不只收乾，還消除漂移源。
-- **`scripts/fmt.sh`**：單一 pin 來源（`PIN=1.94`），self-install 該 toolchain，`cargo +$PIN fmt`（`+toolchain` 只 pin fmt、build/test/clippy 維持 rolling stable、MSRV 仍在 Cargo.toml，**不引入 `rust-toolchain.toml`**）。
-- **收乾 baseline**：14 檔 618+/191-（whitespace-only），784 tests 綠。
-- **三層 enforcement（確定性 > 記憶）**：CI fmt job → `./scripts/fmt.sh --check`（不可繞過守門）；`.claude/quality-gate-config.md` + `dev-flow-config.md` S/L/H gate 都加 `--check`；CLAUDE.md Development Commands 規範一律走 wrapper、禁裸 `cargo fmt`。
-- knowledge `environment.md` 記決策（cross-link `gate-patterns.md` 確定性 gate 家族）。
-**Status 2026-06-23**: 由「研究怎樣處理最好 + 讓所有 session agent 自動 follow」需求展開。研究背書（RFC 2437 跨版本不保證 fmt 穩定；decouple fmt/build toolchain）。
-
----
-
 ## B20 — `codeforge self-update` 二進位自更新（現代化更新機制）
 
 **Area**: `src/cli/selfupdate.rs`、`Cargo.toml`（self_update dep）、`install.sh`、release pipeline
@@ -216,22 +131,6 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 **Area**: `src/mnemos/health.rs:should_refresh`
 **Premise**: `should_refresh` 的 `cache_stale = !fresh_enough(l, now)` 分支在 `PROBE_TTL_MAX(600s) < CACHE_MAX_AGE(3600s)` 的當前常數下永遠被 `ttl_expired` 先短路（dead path，保留作 belt-and-suspenders）。代碼已加 comment 說明。若未來 `PROBE_TTL_MAX` 調高至 > `CACHE_MAX_AGE`，此 OR 分支將重新生效，語意正確性需 revisit（或可移除）。
 **Trigger**: 調整 `PROBE_TTL_MAX` 常數（往 >3600s 方向）時，或決定清理 belt-and-suspenders 時。
-
----
-
-## B22 — `bottom_border` 在 `panel_w < 7` 的 ultimate fallback 可能溢出
-
-**Area**: `src/cli/statusline.rs:bottom_border`（降級階梯最後一級）
-**Premise**: 降級至最極窄（panel_w 遠低於正常終端 80+）的 ultimate fallback 段可能未對字串做 clamp/截斷，在超極窄假想終端寬度下有溢出邊框的風險。真實終端（80+ col）不觸發，故非現役 bug。
-**Trigger**: 為降級階梯補參數化測試（見 B23），或需在嵌入式/腳本窄輸出場景保證不破版時。修法：在 ultimate fallback 加 `.chars().take(panel_w).collect::<String>()` clamp。
-
----
-
-## B23 — 降級階梯缺「剛好等於邊界寬度」的參數化測試
-
-**Area**: `src/cli/statusline.rs` 測試模組、`bottom_border` 降級邏輯
-**Premise**: 現有降級階梯測試驗 wide/narrow 兩端，但缺乏「panel_w 剛好等於每個降級斷點」的邊界值參數化測試（off-by-one 盲區）。
-**Trigger**: 補測試時，或降級斷點數值有調整時。可用 proptest 或 table-driven #[test] 覆蓋每個斷點 ±1。
 
 ---
 
@@ -270,6 +169,7 @@ codeforge bootstrap               # install --all + fmt toolchain + mnemos 狀�
 - **hangar-bridge**：跨 agent 通道連線狀態（此概念目前 repo 內不存在，需先定義；見本 session 接腦討論）。
 - **autopilot**：autopilot 模式 / DOA 狀態指示。
 **Trigger**: 當 hangar-bridge 或 autopilot indicator 有了明確語義 + 狀態來源時。現在不做（無狀態來源、純預留）。
+**Audit 2026-11-01**: autopilot 的狀態已由 autopilot 自己畫在 band（分頁列），B31 的 status 片段契約定案時一併決定這個擴充點留不留；在那之前不加 indicator。
 **注意**: 每加一個 indicator 中段 fill 變窄；窄終端要靠 ladder 的 drop 順序保證不溢出（已有 `bottom_border_narrow_no_overflow` 測試守著）。
 
 ## B28 — `install --force` 是 all-or-nothing：想蓋掉別人的 `subagentStatusLine` 就得清光所有 hook
