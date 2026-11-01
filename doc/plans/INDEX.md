@@ -2,7 +2,9 @@
 
 ## Active Plans
 
-_(none)_
+| Plan | Created | Project |
+|------|---------|---------|
+| [2026-11-01-install-stable-paths](2026-11-01-install-stable-paths.md) | 2026-11-01 | [2026-11-01-install-stable-paths](../projects/2026-11-01-install-stable-paths/README.md) |
 
 ---
 
