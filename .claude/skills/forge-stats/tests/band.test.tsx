@@ -296,11 +296,11 @@ test('rgbHex turns the village colour into #rrggbb and refuses anything else', (
   expect(rgbHex([1, 2])).toBe(null)
 })
 
-test('the band colours by meaning: speed in success, the pet in its village colour, lights by state', async ($, on) => {
+test('the band colours by meaning: speed in suggestion (the running colour of autopilot), the pet in its village colour, lights by state', async ($, on) => {
   world(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const m = await $.ui.mount(band(170))
-  expect((await m.find({ type: 'Text', text: /^ϟ $/ }))?.props.color).toBe('success')
+  expect((await m.find({ type: 'Text', text: /^ϟ $/ }))?.props.color).toBe('suggestion')
   expect((await m.find({ type: 'Text', text: /^Ferris$/ }))?.props.color).toBe('#d75f00')
   // memory active and brain ok: both lights green
   const lights = await m.findAll({ type: 'Text', text: /^● $/ })

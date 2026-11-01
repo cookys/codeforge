@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   had a tok/s.
 - **forge-stats speaks speed with ϟ and colour** — the tab label is `ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1` (pet, then
   sparkline dropped to fit; `ϟ` is U+03DF, one cell, never an emoji). The expanded band colours by meaning: speed in
-  the theme's success colour, the pet's name and XP in its village colour, a light before memory and brain coloured by
+  the theme's suggestion colour (autopilot's `running`, the colour of its own speed label), the pet's name and XP in its village colour, a light before memory and brain coloured by
   state.
 - **forge-stats band columns follow the width** — 1 to 5 columns in priority order (Ferris, pet, speed, recent
   requests, memory and brain): from 26, 56, 92, 140 and 170 cells; the request table takes the spare width.
