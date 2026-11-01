@@ -152,12 +152,15 @@ pub fn run(opts: InstallOpts) -> Result<()> {
                 cache.display()
             ),
         );
+    }
 
-        // The memory pipeline (dream/ship) can only distill session transcripts
-        // that still exist. Claude Code's default cleanupPeriodDays is 30 — older
-        // sessions are deleted before they're ever digested. Bump retention so
-        // raw material survives — but a shared settings.json would carry it to
-        // every machine, so there it takes an explicit --cleanup-period-days.
+    // The memory pipeline (dream/ship) can only distill session transcripts that
+    // still exist. Claude Code's default cleanupPeriodDays is 30 — older sessions
+    // are deleted before they're ever digested. Bump retention so raw material
+    // survives — but a shared settings.json would carry it to every machine, so
+    // there it takes an explicit --cleanup-period-days. An explicit flag applies
+    // whatever else is being installed (a bare `install` included).
+    if install_hooks || opts.cleanup_period_days.is_some() {
         for line in apply_cleanup_period(
             &mut settings,
             opts.cleanup_period_days,
