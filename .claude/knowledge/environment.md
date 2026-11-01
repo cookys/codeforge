@@ -92,7 +92,9 @@ non-codeforge session.
   context --hook` local-recall injector), SessionEnd (`emit-session` +
   `session-digest` + `codeforge dream --quiet` → `codeforge ship --no-hook`
   memory pipeline), PreCompact (`session-digest`). Also writes top-level
-  `cleanupPeriodDays = 3650`.
+  `cleanupPeriodDays = 3650` (v0.0.7+: only on a local settings.json; a shared
+  one — symlink or git-tracked — needs `--cleanup-period-days`). v0.0.7+ hook
+  commands are `codeforge hook <name>` (no path/version), marker `codeforge@1`.
 - `codeforge install --project-hooks` (**shipped**, not "planned") → the 2
   clone-only dev hooks: `check-improvements` (SessionStart) +
   `check-dev-flow` (PreToolUse), to `$CWD/.claude/settings.json`.

@@ -10,6 +10,7 @@ mod daemon;
 pub mod doctor;
 mod dream;
 mod emit;
+pub mod hook;
 mod ingest;
 mod init;
 mod install;
@@ -69,6 +70,17 @@ pub enum Commands {
         /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
         #[arg(long)]
         quiet: bool,
+        /// 保留 session transcript 的天數（cleanupPeriodDays）。共用的 settings.json（symlink 或在 git 版控中）只有加這個旗標才會寫入
+        #[arg(long, value_name = "DAYS", value_parser = clap::value_parser!(u64).range(1..), conflicts_with = "project_hooks")]
+        cleanup_period_days: Option<u64>,
+    },
+    /// 執行 codeforge 內建的 hook 腳本（供 settings.json 呼叫；不帶本機路徑與版號）
+    Hook {
+        /// hook 名稱：emit-session 或 session-digest
+        name: String,
+        /// 原樣傳給腳本的參數
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
     /// 從最新 GitHub release 原地更新 codeforge 二進位（B20）
     SelfUpdate {
@@ -87,6 +99,9 @@ pub enum Commands {
         /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
         #[arg(long)]
         quiet: bool,
+        /// 保留 session transcript 的天數（cleanupPeriodDays）。共用的 settings.json（symlink 或在 git 版控中）只有加這個旗標才會寫入
+        #[arg(long, value_name = "DAYS", value_parser = clap::value_parser!(u64).range(1..))]
+        cleanup_period_days: Option<u64>,
     },
     /// 移除 codeforge 寫入的 settings.json 條目與 hooks scripts
     Uninstall {
@@ -332,6 +347,17 @@ pub enum MemoryAction {
 }
 
 pub fn run(cli: Cli) -> Result<()> {
+    // A hook runs inside Claude Code on every session event: answer before loading
+    // anything else, and turn every forwarder failure into exit 1 (never 2, which
+    // Claude Code treats as blocking).
+    if let Commands::Hook { name, args } = &cli.command {
+        let code = hook::run(name, args).unwrap_or_else(|e| {
+            eprintln!("{e:#}");
+            1
+        });
+        std::process::exit(code);
+    }
+
     let ctx = crate::db::Context::load()?;
 
     match cli.command {
@@ -346,6 +372,7 @@ pub fn run(cli: Cli) -> Result<()> {
             yes,
             settings_path,
             quiet,
+            cleanup_period_days,
         } => install::run(install::InstallOpts {
             hooks,
             all,
@@ -356,6 +383,7 @@ pub fn run(cli: Cli) -> Result<()> {
             yes,
             settings_path,
             quiet,
+            cleanup_period_days,
         }),
         Commands::Uninstall {
             statusline,
@@ -368,12 +396,19 @@ pub fn run(cli: Cli) -> Result<()> {
             settings_path,
             quiet,
         }),
+        Commands::Hook { .. } => unreachable!("handled before Context::load"),
         Commands::SelfUpdate { check, quiet } => {
             selfupdate::run(selfupdate::SelfUpdateOpts { check, quiet })
         }
-        Commands::Bootstrap { dry_run, quiet } => {
-            bootstrap::run(bootstrap::BootstrapOpts { dry_run, quiet })
-        }
+        Commands::Bootstrap {
+            dry_run,
+            quiet,
+            cleanup_period_days,
+        } => bootstrap::run(bootstrap::BootstrapOpts {
+            dry_run,
+            quiet,
+            cleanup_period_days,
+        }),
         Commands::Learn { text, paste, file } => learn::run(&ctx, text, paste, file),
         Commands::Memory { action } => match action {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),

@@ -35,6 +35,18 @@ fn detect_locale() -> String {
 fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     rust_i18n::set_locale(&detect_locale());
-    let cli = cli::Cli::parse();
+    let cli = match cli::Cli::try_parse() {
+        Ok(cli) => cli,
+        // `codeforge hook` runs inside Claude Code, where exit 2 means "blocking":
+        // a malformed hook invocation must exit 1, not clap's usage-error 2.
+        Err(e) if e.use_stderr() && std::env::args().nth(1).as_deref() == Some("hook") => {
+            eprintln!(
+                "codeforge hook：用法 codeforge hook <name> [args…]（可用：{}）",
+                cli::hook::names().join(", ")
+            );
+            std::process::exit(1);
+        }
+        Err(e) => e.exit(),
+    };
     cli::run(cli)
 }

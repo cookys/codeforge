@@ -5,6 +5,33 @@ separate `uninstall` subcommand are all implemented. This spec was written
 forward-looking ("next implementer"); the as-shipped behaviour diverges in
 a few ways — see ⚠️ below. Audited: 2026-06-18.
 
+> ### ⚠️ Superseded by v0.0.7 (B35, 2026-11-02) — shared settings.json
+>
+> Plan: [`doc/plans/2026-11-01-install-stable-paths.md`](../plans/2026-11-01-install-stable-paths.md).
+> These replace the versioned-directory and marker design in §Hook target
+> directory and §Idempotency below, and the `HOOK_SCRIPTS` extraction note:
+>
+> - **Hook commands carry no path or version.** Global hooks are
+>   `codeforge hook emit-session session_start|session_end` and
+>   `codeforge hook session-digest`. The scripts are embedded in the binary
+>   (`src/cli/hook.rs`) and materialized lazily into a private cache
+>   `<data_local_dir>/codeforge/hooks/<version>/` (or `$CODEFORGE_DATA_DIR/hooks/<version>/`),
+>   which never appears in settings.json. install warms the cache; `uninstall`
+>   removes all of `…/codeforge/hooks/`. The versioned directory is now only a
+>   cache, not the command path.
+> - **Marker is an install-contract tag.** Global entries (hooks, statusLine,
+>   subagentStatusLine) carry `"_installed_by": "codeforge@1"`, not the package
+>   version, so re-installing after an upgrade is a zero diff. `--project-hooks`
+>   still writes `codeforge@<version>`. Ownership detection is unchanged
+>   (`starts_with("codeforge@")`), so old `codeforge@0.0.x` entries are swept.
+> - **Writes go through a symlinked settings.json** to its final target (tmp
+>   beside the target, fsync, rename); a dangling link is an error, never
+>   overwritten. Install warns when the file is a symlink or git-tracked.
+> - **statusLine** is `codeforge statusline` for a shared file, or a local file
+>   whose PATH `codeforge` is this binary; otherwise the absolute path.
+> - **cleanupPeriodDays**: shared file → only with `--cleanup-period-days`;
+>   local file → default 3650 when unset (unchanged).
+>
 > ### ⚠️ As-shipped corrections (audit 2026-06-18)
 >
 > canonical = `src/cli/install.rs`. Divergences from this spec's design:

@@ -15,6 +15,8 @@ pub struct InstallOpts {
     pub yes: bool,
     pub settings_path: Option<PathBuf>,
     pub quiet: bool,
+    /// `--cleanup-period-days N`: write this retention even into a shared settings.json.
+    pub cleanup_period_days: Option<u64>,
 }
 
 /// Options for `codeforge uninstall`.
@@ -27,6 +29,11 @@ pub struct UninstallOpts {
 
 const MARKER_KEY: &str = "_installed_by";
 const MARKER_PREFIX: &str = "codeforge@";
+/// Marker for everything the global install writes (hooks, statusLine,
+/// subagentStatusLine). An install-contract version, not the package version, so
+/// re-running install after an upgrade leaves a shared settings.json byte-identical
+/// (B35). `--project-hooks` keeps [`current_marker`].
+const GLOBAL_MARKER: &str = "codeforge@1";
 
 /// Claude Code env-var placeholder. Claude Code expands `${CLAUDE_PROJECT_DIR}`
 /// to the absolute project root before spawning hook processes
@@ -83,7 +90,6 @@ pub fn run(opts: InstallOpts) -> Result<()> {
     let exe = std::env::current_exe().context("讀取 codeforge binary 路徑失敗")?;
     exe.to_str()
         .ok_or_else(|| anyhow!("binary 路徑含非 UTF-8 字元：{}", exe.display()))?;
-    let exe_str = crate::platform::shell_path(&exe);
 
     let settings_path = opts
         .settings_path
@@ -94,17 +100,34 @@ pub fn run(opts: InstallOpts) -> Result<()> {
         opts.quiet,
         &format!("  目標 settings.json: {}", settings_path.display()),
     );
+    check_settings_path(&settings_path)?;
+    let shared = shared_settings(&settings_path);
+    for line in shared_warning_lines(&settings_path, &shared) {
+        say(opts.quiet, &line);
+    }
 
     let mut settings = load_settings(&settings_path)?;
 
     if install_statusline {
-        let cmd = format!("{} statusline", exe_str);
+        let path_hit = codeforge_on_path();
+        let on_path = same_binary(path_hit.as_deref(), &exe);
+        if shared.is_shared() && !on_path {
+            say(
+                opts.quiet,
+                &format!(
+                    "⚠ PATH 上的 codeforge 不是目前這個 binary（{}）；statusLine 會執行 PATH 上的那一個",
+                    exe.display()
+                ),
+            );
+        }
+        let cmd = statusline_command(&exe, on_path, shared.is_shared(), "statusline");
         let action = patch_statusline(&mut settings, &cmd, opts.force)?;
         say(opts.quiet, &format!("✓ statusLine {}", action));
         say(opts.quiet, &format!("  command: {}", cmd));
 
         if opts.subagent_statusline {
-            let sub_cmd = format!("{} subagent-statusline", exe_str);
+            let sub_cmd =
+                statusline_command(&exe, on_path, shared.is_shared(), "subagent-statusline");
             let sub_action = patch_subagent_statusline(&mut settings, &sub_cmd, opts.force)?;
             say(opts.quiet, &format!("✓ subagentStatusLine {}", sub_action));
             say(opts.quiet, &format!("  command: {}", sub_cmd));
@@ -112,39 +135,39 @@ pub fn run(opts: InstallOpts) -> Result<()> {
     }
 
     if install_hooks {
-        let hooks_dir = if opts.dry_run {
-            // Don't actually extract files in dry-run; show the path that would be used
-            default_data_local_dir()?
-                .join("codeforge")
-                .join("hooks")
-                .join(env!("CARGO_PKG_VERSION"))
+        // The hook commands are `codeforge hook <name>`; the scripts live in a
+        // private per-version cache. Warm it now (not in dry-run) so an unwritable
+        // data dir fails here rather than inside a hook later.
+        let cache = if opts.dry_run {
+            super::hook::cache_dir()?
         } else {
-            extract_hook_scripts()?
+            super::hook::materialize_all()?
         };
-        let action = patch_hooks(
-            &mut settings,
-            &hooks_dir,
-            opts.force,
-            /*project=*/ false,
-        )?;
+        let action = patch_hooks(&mut settings, None, opts.force)?;
         say(opts.quiet, &format!("✓ hooks {}", action));
-        say(opts.quiet, &format!("  scripts: {}", hooks_dir.display()));
+        say(
+            opts.quiet,
+            &format!(
+                "  scripts: codeforge hook <name>（快取 {}）",
+                cache.display()
+            ),
+        );
+    }
 
-        // The memory pipeline (dream/ship) can only distill session transcripts
-        // that still exist. Claude Code's default cleanupPeriodDays is 30 — older
-        // sessions are deleted before they're ever digested. Bump retention so
-        // raw material survives. Fills only when unset (respects a user's explicit
-        // value unless --force).
-        let action = patch_cleanup_period(&mut settings, opts.force);
-        say(opts.quiet, &format!("✓ cleanupPeriodDays {}", action));
-        if action != "已設定（保留現值）" {
-            say(
-                opts.quiet,
-                &format!(
-                    "  ↳ 保留 session transcript {} 天（供 dream/ship 萃取）；~/.claude/projects/ 會隨之長期累積",
-                    DEFAULT_CLEANUP_PERIOD_DAYS
-                ),
-            );
+    // The memory pipeline (dream/ship) can only distill session transcripts that
+    // still exist. Claude Code's default cleanupPeriodDays is 30 — older sessions
+    // are deleted before they're ever digested. Bump retention so raw material
+    // survives — but a shared settings.json would carry it to every machine, so
+    // there it takes an explicit --cleanup-period-days. An explicit flag applies
+    // whatever else is being installed (a bare `install` included).
+    if install_hooks || opts.cleanup_period_days.is_some() {
+        for line in apply_cleanup_period(
+            &mut settings,
+            opts.cleanup_period_days,
+            shared.is_shared(),
+            opts.force,
+        ) {
+            say(opts.quiet, &line);
         }
     }
 
@@ -180,6 +203,7 @@ pub fn run_uninstall(opts: UninstallOpts) -> Result<()> {
         .map(Ok)
         .unwrap_or_else(default_global_settings_path)?;
 
+    check_settings_path(&settings_path)?;
     if !settings_path.exists() {
         say(
             opts.quiet,
@@ -206,8 +230,8 @@ pub fn run_uninstall(opts: UninstallOpts) -> Result<()> {
         let action = unpatch_hooks(&mut settings)?;
         say(opts.quiet, &format!("✓ hooks {}", action));
 
-        // Also remove the extracted scripts dir
-        let base = default_data_local_dir()?.join("codeforge").join("hooks");
+        // Also remove the script caches (every version)
+        let base = super::hook::hooks_root()?;
         if base.exists() {
             fs::remove_dir_all(&base).with_context(|| format!("移除 {} 失敗", base.display()))?;
             say(opts.quiet, &format!("✓ removed {}", base.display()));
@@ -256,12 +280,7 @@ fn run_install_project_hooks(opts: &InstallOpts) -> Result<()> {
         .join("scripts");
 
     let mut settings = load_settings(&settings_path)?;
-    let action = patch_hooks(
-        &mut settings,
-        &scripts_dir_template,
-        opts.force,
-        /*project=*/ true,
-    )?;
+    let action = patch_hooks(&mut settings, Some(&scripts_dir_template), opts.force)?;
     say(opts.quiet, &format!("✓ project hooks {}", action));
     say(
         opts.quiet,
@@ -323,11 +342,157 @@ fn load_settings(path: &Path) -> Result<Value> {
     }
 }
 
+/// Refuse a settings path that is a dangling symlink. `Path::exists()` is false
+/// for one, so without this check `load_settings` would read it as an empty file
+/// (dry-run prints a fake success) and `run_uninstall` would report "nothing to do".
+fn check_settings_path(path: &Path) -> Result<()> {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return Ok(()); // missing entirely: load_settings creates it
+    };
+    if meta.file_type().is_symlink() && fs::canonicalize(path).is_err() {
+        let dest = fs::read_link(path)
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|_| "?".to_string());
+        bail!(
+            "settings.json 是指向不存在檔案的 symlink：{} → {}（請先修好連結或它指向的檔案）",
+            path.display(),
+            dest
+        );
+    }
+    Ok(())
+}
+
+/// The file a write to `path` must land in: the final target when `path` is a
+/// symlink (relative links and chains resolved), else `path` itself. Renaming
+/// over the link would replace the link with a regular file and detach it from
+/// e.g. a dotfiles repo.
+fn resolve_write_target(path: &Path) -> Result<PathBuf> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            check_settings_path(path)?;
+            fs::canonicalize(path).with_context(|| format!("解析 symlink {} 失敗", path.display()))
+        }
+        _ => Ok(path.to_path_buf()),
+    }
+}
+
 fn write_settings_atomic(path: &Path, settings: &Value) -> Result<()> {
-    let tmp = path.with_extension("json.tmp");
+    let target = resolve_write_target(path)?;
+    let file_name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "settings.json".to_string());
+    let tmp = target.with_file_name(format!("{file_name}.tmp.{}", std::process::id()));
     let pretty = serde_json::to_string_pretty(settings)? + "\n";
-    fs::write(&tmp, pretty).with_context(|| format!("寫入 {} 失敗", tmp.display()))?;
-    fs::rename(&tmp, path).with_context(|| format!("rename 到 {} 失敗", path.display()))
+
+    let result = (|| -> Result<()> {
+        let mut f = fs::File::create(&tmp)
+            .with_context(|| format!("寫入 {} 失敗（目錄不可寫？）", target.display()))?;
+        f.write_all(pretty.as_bytes())
+            .with_context(|| format!("寫入 {} 失敗", tmp.display()))?;
+        f.sync_all()
+            .with_context(|| format!("寫入 {} 失敗", tmp.display()))?;
+        drop(f);
+        if let Ok(meta) = fs::metadata(&target) {
+            let _ = fs::set_permissions(&tmp, meta.permissions());
+        }
+        fs::rename(&tmp, &target).with_context(|| format!("rename 到 {} 失敗", target.display()))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
+/// Where a settings.json is shared with other machines: a symlink (typically into a
+/// dotfiles repo) and/or a file tracked by git. Both mean whatever install writes
+/// spreads beyond this machine.
+#[derive(Debug, Default, PartialEq)]
+struct SharedSettings {
+    symlink_target: Option<PathBuf>,
+    git_repo: Option<PathBuf>,
+}
+
+impl SharedSettings {
+    fn is_shared(&self) -> bool {
+        self.symlink_target.is_some() || self.git_repo.is_some()
+    }
+}
+
+fn shared_settings(path: &Path) -> SharedSettings {
+    let is_link = fs::symlink_metadata(path)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false);
+    let canonical = fs::canonicalize(path).ok();
+    let symlink_target = if is_link { canonical.clone() } else { None };
+    let git_repo = canonical.as_deref().and_then(git_tracking_repo);
+    SharedSettings {
+        symlink_target,
+        git_repo,
+    }
+}
+
+/// The repo root when `file` is tracked by git; `None` when it isn't, git is
+/// missing, or anything fails. git's own output never reaches the user (it is
+/// English, and `ls-files --error-unmatch` prints a `fatal:` for every untracked
+/// file), and inherited `GIT_*` variables must not redirect `-C` to another repo.
+fn git_tracking_repo(file: &Path) -> Option<PathBuf> {
+    use std::process::{Command, Stdio};
+    let parent = file.parent()?;
+    let name = file.file_name()?;
+    let git = |args: &[&std::ffi::OsStr]| {
+        let mut c = Command::new("git");
+        c.arg("-C")
+            .arg(parent)
+            .args(args)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .stdin(Stdio::null())
+            .stderr(Stdio::null());
+        c
+    };
+    let tracked = git(&[
+        "ls-files".as_ref(),
+        "--error-unmatch".as_ref(),
+        "--".as_ref(),
+        name,
+    ])
+    .stdout(Stdio::null())
+    .status()
+    .ok()?
+    .success();
+    if !tracked {
+        return None;
+    }
+    let out = git(&["rev-parse".as_ref(), "--show-toplevel".as_ref()])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let root = String::from_utf8(out.stdout).ok()?;
+    let root = root.trim();
+    (!root.is_empty()).then(|| PathBuf::from(root))
+}
+
+fn shared_warning_lines(path: &Path, shared: &SharedSettings) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(t) = &shared.symlink_target {
+        lines.push(format!("⚠ settings.json 是 symlink → {}", t.display()));
+    }
+    if let Some(repo) = &shared.git_repo {
+        let shown = shared.symlink_target.as_deref().unwrap_or(path);
+        lines.push(format!(
+            "⚠ {} 在 git 版控中（repo：{}）：寫入的內容會隨 commit 擴散到其他機器",
+            shown.display(),
+            repo.display()
+        ));
+    }
+    if shared.is_shared() {
+        lines.push("  寫入會直接改 target 檔案；hook 指令不含本機路徑，可以安全共用".to_string());
+    }
+    lines
 }
 
 fn default_global_settings_path() -> Result<PathBuf> {
@@ -338,15 +503,37 @@ fn default_global_settings_path() -> Result<PathBuf> {
     Ok(home.join(".claude").join("settings.json"))
 }
 
-fn default_data_local_dir() -> Result<PathBuf> {
-    if let Some(p) = dirs::data_local_dir() {
-        return Ok(p);
-    }
-    let home = dirs::home_dir().context("找不到使用者 home 目錄且無 data_local_dir")?;
-    Ok(home.join(".local").join("share"))
+// ─── statusLine block ─────────────────────────────────────────────────────
+
+/// The first `codeforge` executable on `$PATH`, if any.
+fn codeforge_on_path() -> Option<PathBuf> {
+    let exe_name = format!("codeforge{}", std::env::consts::EXE_SUFFIX);
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(&exe_name))
+        .find(|p| p.is_file())
 }
 
-// ─── statusLine block ─────────────────────────────────────────────────────
+fn same_binary(a: Option<&Path>, b: &Path) -> bool {
+    match (
+        a.and_then(|a| fs::canonicalize(a).ok()),
+        fs::canonicalize(b).ok(),
+    ) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// The statusLine / subagentStatusLine command. A shared settings.json always gets
+/// the PATH form so every machine writes the same bytes; a local file gets the PATH
+/// form when PATH resolves to this very binary, else the absolute path (it does not
+/// spread, and it keeps working when PATH is missing ~/.cargo/bin).
+fn statusline_command(exe: &Path, on_path: bool, shared: bool, sub: &str) -> String {
+    if shared || on_path {
+        format!("codeforge {sub}")
+    } else {
+        format!("{} {sub}", crate::platform::shell_path(exe))
+    }
+}
 
 fn current_marker() -> String {
     format!("{}{}", MARKER_PREFIX, env!("CARGO_PKG_VERSION"))
@@ -363,7 +550,7 @@ fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'st
     let new_block = json!({
         "type": "command",
         "command": cmd,
-        MARKER_KEY: current_marker(),
+        MARKER_KEY: GLOBAL_MARKER,
     });
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("statusLine").cloned();
@@ -390,7 +577,7 @@ fn patch_subagent_statusline(settings: &mut Value, cmd: &str, force: bool) -> Re
     let new_block = json!({
         "type": "command",
         "command": cmd,
-        MARKER_KEY: current_marker(),
+        MARKER_KEY: GLOBAL_MARKER,
     });
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("subagentStatusLine").cloned();
@@ -422,18 +609,7 @@ fn unpatch_statusline(settings: &mut Value) -> Result<&'static str> {
 
 // ─── hooks block ──────────────────────────────────────────────────────────
 
-/// The 2 global-safe scripts. Project-specific scripts
-/// (check-improvements, check-dev-flow) are NOT installed by `--hooks`.
-const HOOK_SCRIPTS: &[(&str, &str)] = &[
-    (
-        "emit-session.js",
-        include_str!("../../.claude/scripts/emit-session.js"),
-    ),
-    (
-        "session-digest.js",
-        include_str!("../../.claude/scripts/session-digest.js"),
-    ),
-];
+// The global hook scripts are embedded in `hook.rs` and run via `codeforge hook`.
 
 /// Codeforge-clone-only DEV scripts (used by `--project-hooks`). These already
 /// live in the codeforge clone at `.claude/scripts/`, so we only need the
@@ -445,32 +621,14 @@ const HOOK_SCRIPTS: &[(&str, &str)] = &[
 /// cause dual-fire. See commit 2648b34.
 const PROJECT_HOOK_SCRIPT_NAMES: &[&str] = &["check-improvements.js", "check-dev-flow.js"];
 
-fn extract_hook_scripts() -> Result<PathBuf> {
-    let version = env!("CARGO_PKG_VERSION");
-    let base = default_data_local_dir()?
-        .join("codeforge")
-        .join("hooks")
-        .join(version);
-    fs::create_dir_all(&base)
-        .with_context(|| format!("建立 hooks 目錄 {} 失敗", base.display()))?;
-    for (name, content) in HOOK_SCRIPTS {
-        let dest = base.join(name);
-        fs::write(&dest, content).with_context(|| format!("寫入 {} 失敗", dest.display()))?;
-    }
-    Ok(base)
-}
-
+/// `project_scripts_dir`: `Some(dir)` for `--project-hooks` (node scripts under the
+/// codeforge clone), `None` for the global install (`codeforge hook <name>`).
 fn patch_hooks(
     settings: &mut Value,
-    scripts_dir: &Path,
+    project_scripts_dir: Option<&Path>,
     force: bool,
-    project: bool,
 ) -> Result<&'static str> {
     require_object_root(settings)?;
-    let marker = current_marker();
-
-    let emit_path = scripts_dir.join("emit-session.js");
-    let digest_path = scripts_dir.join("session-digest.js");
 
     // Build the entries we want to insert. The two install modes carry
     // strictly disjoint hooks to avoid dual-fire when both are installed
@@ -492,7 +650,10 @@ fn patch_hooks(
     //       codeforge-clone-only DEV hooks — check-improvements (SessionStart),
     //       check-dev-flow (PreToolUse). dream/ship moved to the global path so
     //       they run across all projects, not just the codeforge clone.
-    let entries: Vec<(&str, Option<&str>, Vec<Value>)> = if project {
+    let entries: Vec<(&str, Option<&str>, Vec<Value>)> = if let Some(scripts_dir) =
+        project_scripts_dir
+    {
+        let marker = current_marker();
         let check_improvements = scripts_dir.join("check-improvements.js");
         let check_dev_flow = scripts_dir.join("check-dev-flow.js");
         vec![
@@ -516,23 +677,20 @@ fn patch_hooks(
             ),
         ]
     } else {
+        let marker = GLOBAL_MARKER;
         vec![
             (
                 "SessionStart",
                 None,
                 vec![
-                    hook_entry(
-                        &format!("node {} session_start", crate::platform::shell_path(&emit_path)),
-                        3000,
-                        &marker,
-                    ),
+                    hook_entry("codeforge hook emit-session session_start", 3000, marker),
                     // Local recall (no-mnemos READ path): inject a lean ranked L1
                     // index as additionalContext. No-op when the project has no
                     // active L1. Symmetric to the mnemos-cli context central path.
                     hook_entry(
                         "codeforge memory context --hook 2>/dev/null || true",
                         10000,
-                        &marker,
+                        marker,
                     ),
                     // Central recall (fleet recall DOWNLINK, P1.2): pull cross-source
                     // atoms from the Mnemos brain and inject them at SessionStart —
@@ -543,7 +701,7 @@ fn patch_hooks(
                     hook_entry(
                         "codeforge mnemos-cli context --hook --max 5 --with-themes --max-sensitivity work 2>/dev/null || true",
                         10000,
-                        &marker,
+                        marker,
                     ),
                 ],
             ),
@@ -551,34 +709,26 @@ fn patch_hooks(
                 "SessionEnd",
                 None,
                 vec![
-                    hook_entry(
-                        &format!("node {} session_end", crate::platform::shell_path(&emit_path)),
-                        3000,
-                        &marker,
-                    ),
-                    hook_entry(&format!("node {}", crate::platform::shell_path(&digest_path)), 30000, &marker),
+                    hook_entry("codeforge hook emit-session session_end", 3000, marker),
+                    hook_entry("codeforge hook session-digest", 30000, marker),
                     // Memory pipeline: dream distills L0→L1, ship forwards to Mnemos.
                     // Order matters — ship reads the L1 that dream just produced.
                     hook_entry(
                         "codeforge dream --quiet 2>/dev/null || true",
                         30000,
-                        &marker,
+                        marker,
                     ),
                     hook_entry(
                         "codeforge ship --no-hook 2>/dev/null || true",
                         30000,
-                        &marker,
+                        marker,
                     ),
                 ],
             ),
             (
                 "PreCompact",
                 None,
-                vec![hook_entry(
-                    &format!("node {}", crate::platform::shell_path(&digest_path)),
-                    30000,
-                    &marker,
-                )],
+                vec![hook_entry("codeforge hook session-digest", 30000, marker)],
             ),
         ]
     };
@@ -682,9 +832,41 @@ fn unpatch_hooks(settings: &mut Value) -> Result<&'static str> {
 /// time to digest sessions before they're cleaned up. ~10 years ≈ "keep".
 const DEFAULT_CLEANUP_PERIOD_DAYS: u64 = 3650;
 
-/// Set `cleanupPeriodDays` on global settings unless the user already chose a
-/// value (then leave it, unless `force`). Returns a human action string.
-fn patch_cleanup_period(settings: &mut Value, force: bool) -> &'static str {
+/// The cleanupPeriodDays policy (B35), as the lines install prints:
+/// - `--cleanup-period-days N`: write N (an existing value only with `--force`).
+/// - no flag, local file: write the default 3650 when unset (unchanged behaviour).
+/// - no flag, shared file: never add, change or remove it, `--force` included.
+fn apply_cleanup_period(
+    settings: &mut Value,
+    flag: Option<u64>,
+    shared: bool,
+    force: bool,
+) -> Vec<String> {
+    if flag.is_none() && shared {
+        let existing = settings.get("cleanupPeriodDays").filter(|v| !v.is_null());
+        return vec![match existing {
+            Some(v) => format!(
+                "ℹ 共用檔裡已有 cleanupPeriodDays = {v}，保留不動；它會套用到每台機器"
+            ),
+            None => format!(
+                "ℹ cleanupPeriodDays 未寫入（共用檔會套用到每台機器）；要保留 transcript 給 dream/ship，可加 --cleanup-period-days {DEFAULT_CLEANUP_PERIOD_DAYS}"
+            ),
+        }];
+    }
+    let days = flag.unwrap_or(DEFAULT_CLEANUP_PERIOD_DAYS);
+    let action = patch_cleanup_period(settings, days, force);
+    let mut lines = vec![format!("✓ cleanupPeriodDays {action}")];
+    if action != "已設定（保留現值）" {
+        lines.push(format!(
+            "  ↳ 保留 session transcript {days} 天（供 dream/ship 萃取）；~/.claude/projects/ 會隨之長期累積"
+        ));
+    }
+    lines
+}
+
+/// Set `cleanupPeriodDays` to `days` unless the user already chose a value (then
+/// leave it, unless `force`). Returns a human action string.
+fn patch_cleanup_period(settings: &mut Value, days: u64, force: bool) -> &'static str {
     let Some(obj) = settings.as_object_mut() else {
         return "跳過（settings 非 object）";
     };
@@ -695,10 +877,7 @@ fn patch_cleanup_period(settings: &mut Value, force: bool) -> &'static str {
     if present && !force {
         return "已設定（保留現值）";
     }
-    obj.insert(
-        "cleanupPeriodDays".to_string(),
-        json!(DEFAULT_CLEANUP_PERIOD_DAYS),
-    );
+    obj.insert("cleanupPeriodDays".to_string(), json!(days));
     if present {
         "重置（--force）"
     } else {
@@ -988,8 +1167,7 @@ mod tests {
     #[test]
     fn patch_hooks_creates_block() {
         let mut s = json!({});
-        let dir = PathBuf::from("/tmp/cf-test");
-        let action = patch_hooks(&mut s, &dir, false, false).unwrap();
+        let action = patch_hooks(&mut s, None, false).unwrap();
         assert_eq!(action, "新增");
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["SessionEnd"].is_array());
@@ -1032,7 +1210,7 @@ mod tests {
     fn patch_hooks_project_layout_is_codeforge_clone_only() {
         let mut s = json!({});
         let dir = PathBuf::from("/tmp/cf-test");
-        patch_hooks(&mut s, &dir, false, /*project=*/ true).unwrap();
+        patch_hooks(&mut s, Some(&dir), false).unwrap();
         // 2 hook types present: SessionStart + PreToolUse. dream/ship moved to
         // the global path, so project mode no longer writes SessionEnd; PreCompact
         // is global-only too.
@@ -1106,13 +1284,7 @@ mod tests {
                 }]
             }
         });
-        let action = patch_hooks(
-            &mut s,
-            Path::new("/tmp/cf-test"),
-            false,
-            /*project=*/ true,
-        )
-        .unwrap();
+        let action = patch_hooks(&mut s, Some(Path::new("/tmp/cf-test")), false).unwrap();
         assert_eq!(
             action, "更新",
             "legacy dream entry recognized as ours and swept"
@@ -1221,13 +1393,7 @@ mod tests {
                 ]}]
             }
         });
-        patch_hooks(
-            &mut s,
-            Path::new("/tmp/cf-test"),
-            false,
-            /*project=*/ false,
-        )
-        .unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         // Exactly one SessionEnd group, with the new 4-entry chain — no 0.0.3 dupes.
         let se = s["hooks"]["SessionEnd"].as_array().unwrap();
         assert_eq!(
@@ -1265,13 +1431,7 @@ mod tests {
                 }]
             }
         });
-        patch_hooks(
-            &mut s,
-            Path::new("/tmp/cf-test"),
-            false,
-            /*project=*/ false,
-        )
-        .unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         let se = s["hooks"]["SessionEnd"].as_array().unwrap();
         assert_eq!(
             se.len(),
@@ -1293,7 +1453,7 @@ mod tests {
     #[test]
     fn cleanup_period_fills_when_unset() {
         let mut s = json!({});
-        let action = patch_cleanup_period(&mut s, false);
+        let action = patch_cleanup_period(&mut s, DEFAULT_CLEANUP_PERIOD_DAYS, false);
         assert_eq!(action, "新增");
         assert_eq!(s["cleanupPeriodDays"], json!(DEFAULT_CLEANUP_PERIOD_DAYS));
     }
@@ -1301,7 +1461,7 @@ mod tests {
     #[test]
     fn cleanup_period_respects_existing_user_value() {
         let mut s = json!({ "cleanupPeriodDays": 90 });
-        let action = patch_cleanup_period(&mut s, false);
+        let action = patch_cleanup_period(&mut s, DEFAULT_CLEANUP_PERIOD_DAYS, false);
         assert_eq!(action, "已設定（保留現值）");
         assert_eq!(
             s["cleanupPeriodDays"],
@@ -1313,9 +1473,45 @@ mod tests {
     #[test]
     fn cleanup_period_force_overwrites() {
         let mut s = json!({ "cleanupPeriodDays": 90 });
-        let action = patch_cleanup_period(&mut s, true);
+        let action = patch_cleanup_period(&mut s, DEFAULT_CLEANUP_PERIOD_DAYS, true);
         assert_eq!(action, "重置（--force）");
         assert_eq!(s["cleanupPeriodDays"], json!(DEFAULT_CLEANUP_PERIOD_DAYS));
+    }
+
+    #[test]
+    fn cleanup_policy_flag_writes_even_when_shared() {
+        let mut s = json!({});
+        let lines = apply_cleanup_period(&mut s, Some(90), true, false);
+        assert_eq!(s["cleanupPeriodDays"], json!(90));
+        assert!(lines[0].contains("新增"));
+        // an existing value still needs --force
+        let mut s = json!({"cleanupPeriodDays": 30});
+        apply_cleanup_period(&mut s, Some(90), true, false);
+        assert_eq!(s["cleanupPeriodDays"], json!(30));
+        apply_cleanup_period(&mut s, Some(90), true, true);
+        assert_eq!(s["cleanupPeriodDays"], json!(90));
+    }
+
+    #[test]
+    fn cleanup_policy_local_without_flag_keeps_default() {
+        let mut s = json!({});
+        apply_cleanup_period(&mut s, None, false, false);
+        assert_eq!(s["cleanupPeriodDays"], json!(DEFAULT_CLEANUP_PERIOD_DAYS));
+    }
+
+    #[test]
+    fn cleanup_policy_shared_without_flag_never_touches_it() {
+        let mut s = json!({});
+        let lines = apply_cleanup_period(&mut s, None, true, false);
+        assert!(s.get("cleanupPeriodDays").is_none());
+        assert!(lines[0].contains("--cleanup-period-days 3650"), "{lines:?}");
+
+        for force in [false, true] {
+            let mut s = json!({"cleanupPeriodDays": 3650});
+            let lines = apply_cleanup_period(&mut s, None, true, force);
+            assert_eq!(s["cleanupPeriodDays"], json!(3650), "force={force}");
+            assert!(lines[0].contains("保留不動"), "{lines:?}");
+        }
     }
 
     #[test]
@@ -1327,7 +1523,7 @@ mod tests {
         let template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER)
             .join(".claude")
             .join("scripts");
-        patch_hooks(&mut s, &template, false, /*project=*/ true).unwrap();
+        patch_hooks(&mut s, Some(&template), false).unwrap();
         let cmd = s["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             .as_str()
             .unwrap();
@@ -1359,7 +1555,7 @@ mod tests {
                 }]
             }
         });
-        patch_hooks(&mut s, Path::new("/tmp"), false, false).unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         let session_start = s["hooks"]["SessionStart"].as_array().unwrap();
         assert_eq!(session_start.len(), 2);
         assert_eq!(session_start[0]["hooks"][0]["command"], "user-script.sh");
@@ -1380,7 +1576,7 @@ mod tests {
                 }]
             }
         });
-        let action = patch_hooks(&mut s, Path::new("/tmp"), /*force=*/ true, false).unwrap();
+        let action = patch_hooks(&mut s, None, /*force=*/ true).unwrap();
         assert_eq!(action, "重置（--force）");
         // User's PreToolUse should be gone entirely (we don't write to it in non-project mode)
         assert!(s["hooks"].get("PreToolUse").is_none());
@@ -1393,9 +1589,9 @@ mod tests {
     #[test]
     fn patch_hooks_replaces_own_prior_entries() {
         let mut s = json!({});
-        patch_hooks(&mut s, Path::new("/tmp/v1"), false, false).unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         let len_after_first = s["hooks"]["SessionStart"].as_array().unwrap().len();
-        let action = patch_hooks(&mut s, Path::new("/tmp/v2"), false, false).unwrap();
+        let action = patch_hooks(&mut s, None, false).unwrap();
         assert_eq!(action, "更新");
         let len_after_second = s["hooks"]["SessionStart"].as_array().unwrap().len();
         assert_eq!(len_after_first, len_after_second);
@@ -1404,7 +1600,7 @@ mod tests {
     #[test]
     fn unpatch_hooks_removes_only_codeforge() {
         let mut s = json!({});
-        patch_hooks(&mut s, Path::new("/tmp"), false, false).unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         // Add a user hook alongside
         let user = json!({
             "matcher": "",
@@ -1454,10 +1650,391 @@ mod tests {
     #[test]
     fn unpatch_hooks_collapses_empty_root() {
         let mut s = json!({});
-        patch_hooks(&mut s, Path::new("/tmp"), false, false).unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         unpatch_hooks(&mut s).unwrap();
         // No user entries anywhere → the entire `hooks` key should be removed
         assert!(s.as_object().unwrap().get("hooks").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_through_symlink_keeps_link() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dot = tmp.path().join("dot");
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&dot).unwrap();
+        fs::create_dir_all(&home).unwrap();
+        let target = dot.join("settings.json");
+        fs::write(&target, "{}\n").unwrap();
+        let link = home.join("settings.json");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        write_settings_atomic(&link, &json!({"a": 1})).unwrap();
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the link must stay a symlink"
+        );
+        let written: Value = serde_json::from_str(&fs::read_to_string(&target).unwrap()).unwrap();
+        assert_eq!(
+            written,
+            json!({"a": 1}),
+            "the content lands in the link target"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_through_relative_symlink_chain() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dot = tmp.path().join("dot");
+        fs::create_dir_all(&dot).unwrap();
+        fs::write(dot.join("settings.json"), "{}\n").unwrap();
+        // home/settings.json -> mid.json -> ../dot/settings.json (relative, chained)
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        std::os::unix::fs::symlink("../dot/settings.json", home.join("mid.json")).unwrap();
+        std::os::unix::fs::symlink("mid.json", home.join("settings.json")).unwrap();
+
+        write_settings_atomic(&home.join("settings.json"), &json!({"b": 2})).unwrap();
+
+        assert!(fs::symlink_metadata(home.join("settings.json"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(fs::symlink_metadata(home.join("mid.json"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        let written: Value =
+            serde_json::from_str(&fs::read_to_string(dot.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(written, json!({"b": 2}));
+        // no tmp file left behind next to the target
+        let leftovers: Vec<_> = fs::read_dir(&dot)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn write_plain_file_unchanged_behaviour() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}\n").unwrap();
+        write_settings_atomic(&path, &json!({"c": 3})).unwrap();
+        assert!(!fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{\n  \"c\": 3\n}\n");
+    }
+
+    #[cfg(unix)]
+    fn dangling_link(tmp: &Path) -> PathBuf {
+        let link = tmp.join("settings.json");
+        std::os::unix::fs::symlink(tmp.join("gone/settings.json"), &link).unwrap();
+        link
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_refused_by_install_and_write() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let link = dangling_link(tmp.path());
+        let err = check_settings_path(&link).unwrap_err().to_string();
+        assert!(err.contains("不存在") && err.contains("gone"), "{err}");
+        assert!(write_settings_atomic(&link, &json!({})).is_err());
+        // the link itself is untouched
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+
+        let opts = InstallOpts {
+            hooks: true,
+            all: false,
+            subagent_statusline: false,
+            project_hooks: false,
+            dry_run: true,
+            force: false,
+            yes: false,
+            settings_path: Some(link.clone()),
+            quiet: true,
+            cleanup_period_days: None,
+        };
+        assert!(
+            run(opts).is_err(),
+            "dry-run must not read a dangling link as empty"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_refused_by_uninstall() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let link = dangling_link(tmp.path());
+        let res = run_uninstall(UninstallOpts {
+            statusline: true,
+            hooks: false,
+            settings_path: Some(link.clone()),
+            quiet: true,
+        });
+        assert!(
+            res.is_err(),
+            "uninstall must not report nothing-to-do on a dangling link"
+        );
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[test]
+    fn shared_settings_plain_file_is_not_shared() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}").unwrap();
+        let s = shared_settings(&path);
+        assert_eq!(s, SharedSettings::default());
+        assert!(shared_warning_lines(&path, &s).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shared_settings_detects_symlink() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let target = tmp.path().join("real.json");
+        fs::write(&target, "{}").unwrap();
+        let link = tmp.path().join("settings.json");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let s = shared_settings(&link);
+        assert_eq!(s.symlink_target, Some(fs::canonicalize(&target).unwrap()));
+        assert!(s.is_shared());
+        let lines = shared_warning_lines(&link, &s);
+        assert!(lines[0].contains("symlink"));
+    }
+
+    #[test]
+    fn shared_settings_detects_git_tracked_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = tmp.path();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(args)
+                .env_remove("GIT_DIR")
+                .env_remove("GIT_WORK_TREE")
+                .env_remove("GIT_INDEX_FILE")
+                .output()
+        };
+        match git(&["init", "-q"]) {
+            Ok(o) if o.status.success() => {}
+            _ => {
+                eprintln!("skip: git not available");
+                return;
+            }
+        }
+        let path = repo.join("settings.json");
+        fs::write(&path, "{}").unwrap();
+        // untracked → not shared
+        assert_eq!(shared_settings(&path).git_repo, None);
+        git(&["add", "settings.json"]).unwrap();
+        let s = shared_settings(&path);
+        assert_eq!(
+            s.git_repo.map(|p| fs::canonicalize(p).unwrap()),
+            Some(fs::canonicalize(repo).unwrap())
+        );
+        assert!(shared_warning_lines(&path, &shared_settings(&path))
+            .iter()
+            .any(|l| l.contains("git 版控")));
+    }
+
+    fn all_hook_entries(s: &Value) -> Vec<Value> {
+        s["hooks"]
+            .as_object()
+            .unwrap()
+            .values()
+            .flat_map(|groups| groups.as_array().unwrap().clone())
+            .flat_map(|g| g["hooks"].as_array().unwrap().clone())
+            .collect()
+    }
+
+    #[test]
+    fn global_hook_commands_carry_no_machine_path_or_version() {
+        let mut s = json!({});
+        patch_hooks(&mut s, None, false).unwrap();
+        let version = env!("CARGO_PKG_VERSION");
+        let entries = all_hook_entries(&s);
+        assert!(!entries.is_empty());
+        for e in &entries {
+            let cmd = e["command"].as_str().unwrap();
+            assert!(cmd.starts_with("codeforge "), "{cmd}");
+            for bad in [
+                "$HOME",
+                "~",
+                "/home/",
+                "/Users/",
+                "/codeforge/hooks/",
+                "node ",
+            ] {
+                assert!(!cmd.contains(bad), "{cmd} contains {bad}");
+            }
+            assert!(!cmd.contains(version), "{cmd} contains the package version");
+            // The only '/' allowed is the existing `2>/dev/null` redirect.
+            assert!(
+                cmd.replace("2>/dev/null", "").find('/').is_none(),
+                "absolute path in {cmd}"
+            );
+            assert_eq!(e[MARKER_KEY], GLOBAL_MARKER);
+        }
+        let cmds: Vec<&str> = entries
+            .iter()
+            .map(|e| e["command"].as_str().unwrap())
+            .collect();
+        assert!(cmds.contains(&"codeforge hook emit-session session_start"));
+        assert!(cmds.contains(&"codeforge hook emit-session session_end"));
+        assert_eq!(
+            cmds.iter()
+                .filter(|c| **c == "codeforge hook session-digest")
+                .count(),
+            2,
+            "SessionEnd + PreCompact"
+        );
+    }
+
+    #[test]
+    fn global_install_is_byte_identical_across_runs() {
+        let run_once = |s: &mut Value| {
+            patch_hooks(s, None, false).unwrap();
+            patch_statusline(s, "codeforge statusline", false).unwrap();
+            patch_subagent_statusline(s, "codeforge subagent-statusline", false).unwrap();
+        };
+        let mut a = json!({"model": "x"});
+        run_once(&mut a);
+        let first = serde_json::to_string_pretty(&a).unwrap();
+        run_once(&mut a);
+        assert_eq!(first, serde_json::to_string_pretty(&a).unwrap());
+        assert_eq!(a["statusLine"][MARKER_KEY], GLOBAL_MARKER);
+        assert_eq!(a["subagentStatusLine"][MARKER_KEY], GLOBAL_MARKER);
+        assert!(!first.contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn project_hooks_output_unchanged() {
+        // Byte-for-byte what --project-hooks wrote before B35 (marker keeps the
+        // package version; commands use ${CLAUDE_PROJECT_DIR}).
+        let mut s = json!({});
+        let template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER)
+            .join(".claude")
+            .join("scripts");
+        patch_hooks(&mut s, Some(&template), false).unwrap();
+        let marker = format!("codeforge@{}", env!("CARGO_PKG_VERSION"));
+        let expected = json!({
+            "hooks": {
+                "SessionStart": [{"matcher": "", "hooks": [{
+                    "type": "command",
+                    "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/check-improvements.js",
+                    "timeout": 10000,
+                    MARKER_KEY: marker,
+                }]}],
+                "PreToolUse": [{"matcher": "Edit|Write|Bash", "hooks": [{
+                    "type": "command",
+                    "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/check-dev-flow.js",
+                    "timeout": 5000,
+                    MARKER_KEY: marker,
+                }]}],
+            }
+        });
+        assert_eq!(s, expected);
+    }
+
+    #[test]
+    fn upgrade_from_versioned_install_leaves_only_new_form() {
+        // What a v0.0.6 `install --hooks` wrote: marked, versioned node paths.
+        let old = "codeforge@0.0.6";
+        let p = "/home/u/.local/share/codeforge/hooks/0.0.6";
+        let mut s = json!({
+            "statusLine": {"type": "command", "command": "/home/u/.cargo/bin/codeforge statusline", MARKER_KEY: old},
+            "hooks": {
+                "SessionStart": [
+                    {"matcher": "", "hooks": [{"type": "command", "command": "user.sh"}]},
+                    {"matcher": "", "hooks": [
+                        {"type": "command", "command": format!("node {p}/emit-session.js session_start"), "timeout": 3000, MARKER_KEY: old},
+                        {"type": "command", "command": "codeforge memory context --hook 2>/dev/null || true", "timeout": 10000, MARKER_KEY: old}
+                    ]}
+                ],
+                "SessionEnd": [{"matcher": "", "hooks": [
+                    {"type": "command", "command": format!("node {p}/emit-session.js session_end"), "timeout": 3000, MARKER_KEY: old},
+                    {"type": "command", "command": format!("node {p}/session-digest.js"), "timeout": 30000, MARKER_KEY: old}
+                ]}],
+                "PreCompact": [{"matcher": "", "hooks": [
+                    {"type": "command", "command": format!("node {p}/session-digest.js"), "timeout": 30000, MARKER_KEY: old}
+                ]}]
+            }
+        });
+        patch_hooks(&mut s, None, false).unwrap();
+        patch_statusline(&mut s, "codeforge statusline", false).unwrap();
+        let all = serde_json::to_string(&s).unwrap();
+        assert!(!all.contains("0.0.6"), "old entries must be swept: {all}");
+        assert!(!all.contains("node "), "{all}");
+        // one codeforge group per hook type (no stacking), user hook kept
+        for ty in ["SessionStart", "SessionEnd", "PreCompact"] {
+            let ours = s["hooks"][ty]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|g| group_is_codeforge(g))
+                .count();
+            assert_eq!(ours, 1, "{ty}");
+        }
+        assert!(all.contains("user.sh"));
+        assert_eq!(s["statusLine"]["command"], "codeforge statusline");
+    }
+
+    #[test]
+    fn statusline_command_cases() {
+        let exe = Path::new("/opt/cf/codeforge");
+        // shared file: always the PATH form, whatever PATH says
+        assert_eq!(
+            statusline_command(exe, false, true, "statusline"),
+            "codeforge statusline"
+        );
+        assert_eq!(
+            statusline_command(exe, true, true, "subagent-statusline"),
+            "codeforge subagent-statusline"
+        );
+        // local file, PATH resolves to this binary: PATH form
+        assert_eq!(
+            statusline_command(exe, true, false, "statusline"),
+            "codeforge statusline"
+        );
+        // local file, PATH does not: absolute path (current behaviour)
+        assert_eq!(
+            statusline_command(exe, false, false, "statusline"),
+            "/opt/cf/codeforge statusline"
+        );
+    }
+
+    #[test]
+    fn same_binary_compares_canonical_paths() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let a = tmp.path().join("codeforge");
+        fs::write(&a, "").unwrap();
+        assert!(same_binary(Some(&a), &a));
+        assert!(same_binary(
+            Some(&tmp.path().join(".").join("codeforge")),
+            &a
+        ));
+        assert!(!same_binary(None, &a));
+        let b = tmp.path().join("other");
+        fs::write(&b, "").unwrap();
+        assert!(!same_binary(Some(&b), &a));
     }
 
     #[test]

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "logical_plan_id": "install-stable-paths-2026-11-01",
+  "generation": 1,
+  "findings": [
+    {"fingerprint": "d0ae8955ecef2a095c8b2ae5fefc84cb84a8912d1fb30a931d1c798ffbaaca30", "candidate_blocker": true, "disposition": "accepted_blocker",
+     "rationale": "Correct: patch_hooks passes current_marker() to both branches (install.rs patch_hooks), so a constant would change --project-hooks output against R3. Folded: §2.5 now scopes codeforge@1 to the global install; P2 step 4 adds GLOBAL_MARKER, keeps current_marker() for --project-hooks, and adds a byte-identical project-output regression test."},
+    {"fingerprint": "f9e7eec55497dbfb0943babaf96959207f441f27442379cb1a1e6b05dc3d9549", "candidate_blocker": true, "disposition": "accepted_blocker",
+     "rationale": "Same defect as d0ae8955 from the other seat; resolved with the reviewer's option (b): marker chosen by the project parameter, project mode keeps codeforge@<CARGO_PKG_VERSION>, statusLine/subagentStatusLine (global-only callers) use GLOBAL_MARKER. P2 step 4, §2.5."},
+    {"fingerprint": "f27944a98bafb552b6ef971a73b6320c2b0e93eee5f6bec4dbea41a5639bc659", "candidate_blocker": true, "disposition": "accepted_blocker",
+     "rationale": "Correct: the existing dream/ship/memory/mnemos-cli entries contain '2>/dev/null', so a contains('/') assertion contradicts keeping them unchanged. Folded: KR1 now asserts emit-session/session-digest use 'codeforge hook' and that no global command contains an absolute path, $HOME, ~, /codeforge/hooks/ or a version string; P2 step 8 forbids contains('/')."},
+    {"fingerprint": "2b091de53c35629c9712a1e381fc04430f1acca0be0b4570c63af62eca701116", "candidate_blocker": false, "disposition": "accepted_nonblocking",
+     "rationale": "Folded into P2 step 2: Ok(code) -> exit(code), Err -> exit(1) with a message; clap usage errors keep clap's 2 because settings.json always passes a name, so that path is never the hook execution path (documented in README)."},
+    {"fingerprint": "fa6e0c4d4a7ad8f04c1fc29445931b5b9b3776a5e8ca44183a0f7648947e873c", "candidate_blocker": false, "disposition": "accepted_nonblocking",
+     "rationale": "Same exit-mapping point as 2b091de5; folded in P2 step 2 with the same mapping; the node-missing and unknown-name tests returning 1 were already in P2 step 8 / KR6."},
+    {"fingerprint": "2fb1205a54176278d545da7c7e15972842ab0e804c1a5993cb7f31a02683bc39", "candidate_blocker": false, "disposition": "accepted_nonblocking",
+     "rationale": "Correct that KR2 via patch_statusline cannot see the chooser. Folded: P2 step 5 extracts statusline_command(exe, path_hit, shared, sub) as a pure function with one unit test per case; run() only resolves PATH."},
+    {"fingerprint": "8722faf524aaf280e7fd91d2e6c47c485844cbddec9a6e7b86041478476ef7ed", "candidate_blocker": false, "disposition": "accepted_nonblocking",
+     "rationale": "Correct: load_settings uses path.exists(), false for a dangling link, and dry-run returns before write. Folded: P1 step 2 adds check_settings_path() before load_settings in run()/run_uninstall(), shared by dry-run and real writes."}
+  ]
+}
