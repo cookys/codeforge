@@ -6,12 +6,12 @@
 
 | Project | Description | Started |
 |---------|------------|---------|
-| [statusline-band](2026-10-31-statusline-band/README.md) | forge-stats 三欄 band（tok/s｜像素 Ferris｜記憶/腦）+ 版面切換 + 心跳；statusline 偵測同 session 心跳自動縮成精簡版。已合併 `5fac514`；剩 owner 目視，等 autopilot band 疊加（X1） | 2026-10-31 |
 
 ## Archived
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [statusline-band](_archive/2026-10-31-statusline-band/README.md) | forge-stats band（Ferris／寵物／速度／最近請求／記憶與大腦，依寬度 1–5 欄、依列數分 label/summary/mini/full 四級）+ `/forge-stats layout band\|pane` + mod 心跳；statusline 偵測同 session 心跳縮成精簡版。後續演進成 autopilot 分頁列裡的 forge 分頁（`05a06af`、keyed Box 標籤 `c5165cf`）。owner 2026-11-01 目視通過。速度移交 autopilot → B32，納編 → B31 | 2026-11-01 ✅ |
 | [pixel-pet](_archive/2026-10-31-pixel-pet/README.md) | Ferris 24×24 兩幀像素 sprite（`pet.json` `village.sprite`）+ forge-stats 面板 Raster 半格待機動畫；mod 收進 `.claude/skills/forge-stats/` | 2026-10-31 |
 | [brain-indicators](_archive/2026-06-23-brain-indicators/README.md) | statusline 兩顆真實狀態燈（本地腦 L1 + 央腦 Mnemos liveness/readiness）+ `codeforge doctor` + `mnemos-cli probe`。雙軸健康（probe/ship，防 OR 假綠）、per-machine 雙快取、detached probe（process_group 隔離 + O_EXCL rename-steal 鎖防 herd）、NO_COLOR 雙路徑 + 6 級降級階梯、ship 順風車 readiness 快取。3 輪設計 review（R1 翻盤前提：Mnemos /health 早已存在）+ 6 phase per-task review + whole-branch review。817 tests、clippy --all-targets 綠、零新 dep。BACKLOG B21-24 | 2026-06-23 ✅ |
 | [doc-drift-system](_archive/2026-06-18-doc-drift-system/README.md) | 文件↔code drift 全套 — `doc/concepts.md` + API-key fallback 修正 → 7 輪 LLM audit 修 ~120 條 drift（48+4+22+11+13+14+8+10）→ 做成可重用 Workflow + dev-flow 觸發 → 升級成可攜 `autopilot:doc-sync` skill（v2.19→v2.20，兩層模型）→ **確定性 gate** `scripts/check-doc-drift.py`（links/fences/version-sync/cli-surface/roadmap，5 檢查）+ CI job。核心發現：LLM sweep 是**探勘非 gate**，loop-to-zero 不收斂（非確定 finder + 修復自引入錯，commentary 真錯潛伏 6 輪）；可靠性來自確定性檢查（記於 `.claude/doc-audit-state.json`）。兩 repo gate 全綠（codeforge 5/5、autopilot preflight 16/16）；spec design-target → BACKLOG B18 | 2026-06-22 ✅ |
