@@ -338,7 +338,7 @@ mod tests {
         assert!(err(|s| s.height = 22).contains("24x24"));
         assert!(err(|s| s.width = 16).contains("24x24"));
         assert!(err(|s| s.transparent = ' ').contains("transparent"));
-        assert!(err(|s| s.frames = &FERRIS.frames[..1]).contains("2 frames"));
+        assert!(err(|s| s.frames = &FERRIS.frames[..1]).contains("2 frames")); // cjk-ok: slices the frame array, not a string
         assert!(err(|s| s.frame_ms = 100).contains("500"));
         assert!(err(|s| s.palette = &[('o', [200, 95, 0])]).contains("cube"));
         assert!(err(|s| s.palette = &[('é', [215, 95, 0])]).contains("ASCII"));
@@ -355,7 +355,7 @@ mod tests {
         assert!(broken(|s| s.frames = alien)
             .unwrap_err()
             .contains("not in the palette"));
-        let few = &FERRIS.frames[1][..23];
+        let few = &FERRIS.frames[1][..23]; // cjk-ok: slices a frame's row array, not a string
         let few: &'static [&'static [&'static str]] =
             Box::leak(vec![FERRIS.frames[0], few].into_boxed_slice());
         assert!(broken(|s| s.frames = few).unwrap_err().contains("rows"));
