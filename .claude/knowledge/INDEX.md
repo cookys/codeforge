@@ -4,6 +4,7 @@
 
 | Date | Category | Title | File |
 |------|----------|-------|------|
+| 2026-11-02 | env | settings.json symlink atomic write / hook command forwarder subcommand / shared dotfiles settings：rename 會把 symlink 換成一般檔 → 先 canonicalize 寫 target；hook 用 `codeforge hook` 子命令不帶路徑版號、轉發器錯誤 exit 1 不是 2；共用檔偵測（git 子行程 stdio null、清 GIT_*） | `environment.md` |
 | 2026-10-31 | arch | AbovePrompt band layout / statusline heartbeat detection：band 一實例、上層不呼叫 next 就輪不到；mod 心跳檔讓 statusline 縮成 2 行 | `harness-patterns.md` |
 | 2026-10-31 | api | pixel sprite format / half-block raster animation / terminal pixel art palette：調色盤+字元列、`▀` fg=上 bg=下、xterm-256 cube 色、`$.clock.every(500)`+`$.ui.blit`（幀放模組變數）、Raster 用 `e.surface==='terminal'` 判斷 | `harness-patterns.md` |
 | 2026-10-31 | build | mod 測試不能 import JSON／外掛資料夾外的檔（用 `.ts` 鏡像 + Rust 比對）；`$.clock.now()` 未模擬會讓整個 session.start 被 skip；AbovePrompt 讓出要有帶 matcher 的下層替身 | `harness-patterns.md` |
@@ -13,7 +14,6 @@
 | 2026-06-23 | env | `install --all` 先 patch statusLine、衝突就 bail 在 hooks 之前 → 整個中止、hooks 沒裝；要 hooks 必落地就 fallback `install --hooks`（bootstrap step1 即此） | `environment.md` |
 | 2026-06-23 | env | rustfmt drift → 一律走 pinned `scripts/fmt.sh`（單一版本來源、self-install、只 pin fmt 不動 build），永不裸跑 `cargo fmt`；CI fmt job + S/L/H gate 都跑 `--check` | `environment.md` |
 | 2026-06-23 | gate | 寫 grep/awk 確定性 gate 三陷阱：比對原始行不 strip inline comment（`//`-in-string 漏抓）、allow-marker 加錨點（`cjk-ok:`）、精準優先於召回（誤報會被停用） | `gate-patterns.md` |
-| 2026-06-22 | env | `git tag v*.*.*` 觸發 release.yml 發布 pipeline — 別為文件一致性打 tag（codeforge + autopilot 皆 release-on-tag） | `environment.md` |
 
 ## Knowledge Files
 
