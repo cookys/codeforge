@@ -94,6 +94,11 @@ pub fn run(opts: InstallOpts) -> Result<()> {
         opts.quiet,
         &format!("  目標 settings.json: {}", settings_path.display()),
     );
+    check_settings_path(&settings_path)?;
+    let shared = shared_settings(&settings_path);
+    for line in shared_warning_lines(&settings_path, &shared) {
+        say(opts.quiet, &line);
+    }
 
     let mut settings = load_settings(&settings_path)?;
 
@@ -180,6 +185,7 @@ pub fn run_uninstall(opts: UninstallOpts) -> Result<()> {
         .map(Ok)
         .unwrap_or_else(default_global_settings_path)?;
 
+    check_settings_path(&settings_path)?;
     if !settings_path.exists() {
         say(
             opts.quiet,
@@ -323,11 +329,157 @@ fn load_settings(path: &Path) -> Result<Value> {
     }
 }
 
+/// Refuse a settings path that is a dangling symlink. `Path::exists()` is false
+/// for one, so without this check `load_settings` would read it as an empty file
+/// (dry-run prints a fake success) and `run_uninstall` would report "nothing to do".
+fn check_settings_path(path: &Path) -> Result<()> {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return Ok(()); // missing entirely: load_settings creates it
+    };
+    if meta.file_type().is_symlink() && fs::canonicalize(path).is_err() {
+        let dest = fs::read_link(path)
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|_| "?".to_string());
+        bail!(
+            "settings.json 是指向不存在檔案的 symlink：{} → {}（請先修好連結或它指向的檔案）",
+            path.display(),
+            dest
+        );
+    }
+    Ok(())
+}
+
+/// The file a write to `path` must land in: the final target when `path` is a
+/// symlink (relative links and chains resolved), else `path` itself. Renaming
+/// over the link would replace the link with a regular file and detach it from
+/// e.g. a dotfiles repo.
+fn resolve_write_target(path: &Path) -> Result<PathBuf> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            check_settings_path(path)?;
+            fs::canonicalize(path).with_context(|| format!("解析 symlink {} 失敗", path.display()))
+        }
+        _ => Ok(path.to_path_buf()),
+    }
+}
+
 fn write_settings_atomic(path: &Path, settings: &Value) -> Result<()> {
-    let tmp = path.with_extension("json.tmp");
+    let target = resolve_write_target(path)?;
+    let file_name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "settings.json".to_string());
+    let tmp = target.with_file_name(format!("{file_name}.tmp.{}", std::process::id()));
     let pretty = serde_json::to_string_pretty(settings)? + "\n";
-    fs::write(&tmp, pretty).with_context(|| format!("寫入 {} 失敗", tmp.display()))?;
-    fs::rename(&tmp, path).with_context(|| format!("rename 到 {} 失敗", path.display()))
+
+    let result = (|| -> Result<()> {
+        let mut f = fs::File::create(&tmp)
+            .with_context(|| format!("寫入 {} 失敗（目錄不可寫？）", target.display()))?;
+        f.write_all(pretty.as_bytes())
+            .with_context(|| format!("寫入 {} 失敗", tmp.display()))?;
+        f.sync_all()
+            .with_context(|| format!("寫入 {} 失敗", tmp.display()))?;
+        drop(f);
+        if let Ok(meta) = fs::metadata(&target) {
+            let _ = fs::set_permissions(&tmp, meta.permissions());
+        }
+        fs::rename(&tmp, &target).with_context(|| format!("rename 到 {} 失敗", target.display()))
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
+/// Where a settings.json is shared with other machines: a symlink (typically into a
+/// dotfiles repo) and/or a file tracked by git. Both mean whatever install writes
+/// spreads beyond this machine.
+#[derive(Debug, Default, PartialEq)]
+struct SharedSettings {
+    symlink_target: Option<PathBuf>,
+    git_repo: Option<PathBuf>,
+}
+
+impl SharedSettings {
+    fn is_shared(&self) -> bool {
+        self.symlink_target.is_some() || self.git_repo.is_some()
+    }
+}
+
+fn shared_settings(path: &Path) -> SharedSettings {
+    let is_link = fs::symlink_metadata(path)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false);
+    let canonical = fs::canonicalize(path).ok();
+    let symlink_target = if is_link { canonical.clone() } else { None };
+    let git_repo = canonical.as_deref().and_then(git_tracking_repo);
+    SharedSettings {
+        symlink_target,
+        git_repo,
+    }
+}
+
+/// The repo root when `file` is tracked by git; `None` when it isn't, git is
+/// missing, or anything fails. git's own output never reaches the user (it is
+/// English, and `ls-files --error-unmatch` prints a `fatal:` for every untracked
+/// file), and inherited `GIT_*` variables must not redirect `-C` to another repo.
+fn git_tracking_repo(file: &Path) -> Option<PathBuf> {
+    use std::process::{Command, Stdio};
+    let parent = file.parent()?;
+    let name = file.file_name()?;
+    let git = |args: &[&std::ffi::OsStr]| {
+        let mut c = Command::new("git");
+        c.arg("-C")
+            .arg(parent)
+            .args(args)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .stdin(Stdio::null())
+            .stderr(Stdio::null());
+        c
+    };
+    let tracked = git(&[
+        "ls-files".as_ref(),
+        "--error-unmatch".as_ref(),
+        "--".as_ref(),
+        name,
+    ])
+    .stdout(Stdio::null())
+    .status()
+    .ok()?
+    .success();
+    if !tracked {
+        return None;
+    }
+    let out = git(&["rev-parse".as_ref(), "--show-toplevel".as_ref()])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let root = String::from_utf8(out.stdout).ok()?;
+    let root = root.trim();
+    (!root.is_empty()).then(|| PathBuf::from(root))
+}
+
+fn shared_warning_lines(path: &Path, shared: &SharedSettings) -> Vec<String> {
+    let mut lines = Vec::new();
+    if let Some(t) = &shared.symlink_target {
+        lines.push(format!("⚠ settings.json 是 symlink → {}", t.display()));
+    }
+    if let Some(repo) = &shared.git_repo {
+        let shown = shared.symlink_target.as_deref().unwrap_or(path);
+        lines.push(format!(
+            "⚠ {} 在 git 版控中（repo：{}）：寫入的內容會隨 commit 擴散到其他機器",
+            shown.display(),
+            repo.display()
+        ));
+    }
+    if shared.is_shared() {
+        lines.push("  寫入會直接改 target 檔案；hook 指令不含本機路徑，可以安全共用".to_string());
+    }
+    lines
 }
 
 fn default_global_settings_path() -> Result<PathBuf> {
@@ -1458,6 +1610,204 @@ mod tests {
         unpatch_hooks(&mut s).unwrap();
         // No user entries anywhere → the entire `hooks` key should be removed
         assert!(s.as_object().unwrap().get("hooks").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_through_symlink_keeps_link() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dot = tmp.path().join("dot");
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&dot).unwrap();
+        fs::create_dir_all(&home).unwrap();
+        let target = dot.join("settings.json");
+        fs::write(&target, "{}\n").unwrap();
+        let link = home.join("settings.json");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        write_settings_atomic(&link, &json!({"a": 1})).unwrap();
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the link must stay a symlink"
+        );
+        let written: Value = serde_json::from_str(&fs::read_to_string(&target).unwrap()).unwrap();
+        assert_eq!(
+            written,
+            json!({"a": 1}),
+            "the content lands in the link target"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_through_relative_symlink_chain() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dot = tmp.path().join("dot");
+        fs::create_dir_all(&dot).unwrap();
+        fs::write(dot.join("settings.json"), "{}\n").unwrap();
+        // home/settings.json -> mid.json -> ../dot/settings.json (relative, chained)
+        let home = tmp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        std::os::unix::fs::symlink("../dot/settings.json", home.join("mid.json")).unwrap();
+        std::os::unix::fs::symlink("mid.json", home.join("settings.json")).unwrap();
+
+        write_settings_atomic(&home.join("settings.json"), &json!({"b": 2})).unwrap();
+
+        assert!(fs::symlink_metadata(home.join("settings.json"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(fs::symlink_metadata(home.join("mid.json"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        let written: Value =
+            serde_json::from_str(&fs::read_to_string(dot.join("settings.json")).unwrap()).unwrap();
+        assert_eq!(written, json!({"b": 2}));
+        // no tmp file left behind next to the target
+        let leftovers: Vec<_> = fs::read_dir(&dot)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn write_plain_file_unchanged_behaviour() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}\n").unwrap();
+        write_settings_atomic(&path, &json!({"c": 3})).unwrap();
+        assert!(!fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "{\n  \"c\": 3\n}\n");
+    }
+
+    #[cfg(unix)]
+    fn dangling_link(tmp: &Path) -> PathBuf {
+        let link = tmp.join("settings.json");
+        std::os::unix::fs::symlink(tmp.join("gone/settings.json"), &link).unwrap();
+        link
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_refused_by_install_and_write() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let link = dangling_link(tmp.path());
+        let err = check_settings_path(&link).unwrap_err().to_string();
+        assert!(err.contains("不存在") && err.contains("gone"), "{err}");
+        assert!(write_settings_atomic(&link, &json!({})).is_err());
+        // the link itself is untouched
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+
+        let opts = InstallOpts {
+            hooks: true,
+            all: false,
+            subagent_statusline: false,
+            project_hooks: false,
+            dry_run: true,
+            force: false,
+            yes: false,
+            settings_path: Some(link.clone()),
+            quiet: true,
+        };
+        assert!(
+            run(opts).is_err(),
+            "dry-run must not read a dangling link as empty"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_refused_by_uninstall() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let link = dangling_link(tmp.path());
+        let res = run_uninstall(UninstallOpts {
+            statusline: true,
+            hooks: false,
+            settings_path: Some(link.clone()),
+            quiet: true,
+        });
+        assert!(
+            res.is_err(),
+            "uninstall must not report nothing-to-do on a dangling link"
+        );
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[test]
+    fn shared_settings_plain_file_is_not_shared() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}").unwrap();
+        let s = shared_settings(&path);
+        assert_eq!(s, SharedSettings::default());
+        assert!(shared_warning_lines(&path, &s).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shared_settings_detects_symlink() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let target = tmp.path().join("real.json");
+        fs::write(&target, "{}").unwrap();
+        let link = tmp.path().join("settings.json");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let s = shared_settings(&link);
+        assert_eq!(s.symlink_target, Some(fs::canonicalize(&target).unwrap()));
+        assert!(s.is_shared());
+        let lines = shared_warning_lines(&link, &s);
+        assert!(lines[0].contains("symlink"));
+    }
+
+    #[test]
+    fn shared_settings_detects_git_tracked_file() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let repo = tmp.path();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(args)
+                .env_remove("GIT_DIR")
+                .env_remove("GIT_WORK_TREE")
+                .env_remove("GIT_INDEX_FILE")
+                .output()
+        };
+        match git(&["init", "-q"]) {
+            Ok(o) if o.status.success() => {}
+            _ => {
+                eprintln!("skip: git not available");
+                return;
+            }
+        }
+        let path = repo.join("settings.json");
+        fs::write(&path, "{}").unwrap();
+        // untracked → not shared
+        assert_eq!(shared_settings(&path).git_repo, None);
+        git(&["add", "settings.json"]).unwrap();
+        let s = shared_settings(&path);
+        assert_eq!(
+            s.git_repo.map(|p| fs::canonicalize(p).unwrap()),
+            Some(fs::canonicalize(repo).unwrap())
+        );
+        assert!(shared_warning_lines(&path, &shared_settings(&path))
+            .iter()
+            .any(|l| l.contains("git 版控")));
     }
 
     #[test]
