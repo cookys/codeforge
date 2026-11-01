@@ -37,8 +37,8 @@ Targets:
 
 - `x86_64-unknown-linux-gnu` (ubuntu-22.04, glibc 2.35)
 - `aarch64-unknown-linux-gnu` (cross-compile via `cross`)
-- `x86_64-apple-darwin` (macos-13, Intel)
-- `aarch64-apple-darwin` (macos-14, M-series native)
+- `x86_64-apple-darwin` (macos-15, cross-compiled on Apple Silicon)
+- `aarch64-apple-darwin` (macos-15, M-series native)
 
 ## 2. File inventory
 
