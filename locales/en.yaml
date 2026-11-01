@@ -1,9 +1,6 @@
 # CodeForge UI strings — English (base locale)
 # All keys must exist here. Other locales only need to override what they translate.
 
-# UI chrome
-# ui.status_inactive not used: statusline only renders when CC is active
-
 # Stat labels — no trailing colon (V2 statusline style: "ATK 18" reads as a
 # label-value pair via color/weight contrast, not punctuation).
 stat.atk: "ATK"

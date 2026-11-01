@@ -4,6 +4,8 @@
 - **Size**: M · branch `feature/forge-columns` · base `6f7f8d4`
 - **上層專案**: `doc/projects/_archive/2026-10-31-statusline-band/`
 
+> **2026-11-01 已被取代的部分**：心跳的 `pet_shown` 與「blit 成功才縮」的規則已拿掉，statusline 只看 `layout: band`；分頁標籤改為 keyed Box。現行規則以 `doc/specs/codeforge-mod-ui.md` §7 為準。
+
 ## 0. 背景
 
 owner（2026-10-31，卡 d-7ca99c54 後的訊息）：「你可以做偵測寬度自動依程度擺上欄位嗎？1/2/3/4/5 這樣？」

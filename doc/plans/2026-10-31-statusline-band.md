@@ -2,6 +2,7 @@
 
 > logical_plan_id: `codeforge-statusline-band-2026-10-31` · size L · branch `feature/statusline-band`
 > Project: `doc/projects/_archive/2026-10-31-statusline-band/README.md`
+> **2026-11-01 已被取代的部分**：心跳的 `pet_shown` 與「blit 成功才縮」的規則已拿掉，statusline 只看 `layout: band`；分頁標籤改為 keyed Box。現行規則以 `doc/specs/codeforge-mod-ui.md` §7 為準。
 
 ## 0. Context / thesis
 

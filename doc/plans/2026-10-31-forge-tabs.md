@@ -4,6 +4,8 @@
 - **Size**: M · branch `feature/forge-tabs` · base `2ae4d00`
 - **上層專案**: `doc/projects/_archive/2026-10-31-statusline-band/`（「分頁協定」一列）
 
+> **2026-11-01 已被取代的部分**：心跳的 `pet_shown` 與「blit 成功才縮」的規則已拿掉，statusline 只看 `layout: band`；分頁標籤改為 keyed Box。現行規則以 `doc/specs/codeforge-mod-ui.md` §7 為準。
+
 ## 0. 背景
 
 owner 定案的 band（經 autopilot 轉達，msg `01M68S9Q1KQSPV2YDVZ8TXQS2G`）：第 1 列左邊 autopilot indicator，右邊分頁
