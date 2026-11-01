@@ -186,8 +186,10 @@ type Role = 'structure' | 'idle' | 'dim' | 'bold' | 'mono'
 type Seg = { text: string; role?: Role; color?: string }
 type Line = Seg[]
 
-// One colour per meaning in the band (forge-ux): SPEED for speed and for lights that are fine; the pet in its village colour.
-const SPEED = 'success'
+// One colour per meaning in the band (forge-ux), the same roles as autopilot's palette: SPEED (blue, autopilot's `running`)
+// for speed, OK (green, `done`) for lights that are fine; the pet in its village colour.
+const SPEED = 'suggestion'
+const OK = 'success'
 
 const seg = (text: string, role?: Role, color?: string): Seg => ({ text, ...(role ? { role } : {}), ...(color ? { color } : {}) })
 
@@ -323,12 +325,12 @@ function bandMemoryLines(lights: SessionView | null, tr: T): Line[] {
     hidden: GLYPH.empty,
   }
   // a light before each value: the colour says the state, the word says it again for whoever cannot tell the colour
-  const brainColor: Record<SessionView['brain'], string | undefined> = { ok: SPEED, degraded: 'warning', offline: 'error', pending: undefined, hidden: undefined }
+  const brainColor: Record<SessionView['brain'], string | undefined> = { ok: OK, degraded: 'warning', offline: 'error', pending: undefined, hidden: undefined }
   if (lights === null || lights.memory === 'hidden') {
     out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(GLYPH.empty, 'dim')])
   } else {
     const on = lights.memory === 'active'
-    out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(GLYPH.latest + ' ', on ? undefined : 'idle', on ? SPEED : undefined), seg(String(lights.active)), seg(` ${tr('entries')}`, 'dim')])
+    out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(GLYPH.latest + ' ', on ? undefined : 'idle', on ? OK : undefined), seg(String(lights.active)), seg(` ${tr('entries')}`, 'dim')])
   }
   if (lights === null || lights.brain === 'hidden') {
     out.push([seg(padRight(tr('brain'), 6), 'dim'), seg(GLYPH.empty, 'dim')])
