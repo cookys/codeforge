@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-11-02
+
+Install is safe on a shared `~/.claude/settings.json` — a symlink into a dotfiles repo, or a git-tracked file
+(B35).
+
+### Fixed
+
+- **A symlinked settings.json stays a symlink.** install, bootstrap and uninstall used to replace the link with a
+  regular file (tmp file renamed over the link), so the dotfiles copy never changed and the machine silently
+  detached from it. Writes now go to the link's final target. A dangling link is an error (dry-run included), never
+  overwritten or read as an empty file.
+- **Hook commands carry no machine path or version.** They were `node <data dir>/codeforge/hooks/<version>/….js`,
+  which broke on every other machine and changed on every upgrade.
+
+### Added
+
+- **`codeforge hook <name> [args…]`** runs a hook script embedded in the binary (`emit-session`,
+  `session-digest`): copied to a private per-version cache, run with `node`, stdin and the script's exit code passed
+  through. Its own failures exit 1, never 2 (blocking in Claude Code). Scripts now update with `self-update`.
+- **`--cleanup-period-days <DAYS>`** on `install` and `bootstrap`.
+- install warns when settings.json is a symlink or tracked by git.
+
+### Changed
+
+- Global entries use the hook commands above and the fixed marker `codeforge@1` (was `codeforge@<version>`), so
+  re-running install after an upgrade changes nothing. `--project-hooks` output is unchanged.
+- statusLine is `codeforge statusline` on a shared settings.json, and on a local one when PATH's `codeforge` is
+  this binary; otherwise the absolute path as before.
+- `cleanupPeriodDays` is no longer written into a shared settings.json unless you pass `--cleanup-period-days`
+  (an existing value there is left alone, `--force` included). A local file keeps the default 3650.
+- The hook script cache honours `CODEFORGE_DATA_DIR`.
+
+### Upgrading
+
+- Run `codeforge install --all` (or `codeforge bootstrap`) once to replace the versioned `node …/hooks/0.0.x/…`
+  entries; preview with `--dry-run`.
+- **Shared settings.json:** self-update **every** machine that reads the file to 0.0.7 first, then run bootstrap
+  on one machine and commit/sync the result. A machine still on 0.0.6 has no `codeforge hook` subcommand; clap
+  exits 2 there, which blocks compaction on PreCompact.
+
 ## [0.0.6] - 2026-11-01
 
 ### Changed

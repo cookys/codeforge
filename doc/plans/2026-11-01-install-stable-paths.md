@@ -183,4 +183,5 @@
 - Plan review g1（2026-11-01）：gpt-6.1-sol CONDITIONAL、grok-4.6 STOP；3 個 blocker 全部採納（marker 分流保住 `--project-hooks` 輸出；KR1 改成不誤傷既有 `2>/dev/null` 字串），4 個非阻擋意見也採納（hook 結果對應 exit code、statusLine 選擇抽成純函式、dangling symlink 在讀取階段擋下）。處置檔：`doc/plans/2026-11-01-install-stable-paths.g1-dispositions.json`。
 - Plan review g2（2026-11-02，terminal）：兩席 STOP；2 個 blocker（hook 子命令的 clap 錯誤也回 1、git 子行程不把英文輸出漏給使用者）與 4 個非阻擋（uninstall 的 dangling 判斷順序、`CODEFORGE_DATA_LOCAL_DIR` 覆寫、`exec_script` 的 stdin 參數化、共用檔升級順序）由 depth-0 直接裁決，全部採納並併入。處置檔：`doc/plans/2026-11-01-install-stable-paths.g2-dispositions.json`。
 - 凍結：`check-phase-review-receipt.js --plan-artifact <g2> --dispositions <g2-disp>` 對 g2 送審時的版本 exit 0。審查產物：`*.g1-review.json`、`*.g2-review.json`。
+- 實作偏離（2026-11-02）：資料目錄覆寫沿用既有的 `CODEFORGE_DATA_DIR`（`db::Context` 已用它，值為 `<data_local_dir>/codeforge`），不另造 `CODEFORGE_DATA_LOCAL_DIR`；快取路徑為 `$CODEFORGE_DATA_DIR/hooks/<ver>/`。行為與 P2 第 1 步相同。
 - Plan review manifest：`doc/plans/2026-11-01-install-stable-paths.plan-review-manifest.json`。rubric、各 generation 產物與處置在下方補上。
