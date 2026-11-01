@@ -47,6 +47,9 @@ pub struct PetBlueprint {
     pub asset_type: String,
 }
 
+// async_trait marks each generated method `#[must_use]` on a boxed future that is already
+// must_use; newer clippy (CI's rolling stable) flags that as double_must_use. Macro output, not ours.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait ClanContentProvider: Send + Sync {
     async fn available_clans(&self, user_id: UserId) -> anyhow::Result<Vec<ClanSummary>>;
