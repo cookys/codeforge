@@ -70,6 +70,9 @@ pub enum Commands {
         /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
         #[arg(long)]
         quiet: bool,
+        /// 保留 session transcript 的天數（cleanupPeriodDays）。共用的 settings.json（symlink 或在 git 版控中）只有加這個旗標才會寫入
+        #[arg(long, value_name = "DAYS", value_parser = clap::value_parser!(u64).range(1..))]
+        cleanup_period_days: Option<u64>,
     },
     /// 執行 codeforge 內建的 hook 腳本（供 settings.json 呼叫；不帶本機路徑與版號）
     Hook {
@@ -96,6 +99,9 @@ pub enum Commands {
         /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
         #[arg(long)]
         quiet: bool,
+        /// 保留 session transcript 的天數（cleanupPeriodDays）。共用的 settings.json（symlink 或在 git 版控中）只有加這個旗標才會寫入
+        #[arg(long, value_name = "DAYS", value_parser = clap::value_parser!(u64).range(1..))]
+        cleanup_period_days: Option<u64>,
     },
     /// 移除 codeforge 寫入的 settings.json 條目與 hooks scripts
     Uninstall {
@@ -366,6 +372,7 @@ pub fn run(cli: Cli) -> Result<()> {
             yes,
             settings_path,
             quiet,
+            cleanup_period_days,
         } => install::run(install::InstallOpts {
             hooks,
             all,
@@ -376,6 +383,7 @@ pub fn run(cli: Cli) -> Result<()> {
             yes,
             settings_path,
             quiet,
+            cleanup_period_days,
         }),
         Commands::Uninstall {
             statusline,
@@ -392,9 +400,15 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::SelfUpdate { check, quiet } => {
             selfupdate::run(selfupdate::SelfUpdateOpts { check, quiet })
         }
-        Commands::Bootstrap { dry_run, quiet } => {
-            bootstrap::run(bootstrap::BootstrapOpts { dry_run, quiet })
-        }
+        Commands::Bootstrap {
+            dry_run,
+            quiet,
+            cleanup_period_days,
+        } => bootstrap::run(bootstrap::BootstrapOpts {
+            dry_run,
+            quiet,
+            cleanup_period_days,
+        }),
         Commands::Learn { text, paste, file } => learn::run(&ctx, text, paste, file),
         Commands::Memory { action } => match action {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),

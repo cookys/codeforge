@@ -15,6 +15,8 @@ pub struct InstallOpts {
     pub yes: bool,
     pub settings_path: Option<PathBuf>,
     pub quiet: bool,
+    /// `--cleanup-period-days N`: write this retention even into a shared settings.json.
+    pub cleanup_period_days: Option<u64>,
 }
 
 /// Options for `codeforge uninstall`.
@@ -154,18 +156,15 @@ pub fn run(opts: InstallOpts) -> Result<()> {
         // The memory pipeline (dream/ship) can only distill session transcripts
         // that still exist. Claude Code's default cleanupPeriodDays is 30 — older
         // sessions are deleted before they're ever digested. Bump retention so
-        // raw material survives. Fills only when unset (respects a user's explicit
-        // value unless --force).
-        let action = patch_cleanup_period(&mut settings, opts.force);
-        say(opts.quiet, &format!("✓ cleanupPeriodDays {}", action));
-        if action != "已設定（保留現值）" {
-            say(
-                opts.quiet,
-                &format!(
-                    "  ↳ 保留 session transcript {} 天（供 dream/ship 萃取）；~/.claude/projects/ 會隨之長期累積",
-                    DEFAULT_CLEANUP_PERIOD_DAYS
-                ),
-            );
+        // raw material survives — but a shared settings.json would carry it to
+        // every machine, so there it takes an explicit --cleanup-period-days.
+        for line in apply_cleanup_period(
+            &mut settings,
+            opts.cleanup_period_days,
+            shared.is_shared(),
+            opts.force,
+        ) {
+            say(opts.quiet, &line);
         }
     }
 
@@ -830,9 +829,41 @@ fn unpatch_hooks(settings: &mut Value) -> Result<&'static str> {
 /// time to digest sessions before they're cleaned up. ~10 years ≈ "keep".
 const DEFAULT_CLEANUP_PERIOD_DAYS: u64 = 3650;
 
-/// Set `cleanupPeriodDays` on global settings unless the user already chose a
-/// value (then leave it, unless `force`). Returns a human action string.
-fn patch_cleanup_period(settings: &mut Value, force: bool) -> &'static str {
+/// The cleanupPeriodDays policy (B35), as the lines install prints:
+/// - `--cleanup-period-days N`: write N (an existing value only with `--force`).
+/// - no flag, local file: write the default 3650 when unset (unchanged behaviour).
+/// - no flag, shared file: never add, change or remove it, `--force` included.
+fn apply_cleanup_period(
+    settings: &mut Value,
+    flag: Option<u64>,
+    shared: bool,
+    force: bool,
+) -> Vec<String> {
+    if flag.is_none() && shared {
+        let existing = settings.get("cleanupPeriodDays").filter(|v| !v.is_null());
+        return vec![match existing {
+            Some(v) => format!(
+                "ℹ 共用檔裡已有 cleanupPeriodDays = {v}，保留不動；它會套用到每台機器"
+            ),
+            None => format!(
+                "ℹ cleanupPeriodDays 未寫入（共用檔會套用到每台機器）；要保留 transcript 給 dream/ship，可加 --cleanup-period-days {DEFAULT_CLEANUP_PERIOD_DAYS}"
+            ),
+        }];
+    }
+    let days = flag.unwrap_or(DEFAULT_CLEANUP_PERIOD_DAYS);
+    let action = patch_cleanup_period(settings, days, force);
+    let mut lines = vec![format!("✓ cleanupPeriodDays {action}")];
+    if action != "已設定（保留現值）" {
+        lines.push(format!(
+            "  ↳ 保留 session transcript {days} 天（供 dream/ship 萃取）；~/.claude/projects/ 會隨之長期累積"
+        ));
+    }
+    lines
+}
+
+/// Set `cleanupPeriodDays` to `days` unless the user already chose a value (then
+/// leave it, unless `force`). Returns a human action string.
+fn patch_cleanup_period(settings: &mut Value, days: u64, force: bool) -> &'static str {
     let Some(obj) = settings.as_object_mut() else {
         return "跳過（settings 非 object）";
     };
@@ -843,10 +874,7 @@ fn patch_cleanup_period(settings: &mut Value, force: bool) -> &'static str {
     if present && !force {
         return "已設定（保留現值）";
     }
-    obj.insert(
-        "cleanupPeriodDays".to_string(),
-        json!(DEFAULT_CLEANUP_PERIOD_DAYS),
-    );
+    obj.insert("cleanupPeriodDays".to_string(), json!(days));
     if present {
         "重置（--force）"
     } else {
@@ -1422,7 +1450,7 @@ mod tests {
     #[test]
     fn cleanup_period_fills_when_unset() {
         let mut s = json!({});
-        let action = patch_cleanup_period(&mut s, false);
+        let action = patch_cleanup_period(&mut s, DEFAULT_CLEANUP_PERIOD_DAYS, false);
         assert_eq!(action, "新增");
         assert_eq!(s["cleanupPeriodDays"], json!(DEFAULT_CLEANUP_PERIOD_DAYS));
     }
@@ -1430,7 +1458,7 @@ mod tests {
     #[test]
     fn cleanup_period_respects_existing_user_value() {
         let mut s = json!({ "cleanupPeriodDays": 90 });
-        let action = patch_cleanup_period(&mut s, false);
+        let action = patch_cleanup_period(&mut s, DEFAULT_CLEANUP_PERIOD_DAYS, false);
         assert_eq!(action, "已設定（保留現值）");
         assert_eq!(
             s["cleanupPeriodDays"],
@@ -1442,9 +1470,45 @@ mod tests {
     #[test]
     fn cleanup_period_force_overwrites() {
         let mut s = json!({ "cleanupPeriodDays": 90 });
-        let action = patch_cleanup_period(&mut s, true);
+        let action = patch_cleanup_period(&mut s, DEFAULT_CLEANUP_PERIOD_DAYS, true);
         assert_eq!(action, "重置（--force）");
         assert_eq!(s["cleanupPeriodDays"], json!(DEFAULT_CLEANUP_PERIOD_DAYS));
+    }
+
+    #[test]
+    fn cleanup_policy_flag_writes_even_when_shared() {
+        let mut s = json!({});
+        let lines = apply_cleanup_period(&mut s, Some(90), true, false);
+        assert_eq!(s["cleanupPeriodDays"], json!(90));
+        assert!(lines[0].contains("新增"));
+        // an existing value still needs --force
+        let mut s = json!({"cleanupPeriodDays": 30});
+        apply_cleanup_period(&mut s, Some(90), true, false);
+        assert_eq!(s["cleanupPeriodDays"], json!(30));
+        apply_cleanup_period(&mut s, Some(90), true, true);
+        assert_eq!(s["cleanupPeriodDays"], json!(90));
+    }
+
+    #[test]
+    fn cleanup_policy_local_without_flag_keeps_default() {
+        let mut s = json!({});
+        apply_cleanup_period(&mut s, None, false, false);
+        assert_eq!(s["cleanupPeriodDays"], json!(DEFAULT_CLEANUP_PERIOD_DAYS));
+    }
+
+    #[test]
+    fn cleanup_policy_shared_without_flag_never_touches_it() {
+        let mut s = json!({});
+        let lines = apply_cleanup_period(&mut s, None, true, false);
+        assert!(s.get("cleanupPeriodDays").is_none());
+        assert!(lines[0].contains("--cleanup-period-days 3650"), "{lines:?}");
+
+        for force in [false, true] {
+            let mut s = json!({"cleanupPeriodDays": 3650});
+            let lines = apply_cleanup_period(&mut s, None, true, force);
+            assert_eq!(s["cleanupPeriodDays"], json!(3650), "force={force}");
+            assert!(lines[0].contains("保留不動"), "{lines:?}");
+        }
     }
 
     #[test]
@@ -1698,6 +1762,7 @@ mod tests {
             yes: false,
             settings_path: Some(link.clone()),
             quiet: true,
+            cleanup_period_days: None,
         };
         assert!(
             run(opts).is_err(),
