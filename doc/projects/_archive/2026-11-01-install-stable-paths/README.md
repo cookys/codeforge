@@ -1,6 +1,6 @@
 # install-stable-paths — install／bootstrap 對共用 settings.json 安全（v0.0.7）
 
-計畫：[`doc/plans/2026-11-01-install-stable-paths.md`](../../plans/2026-11-01-install-stable-paths.md) · BACKLOG：B35 · Branch：`feature/install-stable-paths`
+計畫：[`doc/plans/2026-11-01-install-stable-paths.md`](../../../plans/2026-11-01-install-stable-paths.md) · BACKLOG：B35 · Branch：`feature/install-stable-paths`
 
 ## Project Goal
 
@@ -16,6 +16,6 @@
 | P1 寫入穿透 symlink + 共用檔偵測 | S | ✅ `7d32cf0` |
 | P2 `codeforge hook` + 不帶路徑與版號的 command + 固定 marker | M | ✅ `cc2bf66` |
 | P3 `cleanupPeriodDays` 依共用與否決定 | S | ✅ `71debcb` |
-| P4 文件、版本、發布 | S | 文件與版號完成；發布待 code review |
+| P4 文件、版本、發布 | S | ✅ `f911020`；code review 修正 `9bc6546`；merge `adb3b58` |
 
 Last updated: 2026-11-02

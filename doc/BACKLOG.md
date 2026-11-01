@@ -225,11 +225,3 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Proposed**: 心跳加「最近 N 秒內 AbovePrompt hook 有被呼叫」的條件（只看有沒有輪到，不看 blit 是否成功，不回到舊的 `pet_shown` 規則）。
 **Trigger**: autopilot 新增會拿掉 forge 分頁或不呼叫下層的模式，或使用者裝了別的會畫 band 的 plugin。
 **Not done**: 只記錄；2026-11-01 清理時順手發現，不在那次範圍。
-
-## B35 — install／bootstrap 寫進共用的 settings.json 時，不能帶本機路徑、版號與全機設定
-
-**Area**: `src/cli/install.rs`（`patch_hooks`、`patch_statusline`、`current_marker`、`patch_cleanup_period`、`write_settings_atomic`）、`src/cli/bootstrap.rs`
-**Premise**: 7840hs 的 `~/.claude/settings.json` 是 symlink，指到進版控、全部機器共用的 dotfiles。`bootstrap --dry-run`（v0.0.6）預覽出：hook 指令是帶版號的絕對路徑（`node <家目錄>/.local/share/codeforge/hooks/0.0.6/…`）、`cleanupPeriodDays: 3650` 會擴散到每台、沒有任何共用檔警告。另查到：`statusLine` 也是絕對路徑；marker `codeforge@<版號>` 每升一版就改動共用檔；`write_settings_atomic` 用 rename 寫入，會把 symlink 換成一般檔案，讓 dotfiles 脫鉤。來源：fleet 訊息 `01M6BQ8BEDZKQM1TFARTSNYK0M`（llm-playground@7840hs，2026-11-01）。
-**Proposed**: 見計畫 `doc/plans/2026-11-01-install-stable-paths.md`。owner 2026-11-01 指示先寫計畫、過 hetero plan review，再實作並發 v0.0.7。
-**Trigger**: 已觸發（7840hs 等 v0.0.7 才跑 bootstrap）。
-**Not done**: 計畫撰寫中；7840hs 在 v0.0.7 發布前不跑 bootstrap。
