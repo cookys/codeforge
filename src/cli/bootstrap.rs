@@ -19,6 +19,8 @@ use crate::mnemos::config::MnemosConfig;
 pub struct BootstrapOpts {
     pub dry_run: bool,
     pub quiet: bool,
+    /// Passed through to `install` (`--cleanup-period-days`).
+    pub cleanup_period_days: Option<u64>,
 }
 
 fn say(quiet: bool, msg: &str) {
@@ -120,6 +122,7 @@ pub fn run(opts: BootstrapOpts) -> Result<()> {
         yes: true,
         settings_path: None,
         quiet: opts.quiet,
+        cleanup_period_days: opts.cleanup_period_days,
     };
     let full_err = install::run(opts_at(false, true))
         .err()

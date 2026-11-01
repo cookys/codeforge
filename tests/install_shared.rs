@@ -39,6 +39,10 @@ fn dry_run_on_untracked_file_leaks_no_git_output() {
         !all.contains("⚠ settings.json"),
         "plain file must not warn: {all}"
     );
+    assert!(
+        all.contains("\"cleanupPeriodDays\": 3650"),
+        "a local file keeps the default retention: {all}"
+    );
 }
 
 #[test]
@@ -127,6 +131,11 @@ fn dry_run_on_symlinked_settings_warns_and_writes_portable_commands() {
     let json_end = stdout.rfind('}').unwrap();
     let v: serde_json::Value = serde_json::from_str(&stdout[json_start..=json_end]).unwrap();
     assert_eq!(v["statusLine"]["command"], "codeforge statusline");
+    assert!(
+        v.get("cleanupPeriodDays").is_none(),
+        "shared file gets no cleanupPeriodDays without the flag"
+    );
+    assert!(stdout.contains("--cleanup-period-days 3650"), "{stdout}");
     for groups in v["hooks"].as_object().unwrap().values() {
         for g in groups.as_array().unwrap() {
             for h in g["hooks"].as_array().unwrap() {
