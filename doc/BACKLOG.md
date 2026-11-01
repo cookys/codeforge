@@ -320,4 +320,4 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 由 autopilot 自己量、自己畫（分頁列的 ϟ 標籤、速度欄、最近請求表），不再兩邊各量一次。forge-stats 只畫 Ferris、寵物、記憶與大腦，
 不回 maxRows=1 的標籤；沒有 autopilot 時 forge-stats 也不再顯示速度。現行算法已交給 autopilot（fleet msg `01M6A95050YK4D480QJXK54QDW`）。
 **Trigger**: autopilot 回報速度上線的 sha；在那之前 forge-stats 照舊回 keyed Box 標籤，避免兩邊都沒有速度的空窗。
-**Not done**: 移除程式與測試、改文件；autopilot 端尚未排程。
+**Not done**: 移除程式與測試、改文件。autopilot 端登記為 BL-0359，排在 alpha.7 發布之後（同 BL-0358，避開 mods 路徑搬家），量法先照抄現行口徑；分頁標籤放不放寵物由 autopilot 做預覽給 owner 選。
