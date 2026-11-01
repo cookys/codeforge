@@ -105,6 +105,7 @@ and the "First-time Claude Code hook setup" section below:
 - `codeforge install --project-hooks` — codeforge-clone-only dev hooks (SessionStart + PreToolUse)
 - `--dry-run` previews the settings.json changes without writing.
 - `--cleanup-period-days <DAYS>` sets `cleanupPeriodDays` (also on `bootstrap`); needed for a shared settings.json, see above.
+- `--replace-statusline` takes over a `statusLine` / `subagentStatusLine` that another tool set, and touches nothing else. (`--force` also clears every hook entry, codeforge's or not; don't use it just to replace the statusLine.)
 
 **Setting up a new machine?** Use the one-command bootstrap instead of running
 the steps by hand:

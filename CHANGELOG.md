@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`install --replace-statusline`** takes over a `statusLine` / `subagentStatusLine` that another tool set, without touching any hook. Before, the only way was `--force`, which also clears every hook entry, codeforge's or not; the conflict error and the bootstrap hint now point at the new flag (B28).
+
 ## [0.0.7] - 2026-11-02
 
 Install is safe on a shared `~/.claude/settings.json` — a symlink into a dotfiles repo, or a git-tracked file
