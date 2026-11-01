@@ -61,6 +61,9 @@ pub enum Commands {
         /// 清掉 hooks 內所有 entries（包含非 codeforge）再寫入 codeforge 的條目；需搭配 --yes
         #[arg(long)]
         force: bool,
+        /// 覆蓋其他程式設定的 statusLine／subagentStatusLine，只換這兩個欄位、不動任何 hook（--force 則會清掉所有 hook）
+        #[arg(long, conflicts_with = "project_hooks")]
+        replace_statusline: bool,
         /// 跳過 --force 的確認提示
         #[arg(long)]
         yes: bool,
@@ -369,6 +372,7 @@ pub fn run(cli: Cli) -> Result<()> {
             project_hooks,
             dry_run,
             force,
+            replace_statusline,
             yes,
             settings_path,
             quiet,
@@ -380,6 +384,7 @@ pub fn run(cli: Cli) -> Result<()> {
             project_hooks,
             dry_run,
             force,
+            replace_statusline,
             yes,
             settings_path,
             quiet,

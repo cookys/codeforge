@@ -12,6 +12,9 @@ pub struct InstallOpts {
     pub project_hooks: bool,
     pub dry_run: bool,
     pub force: bool,
+    /// `--replace-statusline` (B28): take over a statusLine / subagentStatusLine
+    /// another tool owns without touching any hook (unlike `--force`).
+    pub replace_statusline: bool,
     pub yes: bool,
     pub settings_path: Option<PathBuf>,
     pub quiet: bool,
@@ -121,14 +124,18 @@ pub fn run(opts: InstallOpts) -> Result<()> {
             );
         }
         let cmd = statusline_command(&exe, on_path, shared.is_shared(), "statusline");
-        let action = patch_statusline(&mut settings, &cmd, opts.force)?;
+        let action = patch_statusline(&mut settings, &cmd, opts.force || opts.replace_statusline)?;
         say(opts.quiet, &format!("✓ statusLine {}", action));
         say(opts.quiet, &format!("  command: {}", cmd));
 
         if opts.subagent_statusline {
             let sub_cmd =
                 statusline_command(&exe, on_path, shared.is_shared(), "subagent-statusline");
-            let sub_action = patch_subagent_statusline(&mut settings, &sub_cmd, opts.force)?;
+            let sub_action = patch_subagent_statusline(
+                &mut settings,
+                &sub_cmd,
+                opts.force || opts.replace_statusline,
+            )?;
             say(opts.quiet, &format!("✓ subagentStatusLine {}", sub_action));
             say(opts.quiet, &format!("  command: {}", sub_cmd));
         }
@@ -556,7 +563,7 @@ fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'st
     let prior = obj.get("statusLine").cloned();
     if let Some(p) = &prior {
         if !statusline_is_codeforge(p) && !force {
-            bail!("settings.json.statusLine 已被其他程式設定（不是 codeforge）；使用 --force 覆蓋");
+            bail!("settings.json.statusLine 已被其他程式設定（不是 codeforge）；使用 --replace-statusline 覆蓋（只換這個欄位，hooks 不動）");
         }
     }
     obj.insert("statusLine".to_string(), new_block.clone());
@@ -583,7 +590,7 @@ fn patch_subagent_statusline(settings: &mut Value, cmd: &str, force: bool) -> Re
     let prior = obj.get("subagentStatusLine").cloned();
     if let Some(p) = &prior {
         if !statusline_is_codeforge(p) && !force {
-            bail!("settings.json.subagentStatusLine 已被其他程式設定（不是 codeforge）；使用 --force 覆蓋");
+            bail!("settings.json.subagentStatusLine 已被其他程式設定（不是 codeforge）；使用 --replace-statusline 覆蓋（只換這個欄位，hooks 不動）");
         }
     }
     obj.insert("subagentStatusLine".to_string(), new_block.clone());
@@ -1069,7 +1076,8 @@ mod tests {
         // User has their own statusLine (no marker)
         let mut s = json!({"statusLine": {"type": "command", "command": "/user/script"}});
         let err = patch_statusline(&mut s, "/new statusline", false).unwrap_err();
-        assert!(err.to_string().contains("force"));
+        // B28: the error names the narrow override, not --force
+        assert!(err.to_string().contains("--replace-statusline"));
         // The user's statusLine is untouched
         assert_eq!(s["statusLine"]["command"], "/user/script");
     }
@@ -1122,6 +1130,7 @@ mod tests {
         let mut s = json!({"subagentStatusLine": {"type": "command", "command": "/user/script"}});
         let err = patch_subagent_statusline(&mut s, "/x subagent-statusline", false).unwrap_err();
         assert!(err.to_string().contains("subagentStatusLine"));
+        assert!(err.to_string().contains("--replace-statusline"));
     }
 
     #[test]
@@ -1762,6 +1771,7 @@ mod tests {
             project_hooks: false,
             dry_run: true,
             force: false,
+            replace_statusline: false,
             yes: false,
             settings_path: Some(link.clone()),
             quiet: true,

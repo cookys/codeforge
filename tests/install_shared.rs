@@ -196,3 +196,76 @@ fn cleanup_flag_conflicts_with_project_hooks() {
         "the flag must not be silently ignored on --project-hooks"
     );
 }
+
+#[test]
+fn replace_statusline_keeps_foreign_hooks() {
+    // B28: taking over a statusLine another tool owns must not cost the user
+    // their non-codeforge hooks (which `--force` would wipe).
+    let tmp = tempfile::TempDir::new().unwrap();
+    let settings = tmp.path().join("settings.json");
+    std::fs::write(
+        &settings,
+        r#"{
+  "statusLine": {"type": "command", "command": "other-tool status"},
+  "subagentStatusLine": {"type": "command", "command": "other-tool sub"},
+  "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "broadcast-gate"}]}]}
+}"#,
+    )
+    .unwrap();
+    let out = codeforge()
+        .args([
+            "install",
+            "--all",
+            "--subagent-statusline",
+            "--replace-statusline",
+            "--dry-run",
+        ])
+        .env("CODEFORGE_CLAUDE_SETTINGS", &settings)
+        .env("CODEFORGE_DATA_DIR", tmp.path().join("data"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json_start = stdout
+        .find("\n{")
+        .expect("dry-run prints the settings JSON");
+    let json_end = stdout.rfind('}').unwrap();
+    let v: serde_json::Value = serde_json::from_str(&stdout[json_start..=json_end]).unwrap();
+    let sl = v["statusLine"]["command"].as_str().unwrap();
+    assert!(sl.ends_with("codeforge statusline"), "{sl}");
+    let sub = v["subagentStatusLine"]["command"].as_str().unwrap();
+    assert!(sub.ends_with("codeforge subagent-statusline"), "{sub}");
+    let pre = v["hooks"]["PreToolUse"].to_string();
+    assert!(
+        pre.contains("broadcast-gate"),
+        "foreign hook dropped: {pre}"
+    );
+    assert!(
+        v["hooks"]["SessionEnd"].is_array(),
+        "codeforge hooks still installed"
+    );
+}
+
+#[test]
+fn foreign_statusline_error_points_at_replace_flag() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let settings = tmp.path().join("settings.json");
+    std::fs::write(
+        &settings,
+        r#"{"statusLine": {"type": "command", "command": "other-tool status"}}"#,
+    )
+    .unwrap();
+    let out = codeforge()
+        .args(["install", "--dry-run"])
+        .env("CODEFORGE_CLAUDE_SETTINGS", &settings)
+        .env("CODEFORGE_DATA_DIR", tmp.path().join("data"))
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("--replace-statusline"), "{err}");
+}
