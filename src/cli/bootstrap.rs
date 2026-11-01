@@ -66,10 +66,10 @@ fn step1_lines(
         (Some(_), None) => (
             vec![
                 "   ⚠ statusLine 已被其他程式設定，未覆蓋；global hooks 已安裝".to_string(),
-                "     （要讓 codeforge 接管 statusLine：codeforge install --all --force）"
+                "     （要讓 codeforge 接管 statusLine：codeforge install --replace-statusline；hooks 不受影響）"
                     .to_string(),
             ],
-            Some("statusLine 沿用現有（hooks 已裝；--force 可接管）".to_string()),
+            Some("statusLine 沿用現有（hooks 已裝；--replace-statusline 可接管）".to_string()),
         ),
         // Even hooks-only failed — a real problem (e.g. settings.json unwritable).
         (Some(_), Some(fe)) => (
@@ -119,6 +119,7 @@ pub fn run(opts: BootstrapOpts) -> Result<()> {
         project_hooks: false,
         dry_run: opts.dry_run,
         force: false,
+        replace_statusline: false,
         yes: true,
         settings_path: None,
         quiet: opts.quiet,
@@ -253,7 +254,9 @@ mod tests {
         // --all failed, hooks-only fallback succeeded → pipeline landed, warn re statusLine only.
         let (lines, warning) = step1_lines(Some("statusLine 已被其他程式設定"), None);
         assert!(lines.iter().any(|l| l.contains("global hooks 已安裝")));
-        assert!(lines.iter().any(|l| l.contains("--force")));
+        // B28: the hint must not send users to --force (it wipes every hook)
+        assert!(lines.iter().any(|l| l.contains("--replace-statusline")));
+        assert!(!lines.iter().any(|l| l.contains("--force")));
         let w = warning.expect("should warn about statusLine");
         assert!(w.contains("hooks 已裝"));
     }
