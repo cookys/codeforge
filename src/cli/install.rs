@@ -27,6 +27,11 @@ pub struct UninstallOpts {
 
 const MARKER_KEY: &str = "_installed_by";
 const MARKER_PREFIX: &str = "codeforge@";
+/// Marker for everything the global install writes (hooks, statusLine,
+/// subagentStatusLine). An install-contract version, not the package version, so
+/// re-running install after an upgrade leaves a shared settings.json byte-identical
+/// (B35). `--project-hooks` keeps [`current_marker`].
+const GLOBAL_MARKER: &str = "codeforge@1";
 
 /// Claude Code env-var placeholder. Claude Code expands `${CLAUDE_PROJECT_DIR}`
 /// to the absolute project root before spawning hook processes
@@ -83,7 +88,6 @@ pub fn run(opts: InstallOpts) -> Result<()> {
     let exe = std::env::current_exe().context("讀取 codeforge binary 路徑失敗")?;
     exe.to_str()
         .ok_or_else(|| anyhow!("binary 路徑含非 UTF-8 字元：{}", exe.display()))?;
-    let exe_str = crate::platform::shell_path(&exe);
 
     let settings_path = opts
         .settings_path
@@ -103,13 +107,25 @@ pub fn run(opts: InstallOpts) -> Result<()> {
     let mut settings = load_settings(&settings_path)?;
 
     if install_statusline {
-        let cmd = format!("{} statusline", exe_str);
+        let path_hit = codeforge_on_path();
+        let on_path = same_binary(path_hit.as_deref(), &exe);
+        if shared.is_shared() && !on_path {
+            say(
+                opts.quiet,
+                &format!(
+                    "⚠ PATH 上的 codeforge 不是目前這個 binary（{}）；statusLine 會執行 PATH 上的那一個",
+                    exe.display()
+                ),
+            );
+        }
+        let cmd = statusline_command(&exe, on_path, shared.is_shared(), "statusline");
         let action = patch_statusline(&mut settings, &cmd, opts.force)?;
         say(opts.quiet, &format!("✓ statusLine {}", action));
         say(opts.quiet, &format!("  command: {}", cmd));
 
         if opts.subagent_statusline {
-            let sub_cmd = format!("{} subagent-statusline", exe_str);
+            let sub_cmd =
+                statusline_command(&exe, on_path, shared.is_shared(), "subagent-statusline");
             let sub_action = patch_subagent_statusline(&mut settings, &sub_cmd, opts.force)?;
             say(opts.quiet, &format!("✓ subagentStatusLine {}", sub_action));
             say(opts.quiet, &format!("  command: {}", sub_cmd));
@@ -117,23 +133,23 @@ pub fn run(opts: InstallOpts) -> Result<()> {
     }
 
     if install_hooks {
-        let hooks_dir = if opts.dry_run {
-            // Don't actually extract files in dry-run; show the path that would be used
-            default_data_local_dir()?
-                .join("codeforge")
-                .join("hooks")
-                .join(env!("CARGO_PKG_VERSION"))
+        // The hook commands are `codeforge hook <name>`; the scripts live in a
+        // private per-version cache. Warm it now (not in dry-run) so an unwritable
+        // data dir fails here rather than inside a hook later.
+        let cache = if opts.dry_run {
+            super::hook::cache_dir()?
         } else {
-            extract_hook_scripts()?
+            super::hook::materialize_all()?
         };
-        let action = patch_hooks(
-            &mut settings,
-            &hooks_dir,
-            opts.force,
-            /*project=*/ false,
-        )?;
+        let action = patch_hooks(&mut settings, None, opts.force)?;
         say(opts.quiet, &format!("✓ hooks {}", action));
-        say(opts.quiet, &format!("  scripts: {}", hooks_dir.display()));
+        say(
+            opts.quiet,
+            &format!(
+                "  scripts: codeforge hook <name>（快取 {}）",
+                cache.display()
+            ),
+        );
 
         // The memory pipeline (dream/ship) can only distill session transcripts
         // that still exist. Claude Code's default cleanupPeriodDays is 30 — older
@@ -212,8 +228,8 @@ pub fn run_uninstall(opts: UninstallOpts) -> Result<()> {
         let action = unpatch_hooks(&mut settings)?;
         say(opts.quiet, &format!("✓ hooks {}", action));
 
-        // Also remove the extracted scripts dir
-        let base = default_data_local_dir()?.join("codeforge").join("hooks");
+        // Also remove the script caches (every version)
+        let base = super::hook::hooks_root()?;
         if base.exists() {
             fs::remove_dir_all(&base).with_context(|| format!("移除 {} 失敗", base.display()))?;
             say(opts.quiet, &format!("✓ removed {}", base.display()));
@@ -262,12 +278,7 @@ fn run_install_project_hooks(opts: &InstallOpts) -> Result<()> {
         .join("scripts");
 
     let mut settings = load_settings(&settings_path)?;
-    let action = patch_hooks(
-        &mut settings,
-        &scripts_dir_template,
-        opts.force,
-        /*project=*/ true,
-    )?;
+    let action = patch_hooks(&mut settings, Some(&scripts_dir_template), opts.force)?;
     say(opts.quiet, &format!("✓ project hooks {}", action));
     say(
         opts.quiet,
@@ -490,15 +501,37 @@ fn default_global_settings_path() -> Result<PathBuf> {
     Ok(home.join(".claude").join("settings.json"))
 }
 
-fn default_data_local_dir() -> Result<PathBuf> {
-    if let Some(p) = dirs::data_local_dir() {
-        return Ok(p);
-    }
-    let home = dirs::home_dir().context("找不到使用者 home 目錄且無 data_local_dir")?;
-    Ok(home.join(".local").join("share"))
+// ─── statusLine block ─────────────────────────────────────────────────────
+
+/// The first `codeforge` executable on `$PATH`, if any.
+fn codeforge_on_path() -> Option<PathBuf> {
+    let exe_name = format!("codeforge{}", std::env::consts::EXE_SUFFIX);
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(&exe_name))
+        .find(|p| p.is_file())
 }
 
-// ─── statusLine block ─────────────────────────────────────────────────────
+fn same_binary(a: Option<&Path>, b: &Path) -> bool {
+    match (
+        a.and_then(|a| fs::canonicalize(a).ok()),
+        fs::canonicalize(b).ok(),
+    ) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// The statusLine / subagentStatusLine command. A shared settings.json always gets
+/// the PATH form so every machine writes the same bytes; a local file gets the PATH
+/// form when PATH resolves to this very binary, else the absolute path (it does not
+/// spread, and it keeps working when PATH is missing ~/.cargo/bin).
+fn statusline_command(exe: &Path, on_path: bool, shared: bool, sub: &str) -> String {
+    if shared || on_path {
+        format!("codeforge {sub}")
+    } else {
+        format!("{} {sub}", crate::platform::shell_path(exe))
+    }
+}
 
 fn current_marker() -> String {
     format!("{}{}", MARKER_PREFIX, env!("CARGO_PKG_VERSION"))
@@ -515,7 +548,7 @@ fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'st
     let new_block = json!({
         "type": "command",
         "command": cmd,
-        MARKER_KEY: current_marker(),
+        MARKER_KEY: GLOBAL_MARKER,
     });
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("statusLine").cloned();
@@ -542,7 +575,7 @@ fn patch_subagent_statusline(settings: &mut Value, cmd: &str, force: bool) -> Re
     let new_block = json!({
         "type": "command",
         "command": cmd,
-        MARKER_KEY: current_marker(),
+        MARKER_KEY: GLOBAL_MARKER,
     });
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("subagentStatusLine").cloned();
@@ -574,18 +607,7 @@ fn unpatch_statusline(settings: &mut Value) -> Result<&'static str> {
 
 // ─── hooks block ──────────────────────────────────────────────────────────
 
-/// The 2 global-safe scripts. Project-specific scripts
-/// (check-improvements, check-dev-flow) are NOT installed by `--hooks`.
-const HOOK_SCRIPTS: &[(&str, &str)] = &[
-    (
-        "emit-session.js",
-        include_str!("../../.claude/scripts/emit-session.js"),
-    ),
-    (
-        "session-digest.js",
-        include_str!("../../.claude/scripts/session-digest.js"),
-    ),
-];
+// The global hook scripts are embedded in `hook.rs` and run via `codeforge hook`.
 
 /// Codeforge-clone-only DEV scripts (used by `--project-hooks`). These already
 /// live in the codeforge clone at `.claude/scripts/`, so we only need the
@@ -597,32 +619,14 @@ const HOOK_SCRIPTS: &[(&str, &str)] = &[
 /// cause dual-fire. See commit 2648b34.
 const PROJECT_HOOK_SCRIPT_NAMES: &[&str] = &["check-improvements.js", "check-dev-flow.js"];
 
-fn extract_hook_scripts() -> Result<PathBuf> {
-    let version = env!("CARGO_PKG_VERSION");
-    let base = default_data_local_dir()?
-        .join("codeforge")
-        .join("hooks")
-        .join(version);
-    fs::create_dir_all(&base)
-        .with_context(|| format!("建立 hooks 目錄 {} 失敗", base.display()))?;
-    for (name, content) in HOOK_SCRIPTS {
-        let dest = base.join(name);
-        fs::write(&dest, content).with_context(|| format!("寫入 {} 失敗", dest.display()))?;
-    }
-    Ok(base)
-}
-
+/// `project_scripts_dir`: `Some(dir)` for `--project-hooks` (node scripts under the
+/// codeforge clone), `None` for the global install (`codeforge hook <name>`).
 fn patch_hooks(
     settings: &mut Value,
-    scripts_dir: &Path,
+    project_scripts_dir: Option<&Path>,
     force: bool,
-    project: bool,
 ) -> Result<&'static str> {
     require_object_root(settings)?;
-    let marker = current_marker();
-
-    let emit_path = scripts_dir.join("emit-session.js");
-    let digest_path = scripts_dir.join("session-digest.js");
 
     // Build the entries we want to insert. The two install modes carry
     // strictly disjoint hooks to avoid dual-fire when both are installed
@@ -644,7 +648,10 @@ fn patch_hooks(
     //       codeforge-clone-only DEV hooks — check-improvements (SessionStart),
     //       check-dev-flow (PreToolUse). dream/ship moved to the global path so
     //       they run across all projects, not just the codeforge clone.
-    let entries: Vec<(&str, Option<&str>, Vec<Value>)> = if project {
+    let entries: Vec<(&str, Option<&str>, Vec<Value>)> = if let Some(scripts_dir) =
+        project_scripts_dir
+    {
+        let marker = current_marker();
         let check_improvements = scripts_dir.join("check-improvements.js");
         let check_dev_flow = scripts_dir.join("check-dev-flow.js");
         vec![
@@ -668,23 +675,20 @@ fn patch_hooks(
             ),
         ]
     } else {
+        let marker = GLOBAL_MARKER;
         vec![
             (
                 "SessionStart",
                 None,
                 vec![
-                    hook_entry(
-                        &format!("node {} session_start", crate::platform::shell_path(&emit_path)),
-                        3000,
-                        &marker,
-                    ),
+                    hook_entry("codeforge hook emit-session session_start", 3000, marker),
                     // Local recall (no-mnemos READ path): inject a lean ranked L1
                     // index as additionalContext. No-op when the project has no
                     // active L1. Symmetric to the mnemos-cli context central path.
                     hook_entry(
                         "codeforge memory context --hook 2>/dev/null || true",
                         10000,
-                        &marker,
+                        marker,
                     ),
                     // Central recall (fleet recall DOWNLINK, P1.2): pull cross-source
                     // atoms from the Mnemos brain and inject them at SessionStart —
@@ -695,7 +699,7 @@ fn patch_hooks(
                     hook_entry(
                         "codeforge mnemos-cli context --hook --max 5 --with-themes --max-sensitivity work 2>/dev/null || true",
                         10000,
-                        &marker,
+                        marker,
                     ),
                 ],
             ),
@@ -703,34 +707,26 @@ fn patch_hooks(
                 "SessionEnd",
                 None,
                 vec![
-                    hook_entry(
-                        &format!("node {} session_end", crate::platform::shell_path(&emit_path)),
-                        3000,
-                        &marker,
-                    ),
-                    hook_entry(&format!("node {}", crate::platform::shell_path(&digest_path)), 30000, &marker),
+                    hook_entry("codeforge hook emit-session session_end", 3000, marker),
+                    hook_entry("codeforge hook session-digest", 30000, marker),
                     // Memory pipeline: dream distills L0→L1, ship forwards to Mnemos.
                     // Order matters — ship reads the L1 that dream just produced.
                     hook_entry(
                         "codeforge dream --quiet 2>/dev/null || true",
                         30000,
-                        &marker,
+                        marker,
                     ),
                     hook_entry(
                         "codeforge ship --no-hook 2>/dev/null || true",
                         30000,
-                        &marker,
+                        marker,
                     ),
                 ],
             ),
             (
                 "PreCompact",
                 None,
-                vec![hook_entry(
-                    &format!("node {}", crate::platform::shell_path(&digest_path)),
-                    30000,
-                    &marker,
-                )],
+                vec![hook_entry("codeforge hook session-digest", 30000, marker)],
             ),
         ]
     };
@@ -1140,8 +1136,7 @@ mod tests {
     #[test]
     fn patch_hooks_creates_block() {
         let mut s = json!({});
-        let dir = PathBuf::from("/tmp/cf-test");
-        let action = patch_hooks(&mut s, &dir, false, false).unwrap();
+        let action = patch_hooks(&mut s, None, false).unwrap();
         assert_eq!(action, "新增");
         assert!(s["hooks"]["SessionStart"].is_array());
         assert!(s["hooks"]["SessionEnd"].is_array());
@@ -1184,7 +1179,7 @@ mod tests {
     fn patch_hooks_project_layout_is_codeforge_clone_only() {
         let mut s = json!({});
         let dir = PathBuf::from("/tmp/cf-test");
-        patch_hooks(&mut s, &dir, false, /*project=*/ true).unwrap();
+        patch_hooks(&mut s, Some(&dir), false).unwrap();
         // 2 hook types present: SessionStart + PreToolUse. dream/ship moved to
         // the global path, so project mode no longer writes SessionEnd; PreCompact
         // is global-only too.
@@ -1258,13 +1253,7 @@ mod tests {
                 }]
             }
         });
-        let action = patch_hooks(
-            &mut s,
-            Path::new("/tmp/cf-test"),
-            false,
-            /*project=*/ true,
-        )
-        .unwrap();
+        let action = patch_hooks(&mut s, Some(Path::new("/tmp/cf-test")), false).unwrap();
         assert_eq!(
             action, "更新",
             "legacy dream entry recognized as ours and swept"
@@ -1373,13 +1362,7 @@ mod tests {
                 ]}]
             }
         });
-        patch_hooks(
-            &mut s,
-            Path::new("/tmp/cf-test"),
-            false,
-            /*project=*/ false,
-        )
-        .unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         // Exactly one SessionEnd group, with the new 4-entry chain — no 0.0.3 dupes.
         let se = s["hooks"]["SessionEnd"].as_array().unwrap();
         assert_eq!(
@@ -1417,13 +1400,7 @@ mod tests {
                 }]
             }
         });
-        patch_hooks(
-            &mut s,
-            Path::new("/tmp/cf-test"),
-            false,
-            /*project=*/ false,
-        )
-        .unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         let se = s["hooks"]["SessionEnd"].as_array().unwrap();
         assert_eq!(
             se.len(),
@@ -1479,7 +1456,7 @@ mod tests {
         let template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER)
             .join(".claude")
             .join("scripts");
-        patch_hooks(&mut s, &template, false, /*project=*/ true).unwrap();
+        patch_hooks(&mut s, Some(&template), false).unwrap();
         let cmd = s["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             .as_str()
             .unwrap();
@@ -1511,7 +1488,7 @@ mod tests {
                 }]
             }
         });
-        patch_hooks(&mut s, Path::new("/tmp"), false, false).unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         let session_start = s["hooks"]["SessionStart"].as_array().unwrap();
         assert_eq!(session_start.len(), 2);
         assert_eq!(session_start[0]["hooks"][0]["command"], "user-script.sh");
@@ -1532,7 +1509,7 @@ mod tests {
                 }]
             }
         });
-        let action = patch_hooks(&mut s, Path::new("/tmp"), /*force=*/ true, false).unwrap();
+        let action = patch_hooks(&mut s, None, /*force=*/ true).unwrap();
         assert_eq!(action, "重置（--force）");
         // User's PreToolUse should be gone entirely (we don't write to it in non-project mode)
         assert!(s["hooks"].get("PreToolUse").is_none());
@@ -1545,9 +1522,9 @@ mod tests {
     #[test]
     fn patch_hooks_replaces_own_prior_entries() {
         let mut s = json!({});
-        patch_hooks(&mut s, Path::new("/tmp/v1"), false, false).unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         let len_after_first = s["hooks"]["SessionStart"].as_array().unwrap().len();
-        let action = patch_hooks(&mut s, Path::new("/tmp/v2"), false, false).unwrap();
+        let action = patch_hooks(&mut s, None, false).unwrap();
         assert_eq!(action, "更新");
         let len_after_second = s["hooks"]["SessionStart"].as_array().unwrap().len();
         assert_eq!(len_after_first, len_after_second);
@@ -1556,7 +1533,7 @@ mod tests {
     #[test]
     fn unpatch_hooks_removes_only_codeforge() {
         let mut s = json!({});
-        patch_hooks(&mut s, Path::new("/tmp"), false, false).unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         // Add a user hook alongside
         let user = json!({
             "matcher": "",
@@ -1606,7 +1583,7 @@ mod tests {
     #[test]
     fn unpatch_hooks_collapses_empty_root() {
         let mut s = json!({});
-        patch_hooks(&mut s, Path::new("/tmp"), false, false).unwrap();
+        patch_hooks(&mut s, None, false).unwrap();
         unpatch_hooks(&mut s).unwrap();
         // No user entries anywhere → the entire `hooks` key should be removed
         assert!(s.as_object().unwrap().get("hooks").is_none());
@@ -1808,6 +1785,188 @@ mod tests {
         assert!(shared_warning_lines(&path, &shared_settings(&path))
             .iter()
             .any(|l| l.contains("git 版控")));
+    }
+
+    fn all_hook_entries(s: &Value) -> Vec<Value> {
+        s["hooks"]
+            .as_object()
+            .unwrap()
+            .values()
+            .flat_map(|groups| groups.as_array().unwrap().clone())
+            .flat_map(|g| g["hooks"].as_array().unwrap().clone())
+            .collect()
+    }
+
+    #[test]
+    fn global_hook_commands_carry_no_machine_path_or_version() {
+        let mut s = json!({});
+        patch_hooks(&mut s, None, false).unwrap();
+        let version = env!("CARGO_PKG_VERSION");
+        let entries = all_hook_entries(&s);
+        assert!(!entries.is_empty());
+        for e in &entries {
+            let cmd = e["command"].as_str().unwrap();
+            assert!(cmd.starts_with("codeforge "), "{cmd}");
+            for bad in [
+                "$HOME",
+                "~",
+                "/home/",
+                "/Users/",
+                "/codeforge/hooks/",
+                "node ",
+            ] {
+                assert!(!cmd.contains(bad), "{cmd} contains {bad}");
+            }
+            assert!(!cmd.contains(version), "{cmd} contains the package version");
+            // The only '/' allowed is the existing `2>/dev/null` redirect.
+            assert!(
+                cmd.replace("2>/dev/null", "").find('/').is_none(),
+                "absolute path in {cmd}"
+            );
+            assert_eq!(e[MARKER_KEY], GLOBAL_MARKER);
+        }
+        let cmds: Vec<&str> = entries
+            .iter()
+            .map(|e| e["command"].as_str().unwrap())
+            .collect();
+        assert!(cmds.contains(&"codeforge hook emit-session session_start"));
+        assert!(cmds.contains(&"codeforge hook emit-session session_end"));
+        assert_eq!(
+            cmds.iter()
+                .filter(|c| **c == "codeforge hook session-digest")
+                .count(),
+            2,
+            "SessionEnd + PreCompact"
+        );
+    }
+
+    #[test]
+    fn global_install_is_byte_identical_across_runs() {
+        let run_once = |s: &mut Value| {
+            patch_hooks(s, None, false).unwrap();
+            patch_statusline(s, "codeforge statusline", false).unwrap();
+            patch_subagent_statusline(s, "codeforge subagent-statusline", false).unwrap();
+        };
+        let mut a = json!({"model": "x"});
+        run_once(&mut a);
+        let first = serde_json::to_string_pretty(&a).unwrap();
+        run_once(&mut a);
+        assert_eq!(first, serde_json::to_string_pretty(&a).unwrap());
+        assert_eq!(a["statusLine"][MARKER_KEY], GLOBAL_MARKER);
+        assert_eq!(a["subagentStatusLine"][MARKER_KEY], GLOBAL_MARKER);
+        assert!(!first.contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn project_hooks_output_unchanged() {
+        // Byte-for-byte what --project-hooks wrote before B35 (marker keeps the
+        // package version; commands use ${CLAUDE_PROJECT_DIR}).
+        let mut s = json!({});
+        let template = Path::new(PROJECT_DIR_ENV_PLACEHOLDER)
+            .join(".claude")
+            .join("scripts");
+        patch_hooks(&mut s, Some(&template), false).unwrap();
+        let marker = format!("codeforge@{}", env!("CARGO_PKG_VERSION"));
+        let expected = json!({
+            "hooks": {
+                "SessionStart": [{"matcher": "", "hooks": [{
+                    "type": "command",
+                    "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/check-improvements.js",
+                    "timeout": 10000,
+                    MARKER_KEY: marker,
+                }]}],
+                "PreToolUse": [{"matcher": "Edit|Write|Bash", "hooks": [{
+                    "type": "command",
+                    "command": "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/check-dev-flow.js",
+                    "timeout": 5000,
+                    MARKER_KEY: marker,
+                }]}],
+            }
+        });
+        assert_eq!(s, expected);
+    }
+
+    #[test]
+    fn upgrade_from_versioned_install_leaves_only_new_form() {
+        // What a v0.0.6 `install --hooks` wrote: marked, versioned node paths.
+        let old = "codeforge@0.0.6";
+        let p = "/home/u/.local/share/codeforge/hooks/0.0.6";
+        let mut s = json!({
+            "statusLine": {"type": "command", "command": "/home/u/.cargo/bin/codeforge statusline", MARKER_KEY: old},
+            "hooks": {
+                "SessionStart": [
+                    {"matcher": "", "hooks": [{"type": "command", "command": "user.sh"}]},
+                    {"matcher": "", "hooks": [
+                        {"type": "command", "command": format!("node {p}/emit-session.js session_start"), "timeout": 3000, MARKER_KEY: old},
+                        {"type": "command", "command": "codeforge memory context --hook 2>/dev/null || true", "timeout": 10000, MARKER_KEY: old}
+                    ]}
+                ],
+                "SessionEnd": [{"matcher": "", "hooks": [
+                    {"type": "command", "command": format!("node {p}/emit-session.js session_end"), "timeout": 3000, MARKER_KEY: old},
+                    {"type": "command", "command": format!("node {p}/session-digest.js"), "timeout": 30000, MARKER_KEY: old}
+                ]}],
+                "PreCompact": [{"matcher": "", "hooks": [
+                    {"type": "command", "command": format!("node {p}/session-digest.js"), "timeout": 30000, MARKER_KEY: old}
+                ]}]
+            }
+        });
+        patch_hooks(&mut s, None, false).unwrap();
+        patch_statusline(&mut s, "codeforge statusline", false).unwrap();
+        let all = serde_json::to_string(&s).unwrap();
+        assert!(!all.contains("0.0.6"), "old entries must be swept: {all}");
+        assert!(!all.contains("node "), "{all}");
+        // one codeforge group per hook type (no stacking), user hook kept
+        for ty in ["SessionStart", "SessionEnd", "PreCompact"] {
+            let ours = s["hooks"][ty]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|g| group_is_codeforge(g))
+                .count();
+            assert_eq!(ours, 1, "{ty}");
+        }
+        assert!(all.contains("user.sh"));
+        assert_eq!(s["statusLine"]["command"], "codeforge statusline");
+    }
+
+    #[test]
+    fn statusline_command_cases() {
+        let exe = Path::new("/opt/cf/codeforge");
+        // shared file: always the PATH form, whatever PATH says
+        assert_eq!(
+            statusline_command(exe, false, true, "statusline"),
+            "codeforge statusline"
+        );
+        assert_eq!(
+            statusline_command(exe, true, true, "subagent-statusline"),
+            "codeforge subagent-statusline"
+        );
+        // local file, PATH resolves to this binary: PATH form
+        assert_eq!(
+            statusline_command(exe, true, false, "statusline"),
+            "codeforge statusline"
+        );
+        // local file, PATH does not: absolute path (current behaviour)
+        assert_eq!(
+            statusline_command(exe, false, false, "statusline"),
+            "/opt/cf/codeforge statusline"
+        );
+    }
+
+    #[test]
+    fn same_binary_compares_canonical_paths() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let a = tmp.path().join("codeforge");
+        fs::write(&a, "").unwrap();
+        assert!(same_binary(Some(&a), &a));
+        assert!(same_binary(
+            Some(&tmp.path().join(".").join("codeforge")),
+            &a
+        ));
+        assert!(!same_binary(None, &a));
+        let b = tmp.path().join("other");
+        fs::write(&b, "").unwrap();
+        assert!(!same_binary(Some(&b), &a));
     }
 
     #[test]

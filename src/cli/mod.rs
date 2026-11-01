@@ -10,6 +10,7 @@ mod daemon;
 pub mod doctor;
 mod dream;
 mod emit;
+pub mod hook;
 mod ingest;
 mod init;
 mod install;
@@ -69,6 +70,14 @@ pub enum Commands {
         /// 安靜模式：不輸出 stdout（exit code 仍會反映結果）
         #[arg(long)]
         quiet: bool,
+    },
+    /// 執行 codeforge 內建的 hook 腳本（供 settings.json 呼叫；不帶本機路徑與版號）
+    Hook {
+        /// hook 名稱：emit-session 或 session-digest
+        name: String,
+        /// 原樣傳給腳本的參數
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
     /// 從最新 GitHub release 原地更新 codeforge 二進位（B20）
     SelfUpdate {
@@ -332,6 +341,17 @@ pub enum MemoryAction {
 }
 
 pub fn run(cli: Cli) -> Result<()> {
+    // A hook runs inside Claude Code on every session event: answer before loading
+    // anything else, and turn every forwarder failure into exit 1 (never 2, which
+    // Claude Code treats as blocking).
+    if let Commands::Hook { name, args } = &cli.command {
+        let code = hook::run(name, args).unwrap_or_else(|e| {
+            eprintln!("{e:#}");
+            1
+        });
+        std::process::exit(code);
+    }
+
     let ctx = crate::db::Context::load()?;
 
     match cli.command {
@@ -368,6 +388,7 @@ pub fn run(cli: Cli) -> Result<()> {
             settings_path,
             quiet,
         }),
+        Commands::Hook { .. } => unreachable!("handled before Context::load"),
         Commands::SelfUpdate { check, quiet } => {
             selfupdate::run(selfupdate::SelfUpdateOpts { check, quiet })
         }
