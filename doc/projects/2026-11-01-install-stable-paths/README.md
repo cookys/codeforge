@@ -12,10 +12,10 @@
 
 | Phase | Size | Status |
 |---|---|---|
-| Plan + hetero plan review | — | 進行中 |
+| Plan + hetero plan review | — | ✅ 2026-11-02 凍結（g1+g2，13 條意見全採納） |
 | P1 寫入穿透 symlink + 共用檔偵測 | S | — |
 | P2 `codeforge hook` + 不帶路徑與版號的 command + 固定 marker | M | — |
 | P3 `cleanupPeriodDays` 依共用與否決定 | S | — |
 | P4 文件、版本、發布 | S | — |
 
-Last updated: 2026-11-01
+Last updated: 2026-11-02

@@ -1,6 +1,6 @@
 # Plan — install／bootstrap 對共用 settings.json 安全（v0.0.7）
 
-> Status: draft（hetero plan review 前）· Owner: cookys · Branch: `feature/install-stable-paths` · Size: L
+> Status: frozen（hetero plan review g1+g2 完成，2026-11-02）· Owner: cookys · Branch: `feature/install-stable-paths` · Size: L
 > BACKLOG: B35 · Project: [`doc/projects/2026-11-01-install-stable-paths/`](../projects/2026-11-01-install-stable-paths/README.md)
 
 ## 0. Context
@@ -50,7 +50,7 @@
 
 ## 2.6 Change-policy decisions
 
-- **Compatibility impact**: `published-compatible`。新 install 寫出不同的 command 字串與 marker，但舊 entry（`codeforge@0.0.x` marker、`hooks/<ver>/` node 路徑）都會被既有 sweep 收掉再重寫，不會重複觸發；沒重跑 install 的機器繼續用舊的 versioned 腳本，照常運作。CHANGELOG 註明「升級後重跑一次 `codeforge install --hooks`（或 `bootstrap`）」。`cleanupPeriodDays` 的預設對單機使用者不變。
+- **Compatibility impact**: `published-compatible`，但共用檔有升級順序。新 install 寫出不同的 command 字串與 marker，舊 entry（`codeforge@0.0.x` marker、`hooks/<ver>/` node 路徑）都會被既有 sweep 收掉再重寫，不會重複觸發。單機檔：沒重跑 install 的機器繼續用舊的 versioned 腳本，照常運作。共用檔：一旦任一台用 0.0.7 改寫，所有讀這份檔的機器都會執行 `codeforge hook …`；PATH 上還是 0.0.6 的機器會得到 clap 的未知子命令（exit 2，在 PreCompact 上會擋下 compaction）。所以順序是：每台先 `self-update` 到 0.0.7，再讓改寫後的 settings.json 進共用來源。不雙寫舊 node 路徑（會重複觸發）。CHANGELOG 與 P4 第 5 步寫明這個順序。`cleanupPeriodDays` 的預設對單機使用者不變。
 - **Dependency decision**: `platform/stdlib` + `existing`。symlink 用 `std::fs::symlink_metadata`／`canonicalize`；git 版控偵測呼叫 `git` 執行檔（找不到 git 就略過這項偵測）；子行程用 `std::process::Command`。
 
 ## 3. File-structure map
@@ -72,15 +72,16 @@
 ### P1（S）— 寫入穿透 symlink + 共用檔偵測
 
 1. **先寫紅測試** `write_through_symlink_keeps_link`：tempdir 建 `dot/settings.json` 與指向它的 `home/settings.json`，呼叫 `write_settings_atomic(home/settings.json, {"a":1})`，斷言 `home/settings.json` 仍是 symlink（`symlink_metadata().file_type().is_symlink()`），且 `dot/settings.json` 內容含 `"a": 1`。現行程式這個測試會紅。
-2. dangling symlink 在讀取階段就擋下：`run()`／`run_uninstall()` 在 `load_settings` 前呼叫 `check_settings_path(path)`，`symlink_metadata` 是 symlink 且 `canonicalize` 失敗時回錯（訊息含連結路徑與 `read_link` 目標）。dry-run 與實寫走同一個檢查，`bootstrap --dry-run` 不會把斷掉的連結當成空檔、印出假成功。
+2. dangling symlink 在讀取階段就擋下：`run()` 在 `load_settings` 前、`run_uninstall()` 在 `exists()` 判斷前呼叫 `check_settings_path(path)`（dangling 時 `exists()` 為 false，否則 uninstall 會走「不存在、沒事可做」），`symlink_metadata` 是 symlink 且 `canonicalize` 失敗時回錯（訊息含連結路徑與 `read_link` 目標）。dry-run 與實寫走同一個檢查，`bootstrap --dry-run` 不會把斷掉的連結當成空檔、印出假成功。
 2b. 改 `write_settings_atomic`：若 `symlink_metadata(path)` 是 symlink，`target = fs::canonicalize(path)`（可解相對連結與連結鏈，寫到最終實體）；在 `target` 同目錄寫 `<target>.tmp.<pid>`，`sync_all` 後 rename 到 `target`；不是 symlink 時行為不變（但同樣補 `sync_all`）。保留 target 原本的權限（`fs::metadata(target).permissions()` 套到 tmp）。錯誤處理：
    - dangling symlink（`canonicalize` 失敗）：回錯並印出連結路徑與 `read_link` 的目標，**絕不**退回對連結本身做 rename。
    - target 目錄不可寫（例如 home-manager 的 `/nix/store`，EACCES／EROFS）：錯誤訊息指出 target 路徑。
    - 寫入或 rename 失敗時刪掉 tmp，不留 `*.tmp.<pid>`。
-   - 加測試：dangling symlink 回錯且連結保持原樣；相對路徑 symlink 寫到正確 target。
+   - 加測試：dangling symlink 在 install 與 uninstall 都回錯且連結保持原樣；相對路徑 symlink 寫到正確 target。
 3. 新純函式 `fn shared_settings(path: &Path) -> SharedSettings { symlink_target: Option<PathBuf>, git_repo: Option<PathBuf> }`：
    - `symlink_target`：`symlink_metadata` 是 symlink 時填 `canonicalize` 的結果。
    - `git_repo`：對 canonical 路徑跑 `git -C <parent> ls-files --error-unmatch -- <basename>`，exit 0 時再跑 `git -C <parent> rev-parse --show-toplevel` 取 repo 根目錄；git 不存在或任一指令失敗時為 `None`。兩個 `Command` 都要 `env_remove("GIT_DIR")`、`GIT_WORK_TREE`、`GIT_INDEX_FILE`，避免繼承的環境讓 `-C` 指到別的 repo。
+   - 兩個 git `Command` 的 stdin、stderr 都設 `Stdio::null()`；`ls-files` 只看 exit status（stdout 也 null）；`rev-parse` 用 `output()` 只解析 captured stdout。spawn 失敗（含 NotFound）與任何非 0 都當 `None`，不用 `?` 往上傳英文 os error。測試：對非 git 目錄的檔案呼叫時，測試行程看不到 git 的 `fatal:` 輸出（以 `CARGO_BIN_EXE_codeforge install --dry-run` 的 stderr 斷言）。
    - 已知假陰性（只能印不到警告、不影響寫入正確性）：chezmoi 複製模式、Syncthing 同步、PATH 上沒有 git。README 註明這些情況請加 `--cleanup-period-days` 或自行檢查。
    - `is_shared() = symlink_target.is_some() || git_repo.is_some()`。
 4. `run()`（global 路徑，含 dry-run）在印出「目標 settings.json」後，若 `is_shared()`，印：
@@ -97,9 +98,10 @@
    - `pub fn run(name: &str, args: &[String]) -> Result<i32>`。
    - 名稱對照 `HOOK_SCRIPTS`（`emit-session` → `emit-session.js`、`session-digest` → `session-digest.js`；去掉 `.js` 的名稱也接受帶 `.js`）。不在清單內：stderr 印 `未知的 hook：<name>（可用：emit-session, session-digest）`，回傳 1。
    - 落地：`<data_local_dir>/codeforge/hooks/<CARGO_PKG_VERSION>/<file>`（私有快取，不會寫進 settings.json）。內容與內嵌相同就不寫；檔案不存在或內容不同時，寫 `<file>.tmp.<pid>` 再 rename（多個 hook 同時觸發時不會讀到半個檔案）。rename 失敗時（Windows 上覆寫既有檔可能失敗）重新讀目的檔，內容相同就當成功，否則回錯。函式 `pub(crate) fn materialize(name) -> Result<PathBuf>` 與 `materialize_all()`。
-   - 執行：`Command::new("node").arg(path).args(args)`，stdin／stdout／stderr 全部繼承；回傳 child 的 exit code（被 signal 中止時回傳 1）。`node` 找不到：stderr 印 `找不到 node，codeforge hook <name> 未執行`，回傳 1。轉發器自身絕不回傳 2（Claude Code 把 exit 2 當成 blocking）。
+   - 資料目錄覆寫：`default_data_local_dir()` 先讀 `CODEFORGE_DATA_LOCAL_DIR`（與既有 `CODEFORGE_CLAUDE_SETTINGS` 同一種覆寫），macOS 的 `dirs::data_local_dir()` 不讀 `XDG_DATA_HOME`。單元測試不設 env（避免 `set_var` 在 cargo test 內互相干擾），改呼叫 `materialize_in(base: &Path, name)`，傳 tempdir。
+   - 執行：`fn exec_script(path, args, stdin: Stdio) -> Result<i32>`，`Command::new("node").arg(path).args(args)`，stdout／stderr 繼承；生產路徑傳 `Stdio::inherit()`，轉發器自身絕不讀 stdin；回傳 child 的 exit code（被 signal 中止時回傳 1）。`node` 找不到：stderr 印 `找不到 node，codeforge hook <name> 未執行`，回傳 1。轉發器自身絕不回傳 2（Claude Code 把 exit 2 當成 blocking）。
    - `HOOK_SCRIPTS` 從 `install.rs` 移到 `hook.rs`（`pub(crate)`）；`extract_hook_scripts` 改成呼叫 `hook::materialize_all()`：install（非 dry-run）仍先把快取暖好，`data_local_dir` 不可寫時在 install 當下就報錯，不會拖到 hook 執行時才失敗。
-2. `main.rs`：`Hook { name: String, #[arg(trailing_var_arg = true, allow_hyphen_values = true)] args: Vec<String> }`。結果對應：`Ok(code)` → `exit(code)`；`Err(e)`（落地、spawn、wait 失敗）→ stderr 印正體中文訊息後 `exit(1)`。clap 的用法錯誤（例如漏了 name）維持 clap 預設的 2：settings.json 寫出的指令一定帶 name，這條路不在 hook 執行路徑上，README 註明。
+2. `main.rs`：`Hook { name: String, #[arg(trailing_var_arg = true, allow_hyphen_values = true)] args: Vec<String> }`。結果對應：`Ok(code)` → `exit(code)`；`Err(e)`（落地、spawn、wait 失敗）→ stderr 印正體中文訊息後 `exit(1)`。clap 的用法錯誤也不得回 2：`main` 改用 `Cli::try_parse()`，解析失敗且 argv[1] 是 `hook` 時印正體中文用法說明後 `exit(1)`；其他子命令維持 `e.exit()`。整合測試（`CARGO_BIN_EXE_codeforge`）：漏 name → 1、未知 name → 1。
 3. `patch_hooks(global)` 的 command 改為：
    - `codeforge hook emit-session session_start`、`codeforge hook emit-session session_end`
    - `codeforge hook session-digest`（SessionEnd、PreCompact）
@@ -111,7 +113,7 @@
    - 單機檔：PATH 解析到同一個 binary 時寫 `codeforge statusline`；否則維持絕對路徑（單機不擴散，現行行為）。
 6. `is_legacy_codeforge_command` 不用改（舊的 node 路徑 entry 都有 marker，靠 marker 就會被 sweep）；加測試證明：一份含 `codeforge@0.0.6` marker 與 `hooks/0.0.6/…` node 路徑的 settings，install 後只剩新形式、沒有重複。
 7. 更新既有測試中預期 `hooks/0.0.x/` 路徑的斷言（`patch_hooks_creates_block`、`global_install_sweeps_unmarkered_legacy_node_hooks` 等）。
-8. 新測試：KR1（逐條斷言，規則同 KR1 表格，不做 `contains('/')`）、KR2（同一份輸入連跑兩次 `patch_hooks` + `patch_statusline` 輸出相同；marker 等於 `codeforge@1`）、KR6（`hook::run` 對未知名稱回 1；抽出 `fn exec_script(path, args) -> Result<i32>`，以 tempdir 裡的小 js 檔測試：stdin 原樣轉發、argv 傳遞、exit code 7 原樣回傳；沒有 node 時 skip 並印出原因）。
+8. 新測試：KR1（逐條斷言，規則同 KR1 表格，不做 `contains('/')`）、KR2（同一份輸入連跑兩次 `patch_hooks` + `patch_statusline` 輸出相同；marker 等於 `codeforge@1`）、KR6（`hook::run` 對未知名稱回 1；`exec_script` 以 tempdir 裡的小 js 檔測試，stdin 傳 `Stdio::from(File::open(<含 JSON 的 temp 檔>))`：js 把收到的 stdin 與 argv 寫進輸出檔，斷言逐字相同；exit code 7 與 2 都原樣回傳；沒有 node 時 skip 並印出原因）。
 9. 兩支腳本的相依（已查證）：`emit-session.js` 讀 stdin 的 `cwd`、`argv[2]` 是事件名、透過 PATH 呼叫 `codeforge emit`；`session-digest.js` 讀 stdin 的 `session_id`／`transcript_path`／`cwd`，唯一依賴自身位置的是 `__dirname/session-digest.log`（寫在快取目錄旁，寫入失敗已被 try/catch 包住）。兩者都不讀 env。所以從快取目錄執行與現在從 `hooks/<ver>/` 執行行為相同。
 
 **Acceptance**：KR1、KR2、KR6 綠；e2e：`CODEFORGE_CLAUDE_SETTINGS=<scratch>/s.json codeforge install --hooks --dry-run` 輸出中，所有 hook `command` 都是 `codeforge …` 開頭；`echo '{}' | codeforge hook session-digest` 在 scratch HOME 下 exit 0。
@@ -133,7 +135,7 @@
 2. CHANGELOG `[0.0.7]`：列 P-a～P-f 的修正、升級後重跑 install 的說明、`--cleanup-period-days`、`codeforge hook`。
 3. 版號：`Cargo.toml` 0.0.7、`cargo update -p codeforge --offline`。
 4. merge 進 main（`QC-Verdict` trailer）→ push → 看 CI → 打 tag `v0.0.7` → 看 release workflow → `gh release edit v0.0.7 --draft=false --latest --notes-file <CHANGELOG 0.0.7 段>`。發布是對外動作，在 owner 核可本計畫後才做。
-5. 回覆 7840hs（fleet reply）：版本、升級步驟 `codeforge self-update` → `codeforge bootstrap --dry-run`（確認警告、command 形式、沒有 `cleanupPeriodDays`）→ `codeforge bootstrap`；並提醒 dotfiles 裡舊的 `hooks/0.0.x` entry 會被這次 install 換掉。
+5. 回覆 7840hs（fleet reply）：版本、升級步驟 `codeforge self-update` → `codeforge bootstrap --dry-run`（確認警告、command 形式、沒有 `cleanupPeriodDays`）→ `codeforge bootstrap`；並提醒 dotfiles 裡舊的 `hooks/0.0.x` entry 會被這次 install 換掉，以及升級順序：共用 dotfiles 的每台機器都先 `self-update` 到 0.0.7，最後才 commit／同步改寫後的 settings.json。
 
 **Acceptance**：KR7、KR8。
 
@@ -143,7 +145,7 @@
 
 - script-gated：§2 KR1–KR7 的單元／整合測試、品質閘、CI。
 - human-gated：v0.0.7 發布前 owner 核可；7840hs 由它的 owner 決定何時真跑 bootstrap。
-- e2e 只在 scratch 目錄、以 `CODEFORGE_CLAUDE_SETTINGS` 與 `XDG_DATA_HOME` 指向 temp 路徑執行，不碰本機 `~/.claude/settings.json`。
+- e2e 只在 scratch 目錄、以 `CODEFORGE_CLAUDE_SETTINGS` 與 `CODEFORGE_DATA_LOCAL_DIR` 指向 temp 路徑執行，不碰本機 `~/.claude/settings.json` 與資料目錄。
 
 ## 6. Risks + inversion
 
@@ -157,6 +159,7 @@
 | 舊版 entry 沒被 sweep，新舊 hook 同時觸發 | P2 第 6 步的遷移測試 |
 | 共用檔上 `cleanupPeriodDays` 不再預設寫入，transcript 30 天後被清 | 印出提示與旗標；單機使用者不受影響 |
 | `is_shared()` 假陰性（chezmoi 複製、Syncthing、無 git） | 只影響警告與 `cleanupPeriodDays` 預設；hook／statusLine 在單機檔也已不帶路徑與版號（statusLine 只有 PATH 對不上時例外）；README 註明 |
+| 共用檔被 0.0.7 改寫時，別台還是 0.0.6 | 升級順序寫進 CHANGELOG 與給 7840hs 的回覆（§2.6） |
 | `/nix/store` 等唯讀 target | 不嘗試繞過；錯誤訊息指出 target，請使用者改 dotfiles 來源 |
 
 ## 7. Out of scope
@@ -178,4 +181,6 @@
 - Ladder：consult 後重跑 `probe-unknown.js classify` 仍是 U1，唯一訊號是 S4（這些詞在 knowledge／memory 零命中），不是未解的設計問題；第二次 U1 與即將進行的 hetero plan review 重複，故不再花。finish 時以 `autopilot:learn` 記下這些詞，讓下次命中。
 - Proposal：選項 A／B／C 已在決策卡 d-f0103e28 呈給 owner；owner 2026-11-01 改指示「寫計畫、過 hetero loop review」，本計畫依卡上推薦的 A 撰寫，卡已關閉。
 - Plan review g1（2026-11-01）：gpt-6.1-sol CONDITIONAL、grok-4.6 STOP；3 個 blocker 全部採納（marker 分流保住 `--project-hooks` 輸出；KR1 改成不誤傷既有 `2>/dev/null` 字串），4 個非阻擋意見也採納（hook 結果對應 exit code、statusLine 選擇抽成純函式、dangling symlink 在讀取階段擋下）。處置檔：`doc/plans/2026-11-01-install-stable-paths.g1-dispositions.json`。
+- Plan review g2（2026-11-02，terminal）：兩席 STOP；2 個 blocker（hook 子命令的 clap 錯誤也回 1、git 子行程不把英文輸出漏給使用者）與 4 個非阻擋（uninstall 的 dangling 判斷順序、`CODEFORGE_DATA_LOCAL_DIR` 覆寫、`exec_script` 的 stdin 參數化、共用檔升級順序）由 depth-0 直接裁決，全部採納並併入。處置檔：`doc/plans/2026-11-01-install-stable-paths.g2-dispositions.json`。
+- 凍結：`check-phase-review-receipt.js --plan-artifact <g2> --dispositions <g2-disp>` 對 g2 送審時的版本 exit 0。審查產物：`*.g1-review.json`、`*.g2-review.json`。
 - Plan review manifest：`doc/plans/2026-11-01-install-stable-paths.plan-review-manifest.json`。rubric、各 generation 產物與處置在下方補上。
