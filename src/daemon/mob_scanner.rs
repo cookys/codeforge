@@ -921,6 +921,25 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
     }
 
     #[test]
+    fn dup_grouped_use_with_trailing_block_comment_spawns_none() {
+        // Review g2 (grok): a boundary line that also opens `/*` must stay
+        // a boundary and keep its multi-line continuation.
+        let dir = tempdir().unwrap();
+        let mut u =
+            String::from("pub(crate) use crate::{ /* grouped imports\n   kept together */\n");
+        for i in 0..12 {
+            u.push_str(&format!(
+                "    some_module_{i}::{{FirstLongName{i}, SecondLongName{i}}},\n"
+            ));
+        }
+        u.push_str("};\n#[derive(Debug)] /* trailing\n   note */\nfn main() {}\n");
+        write(&dir.path().join("src/a.rs"), &u);
+        write(&dir.path().join("src/b.rs"), &u);
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert!(dop_names(&specs).is_empty(), "got: {specs:?}");
+    }
+
+    #[test]
     fn dup_multiline_grouped_use_spawns_none() {
         let dir = tempdir().unwrap();
         let mut u = String::from("use crate::{\n");

@@ -359,29 +359,35 @@ fn classify(t: &str, lang: Lang, state: State) -> (LineClass, State) {
             if t == "*" || t.starts_with("*/") || t.starts_with("* ") {
                 return (LineClass::Skip, State::Normal);
             }
-            // Code followed by an unclosed `/*` (review g1): the line's
-            // code part is classified as usual, the comment body that
-            // follows is skipped.
-            if opens_unclosed_block_comment(t) {
-                let class = if is_trivial(t) {
-                    LineClass::Skip
-                } else {
-                    LineClass::Keep
-                };
-                return (class, State::BlockComment);
-            }
         }
     }
 
-    // Boundaries: imports, declarations, attributes, decorators.
+    // Code followed by an unclosed `/*` (review g1): the line itself is
+    // classified as usual and the comment body after it is skipped.
+    let opens_comment = lang != Lang::Python && opens_unclosed_block_comment(t);
+
+    // Boundaries: imports, declarations, attributes, decorators. Checked
+    // before the comment state (review g2): a boundary line stays a
+    // boundary, and a multi-line continuation it opens wins over the
+    // comment (its lines are boundaries until the terminator anyway).
     if let Some(next) = boundary(t, lang) {
+        let next = if opens_comment && next == State::Normal {
+            State::BlockComment
+        } else {
+            next
+        };
         return (LineClass::Boundary, next);
     }
 
+    let next = if opens_comment {
+        State::BlockComment
+    } else {
+        State::Normal
+    };
     if is_trivial(t) {
-        return (LineClass::Skip, State::Normal);
+        return (LineClass::Skip, next);
     }
-    (LineClass::Keep, State::Normal)
+    (LineClass::Keep, next)
 }
 
 /// `Some(next_state)` when `t` is a boundary line.
