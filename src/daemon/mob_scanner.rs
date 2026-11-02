@@ -898,6 +898,29 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
     }
 
     #[test]
+    fn dup_block_comment_opened_after_code_spawns_none() {
+        // Review g1 (both seats): `/*` mid-line must start comment state.
+        let dir = tempdir().unwrap();
+        let mut body = String::new();
+        for i in 0..12 {
+            body.push_str(&format!(
+                "   Prose line {i} describing the module behaviour at length.\n"
+            ));
+        }
+        body.push_str("*/\nfn main() {}\n");
+        write(
+            &dir.path().join("src/a.rs"),
+            &format!("let opener_a = prepare(ctx); /*\n{body}"),
+        );
+        write(
+            &dir.path().join("src/b.rs"),
+            &format!("let opener_b = setup(other); /*\n{body}"),
+        );
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert!(dop_names(&specs).is_empty(), "got: {specs:?}");
+    }
+
+    #[test]
     fn dup_multiline_grouped_use_spawns_none() {
         let dir = tempdir().unwrap();
         let mut u = String::from("use crate::{\n");

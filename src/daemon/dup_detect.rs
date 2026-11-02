@@ -359,6 +359,17 @@ fn classify(t: &str, lang: Lang, state: State) -> (LineClass, State) {
             if t == "*" || t.starts_with("*/") || t.starts_with("* ") {
                 return (LineClass::Skip, State::Normal);
             }
+            // Code followed by an unclosed `/*` (review g1): the line's
+            // code part is classified as usual, the comment body that
+            // follows is skipped.
+            if opens_unclosed_block_comment(t) {
+                let class = if is_trivial(t) {
+                    LineClass::Skip
+                } else {
+                    LineClass::Keep
+                };
+                return (class, State::BlockComment);
+            }
         }
     }
 
@@ -447,6 +458,42 @@ fn boundary(t: &str, lang: Lang) -> Option<State> {
     }
 }
 
+/// True when `t` leaves a `/*` block comment open: a `/*` outside a
+/// double-quoted string, before any `//`, with no `*/` after it.
+fn opens_unclosed_block_comment(t: &str) -> bool {
+    let b = t.as_bytes();
+    let mut in_string = false;
+    let mut in_comment = false;
+    let mut i = 0;
+    while i < b.len() {
+        if in_comment {
+            if b[i] == b'*' && b.get(i + 1) == Some(&b'/') {
+                in_comment = false;
+                i += 2;
+                continue;
+            }
+        } else if in_string {
+            if b[i] == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b[i] == b'"' {
+                in_string = false;
+            }
+        } else if b[i] == b'"' {
+            in_string = true;
+        } else if b[i] == b'/' && b.get(i + 1) == Some(&b'/') {
+            return false;
+        } else if b[i] == b'/' && b.get(i + 1) == Some(&b'*') {
+            in_comment = true;
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+    in_comment
+}
+
 /// Drop one leading Rust visibility qualifier: `pub`, `pub(crate)`,
 /// `pub(super)`, `pub(self)`, `pub(in path)`.
 fn strip_rust_visibility(t: &str) -> &str {
@@ -525,6 +572,34 @@ mod tests {
             "/*\nlong prose line one here\nlong prose line two here\n*/\nlet real_code = 1;\n";
         let (lines, _) = normalize(text, Lang::Rust);
         assert_eq!(lines, vec!["let real_code = 1;".to_string()]);
+    }
+
+    #[test]
+    fn block_comment_opened_mid_line_is_tracked() {
+        // The opener's code part is kept; the comment body is not.
+        let text = "let a = 1; /*\nprose inside the comment\n*/\nlet real_code = 2;\n";
+        let (lines, _) = normalize(text, Lang::Rust);
+        assert_eq!(
+            lines,
+            vec![
+                "let a = 1; /*".to_string(),
+                "let real_code = 2;".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn comment_opener_inside_string_or_line_comment_is_ignored() {
+        let text = "let glob = \"src/*.rs\";\nlet next_line = 2;\n// see /* old\nlet third = 3;\n";
+        let (lines, _) = normalize(text, Lang::Rust);
+        assert_eq!(
+            lines,
+            vec![
+                "let glob = \"src/*.rs\";".to_string(),
+                "let next_line = 2;".to_string(),
+                "let third = 3;".to_string(),
+            ]
+        );
     }
 
     #[test]
