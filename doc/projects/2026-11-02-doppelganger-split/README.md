@@ -26,9 +26,15 @@
 
 | Phase | 內容 | 狀態 |
 |-------|------|------|
-| P1 | scanner 重複區塊偵測 → 產生分身怪 | ⏳ |
-| P2 | mobs `parent_id`／`generation` 欄位 + migration | ⏳ |
-| P3 | combat 擊殺分裂 + Ward 消費 | ⏳ |
-| P4 | inventory 警語、spec／文件同步 | ⏳ |
+| P1 | scanner 重複區塊偵測 → 產生分身怪 | ✅ `a241b7e` |
+| P2 | mobs `parent_id`／`generation` 欄位 + migration | ✅ `8e2802c` |
+| P3 | combat 擊殺分裂 + Ward 消費 | ✅ `b30b795` |
+| P4 | inventory 警語、spec／文件同步 | ✅ `5cc32c4` |
+
+## Verify notes
+
+- 實測 `scan_dir`（release build，臨時測試、未 commit）：codeforge repo 46 ms、20 隻（含 3 隻分身怪：`ferris-sprite.ts ↔ sprite.rs` 的像素列、`craft.rs ↔ use_item.rs`、`world.rs ↔ snapshot/render.rs`）；autopilot repo 425 ms。對應 U1 consult 標為 insufficient_evidence 的 DefaultHasher 速度疑慮：在 tick 預算內。
+- 觀察（範圍外）：scanner 的 skip 清單沒有 `.claude/worktrees`，所以有 worktree 的 repo 會在 worktree 副本之間抓到重複；既有四種怪也一樣會掃進 worktree。
+- 突變探測：拿掉 `pub` 前綴處理、拿掉每檔一個位置、拿掉排序走訪、顛倒「先標記死亡再生子代」——各自都有測試轉紅。
 
 Last updated: 2026-11-02
