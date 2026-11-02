@@ -1,9 +1,9 @@
 # Doppelganger 分身怪：重複程式碼偵測 + 擊殺分裂（B10）
 
-**Status**: Active · L · branch `feature/doppelganger-split`
+**Status**: ✅ Done 2026-11-02 · L · branch `feature/doppelganger-split`
 **Owner 決定**: 卡 d-b8ef81a6 → A（proposal 三參數全用預設 A/A/A）；卡 d-2bfdc585 → A（範圍擴大到 scanner 偵測，讓分身怪真的出現）
-**Proposal**: [`doc/proposals/2026-04-18-doppelganger-split.md`](../../proposals/2026-04-18-doppelganger-split.md)
-**Plan**: [`doc/plans/2026-11-02-doppelganger-split.md`](../../plans/2026-11-02-doppelganger-split.md)
+**Proposal**: [`doc/proposals/2026-04-18-doppelganger-split.md`](../../../proposals/2026-04-18-doppelganger-split.md)
+**Plan**: [`doc/plans/2026-11-02-doppelganger-split.md`](../../../plans/2026-11-02-doppelganger-split.md)
 
 ## Project Goal
 
