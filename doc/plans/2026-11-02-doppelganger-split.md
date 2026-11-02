@@ -1,6 +1,6 @@
 # Plan — Doppelganger 分身怪：重複程式碼偵測 + 擊殺分裂（B10）
 
-**Status**: draft（plan review 前）
+**Status**: frozen 2026-11-02（plan review g1＋g2，見 §7）
 **Project**: [`doc/projects/2026-11-02-doppelganger-split/`](../projects/2026-11-02-doppelganger-split/README.md)
 **Proposal**: [`doc/proposals/2026-04-18-doppelganger-split.md`](../proposals/2026-04-18-doppelganger-split.md)（Decision 段：A/A/A + 範圍追加）
 **Size**: L · branch `feature/doppelganger-split`
@@ -57,27 +57,27 @@ owner 決定（d-b8ef81a6、d-2bfdc585）：分裂參數 A/A/A，範圍含 scann
 | 空行 | trim 後為空 | 略過 |
 | 註解行 | brace 語言（rs/ts/js/go）：開頭 `//`、`/*`，或整行是 `*`、`*/`，或開頭 `* `（block comment 內文）；Python：開頭 `#` | 略過 |
 | 瑣碎行 | 英數字元數 < 3（`}`、`});`、`)`），或只剩英數的內容屬於 {`else`, `return`, `break`, `continue`, `pass`, `default`, `try`, `finally`, `do`, `end`} | 略過 |
-| 邊界行 | import／宣告：rs `use `、`mod …;`、`extern crate`；py `import `、`from `；ts/js `import `、`export … from`；go `import`、`package `；屬性與 decorator：rs `#[`、`#![`，py／ts `@` | **切斷**視窗（不讓兩邊不相干的程式碼被縫成一塊） |
+| 邊界行 | import／宣告：rs 先剝掉行首一個可見度前綴（`pub`、`pub(crate)`、`pub(super)`、`pub(self)`、`pub(in …)` 到配對的右括號）再判斷 `use `、`mod …;`、`extern crate`；py `import `、`from `；ts/js `import `、`export … from`；go `import`、`package `；屬性與 decorator：rs `#[`、`#![`，py／ts `@` | **切斷**視窗（不讓兩邊不相干的程式碼被縫成一塊） |
 | 其餘 | — | 保留（正規化 = trim 後原文） |
 
 **跨行狀態**（逐行分類前先追蹤，整段都不入視窗）：
 
 - brace 語言的 block comment：某行在 `/*` 之後沒有 `*/` → 進入註解狀態，直到含 `*/` 的那行（含）為止，中間每行當註解略過，不論開頭有沒有 `*`。
 - Python 三引號字串：行首（trim 後）是 `"""` 或 `'''` 且同一行沒有閉合 → 進入字串狀態直到閉合那行；整段略過。
-- 跨行 import／宣告：rs `use …{` 沒以 `;` 結尾 → 直到以 `;` 結尾的行；py `from … import (` → 直到含 `)` 的行；ts/js `import {`、`export {` 沒有 `from`／`;` → 直到含 `from` 或以 `;` 結尾的行；go `import (` → 直到 `)` 那行。整段當邊界：開頭切斷視窗，中間的行全部不入視窗。
+- 跨行 import／宣告：rs（同樣先剝可見度前綴）`use …{` 沒以 `;` 結尾 → 直到以 `;` 結尾的行；py `from … import (` → 直到含 `)` 的行；ts/js `import {`、`export {` 沒有 `from`／`;` → 直到含 `from` 或以 `;` 結尾的行；go `import (` → 直到 `)` 那行。整段當邊界：開頭切斷視窗，中間的行全部不入視窗。
 - 跨行 rs 屬性：`#[` 開頭但不以 `]` 結尾 → 直到以 `]` 結尾的行；整段當邊界。
 
 **跳過的檔案**：前 5 行含 `@generated` 或 `DO NOT EDIT`；檔名 `*.min.js`、`*.d.ts`、`*.pb.go`、`*_pb2.py`。
 
 **視窗**：在兩個邊界之間的連續保留行上滑動，W = `DUP_WINDOW_LINES` = 8；視窗正規化文字總長 ≥ `DUP_MIN_WINDOW_BYTES` = 200，且 8 行中至少 `DUP_MIN_DISTINCT_LINES` = 4 行不同，否則不入索引。
 
-**雜湊與驗證**：`std::collections::hash_map::DefaultHasher`，逐行 hash（`str` 的 `Hash` 自帶結尾標記，不需組字串）。索引 `HashMap<u64, Vec<(file_idx, kept_line_idx)>>`；每個 hash 最多記錄 `DUP_MAX_OCCURRENCES` = 8 個出現位置：檔案按排序後的順序處理，所以留下的是（相對路徑、保留行號）最前面的 8 個；之後的出現直接忽略（bucket 滿了就不再增加，不會被移除後重建）。這樣同一段程式碼出現在很多檔案時仍會產生分身怪（≤ 3 隻，由排在前面的路徑對決定），配對數也有上限。命中後**逐行比對正規化文字**才算數；hash 只用來挑候選。
+**雜湊與驗證**：`std::collections::hash_map::DefaultHasher`，逐行 hash（`str` 的 `Hash` 自帶結尾標記，不需組字串）。索引 `HashMap<u64, Vec<(file_idx, kept_line_idx)>>`；每個 hash 對**每個檔案只記最早的 1 個**保留行位置，且最多記 `DUP_MAX_OCCURRENCES` = 8 個不同檔案：檔案按走訪順序處理，所以留下的是排在前面的 8 個檔；之後的檔直接忽略（bucket 滿了就不再增加，不會被移除後重建）。同一檔案裡重複多次的區塊不會占掉其他檔的名額。這樣同一段程式碼出現在很多檔案時仍會產生分身怪（≤ 3 隻，由排在前面的路徑對決定），配對數也有上限。命中後**逐行比對正規化文字**才算數；hash 只用來挑候選。
 
 **只抓跨檔**：同一檔案內的重複 MVP 不抓（省掉區間重疊判斷，也少掉一大類樣板）。
 
-**配對與合併**：每個合格 hash 的出現位置兩兩配對（只配不同檔，檔案 idx 小的當 a）。依 (a, b) 分組，在組內按 (ka, kb) 排序；兩邊 offset 同時 +1 才算同一塊延續。每組取最長塊的行數（W + 延續數 − 1）。
+**配對與合併**：每個合格 hash 的出現位置兩兩配對（每個位置在不同檔，所以全是跨檔）。依檔案對分組（組鍵只用來分組，跟對外的 a／b 無關）。延續判斷：每組把命中點 (ka, kb) 放進 `HashSet`；只從「(ka−1, kb−1) 不在集合裡」的點出發，沿 (ka+1, kb+1) 往後走到斷為止，得到一條鏈的長度——每個點最多被走一次，整組 O(命中數)，不做兩兩比較，也不只看排序後的相鄰項（雙重對齊時相鄰項不連續）。每組取最長鏈，塊行數 = W + 鏈長 − 1。
 
-**選出與命名**：合格的檔案對依（最長塊行數降冪、a 路徑、b 路徑）排序，取前 `MAX_DOPPELGANGERS_PER_SCAN` = 3。名稱 `dup @ <a> ↔ <b>`（scan root 相對路徑、`/` 分隔、a < b 字典序）——**不帶行數或 hash**，重複區塊長大或縮小名稱都不變，re-scan 不會多生一隻；同一對檔案之間的多段重複算同一隻。檔案改名會換身分（接受）。`origin_path` = a。
+**選出與命名**：每對的 a、b 一律定義為兩個 scan root 相對路徑（`/` 分隔）依 byte 字典序的小與大，跟走訪順序無關（例：`a.rs` 與 `a/b.rs`，`.` 小於 `/`，a = `a.rs`）。合格的檔案對依（最長塊行數降冪、a、b）排序，取前 `MAX_DOPPELGANGERS_PER_SCAN` = 3。名稱 `dup @ <a> ↔ <b>`——**不帶行數或 hash**，重複區塊長大或縮小名稱都不變，re-scan 不會多生一隻；同一對檔案之間的多段重複算同一隻。檔案改名會換身分（接受）。`origin_path` = a。
 
 **預算**（都在 tick transaction 內跑，所以要有上限）：
 
@@ -91,7 +91,7 @@ owner 決定（d-b8ef81a6、d-2bfdc585）：分裂參數 A/A/A，範圍含 scann
 
 現在的檔案迴圈在 20 隻上限時 `break`，後面的檔案根本沒讀；重複偵測需要所有檔案的內容。改成：
 
-1. `collect_source_files` 走訪時就排序：每個目錄先收下全部 entries、依檔名排序，再依這個順序處理檔案與子目錄（深度優先、子目錄也按名稱順序）；`MAX_FILES_TO_SCAN` 只作用在這個已排序的走訪上。理由：`read_dir` 順序各機器不同，檔數超過上限時，被收進來的子集必須由路徑決定。
+1. `collect_source_files` 走訪時就排序：每個目錄先收下全部 entries、依檔名升序排序，再依這個順序處理檔案與子目錄（深度優先、子目錄也按名稱升序；現行實作是 stack LIFO，排序後直接 push 會讓子目錄反序，要改成反序 push 或改用遞迴）；`MAX_FILES_TO_SCAN` 只作用在這個已排序的走訪上。理由：`read_dir` 順序各機器不同，檔數超過上限時，被收進來的子集必須由路徑決定。
 2. 單次讀檔迴圈：每個檔案讀一次，跑既有四種 per-file heuristic（收滿 `MAX_MOBS_PER_SCAN` = 20 筆後只停止收集，**不**提前預扣分身怪名額、也不 break 迴圈），同時把正規化後的行餵進重複偵測的索引（受 §3.1 的預算限制）。
 3. 迴圈結束後跑重複配對，得到 d 隻分身怪（d ≤ `MAX_DOPPELGANGERS_PER_SCAN` = 3）。
 4. 輸出 = 既有結果的前 (20 − d) 筆 + 這 d 隻。沒有重複時既有怪仍可到 20 隻，跟現在一樣。
@@ -156,9 +156,13 @@ P1 必要測試（tempdir fixture，`scan_dir` 直接呼叫）：
 7. 先放 20 個會產生殭屍的檔案、字典序排在後面的兩檔才有重複 → 結果含分身怪，總數 ≤ 20。
 8. 同一檔案內的兩段重複 → 0 隻。
 9. 前 5 行有 `@generated` 的檔案不參與重複偵測。
-10. 1001 個來源檔，只有字典序最後的兩檔有重複 → 兩個以不同順序建立的 tempdir 結果相同（都抓不到，因為最後一檔超出 1000 上限；斷言兩邊一致且不含該對）。再做一組只有字典序最前面的兩檔有重複 → 兩邊都抓到。
+10. （單一目錄 fixture，所以目錄內檔名序 = 全域字典序）1001 個來源檔，只有字典序最後的兩檔有重複 → 兩個以不同順序建立的 tempdir 結果相同（都抓不到，因為最後一檔超出 1000 上限；斷言兩邊一致且不含該對）。再做一組只有字典序最前面的兩檔有重複 → 兩邊都抓到。
 11. 30 個殭屍檔、沒有任何合格重複 → 恰好 20 隻、0 隻分身怪。
 12. 有足夠的既有候選時，分別構造 0、1、2、3 組重複 → 總數都是 20，分身怪各為 0、1、2、3。
+13. 檔 A 把同一段合格區塊連寫 8 次、檔 B 寫 1 次 → 恰好 1 隻，名稱由 A、B 的路徑決定。
+14. 兩檔各有同一段 ≥ 8 行的單行 `pub use …;`，以及另一組兩檔各有同一段跨行 `pub(crate) use foo::{ … };` → 都是 0 隻。
+15. `a.rs` 與 `a/b.rs` 有重複 → 名稱 `dup @ a.rs ↔ a/b.rs`、origin_path = `a.rs`。
+16. 鏈延伸函式的單元測試：命中點 {(0,0),(0,100),(1,1),(1,101),(2,2)} → 最長鏈 3；{(5,9)} → 1；空集合 → 0。（每 hash 每檔只記 1 個位置後，`scan_dir` 層級很難構造雙重對齊，所以直接測函式。）
 
 ## 5. 不做
 
@@ -200,3 +204,14 @@ consult 標記為 insufficient_evidence 的一項：DefaultHasher 在 tick 延�
 | e6b6409a | astra | non-blocking R3 | 丟掉後會被重建 → 隨 40ff8206 一起解：bucket 滿了只忽略、不移除 |
 | 9e3e4558 | grok | blocking R2 | §3.2 括號那句讀起來像在規定「截斷後再排序」→ 改寫為只有走訪時排序；加 1001 檔測試 10 |
 | 9f949a5d、38e61d64 | astra、grok | non-blocking R11 | §3.6 漏了 effects.rs、mob_scanner.rs 模組首段、proposal → 補進 §3.6 |
+
+**g2**（gpt-6-astra low STOP、grok-4.7 high CONDITIONAL；已達 2 輪上限，terminal，depth-0 裁決 6 條全採納並直接折入，dispositions `2026-11-02-doppelganger-split.g2-dispositions.json`）：
+
+| fp | 席 | 等級 | 處置 |
+|----|----|------|------|
+| 9acfa9f1、c9703cf1 | astra、grok | blocking R1 | 同一檔重複 8 次會占滿 8 個名額、讓跨檔重複變 0 隻 → 每 hash 每檔只記最早 1 個位置、最多 8 個不同檔；測試 13 |
+| be23708e、332f3413 | astra、grok | blocking R1 | `pub use`、`pub(crate) use` 等帶可見度的 import 不算邊界 → 先剝可見度前綴再判斷；測試 14 |
+| db5f16c6 | grok | non-blocking R3 | 組內延續判斷若兩兩比較是平方、只看相鄰項會被雙重對齊切短 → HashSet 鏈延伸，O(命中數)；測試 16 |
+| a5d5e2f8 | grok | non-blocking R2 | 走訪 idx 與路徑字典序在巢狀路徑上相反；stack LIFO 會讓子目錄反序 → a／b 一律用 byte 字典序，與 idx 脫鉤；走訪改為真正升序；測試 15、測試 10 註明單一目錄 |
+
+g2 之後不再送第三輪（上限 2 輪）；實作照本版，code review 時兩席會再看實作。

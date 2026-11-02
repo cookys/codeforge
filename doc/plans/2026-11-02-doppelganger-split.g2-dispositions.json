@@ -1,0 +1,43 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "doppelganger-split-2026-11-02",
+ "generation": 2,
+ "findings": [
+  {
+   "fingerprint": "9acfa9f1719d15a482e24db9f3ceda528d4b6a85503d60dd5ad425bdb06a546f",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Correct: one file repeating a block could fill all 8 slots. Now at most one (earliest) position per file per hash, up to 8 distinct files; test 13."
+  },
+  {
+   "fingerprint": "be23708ecf62fa46f60c5419ec24ced9fad46004765cd1ae9a7bfd38316a9635",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Correct: visibility-prefixed use was not a boundary. Strip one pub / pub(...) prefix before the Rust boundary rules, single-line and multiline; test 14."
+  },
+  {
+   "fingerprint": "c9703cf16bc9d09ec3213698ee760e35bcebb588b4a4fc0f7f57adfc6dbe2c35",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Same defect as 9acfa9f1; folded identically."
+  },
+  {
+   "fingerprint": "332f3413269f989db4a3a0d347c6652a328f28b59876048803c964c82bd2f45e",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Same as be23708e; folded identically."
+  },
+  {
+   "fingerprint": "db5f16c63511fe0214de102030db84a14832e572d943e019462c05ce8459c9be",
+   "candidate_blocker": false,
+   "disposition": "accepted_nonblocking",
+   "rationale": "Correct: chain detection now uses a HashSet walk from chain starts, O(hits); unit test 16 on the chain function."
+  },
+  {
+   "fingerprint": "a5d5e2f87c006b8f0047f9bb5735fb199282695c2cfa9ee42f739e6f3f84e904",
+   "candidate_blocker": false,
+   "disposition": "accepted_nonblocking",
+   "rationale": "Correct: a/b now always the byte-lexicographic min/max of relative paths, decoupled from traversal idx; traversal fixed to true ascending order (stack LIFO reversal called out); tests 15 and 10 note."
+  }
+ ]
+}
