@@ -3,7 +3,7 @@
 // (~/projects/autopilot/docs/plans/2026-10-13-live-pane-design-system.md): grid 0/2/4/12,
 // semantic colour only, verified single-cell glyphs only, no emoji-presentation glyphs.
 
-import type { Layout, PetData, PetView, SessionView, SpriteData, Step, VillageData } from '../types'
+import type { Layout, PetData, PetView, SessionView, SpriteData, VillageData } from '../types'
 
 // ---------------------------------------------------------------------------------------------
 // display width (copied from autopilot mods/live/ui.ts: a plugin cannot import another plugin)
@@ -36,87 +36,10 @@ export const GLYPH = {
   empty: '—',
   meterOn: '▰',
   meterOff: '▱',
-  /** speed (U+03DF, one cell, never emoji presentation) */
-  speed: 'ϟ',
-  spark: ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'],
 } as const
 
 // ---------------------------------------------------------------------------------------------
-// formats
-
-/** Sub-second durations (live has none): `840ms`, `1.2s`, `14s`, `2m05s`. */
-export function fmtMs(ms: number | null): string {
-  if (ms === null || !Number.isFinite(ms)) return GLYPH.empty
-  if (ms < 1000) return `${Math.round(ms)}ms`
-  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s`
-  const m = Math.floor(ms / 60_000)
-  return `${m}m${String(Math.floor((ms % 60_000) / 1000)).padStart(2, '0')}s`
-}
-export const fmtTps = (tps: number | null) => (tps === null || !Number.isFinite(tps) ? GLYPH.empty : String(Math.round(tps)))
-export const fmtCount = (n: number) => n.toLocaleString('en-US')
-export const shortModel = (m: string) => m.replace(/^claude-/, '').replace(/-\d{8}$/, '').replace(/\[1m\]$/, '')
-
-// ---------------------------------------------------------------------------------------------
-// throughput
-
-/** Below this writing window the rate is noise (one-chunk replies). */
-export const MIN_DECODE_MS = 150
-
-/**
- * One request's writing window and rate. `output_tokens` counts thinking, so the window must hold the time
- * the thinking was written in:
- * - thinking streamed as visible text: first chunk → last chunk;
- * - no thinking text streamed: send → last chunk. With the thinking display omitted, the thinking tokens are
- *   written before the first visible chunk, and a stream cannot tell a hidden thinking block from none at all.
- *   This window also holds the prompt processing, so the rate is a lower bound, never an inflated one. (Timing
- *   first → last here once showed 3578 tok/s for 773 tokens: ~9 s of hidden thinking divided out of 0.2 s.)
- * Time the API spent running its own tools inside the request (the advisor) is taken out of the window either way.
- */
-export function stepRate(t: {
-  sent: number
-  first: number | null
-  last: number | null
-  outTokens: number
-  thinkingStreamed: boolean
-  serverToolMs: number
-}): { decodeMs: number | null; tps: number | null } {
-  if (t.first === null || t.last === null) return { decodeMs: null, tps: null }
-  const start = t.thinkingStreamed ? t.first : t.sent
-  const decodeMs = Math.max(0, t.last - start - t.serverToolMs)
-  const tps = decodeMs >= MIN_DECODE_MS && t.outTokens > 0 ? t.outTokens / (decodeMs / 1000) : null
-  return { decodeMs, tps }
-}
-
-export type Summary = { requests: number; outTokens: number; avgTps: number | null; medianTtft: number | null; bestTps: number | null }
-
-export function summarize(list: readonly Step[]): Summary {
-  const timed = list.filter(s => s.tps !== null && s.decodeMs !== null)
-  const tokens = timed.reduce((n, s) => n + s.outTokens, 0)
-  const decode = timed.reduce((n, s) => n + (s.decodeMs ?? 0), 0)
-  const ttfts = list.map(s => s.ttftMs).filter((x): x is number => x !== null).sort((a, b) => a - b)
-  const rates = timed.map(s => s.tps as number)
-  return {
-    requests: list.length,
-    outTokens: list.reduce((n, s) => n + s.outTokens, 0),
-    // token-weighted: total tokens over total decode time
-    avgTps: decode > 0 ? tokens / (decode / 1000) : null,
-    medianTtft: ttfts[Math.floor(ttfts.length / 2)] ?? null,
-    bestTps: rates.length ? Math.max(...rates) : null,
-  }
-}
-
-/** One spark cell per value, scaled to the largest; a missing value draws as the lowest step, dim. */
-export function sparkline(values: readonly (number | null)[]): string {
-  const max = Math.max(0, ...values.map(v => v ?? 0))
-  return values
-    .map(v => {
-      if (v === null || max <= 0) return GLYPH.spark[0]
-      const i = Math.min(GLYPH.spark.length - 1, Math.floor((v / max) * (GLYPH.spark.length - 1) + 0.5))
-      return GLYPH.spark[i]
-    })
-    .join('')
-}
+// meter
 
 export function meter(ratio: number, width: number): { on: string; off: string } {
   const r = Math.max(0, Math.min(1, Number.isFinite(ratio) ? ratio : 0))
@@ -305,28 +228,23 @@ export function heartbeatText(sid: string, now: number, layout: Layout): string 
 
 export const BAND_MIN_ROWS = 12
 export const BAND_MIN_COLUMNS = 26
-export const BAND_SPEED_W = 34
 export const BAND_GAP = 2
 
 export const BAND_PET_W = 30
-// a sub-agent row is 33 cells + the model name; 46 holds a 13-character name
-export const BAND_RECENT_W = 46
 export const BAND_MEMORY_W = 28
 
-export type BandColumnId = 'ferris' | 'pet' | 'speed' | 'recent' | 'memory'
+export type BandColumnId = 'ferris' | 'pet' | 'memory'
 export type BandColumn = { id: BandColumnId; width: number }
 
 /**
- * The band's columns, left to right, in priority order: Ferris, pet, speed, recent requests, memory and brain
- * (forge-columns plan §2.5). As many as fit in `bodyColumns`, a gap before each but the first; the first that does not
- * fit ends the row. The spare width goes to the request table when it is shown.
+ * The band's columns, left to right, in priority order: Ferris, pet, memory and brain (forge-columns plan §2.5; speed
+ * and the request table moved to autopilot, B32). As many as fit in `bodyColumns`, a gap before each but the first;
+ * the first that does not fit ends the row.
  */
 export function bandLayout(bodyColumns: number, spriteWidth: number): BandColumn[] {
   const want: BandColumn[] = [
     { id: 'ferris', width: spriteWidth },
     { id: 'pet', width: BAND_PET_W },
-    { id: 'speed', width: BAND_SPEED_W },
-    { id: 'recent', width: BAND_RECENT_W },
     { id: 'memory', width: BAND_MEMORY_W },
   ]
   const out: BandColumn[] = []
@@ -337,8 +255,6 @@ export function bandLayout(bodyColumns: number, spriteWidth: number): BandColumn
     out.push({ ...c })
     used += need
   }
-  const recent = out.find(c => c.id === 'recent')
-  if (recent !== undefined) recent.width += bodyColumns - used
   return out
 }
 
@@ -375,42 +291,13 @@ export const MINI_MIN_ROWS = 6
 
 export type BandTier = 'label' | 'summary' | 'mini' | 'full'
 
-/** One row → a tab label; 2–5 rows or a thin column → a one-row summary; 6–11 → mini Ferris; 12+ → full. */
+/** One row → nothing (the tab label is autopilot's, B32); 2–5 rows or a thin column → a one-row summary; 6–11 → mini Ferris; 12+ → full. */
 export function bandTier(maxRows: number, bodyColumns: number, hasMini: boolean): BandTier {
   if (maxRows <= 1) return 'label'
   if (maxRows < MINI_MIN_ROWS || bodyColumns < BAND_MIN_COLUMNS) return 'summary'
   if (maxRows < BAND_MIN_ROWS) return hasMini ? 'mini' : 'summary'
   return 'full'
 }
-
-/** A part of the forge tab label; autopilot colours it by `key` (speed, trend, sep, pet). */
-export type LabelPart = { key: 'speed' | 'trend' | 'sep' | 'pet'; text: string }
-
-/**
- * The forge tab's label as keyed parts: the longest form that fits `cols` cells — `ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1`,
- * then without the pet, then without the sparkline, then `ϟ93`. A space belongs to the part after it. `spark` is ''
- * with under two timed requests, `pet` null with no pet.
- */
-export function tabParts(cols: number, tps: number | null, spark = '', pet: string | null = null): LabelPart[] {
-  const n = fmtTps(tps)
-  const speed: LabelPart = { key: 'speed', text: `${GLYPH.speed} ${n} tok/s` }
-  const trend: LabelPart | null = spark ? { key: 'trend', text: ' ' + spark } : null
-  const petParts: LabelPart[] = pet ? [{ key: 'sep', text: ' · ' }, { key: 'pet', text: pet }] : []
-  const tries: (LabelPart[] | null)[] = [
-    trend && pet ? [speed, trend, ...petParts] : null,
-    !trend && pet ? [speed, ...petParts] : null,
-    trend ? [speed, trend] : null,
-    [speed],
-  ]
-  for (const t of tries) if (t !== null && displayWidth(t.map(p => p.text).join('')) <= cols) return t
-  return [{ key: 'speed', text: `${GLYPH.speed}${n}` }]
-}
-
-/** The label as one string (the one-row summary, and tests). */
-export const tabLabel = (cols: number, tps: number | null, spark = '', pet: string | null = null): string =>
-  tabParts(cols, tps, spark, pet)
-    .map(p => p.text)
-    .join('')
 
 /** `village.rgb` as a `#rrggbb` text colour; null when it is not three 0–255 integers. */
 export function rgbHex(rgb: readonly number[]): string | null {
