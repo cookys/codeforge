@@ -42,15 +42,6 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 
 ---
 
-## B10 — Doppelganger Split + `SuppressDoppelgangerSplit` Runtime
-
-**Area**: `src/daemon/mob.rs`, `src/daemon/combat.rs`, `src/db/schema.sql`
-**Premise**: Phase 3e 的 `Doppelganger Ward` item 可 craft + use，`active_effects` table 正確寫入，但 daemon 沒有 doppelganger split 邏輯 —— 整個 split mechanic（on-defeat spawn / cascade / stats 繼承）在 spec §2 只有一行，需要先補 design 才能寫 code。Ward 目前 storage-only，`codeforge inventory` 會顯示警語提醒玩家。
-**Trigger**: `doc/proposals/2026-04-18-doppelganger-split.md` 有 `## Decision` 區塊 —— user 回答三個參數（`split_trigger` / `max_children` / `child_stat_ratio`）後可直接進入 L-size 實作。
-**Status 2026-04-18**: Proposal 已寫，等 user decision。預設答案（A/A/A）列在 proposal 文末。
-
----
-
 ## B13 — 真實 production ship e2e（對 live Mnemos server）
 
 **Area**: runtime（`codeforge ship --no-hook` SessionEnd + `~/.mnemos/data/mnemos.db`）
@@ -218,3 +209,19 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Proposed**: 心跳加「最近 N 秒內 AbovePrompt hook 有被呼叫」的條件（只看有沒有輪到，不看 blit 是否成功，不回到舊的 `pet_shown` 規則）。
 **Trigger**: autopilot 新增會拿掉 forge 分頁或不呼叫下層的模式，或使用者裝了別的會畫 band 的 plugin。
 **Not done**: 只記錄；2026-11-01 清理時順手發現，不在那次範圍。
+
+## B37 — 分身偵測：邊界續行裡的 block comment 本文含結束符時，續行提前結束
+
+**Area**: `src/daemon/dup_detect.rs` `classify`（`State::Boundary` 與 `State::BlockComment` 只能擇一）
+**Premise**: 同一行同時開了跨行 import／屬性續行與未閉合的 `/*`（例：`pub(crate) use crate::{ /*`）時，以續行狀態為準、註解狀態被丟掉。若註解本文剛好有 `};`、`]`、`)` 這類續行結束符，續行就提前回到 Normal，之後到 `*/` 為止的註解本文會進入重複索引，兩檔都這樣寫就可能生出假的分身怪。只會多生怪，不影響資料或 tick。（來源：B10 hetero code review g3，grok-4.7 finding `d06d04b2`，審查已達 3 輪上限而延後。）
+**Proposed**: 加一個「續行內的註解」狀態：遇到含 `*/` 的行之前一律略過、不檢查結束符；`*/` 之後若續行還沒結束就回到續行，直到真正的結束行。加兩檔各寫一段這種結構的負例測試。
+**Trigger**: 下次動 `dup_detect.rs` 的行分類，或實際觀察到這種假分身怪。
+**Not done**: 只記錄；B10 已修掉 g1、g2 的兩個同類問題（`c2679ad`、`bd59ca5`）。
+
+## B38 — MOB scanner 會掃進 `.claude/worktrees` 等 worktree 副本
+
+**Area**: `src/daemon/mob_scanner.rs` `should_skip_dir`
+**Premise**: skip 清單只有 `target`、`node_modules`、`.git`、`dist`、`build` 等；有 git worktree 放在 repo 內（例如 `.claude/worktrees/<lane>/`）時，scanner 會把 worktree 裡的副本當成獨立檔案。B10 實測 autopilot repo：3 隻分身怪全是 worktree 副本與主檔之間的重複；殭屍、Boss 等既有怪也會重複出現。
+**Proposed**: skip `.claude/worktrees`，或更一般地跳過含 `.git` 檔案（worktree 標記）的子目錄；加 tempdir 測試。
+**Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
+**Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
