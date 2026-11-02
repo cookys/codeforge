@@ -218,7 +218,9 @@ CREATE TABLE IF NOT EXISTS mobs (
     difficulty  INTEGER NOT NULL DEFAULT 1,
     spawned_at  INTEGER NOT NULL,                -- unix ts
     defeated_at INTEGER,                         -- NULL = alive
-    origin_path TEXT                             -- Phase 2c: repo-relative path (nullable for P2b legacy rows)
+    origin_path TEXT,                            -- Phase 2c: repo-relative path (nullable for P2b legacy rows)
+    parent_id   INTEGER,                         -- B10: Doppelganger split parent (NULL = scanner-spawned)
+    generation  INTEGER NOT NULL DEFAULT 0       -- B10: 0 = scanner-spawned, +1 per split
 );
 
 -- Partial index speeds up the per-tick "alive mobs in zone" scan
