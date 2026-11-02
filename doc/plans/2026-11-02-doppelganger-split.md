@@ -1,7 +1,7 @@
 # Plan — Doppelganger 分身怪：重複程式碼偵測 + 擊殺分裂（B10）
 
 **Status**: frozen 2026-11-02（plan review g1＋g2，見 §7）
-**Project**: [`doc/projects/2026-11-02-doppelganger-split/`](../projects/2026-11-02-doppelganger-split/README.md)
+**Project**: [`doc/projects/2026-11-02-doppelganger-split/`](../projects/_archive/2026-11-02-doppelganger-split/README.md)
 **Proposal**: [`doc/proposals/2026-04-18-doppelganger-split.md`](../proposals/2026-04-18-doppelganger-split.md)（Decision 段：A/A/A + 範圍追加）
 **Size**: L · branch `feature/doppelganger-split`
 
