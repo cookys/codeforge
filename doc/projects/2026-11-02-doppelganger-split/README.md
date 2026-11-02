@@ -35,6 +35,8 @@
 
 - 實測 `scan_dir`（release build，臨時測試、未 commit）：codeforge repo 46 ms、20 隻（含 3 隻分身怪：`ferris-sprite.ts ↔ sprite.rs` 的像素列、`craft.rs ↔ use_item.rs`、`world.rs ↔ snapshot/render.rs`）；autopilot repo 425 ms。對應 U1 consult 標為 insufficient_evidence 的 DefaultHasher 速度疑慮：在 tick 預算內。
 - 觀察（範圍外）：scanner 的 skip 清單沒有 `.claude/worktrees`，所以有 worktree 的 repo 會在 worktree 副本之間抓到重複；既有四種怪也一樣會掃進 worktree。
+- Code review（hetero，gpt-6-astra low／grok-4.7 high，ledger 在 session scratch）：g1 兩席同抓「行中 `/*` 沒進註解狀態」→ `c2679ad`；g2 grok 抓到該修正讓邊界行失去邊界 → `bd59ca5`；g3 astra SHIP-AS-IS、grok 提「續行內註解含結束符」的窄邊角 → 3 輪上限，depth-0 延後為 BACKLOG B37。receipt 檢查 rc=0。
+- 測試：`live::tests::findmnt_tmpfs_selects_xdg_candidate`（`src/live.rs`，B10 未動）全套跑一次失敗、單跑與之後連 3 次全套皆綠 → 既有的不穩定測試，非本次引入。
 - 突變探測：拿掉 `pub` 前綴處理、拿掉每檔一個位置、拿掉排序走訪、顛倒「先標記死亡再生子代」——各自都有測試轉紅。
 
 Last updated: 2026-11-02
