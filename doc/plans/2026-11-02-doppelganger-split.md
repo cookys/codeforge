@@ -60,11 +60,18 @@ owner 決定（d-b8ef81a6、d-2bfdc585）：分裂參數 A/A/A，範圍含 scann
 | 邊界行 | import／宣告：rs `use `、`mod …;`、`extern crate`；py `import `、`from `；ts/js `import `、`export … from`；go `import`、`package `；屬性與 decorator：rs `#[`、`#![`，py／ts `@` | **切斷**視窗（不讓兩邊不相干的程式碼被縫成一塊） |
 | 其餘 | — | 保留（正規化 = trim 後原文） |
 
+**跨行狀態**（逐行分類前先追蹤，整段都不入視窗）：
+
+- brace 語言的 block comment：某行在 `/*` 之後沒有 `*/` → 進入註解狀態，直到含 `*/` 的那行（含）為止，中間每行當註解略過，不論開頭有沒有 `*`。
+- Python 三引號字串：行首（trim 後）是 `"""` 或 `'''` 且同一行沒有閉合 → 進入字串狀態直到閉合那行；整段略過。
+- 跨行 import／宣告：rs `use …{` 沒以 `;` 結尾 → 直到以 `;` 結尾的行；py `from … import (` → 直到含 `)` 的行；ts/js `import {`、`export {` 沒有 `from`／`;` → 直到含 `from` 或以 `;` 結尾的行；go `import (` → 直到 `)` 那行。整段當邊界：開頭切斷視窗，中間的行全部不入視窗。
+- 跨行 rs 屬性：`#[` 開頭但不以 `]` 結尾 → 直到以 `]` 結尾的行；整段當邊界。
+
 **跳過的檔案**：前 5 行含 `@generated` 或 `DO NOT EDIT`；檔名 `*.min.js`、`*.d.ts`、`*.pb.go`、`*_pb2.py`。
 
 **視窗**：在兩個邊界之間的連續保留行上滑動，W = `DUP_WINDOW_LINES` = 8；視窗正規化文字總長 ≥ `DUP_MIN_WINDOW_BYTES` = 200，且 8 行中至少 `DUP_MIN_DISTINCT_LINES` = 4 行不同，否則不入索引。
 
-**雜湊與驗證**：`std::collections::hash_map::DefaultHasher`，逐行 hash（`str` 的 `Hash` 自帶結尾標記，不需組字串）。索引 `HashMap<u64, Vec<(file_idx, kept_line_idx)>>`；同一 hash 出現超過 `DUP_MAX_OCCURRENCES` = 8 次視為樣板（太常見），整個 hash 丟掉。命中後**逐行比對正規化文字**才算數；hash 只用來挑候選。
+**雜湊與驗證**：`std::collections::hash_map::DefaultHasher`，逐行 hash（`str` 的 `Hash` 自帶結尾標記，不需組字串）。索引 `HashMap<u64, Vec<(file_idx, kept_line_idx)>>`；每個 hash 最多記錄 `DUP_MAX_OCCURRENCES` = 8 個出現位置：檔案按排序後的順序處理，所以留下的是（相對路徑、保留行號）最前面的 8 個；之後的出現直接忽略（bucket 滿了就不再增加，不會被移除後重建）。這樣同一段程式碼出現在很多檔案時仍會產生分身怪（≤ 3 隻，由排在前面的路徑對決定），配對數也有上限。命中後**逐行比對正規化文字**才算數；hash 只用來挑候選。
 
 **只抓跨檔**：同一檔案內的重複 MVP 不抓（省掉區間重疊判斷，也少掉一大類樣板）。
 
@@ -76,7 +83,7 @@ owner 決定（d-b8ef81a6、d-2bfdc585）：分裂參數 A/A/A，範圍含 scann
 
 - `SCAN_READ_BUDGET_BYTES` = 32 MiB：本次 scan 累計讀檔位元組，用完就停止整個讀檔迴圈（既有 heuristic 與重複偵測一起停）。
 - `DUP_INDEX_BUDGET_BYTES` = 4 MiB：累計餵進重複索引的正規化位元組（每個檔案的保留行要留在記憶體供命中驗證），用完後後面的檔案只跑既有 heuristic、不再入索引。hash 運算量 ≤ W × 4 MiB。
-- 每個 hash 的出現上限 8（上面），配對數因此 ≤ 28／hash。
+- 每個 hash 最多留 8 個出現位置（上面），配對數因此 ≤ 28／hash。
 
 **名額**：既有 heuristic 照舊收集，但不再在 20 隻時 `break` 讀檔迴圈（要繼續餵重複索引）；收滿 20 隻後只停止收集既有 heuristic 的結果。最後 `specs = 既有結果.take(MAX_MOBS_PER_SCAN − 分身怪數) + 分身怪`——分身怪沒用完的名額自然回補給既有 heuristic。
 
@@ -84,10 +91,10 @@ owner 決定（d-b8ef81a6、d-2bfdc585）：分裂參數 A/A/A，範圍含 scann
 
 現在的檔案迴圈在 20 隻上限時 `break`，後面的檔案根本沒讀；重複偵測需要所有檔案的內容。改成：
 
-1. `collect_source_files` 走訪時就排序：每個目錄的 `read_dir` 結果先依檔名排序再處理，1000 檔上限套在這個確定順序上（`read_dir` 順序各機器不同；只排截斷後的結果，被截掉的子集仍然不確定）。
-2. 單次讀檔迴圈：每個檔案讀一次，先跑既有四種 per-file heuristic（上限改為 `MAX_MOBS_PER_SCAN − MAX_DOPPELGANGERS_PER_SCAN`，名額保留給分身怪），同時把正規化後的行餵進重複偵測的索引（受 §3.1 的總位元組預算限制）。
-3. 迴圈結束後跑重複配對，最多產出 `MAX_DOPPELGANGERS_PER_SCAN` 隻，接在 specs 後面。
-4. 總數仍 ≤ `MAX_MOBS_PER_SCAN`。
+1. `collect_source_files` 走訪時就排序：每個目錄先收下全部 entries、依檔名排序，再依這個順序處理檔案與子目錄（深度優先、子目錄也按名稱順序）；`MAX_FILES_TO_SCAN` 只作用在這個已排序的走訪上。理由：`read_dir` 順序各機器不同，檔數超過上限時，被收進來的子集必須由路徑決定。
+2. 單次讀檔迴圈：每個檔案讀一次，跑既有四種 per-file heuristic（收滿 `MAX_MOBS_PER_SCAN` = 20 筆後只停止收集，**不**提前預扣分身怪名額、也不 break 迴圈），同時把正規化後的行餵進重複偵測的索引（受 §3.1 的預算限制）。
+3. 迴圈結束後跑重複配對，得到 d 隻分身怪（d ≤ `MAX_DOPPELGANGERS_PER_SCAN` = 3）。
+4. 輸出 = 既有結果的前 (20 − d) 筆 + 這 d 隻。沒有重複時既有怪仍可到 20 隻，跟現在一樣。
 
 排序會改變既有四種怪在超過上限時「哪些先被掃到」——這是刻意的（讓結果可重現），既有測試若依賴目錄順序要一併調整。
 
@@ -121,7 +128,8 @@ owner 決定（d-b8ef81a6、d-2bfdc585）：分裂參數 A/A/A，範圍含 scann
 ### 3.6 顯示與文件
 
 - `src/cli/inventory.rs`：拿掉 Ward 的「split 機制尚未實作」警語。
-- `src/cli/use_item.rs` 模組註解、`src/daemon/mob.rs` 模組註解：分身怪改為已實作。
+- `src/cli/use_item.rs` 模組註解、`src/daemon/mob.rs` 模組註解、`src/daemon/mob_scanner.rs` 模組首段（現在寫 duplicates 是 Phase 3+ token hashing）、`src/craft/effects.rs` 的 `SuppressDoppelgangerSplit` 註解（現在寫 daemon wiring deferred）：改成已實作的事實——scanner 生成第 0 代，Ward 只在擊殺時抑制分裂。
+- `doc/proposals/2026-04-18-doppelganger-split.md`：Status 改為 Implemented，指向本 plan，註明 heuristic 與 proposal 原文的差異（proposal 沒有偵測段）。
 - `src/snapshot/render.rs` `KIND_COLUMNS`：**不加**分身怪欄（卡片寬度已滿，註解寫明）。
 - `doc/specs/codeforge-mud-engine.md`：line 14 的 STALE 標註、§2 Planned 區塊把 Doppelganger 移到已實作並寫 heuristic 與分裂規則、§3.5 Ward 描述。
 - CHANGELOG `[Unreleased] ### Added`。
@@ -141,13 +149,16 @@ P1 必要測試（tempdir fixture，`scan_dir` 直接呼叫）：
 
 1. 兩檔各含同一段 10 行非瑣碎程式碼 → 1 隻分身怪，名稱 `dup @ a ↔ b`、origin_path = a。
 2. 改掉其中一檔那段 → 0 隻。
-3. 只有 import、屬性、空行、`}`、`else {`、註解重複 → 0 隻。
+3. 只有 import、屬性、空行、`}`、`else {`、註解重複 → 0 隻；另含兩個子案例：(a) 兩檔有同一段 ≥ 8 行、≥ 200 bytes、開頭不帶 `*` 的 block comment 內文；(b) 兩檔有同一段 ≥ 8 行的跨行 grouped `use …{ … };` → 都是 0 隻。
 4. 重複區塊從 10 行長到 14 行 → 名稱不變；對同一 DB 連跑兩次 `persist_scan` 第二次插入 0。
 5. 同一組檔案以不同建立順序寫入兩個 tempdir → 兩邊結果（名稱、順序）完全相同。
-6. 同一段程式碼出現在 12 個檔案（超過每 hash 8 次）→ 0 隻，且不 panic、不爆時間。
+6. 同一段程式碼出現在 12 個檔案（超過每 hash 8 個出現位置）→ 1 至 3 隻，名稱集合只由排在前面的路徑對決定，兩個以不同順序建立的 tempdir 結果相同；不 panic。
 7. 先放 20 個會產生殭屍的檔案、字典序排在後面的兩檔才有重複 → 結果含分身怪，總數 ≤ 20。
 8. 同一檔案內的兩段重複 → 0 隻。
 9. 前 5 行有 `@generated` 的檔案不參與重複偵測。
+10. 1001 個來源檔，只有字典序最後的兩檔有重複 → 兩個以不同順序建立的 tempdir 結果相同（都抓不到，因為最後一檔超出 1000 上限；斷言兩邊一致且不含該對）。再做一組只有字典序最前面的兩檔有重複 → 兩邊都抓到。
+11. 30 個殭屍檔、沒有任何合格重複 → 恰好 20 隻、0 隻分身怪。
+12. 有足夠的既有候選時，分別構造 0、1、2、3 組重複 → 總數都是 20，分身怪各為 0、1、2、3。
 
 ## 5. 不做
 
@@ -179,4 +190,13 @@ consult 標記為 insufficient_evidence 的一項：DefaultHasher 在 tick 延�
 
 ## 7. Review log
 
-（plan review 後回填。）
+**g1**（gpt-6-astra low CONDITIONAL、grok-4.7 high STOP；8 條全採納，dispositions `2026-11-02-doppelganger-split.g1-dispositions.json`）：
+
+| fp | 席 | 等級 | 處置 |
+|----|----|------|------|
+| 4dc5dc35、59dd403f | astra、grok | blocking R4 | §3.1 與 §3.2 名額算法互斥 → 刪掉 §3.2 的固定預扣 17，統一為「收滿 20 停收、輸出前 20−d 筆 + d」；加測試 11、12 |
+| a041e20d | astra | blocking R1 | 跨行 block comment 與 grouped import 內文會被當程式碼 → §3.1 加「跨行狀態」；測試 3 加兩個子案例 |
+| 40ff8206 | grok | blocking R1 | 超過 8 次整個丟掉會讓真重複產出 0 隻，違反 R1 → 改為只留排序最前的 8 個出現位置；測試 6 改預期 |
+| e6b6409a | astra | non-blocking R3 | 丟掉後會被重建 → 隨 40ff8206 一起解：bucket 滿了只忽略、不移除 |
+| 9e3e4558 | grok | blocking R2 | §3.2 括號那句讀起來像在規定「截斷後再排序」→ 改寫為只有走訪時排序；加 1001 檔測試 10 |
+| 9f949a5d、38e61d64 | astra、grok | non-blocking R11 | §3.6 漏了 effects.rs、mob_scanner.rs 模組首段、proposal → 補進 §3.6 |
