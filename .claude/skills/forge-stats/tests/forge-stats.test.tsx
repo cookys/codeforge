@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { DEFAULT_COLOR, halfBlockCells, LOWER_HALF, parseSnapshot, parseSprite, SPACE, sparkline, staleMinutes, UPPER_HALF } from '../hooks/model'
+import { DEFAULT_COLOR, halfBlockCells, LOWER_HALF, parseSnapshot, parseSprite, SPACE, sparkline, staleMinutes, stepRate, UPPER_HALF } from '../hooks/model'
 import { FERRIS } from './ferris-sprite'
 
 const PANE = {
@@ -116,6 +116,56 @@ test('a streamed request is timed and shown with its tok/s', async ($, on) => {
     expect(off?.props.color).toBe('inactive')
     await ui.unmount()
   }
+})
+
+test('stepRate: hidden thinking counts from send, streamed thinking from the first chunk', () => {
+  // The 2026-11-02 case: 773 tokens, 9.1 s to the first visible chunk, 0.216 s of text after it.
+  const hidden = stepRate({ sent: 0, first: 9100, last: 9316, outTokens: 773, thinkingStreamed: false, serverToolMs: 0 })
+  expect(hidden.decodeMs).toBe(9316)
+  expect(Math.round(hidden.tps ?? 0)).toBe(83)
+  // the same stream with its thinking shown as text: the first chunk is where writing began
+  const shown = stepRate({ sent: 0, first: 900, last: 9316, outTokens: 773, thinkingStreamed: true, serverToolMs: 0 })
+  expect(shown.decodeMs).toBe(8416)
+  // the API's own tool time (the advisor) is no writing time
+  const advisor = stepRate({ sent: 0, first: 9100, last: 9316, outTokens: 773, thinkingStreamed: false, serverToolMs: 5000 })
+  expect(advisor.decodeMs).toBe(4316)
+  // too short to time, nothing written, nothing streamed
+  expect(stepRate({ sent: 0, first: 10, last: 100, outTokens: 5, thinkingStreamed: true, serverToolMs: 0 }).tps).toBe(null)
+  expect(stepRate({ sent: 0, first: 10, last: 900, outTokens: 0, thinkingStreamed: false, serverToolMs: 0 }).tps).toBe(null)
+  expect(stepRate({ sent: 0, first: null, last: null, outTokens: 50, thinkingStreamed: false, serverToolMs: 0 })).toEqual({ decodeMs: null, tps: null })
+})
+
+test('a request whose thinking never streamed is not timed from its first visible chunk', async ($, on) => {
+  base(on, SNAP)
+  // Stands for the API with the thinking display omitted: ~400 ms of hidden thinking, then ~150 ms of text.
+  on('turn.step', async function* () {
+    spin(400)
+    yield { kind: 'text', index: 0, text: 'a' } as const
+    spin(150)
+    yield { kind: 'text', index: 0, text: 'b' } as const
+    return {
+      turnId: 't1',
+      index: 0,
+      answer: 'ab',
+      toolUses: [],
+      stopReason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' },
+    } as const
+  })
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const stream = $.turn.step({ turnId: 't1', index: 0, model: 'opus', messageCount: 1 })
+  for await (const _ of stream) {
+  }
+  await stream.result
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const row = await ui.find({ type: 'Text', text: /opus-5-5/ })
+  const tps = Number(row?.text.trim().split(/\s+/)[0])
+  // 100 tokens over >= 550 ms: at most ~182 tok/s. Timing only the text (>= 150 ms) would read up to ~667.
+  expect(tps).toBeGreaterThan(0)
+  expect(tps).toBeLessThanOrEqual(185)
+  await ui.unmount()
 })
 
 test('a snapshot with no pet says so, dim', async ($, on) => {

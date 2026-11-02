@@ -60,6 +60,34 @@ export const shortModel = (m: string) => m.replace(/^claude-/, '').replace(/-\d{
 // ---------------------------------------------------------------------------------------------
 // throughput
 
+/** Below this writing window the rate is noise (one-chunk replies). */
+export const MIN_DECODE_MS = 150
+
+/**
+ * One request's writing window and rate. `output_tokens` counts thinking, so the window must hold the time
+ * the thinking was written in:
+ * - thinking streamed as visible text: first chunk → last chunk;
+ * - no thinking text streamed: send → last chunk. With the thinking display omitted, the thinking tokens are
+ *   written before the first visible chunk, and a stream cannot tell a hidden thinking block from none at all.
+ *   This window also holds the prompt processing, so the rate is a lower bound, never an inflated one. (Timing
+ *   first → last here once showed 3578 tok/s for 773 tokens: ~9 s of hidden thinking divided out of 0.2 s.)
+ * Time the API spent running its own tools inside the request (the advisor) is taken out of the window either way.
+ */
+export function stepRate(t: {
+  sent: number
+  first: number | null
+  last: number | null
+  outTokens: number
+  thinkingStreamed: boolean
+  serverToolMs: number
+}): { decodeMs: number | null; tps: number | null } {
+  if (t.first === null || t.last === null) return { decodeMs: null, tps: null }
+  const start = t.thinkingStreamed ? t.first : t.sent
+  const decodeMs = Math.max(0, t.last - start - t.serverToolMs)
+  const tps = decodeMs >= MIN_DECODE_MS && t.outTokens > 0 ? t.outTokens / (decodeMs / 1000) : null
+  return { decodeMs, tps }
+}
+
 export type Summary = { requests: number; outTokens: number; avgTps: number | null; medianTtft: number | null; bestTps: number | null }
 
 export function summarize(list: readonly Step[]): Summary {
