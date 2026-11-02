@@ -6,6 +6,7 @@
 
 | Project | Description | Started |
 |---------|------------|---------|
+| [doppelganger-split](2026-11-02-doppelganger-split/README.md) | B10 分身怪 🪞：scanner 重複程式碼偵測讓分身怪出現 + 擊殺分裂（A/A/A：on_defeat、每次 1 隻上限 2 代、stats 0.7）+ Doppelganger Ward 生效 | 2026-11-02 |
 | [autopilot-hook-bridge](2026-11-02-autopilot-hook-bridge/README.md) | B31 hooks 段提前：`codeforge hook on <event>` 給 autopilot bridge 呼叫，install 偵測到 bridge 時不寫 hooks 並清掉舊項目。v0.0.8 | 2026-11-02 |
 
 ## Archived
