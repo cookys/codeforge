@@ -2,11 +2,17 @@
 //!
 //! Heuristics are deliberately dumb — no AST, no type resolution. Good
 //! enough to produce a steady stream of MOBs during `cargo run` on a real
-//! codebase and exercise the combat loop. Strong analysis lives in
-//! Phase 3+ (dead-code → `cargo check` JSON, duplicates → token hashing).
+//! codebase and exercise the combat loop. Strong analysis (dead-code →
+//! `cargo check` JSON) stays future work.
+//!
+//! Duplicate code blocks (Doppelganger, B10) are a cross-file pass:
+//! `scan_dir` feeds every file it reads into `dup_detect::DupIndex` and
+//! appends up to `MAX_DOPPELGANGERS_PER_SCAN` pairs after the per-file
+//! heuristics.
 //!
 //! Call path: `tick::run_one` → `rate_limited_scan` (every 10 ticks) →
-//! `scan_dir` → `analyze_file` → `persist_scan` (`INSERT OR IGNORE`).
+//! `scan_dir` → `analyze_file` + `DupIndex` → `persist_scan`
+//! (`INSERT OR IGNORE`).
 
 use anyhow::Result;
 use rusqlite::Connection;
@@ -14,6 +20,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::dup_detect::DupIndex;
 use super::mob::{MobKind, MobSpec};
 
 /// Max files walked per scan — bound worst-case cost.
@@ -24,6 +31,13 @@ pub const MAX_MOBS_PER_SCAN: usize = 20;
 /// exceeding this is skipped rather than loaded — prevents a bundled
 /// `dist/*.min.js` or a generated `.rs` from blowing out daemon memory.
 pub const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
+/// Max Doppelgangers (duplicate-block pairs) per scan. Not reserved up
+/// front: per-file heuristics may fill all `MAX_MOBS_PER_SCAN` slots and
+/// give back one slot per Doppelganger actually found.
+pub const MAX_DOPPELGANGERS_PER_SCAN: usize = 3;
+/// Cumulative bytes read per scan. The scan runs inside the tick
+/// transaction, so the whole read loop stops once this is spent.
+pub const SCAN_READ_BUDGET_BYTES: u64 = 32 * 1024 * 1024;
 /// Scanner runs on tick_count 1, 11, 21, ... (every N ticks).
 pub const SCAN_EVERY_N_TICKS: u64 = 10;
 /// Zombie threshold — TODO/FIXME lines per file.
@@ -110,21 +124,29 @@ pub fn resolve_scan_dir() -> Option<PathBuf> {
 }
 
 /// Walk `root`, apply heuristics, return MobSpecs capped at MAX_MOBS_PER_SCAN.
+///
+/// Every file (up to `MAX_FILES_TO_SCAN` / `SCAN_READ_BUDGET_BYTES`) is
+/// read once: per-file heuristics stop *collecting* at the cap but the
+/// loop keeps feeding the duplicate index. Output = first
+/// `MAX_MOBS_PER_SCAN - d` per-file specs + the `d` Doppelgangers.
 pub fn scan_dir(root: &Path, zone_id: &str) -> std::io::Result<Vec<MobSpec>> {
     let files = collect_source_files(root, MAX_FILES_TO_SCAN)?;
     let mut specs: Vec<MobSpec> = Vec::new();
+    let mut dups = DupIndex::new();
+    let mut read_bytes: u64 = 0;
     for path in files {
-        if specs.len() >= MAX_MOBS_PER_SCAN {
-            break;
-        }
         // Stat first — skip files larger than MAX_FILE_BYTES before loading.
         // Any stat error (permission denied, broken symlink) is treated the
         // same as a read error below: skip silently, continue the scan.
-        match fs::metadata(&path) {
+        let len = match fs::metadata(&path) {
             Ok(m) if m.len() > MAX_FILE_BYTES => continue,
             Err(_) => continue,
-            _ => {}
+            Ok(m) => m.len(),
+        };
+        if read_bytes + len > SCAN_READ_BUDGET_BYTES {
+            break;
         }
+        read_bytes += len;
         let text = match fs::read_to_string(&path) {
             Ok(t) => t,
             Err(_) => continue,
@@ -136,13 +158,34 @@ pub fn scan_dir(root: &Path, zone_id: &str) -> std::io::Result<Vec<MobSpec>> {
             .unwrap_or(&path)
             .to_string_lossy()
             .replace('\\', "/");
-        for spec in analyze_file(&path, &text, zone_id) {
-            if specs.len() >= MAX_MOBS_PER_SCAN {
-                break;
+        if specs.len() < MAX_MOBS_PER_SCAN {
+            for spec in analyze_file(&path, &text, zone_id) {
+                if specs.len() >= MAX_MOBS_PER_SCAN {
+                    break;
+                }
+                specs.push(spec.with_origin_path(rel.clone()));
             }
-            specs.push(spec.with_origin_path(rel.clone()));
+        }
+        if !DupIndex::is_excluded(&rel, &text) {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            dups.add_file(&rel, ext, &text);
         }
     }
+    let doppelgangers: Vec<MobSpec> = dups
+        .find_pairs()
+        .into_iter()
+        .take(MAX_DOPPELGANGERS_PER_SCAN)
+        .map(|p| {
+            MobSpec::new(
+                zone_id,
+                MobKind::Doppelganger,
+                format!("dup @ {} ↔ {}", p.a, p.b),
+            )
+            .with_origin_path(p.a)
+        })
+        .collect();
+    specs.truncate(MAX_MOBS_PER_SCAN - doppelgangers.len());
+    specs.extend(doppelgangers);
     Ok(specs)
 }
 
@@ -184,30 +227,31 @@ pub fn persist_scan(conn: &Connection, specs: &[MobSpec]) -> Result<usize> {
 
 // ─── File collection ────────────────────────────────────────────────
 
+/// Depth-first walk in ascending file-name order within every directory
+/// (files and sub-directories interleaved by name), so the `cap` subset
+/// and every downstream choice are the same on every machine — `read_dir`
+/// order is platform-defined.
 fn collect_source_files(root: &Path, cap: usize) -> std::io::Result<Vec<PathBuf>> {
     let mut out: Vec<PathBuf> = Vec::new();
+    // Pending paths; children are pushed in reverse name order so pops
+    // come out ascending.
     let mut stack: Vec<PathBuf> = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
+    while let Some(p) = stack.pop() {
         if out.len() >= cap {
             break;
         }
-        if should_skip_dir(&dir) {
-            continue;
-        }
-        let entries = match fs::read_dir(&dir) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        for entry in entries.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() && has_source_ext(&p) {
-                out.push(p);
-                if out.len() >= cap {
-                    break;
-                }
+        if p.is_dir() {
+            if should_skip_dir(&p) {
+                continue;
             }
+            let mut children: Vec<PathBuf> = match fs::read_dir(&p) {
+                Ok(e) => e.flatten().map(|entry| entry.path()).collect(),
+                Err(_) => continue,
+            };
+            children.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+            stack.extend(children.into_iter().rev());
+        } else if p.is_file() && has_source_ext(&p) {
+            out.push(p);
         }
     }
     Ok(out)
@@ -757,5 +801,366 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
             )
             .unwrap();
         assert!(n >= 1, "expired repellent must no longer suppress spawns");
+    }
+
+    // ─── Doppelganger: duplicate code blocks (B10) ─────────────
+
+    /// `n` distinct, non-trivial lines (each ~60 bytes) tagged by `tag`
+    /// so two calls with the same tag produce an identical block.
+    fn dup_block(n: usize, tag: &str) -> String {
+        let mut s = String::new();
+        for i in 0..n {
+            s.push_str(&format!(
+                "    let value_{i}_{tag} = compute_thing(alpha_{i}, beta_{i}) + offset_{tag};\n"
+            ));
+        }
+        s
+    }
+
+    fn wrap_fn(name: &str, body: &str) -> String {
+        format!("fn {name}() {{\n{body}}}\n")
+    }
+
+    fn dop_names(specs: &[MobSpec]) -> Vec<String> {
+        specs
+            .iter()
+            .filter(|s| s.kind == MobKind::Doppelganger)
+            .map(|s| s.name.clone())
+            .collect()
+    }
+
+    #[test]
+    fn dup_two_files_same_block_spawns_one_doppelganger() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join("src/a.rs"),
+            &wrap_fn("one", &dup_block(10, "x")),
+        );
+        write(
+            &dir.path().join("src/b.rs"),
+            &wrap_fn("two", &dup_block(10, "x")),
+        );
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        let dops: Vec<&MobSpec> = specs
+            .iter()
+            .filter(|s| s.kind == MobKind::Doppelganger)
+            .collect();
+        assert_eq!(dops.len(), 1, "got: {specs:?}");
+        assert_eq!(dops[0].name, "dup @ src/a.rs ↔ src/b.rs");
+        assert_eq!(dops[0].origin_path.as_deref(), Some("src/a.rs"));
+    }
+
+    #[test]
+    fn dup_changed_copy_spawns_none() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join("src/a.rs"),
+            &wrap_fn("one", &dup_block(10, "x")),
+        );
+        write(
+            &dir.path().join("src/b.rs"),
+            &wrap_fn("two", &dup_block(10, "y")),
+        );
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert!(dop_names(&specs).is_empty(), "got: {specs:?}");
+    }
+
+    #[test]
+    fn dup_trivial_lines_spawn_none() {
+        let dir = tempdir().unwrap();
+        let mut trivial = String::new();
+        for i in 0..12 {
+            trivial.push_str(&format!("use crate::module_{i}::SomeLongTypeName{i};\n"));
+            trivial.push_str("#[derive(Debug, Clone, PartialEq)]\n");
+            trivial.push_str("\n}\n} else {\n});\n");
+            trivial.push_str(&format!("// a fairly long comment line number {i} here\n"));
+        }
+        write(&dir.path().join("src/a.rs"), &trivial);
+        write(&dir.path().join("src/b.rs"), &trivial);
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert!(dop_names(&specs).is_empty(), "got: {specs:?}");
+    }
+
+    #[test]
+    fn dup_block_comment_body_spawns_none() {
+        let dir = tempdir().unwrap();
+        let mut c = String::from("/*\n");
+        for i in 0..12 {
+            c.push_str(&format!(
+                "   Prose line {i} describing the module behaviour at length.\n"
+            ));
+        }
+        c.push_str("*/\nfn main() {}\n");
+        write(&dir.path().join("src/a.rs"), &c);
+        write(&dir.path().join("src/b.rs"), &c);
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert!(dop_names(&specs).is_empty(), "got: {specs:?}");
+    }
+
+    #[test]
+    fn dup_multiline_grouped_use_spawns_none() {
+        let dir = tempdir().unwrap();
+        let mut u = String::from("use crate::{\n");
+        for i in 0..12 {
+            u.push_str(&format!(
+                "    some_module_{i}::{{FirstLongName{i}, SecondLongName{i}}},\n"
+            ));
+        }
+        u.push_str("};\nfn main() {}\n");
+        write(&dir.path().join("src/a.rs"), &u);
+        write(&dir.path().join("src/b.rs"), &u);
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert!(dop_names(&specs).is_empty(), "got: {specs:?}");
+    }
+
+    #[test]
+    fn dup_pub_use_lines_and_groups_spawn_none() {
+        let dir = tempdir().unwrap();
+        let mut single = String::new();
+        for i in 0..12 {
+            single.push_str(&format!(
+                "pub use crate::some_module_{i}::LongReexportedName{i};\n"
+            ));
+        }
+        write(&dir.path().join("src/a.rs"), &single);
+        write(&dir.path().join("src/b.rs"), &single);
+        let mut group = String::from("pub(crate) use crate::{\n");
+        for i in 0..12 {
+            group.push_str(&format!(
+                "    other_module_{i}::{{FirstLongName{i}, SecondLongName{i}}},\n"
+            ));
+        }
+        group.push_str("};\n");
+        write(&dir.path().join("src/c.rs"), &group);
+        write(&dir.path().join("src/d.rs"), &group);
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert!(dop_names(&specs).is_empty(), "got: {specs:?}");
+    }
+
+    #[test]
+    fn dup_name_stable_when_block_grows() {
+        let dir = tempdir().unwrap();
+        write(
+            &dir.path().join("src/a.rs"),
+            &wrap_fn("one", &dup_block(10, "x")),
+        );
+        write(
+            &dir.path().join("src/b.rs"),
+            &wrap_fn("two", &dup_block(10, "x")),
+        );
+        let before = dop_names(&scan_dir(dir.path(), "rust").unwrap());
+        let conn = fresh_conn();
+        let first = persist_scan(&conn, &scan_dir(dir.path(), "rust").unwrap()).unwrap();
+        assert!(first >= 1);
+        write(
+            &dir.path().join("src/a.rs"),
+            &wrap_fn("one", &dup_block(14, "x")),
+        );
+        write(
+            &dir.path().join("src/b.rs"),
+            &wrap_fn("two", &dup_block(14, "x")),
+        );
+        let after_specs = scan_dir(dir.path(), "rust").unwrap();
+        assert_eq!(before, dop_names(&after_specs));
+        assert_eq!(persist_scan(&conn, &after_specs).unwrap(), 0);
+    }
+
+    /// Writes `files` (rel path, content) into a fresh tempdir in the given
+    /// order and returns the scan result.
+    fn scan_fixture(files: &[(String, String)]) -> Vec<MobSpec> {
+        let dir = tempdir().unwrap();
+        for (rel, content) in files {
+            write(&dir.path().join(rel), content);
+        }
+        scan_dir(dir.path(), "rust").unwrap()
+    }
+
+    fn summary(specs: &[MobSpec]) -> Vec<(String, Option<String>)> {
+        specs
+            .iter()
+            .map(|s| (s.name.clone(), s.origin_path.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn dup_result_independent_of_creation_order() {
+        let mut files: Vec<(String, String)> = Vec::new();
+        for i in 0..6 {
+            let tag = if i % 2 == 0 { "even" } else { "odd" };
+            files.push((
+                format!("src/m{i}/f{i}.rs"),
+                wrap_fn("f", &dup_block(10, tag)),
+            ));
+        }
+        let fwd = scan_fixture(&files);
+        files.reverse();
+        let rev = scan_fixture(&files);
+        assert_eq!(summary(&fwd), summary(&rev));
+        assert!(!dop_names(&fwd).is_empty());
+    }
+
+    #[test]
+    fn dup_many_files_still_spawns_bounded_and_deterministic() {
+        let mut files: Vec<(String, String)> = Vec::new();
+        for i in 0..12 {
+            files.push((format!("src/f{i:02}.rs"), wrap_fn("f", &dup_block(10, "x"))));
+        }
+        let fwd = scan_fixture(&files);
+        files.reverse();
+        let rev = scan_fixture(&files);
+        let n = dop_names(&fwd).len();
+        assert!((1..=MAX_DOPPELGANGERS_PER_SCAN).contains(&n), "got {n}");
+        assert_eq!(summary(&fwd), summary(&rev));
+        // Only the earliest files can win slots.
+        assert!(dop_names(&fwd).iter().all(|nm| nm.contains("src/f0")));
+    }
+
+    #[test]
+    fn dup_found_even_after_ordinary_slots_fill() {
+        let mut files: Vec<(String, String)> = Vec::new();
+        for i in 0..20 {
+            files.push((
+                format!("src/a_todo_{i:02}.rs"),
+                "// TODO: a\n// TODO: b\n// TODO: c\n// TODO: d\n// TODO: e\nfn main() {}\n".into(),
+            ));
+        }
+        files.push(("src/z1.rs".into(), wrap_fn("one", &dup_block(10, "x"))));
+        files.push(("src/z2.rs".into(), wrap_fn("two", &dup_block(10, "x"))));
+        let specs = scan_fixture(&files);
+        assert_eq!(dop_names(&specs).len(), 1, "got: {specs:?}");
+        assert_eq!(specs.len(), MAX_MOBS_PER_SCAN);
+    }
+
+    #[test]
+    fn dup_same_file_repeat_spawns_none() {
+        let dir = tempdir().unwrap();
+        let body = format!(
+            "{}{}",
+            wrap_fn("one", &dup_block(10, "x")),
+            wrap_fn("two", &dup_block(10, "x"))
+        );
+        write(&dir.path().join("src/a.rs"), &body);
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert!(dop_names(&specs).is_empty(), "got: {specs:?}");
+    }
+
+    #[test]
+    fn dup_generated_file_ignored() {
+        let dir = tempdir().unwrap();
+        let generated = format!(
+            "// @generated by a tool\n{}",
+            wrap_fn("one", &dup_block(10, "x"))
+        );
+        write(&dir.path().join("src/a.rs"), &generated);
+        write(
+            &dir.path().join("src/b.rs"),
+            &wrap_fn("two", &dup_block(10, "x")),
+        );
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert!(dop_names(&specs).is_empty(), "got: {specs:?}");
+    }
+
+    #[test]
+    fn dup_file_cap_applies_to_sorted_walk() {
+        // Single directory: in-directory name order == global lexicographic.
+        let filler = "fn filler() {}\n".to_string();
+        let mut late: Vec<(String, String)> = (0..999)
+            .map(|i| (format!("f{i:04}.rs"), filler.clone()))
+            .collect();
+        late.push(("zz1.rs".into(), wrap_fn("one", &dup_block(10, "x"))));
+        late.push(("zz2.rs".into(), wrap_fn("two", &dup_block(10, "x"))));
+        let fwd = scan_fixture(&late);
+        late.reverse();
+        let rev = scan_fixture(&late);
+        assert_eq!(summary(&fwd), summary(&rev));
+        assert!(
+            dop_names(&fwd).is_empty(),
+            "zz2.rs is file 1001 and must be cut"
+        );
+
+        let mut early: Vec<(String, String)> = (0..999)
+            .map(|i| (format!("f{i:04}.rs"), filler.clone()))
+            .collect();
+        early.push(("a1.rs".into(), wrap_fn("one", &dup_block(10, "x"))));
+        early.push(("a2.rs".into(), wrap_fn("two", &dup_block(10, "x"))));
+        let fwd = scan_fixture(&early);
+        early.reverse();
+        let rev = scan_fixture(&early);
+        assert_eq!(summary(&fwd), summary(&rev));
+        assert_eq!(dop_names(&fwd), vec!["dup @ a1.rs ↔ a2.rs".to_string()]);
+    }
+
+    #[test]
+    fn dup_no_duplicates_keeps_full_ordinary_quota() {
+        let mut files: Vec<(String, String)> = Vec::new();
+        for i in 0..30 {
+            files.push((
+                format!("src/todo_{i:02}.rs"),
+                "// TODO: a\n// TODO: b\n// TODO: c\n// TODO: d\n// TODO: e\nfn main() {}\n".into(),
+            ));
+        }
+        let specs = scan_fixture(&files);
+        assert_eq!(specs.len(), MAX_MOBS_PER_SCAN);
+        assert!(dop_names(&specs).is_empty());
+    }
+
+    #[test]
+    fn dup_quota_total_stays_full_for_zero_to_three_pairs() {
+        for pairs in 0..=3usize {
+            let mut files: Vec<(String, String)> = Vec::new();
+            for i in 0..30 {
+                files.push((
+                    format!("src/todo_{i:02}.rs"),
+                    "// TODO: a\n// TODO: b\n// TODO: c\n// TODO: d\n// TODO: e\nfn main() {}\n"
+                        .into(),
+                ));
+            }
+            for p in 0..pairs {
+                let tag = format!("pair{p}");
+                files.push((
+                    format!("src/dup{p}_a.rs"),
+                    wrap_fn("one", &dup_block(10, &tag)),
+                ));
+                files.push((
+                    format!("src/dup{p}_b.rs"),
+                    wrap_fn("two", &dup_block(10, &tag)),
+                ));
+            }
+            let specs = scan_fixture(&files);
+            assert_eq!(specs.len(), MAX_MOBS_PER_SCAN, "pairs={pairs}");
+            assert_eq!(dop_names(&specs).len(), pairs, "pairs={pairs}");
+        }
+    }
+
+    #[test]
+    fn dup_one_file_repeating_block_does_not_starve_other_file() {
+        let mut a = String::new();
+        for k in 0..8 {
+            a.push_str(&wrap_fn(&format!("copy{k}"), &dup_block(10, "x")));
+        }
+        let files = vec![
+            ("src/a.rs".to_string(), a),
+            ("src/b.rs".to_string(), wrap_fn("one", &dup_block(10, "x"))),
+        ];
+        let specs = scan_fixture(&files);
+        assert_eq!(
+            dop_names(&specs),
+            vec!["dup @ src/a.rs ↔ src/b.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn dup_name_uses_byte_lexicographic_paths() {
+        let files = vec![
+            ("a/b.rs".to_string(), wrap_fn("one", &dup_block(10, "x"))),
+            ("a.rs".to_string(), wrap_fn("two", &dup_block(10, "x"))),
+        ];
+        let specs = scan_fixture(&files);
+        let dop = specs
+            .iter()
+            .find(|s| s.kind == MobKind::Doppelganger)
+            .expect("doppelganger");
+        assert_eq!(dop.name, "dup @ a.rs ↔ a/b.rs");
+        assert_eq!(dop.origin_path.as_deref(), Some("a.rs"));
     }
 }
