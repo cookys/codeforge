@@ -1,5 +1,11 @@
 //! Duplicate code block detection for the Doppelganger MOB (B10).
 //!
+//! Keywords (for future lookups): duplicate code detection, clone detection
+//! heuristic, sliding window line hash. Approach = normalized-line
+//! sliding window hash + text verification on hit + O(hits) diagonal
+//! chain walk; no AST/token clone detector, no rolling hash (U1 consult,
+//! plan §6).
+//!
 //! A game signal, not a refactoring tool: it is deliberately cheap and
 //! conservative. Missing a real duplicate is fine; flagging two `}` lines
 //! as "duplicate code" is not. Design + review history:
