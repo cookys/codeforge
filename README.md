@@ -372,16 +372,14 @@ on UI events.
 
 The repo ships one reader: **forge-stats**, a Claude Code mod in `.claude/skills/forge-stats/`. Claude
 Code loads a project's `.claude/skills/<name>` mod on its own, so any `claude` started in this repo shows
-model speed (tok/s, time to first token) and the pet — Ferris as an animated half-block pixel sprite in the
-terminal. It has two layouts, kept across sessions: `/forge-stats layout band` (the default) draws a band
+the pet — Ferris as an animated half-block pixel sprite in the terminal — with the memory and brain lights. Model
+speed (tok/s) is not forge-stats': autopilot's live mod measures and draws it. It has two layouts, kept across sessions: `/forge-stats layout band` (the default) draws a band
 right above the prompt and `/forge-stats layout pane` opens a side pane instead (`/forge-stats` alone opens the
 pane in either layout). The band shows as many columns as the width allows, in this order: Ferris, pet (level, XP,
-stats), speed, recent requests, memory and brain — 2 columns from 56 cells, 3 from 92, 4 from 140, 5 from 170
-(Ferris alone below 56; under 26 cells the band is a one-line summary); spare width goes to the request table. Its size follows the rows it is given: 12 or more
-draw the full band, 6 to 11 the 16×6 mini Ferris, 2 to 5 (or under 26 columns) a one-line summary, and
-one row a short label (`ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1`, dropping the pet, then the sparkline, to fit) drawn as a row of
-Boxes keyed `speed` / `trend` / `sep` / `pet`, one plain Text each, so a plugin above it, such as autopilot's tab
-bar, can put the label on a button and colour each part by its key. Only one plugin draws the band slot: one that sits above
+stats), memory and brain — 2 columns from 56 cells, 3 from 86 (Ferris alone below 56; under 26 cells the band is a
+one-line summary). Its size follows the rows it is given: 12 or more draw the full band, 6 to 11 the 16×6 mini Ferris,
+2 to 5 (or under 26 columns) a one-line summary (`Ferris Lv.1`), and one row draws nothing: that row is the tab label of
+autopilot's tab bar, autopilot's own. Only one plugin draws the band slot: one that sits above
 forge-stats and draws its own band without passing the slot on hides it. The heartbeat does not see that, so the statusline
 still compacts in band layout; autopilot's tab bar passes the slot on, so it is not affected. Test it with `claude plugin test .claude/skills/forge-stats`.
 
