@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Doppelganger 分身怪 🪞（B10）**：daemon scanner 新增跨檔重複程式碼區塊偵測（8 個保留行、略過註解／import／瑣碎行，每次最多 3 隻，名稱 `dup @ <a> ↔ <b>`）；分身怪被擊殺時依 proposal A/A/A 分裂（每次 1 隻、到第 2 代為止、stats × 0.7），Doppelganger Ward 生效期間不分裂。`mobs` 新增 `parent_id`、`generation` 欄位（自動升級）。`codeforge inventory` 拿掉 Ward「尚未實作」的警語。scanner 改為依檔名排序走訪，超過 1000 檔時收進來的檔案在每台機器都一樣。
 - **`install --replace-statusline`** takes over a `statusLine` / `subagentStatusLine` that another tool set, without touching any hook. Before, the only way was `--force`, which also clears every hook entry, codeforge's or not; the conflict error and the bootstrap hint now point at the new flag (B28).
 
 ## [0.0.7] - 2026-11-02
