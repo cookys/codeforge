@@ -1,16 +1,12 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Layout, PetView, SessionView, SpriteData, Step } from '../types'
+import type { Layout, PetView, SessionView, SpriteData } from '../types'
 import {
   BAND_GAP,
-  BAND_SPEED_W,
   GLYPH,
   KEY_W,
   displayWidth,
-  fmtCount,
-  fmtMs,
-  fmtTps,
   bandLayout,
   bandTier,
   halfBlockCells,
@@ -24,21 +20,13 @@ import {
   parseSnapshot,
   sessionViewPath,
   rgbHex,
-  tabLabel,
-  tabParts,
-  shortModel,
-  sparkline,
   staleMinutes,
-  stepRate,
-  summarize,
 } from './model'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
 const PANE = 'forge-stats'
-const KEEP = 200
 
-const steps = atom({ plugin: 'forge-stats', key: 'steps' } as const, [] as Step[], { shape: 'steps-2' }) // steps-2: rates from stepRate; steps-1 samples (first → last only) are dropped
 const pet = atom(
   { plugin: 'forge-stats', key: 'pet' } as const,
   { status: 'missing', readAt: 0, writtenAt: null, path: null, pet: null, village: null } as PetView,
@@ -178,9 +166,8 @@ type Role = 'structure' | 'idle' | 'dim' | 'bold' | 'mono'
 type Seg = { text: string; role?: Role; color?: string }
 type Line = Seg[]
 
-// One colour per meaning in the band (forge-ux), the same roles as autopilot's palette: SPEED (blue, autopilot's `running`)
-// for speed, OK (green, `done`) for lights that are fine; the pet in its village colour.
-const SPEED = 'suggestion'
+// One colour per meaning in the band (forge-ux), the same roles as autopilot's palette: OK (green, `done`) for lights
+// that are fine; the pet in its village colour. Speed is autopilot's to measure and draw (B32).
 const OK = 'success'
 
 const seg = (text: string, role?: Role, color?: string): Seg => ({ text, ...(role ? { role } : {}), ...(color ? { color } : {}) })
@@ -193,53 +180,6 @@ function rule(title: string, cols: number, note?: string): Line {
 }
 
 const kv = (key: string, ...value: Seg[]): Line => [seg(padRight(key, KEY_W), 'dim'), ...value]
-
-function speedLines(list: readonly Step[], cols: number, tr: T): Line[] {
-  const main = summarize(list.filter(s => !s.isSubagent))
-  const all = summarize(list)
-  if (list.length === 0) return [[seg(`${GLYPH.empty} ${tr('noRequests')}`, 'dim')]]
-  const unit = tr('reqUnit')
-  const n = (k: number) => (unit ? `${k} ${unit}` : String(k))
-  const out: Line[] = [
-    kv(tr('main'), seg(fmtTps(main.avgTps), 'bold'), seg(' tok/s', 'dim'), seg(`  ·  ${tr('firstToken')} `, 'dim'), seg(fmtMs(main.medianTtft)), seg(` ${tr('median')}`, 'dim')),
-    kv(tr('requests'), seg(n(main.requests)), seg(`  ·  ${tr('out')} `, 'dim'), seg(fmtCount(main.outTokens)), seg(' tokens', 'dim')),
-  ]
-  if (all.requests !== main.requests) {
-    out.push(kv(tr('withSub'), seg(n(all.requests)), seg(`  ·  ${tr('avg')} `, 'dim'), seg(fmtTps(all.avgTps)), seg(' tok/s', 'dim')))
-  }
-  const room = Math.max(8, Math.min(40, cols - KEY_W - 16))
-  const recent = list.filter(s => !s.isSubagent).slice(-room)
-  if (recent.length >= 2) {
-    out.push(
-      kv(tr('lastN', { n: recent.length }), seg(sparkline(recent.map(s => s.tps)), 'mono'), seg(`  ${tr('best')} `, 'dim'), seg(fmtTps(main.bestTps)), seg(' tok/s', 'dim')),
-    )
-  }
-  return out
-}
-
-function recentLines(list: readonly Step[], rows: number, tr: T): Line[] {
-  if (list.length === 0) return []
-  const W = { tps: 6, ttft: 8, out: 7 }
-  const header: Line = [
-    seg('  ' + padLeft(tr('colTps'), W.tps) + padLeft(tr('colTtft'), W.ttft + 1) + padLeft(tr('colOut'), W.out + 1) + '  ' + tr('colModel'), 'dim'),
-  ]
-  const shown = list.slice(-rows).reverse()
-  const body = shown.map((s, i): Line => {
-    const glyph = i === 0 ? GLYPH.latest : GLYPH.bullet
-    const cells = padLeft(fmtTps(s.tps), W.tps) + ' ' + padLeft(fmtMs(s.ttftMs), W.ttft) + ' ' + padLeft(fmtCount(s.outTokens), W.out) + '  ' + shortModel(s.model)
-    return s.isSubagent
-      ? [seg(glyph + ' ', 'structure'), seg(cells, 'dim'), seg(` · ${tr('sub')}`, 'dim')]
-      : [seg(glyph + ' ', 'structure'), seg(cells, 'mono')]
-  })
-  return [header, ...body]
-}
-
-/** The band's request table: a title, then the pane's table cut to the rows left. */
-function recentRows(list: readonly Step[], rows: number, tr: T): Line[] {
-  const title: Line = [seg(tr('recent'), 'bold')]
-  const table = recentLines(list, Math.max(1, rows - 2), tr)
-  return table.length ? [title, ...table] : [title, [seg(`${GLYPH.empty} ${tr('noRequests')}`, 'dim')]]
-}
 
 function petLines(view: PetView, cols: number, tr: T, now: number, withArt = true): Line[] {
   const { pet: p, village: v } = view
@@ -272,23 +212,6 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
 }
 
 // band columns: at most 12 rows each, beside the 12-row Ferris
-
-function bandSpeedLines(list: readonly Step[], tr: T): Line[] {
-  const main = summarize(list.filter(s => !s.isSubagent))
-  const out: Line[] = [[seg(GLYPH.speed + ' ', 'bold', SPEED), seg(tr('speed'), 'bold'), seg('  tok/s', 'dim')]]
-  if (main.requests === 0) return [...out, [seg(`${GLYPH.empty} ${tr('noRequests')}`, 'dim')]]
-  const unit = tr('reqUnit')
-  // a request too short to time (a lone tool call) has no tok/s: speak of the last one that had one
-  const timed = list.filter(s => !s.isSubagent && s.tps !== null)
-  const latest = timed[timed.length - 1]
-  out.push([seg(fmtTps(main.avgTps), 'bold', SPEED), seg(` ${tr('avg')}`, 'dim'), seg(`  ${tr('best')} `, 'dim'), seg(fmtTps(main.bestTps))])
-  if (latest) out.push([seg(`${tr('latest')} `, 'dim'), seg(fmtTps(latest.tps)), seg(`  ${tr('firstToken')} `, 'dim'), seg(fmtMs(latest.ttftMs))])
-  out.push([seg(`${tr('firstToken')} `, 'dim'), seg(fmtMs(main.medianTtft)), seg(` ${tr('median')}`, 'dim')])
-  out.push([seg(`${main.requests}${unit ? ' ' + unit : ''} ${tr('requests')}`, 'dim')])
-  const recent = timed.slice(-(BAND_SPEED_W - 2))
-  if (recent.length >= 2) out.push([seg(sparkline(recent.map(s => s.tps)), 'mono', SPEED)])
-  return out
-}
 
 function bandPetLines(view: PetView, width: number, tr: T, short = false): Line[] {
   const { pet: p, village: v } = view
@@ -378,43 +301,6 @@ export const register: Register = on => {
     return { text: t()('opened') }
   })
 
-  // Time every model request from its stream: send → first content chunk → last chunk. The rate's window
-  // is picked by stepRate (model.ts): hidden thinking is written before the first chunk, so it counts from send.
-  on('turn.step', async function* ($, e, next) {
-    const sent = performance.now()
-    let first: number | null = null
-    let last: number | null = null
-    let thinkingStreamed = false
-    const stream = next(e)
-    for await (const chunk of stream) {
-      if (chunk.kind !== 'engine') {
-        const now = performance.now()
-        if (first === null) first = now
-        last = now
-        if (chunk.kind === 'thinking' && chunk.text.length > 0) thinkingStreamed = true
-      }
-      yield chunk
-    }
-    const result = await stream.result
-    const usage = result.usage
-    if (usage) {
-      const outTokens = usage.output_tokens ?? 0
-      const serverToolMs = (result.serverToolUses ?? []).reduce((n, u) => n + (u.endedAt !== undefined ? Math.max(0, u.endedAt - u.startedAt) : 0), 0)
-      const { decodeMs, tps } = stepRate({ sent, first, last, outTokens, thinkingStreamed, serverToolMs })
-      const step: Step = {
-        at: Date.now(),
-        model: usage.model ?? e.model,
-        isSubagent: e.agentId !== undefined,
-        ttftMs: first !== null ? first - sent : null,
-        decodeMs,
-        outTokens,
-        tps,
-      }
-      await update($, steps, list => [...list, step].slice(-KEEP))
-    }
-    return result
-  })
-
   on('turn.complete', async ($, e, next) => {
     void refreshPet($)
     return next(e)
@@ -426,26 +312,16 @@ export const register: Register = on => {
     // Raster paints only in the terminal (other surfaces have no cell grid): draw ASCII there
     const Raster = e.surface === 'terminal' && 'Raster' in els ? els.Raster : undefined
     const tr = t()
-    const list = await read($, steps)
     const p = await read($, pet)
     // bodyColumns may run ~2 cells wider than what draws; keep a margin.
     const cols = Math.max(30, (e.props?.bodyColumns ?? 44) - 2)
-    const bodyRows = e.props?.scroll?.bodyRows ?? e.viewport?.rows ?? 30
 
-    const speed = speedLines(list, cols, tr)
     const sprite = p.status === 'ok' && Raster !== undefined ? (p.village?.sprite ?? null) : null
     // sprite beside the stats when both fit (sprite + 2 gap + 28 text), else stacked
     const side = sprite !== null && cols >= sprite.width + 2 + 28
     const petPart = sprite === null ? petLines(p, cols, tr, Date.now()) : petLines(p, side ? cols - sprite.width - 2 : cols, tr, Date.now(), false)
-    const spriteRows = sprite === null ? 0 : sprite.height / 2
-    const petHeight = sprite === null ? petPart.length : side ? Math.max(spriteRows, petPart.length) : spriteRows + 1 + petPart.length
-    const fixed = 3 + speed.length + petHeight + 2
-    const room = Math.max(3, Math.min(12, bodyRows - fixed - 1))
-    const recent = recentLines(list, room, tr)
 
-    const lines: Line[] = [rule(tr('speed'), cols), ...speed]
-    if (recent.length) lines.push([seg(' ')], rule(tr('recent'), cols), ...recent)
-    lines.push([seg(' ')], rule(tr('pet'), cols))
+    const lines: Line[] = [rule(tr('pet'), cols)]
     if (sprite === null) lines.push(...petPart)
 
     const draw = (s: Seg, i: number) => {
@@ -497,7 +373,7 @@ export const register: Register = on => {
       </Box>
     )
   })
-  // The band above the prompt: speed | Ferris | memory and pet (statusline-band plan §2.5).
+  // The band above the prompt: Ferris | pet | memory and brain (statusline-band plan §2.5; speed is autopilot's, B32).
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const props = e.props
     if (e.surface !== 'terminal' || layout !== 'band' || props.hasSurvey || props.maxRows < 1) {
@@ -507,7 +383,6 @@ export const register: Register = on => {
     const els = $.ui.resolve(e)
     const { Box, Text } = els
     const p = await read($, pet)
-    const list = await read($, steps)
     const full = p.status === 'ok' ? (p.village?.sprite ?? null) : null
     const mini = p.status === 'ok' ? (p.village?.sprite_mini ?? null) : null
     const Raster = 'Raster' in els ? els.Raster : undefined
@@ -516,30 +391,13 @@ export const register: Register = on => {
     if (tier === 'mini' && (mini === null || Raster === undefined)) tier = 'summary'
     const sprite = tier === 'full' ? full : tier === 'mini' ? mini : null
     if (sprite === null || Raster === undefined) {
-      // text tiers: one Text (strings and nested Text only), so autopilot can wrap it in its Button
       bandId = null
       bandSprite = null
-      // only requests long enough to time: most steps of a working turn are a lone tool call with no tok/s
-      const timed = list.filter(s => !s.isSubagent && s.tps !== null)
-      const latest = timed.length ? timed[timed.length - 1]!.tps : null
-      const recent = timed.slice(tier === 'label' ? -5 : -8)
-      const spark = recent.length >= 2 ? sparkline(recent.map(s => s.tps)) : ''
+      // one row is the tab label, autopilot's own since the speed moved there (B32): pass it on
       const petTag = p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
-      if (tier === 'label') {
-        // keyed Boxes, one Text of plain strings each: autopilot reads the keys and colours the parts (a Text's key
-        // does not reach the plugin above; a Box's does)
-        return (
-          <Box flexDirection="row">
-            {tabParts(props.bodyColumns, latest, spark, petTag).map(part => (
-              <Box key={part.key}>
-                <Text>{part.text}</Text>
-              </Box>
-            ))}
-          </Box>
-        )
-      }
+      if (tier === 'label' || petTag === null) return next(e)
       // the summary has the row to itself and is cut at its end
-      return <Text wrap="truncate-end">{tabLabel(Number.MAX_SAFE_INTEGER, latest, spark, petTag)}</Text>
+      return <Text wrap="truncate-end">{petTag}</Text>
     }
     const tr = t()
     const lights = await read($, session)
@@ -576,10 +434,6 @@ export const register: Register = on => {
               return <Raster key={BAND_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
             case 'pet':
               return column(bandPetLines(p, c.width, tr, tier === 'mini'), c.width, 'pet')
-            case 'speed':
-              return column(bandSpeedLines(list, tr), c.width, 'speed')
-            case 'recent':
-              return column(recentRows(list, frame.rows, tr), c.width, 'recent')
             case 'memory':
               return column(bandMemoryLines(lights, tr), c.width, 'memory')
           }

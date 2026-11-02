@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **forge-stats 不再量測與顯示速度（B32）**：tok/s 改由 autopilot 的 live mod 自己量、自己畫（owner 卡 d-7b0f7a4a）。forge-stats 拿掉 `turn.step` 量測、band 的速度與最近請求兩欄、pane 的速度段與最近請求表，以及 1 列的分頁標籤（改為原樣傳給下層）；band 只剩 Ferris｜寵物｜記憶與大腦，第 3 欄的門檻從 170 欄降到 86 欄，一列摘要只顯示寵物名與等級。沒有 autopilot 時也不顯示速度。
+
 ### Added
 
 - **Doppelganger 分身怪 🪞（B10）**：daemon scanner 新增跨檔重複程式碼區塊偵測（8 個保留行、略過註解／import／瑣碎行，每次最多 3 隻，名稱 `dup @ <a> ↔ <b>`）；分身怪被擊殺時依 proposal A/A/A 分裂（每次 1 隻、到第 2 代為止、stats × 0.7），Doppelganger Ward 生效期間不分裂。`mobs` 新增 `parent_id`、`generation` 欄位（自動升級）。`codeforge inventory` 拿掉 Ward「尚未實作」的警語。scanner 改為依檔名排序走訪，超過 1000 檔時收進來的檔案在每台機器都一樣。

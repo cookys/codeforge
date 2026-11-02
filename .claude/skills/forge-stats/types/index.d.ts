@@ -1,20 +1,3 @@
-/** One model request, timed from the stream. */
-export type Step = {
-  /** Wall-clock ms when the request finished. */
-  at: number
-  model: string
-  /** True when the request ran inside a subagent. */
-  isSubagent: boolean
-  /** Request sent → first content chunk; null when nothing streamed. */
-  ttftMs: number | null
-  /** The writing window (see `stepRate` in hooks/model.ts): first chunk → last chunk when thinking streamed as text,
-   *  else send → last chunk; minus the API's own tool time (the advisor). */
-  decodeMs: number | null
-  outTokens: number
-  /** outTokens / decode time; null when too short to measure. */
-  tps: number | null
-}
-
 /** `pet` of codeforge's `codeforge.pet-view/1` snapshot. */
 export type PetData = {
   name: string
@@ -86,7 +69,6 @@ export type SessionView = {
 declare module 'claude-code' {
   interface PluginState {
     'forge-stats': {
-      steps: Shaped<Step[]>
       pet: Shaped<PetView>
       session: Shaped<SessionView | null>
     }
