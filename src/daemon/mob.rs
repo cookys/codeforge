@@ -5,10 +5,25 @@
 //! - **elite**: high cyclomatic complexity; medium HP, medium XP
 //! - **zombie**: TODO/FIXME cluster; low HP, many, TODO Cleaner loot
 //! - **ghost**: unused imports / dead code; one-shot, drops Dead Code Crystal
-//! - **doppelganger**: duplicate blocks (Phase 3 — deferred)
+//! - **doppelganger**: duplicate code block across two files
+//!   (`dup_detect`); splits on defeat — see [`child_stats`]
 //! - **void**: missing test coverage (Phase 3 — deferred)
 
 use std::fmt;
+
+/// Doppelganger split cap: scanner-spawned mobs are generation 0, each
+/// split adds 1, and a mob at this generation no longer splits — so one
+/// scanner-spawned Doppelganger yields at most two descendants (B10,
+/// proposal Q2 = A).
+pub const MAX_SPLIT_GENERATION: u32 = 2;
+
+/// Stats of a split child from its parent's `hp_max` / `atk` / `def`:
+/// each × 0.7, rounded up, at least 1 (B10, proposal Q3 = A). Integer
+/// arithmetic so the result is exact. `difficulty` is inherited as-is.
+pub fn child_stats(hp_max: u32, atk: u32, def: u32) -> (u32, u32, u32) {
+    let scale = |x: u32| (((x as u64) * 7).div_ceil(10).max(1)) as u32;
+    (scale(hp_max), scale(atk), scale(def))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MobKind {
@@ -147,5 +162,12 @@ mod tests {
         assert_eq!(s.hp, s.hp_max);
         let (expected_hp, _, _, _) = MobKind::Boss.base_stats();
         assert_eq!(s.hp_max, expected_hp);
+    }
+
+    #[test]
+    fn child_stats_scale_by_seventy_percent_ceil_min_one() {
+        assert_eq!(child_stats(80, 15, 3), (56, 11, 3));
+        assert_eq!(child_stats(56, 11, 3), (40, 8, 3));
+        assert_eq!(child_stats(1, 1, 0), (1, 1, 1));
     }
 }
