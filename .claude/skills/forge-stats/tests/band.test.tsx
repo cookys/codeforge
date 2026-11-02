@@ -321,7 +321,7 @@ test('label then expanded in one render: the expanded call decides the band blit
   await full.unmount()
 })
 
-test('forge-stats no longer times requests: a step passes through and the band shows no speed (B32)', async ($, on) => {
+test('after a model step the band and the summary show no speed (B32)', async ($, on) => {
   world(on)
   on('turn.step', async function* () {
     yield { kind: 'text', index: 0, text: 'ab' } as const
