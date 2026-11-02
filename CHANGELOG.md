@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-11-03
+
+Model speed moves to autopilot's live mod (B32); duplicate code spawns Doppelgangers (B10); install can take over a
+foreign statusLine without touching hooks (B28).
+
+### Upgrading
+
+- **Don't use `install --force` to take over a statusLine.** On 0.0.7 the "statusLine 已被其他程式設定" error points
+  at `--force`, which also clears every hook entry, codeforge's or not. Use `--replace-statusline` (new here) instead;
+  or, when only the hook commands need refreshing, `codeforge install --hooks`, which never touches the statusLine.
+- forge-stats shows no speed any more. autopilot's live mod measures and draws it from autopilot develop `add397e9b`
+  (BL-0359) on; reload or restart the session to pick both mods up.
+
 ### Removed
 
 - **forge-stats 不再量測與顯示速度（B32）**：tok/s 改由 autopilot 的 live mod 自己量、自己畫（owner 卡 d-7b0f7a4a）。forge-stats 拿掉 `turn.step` 量測、band 的速度與最近請求兩欄、pane 的速度段與最近請求表，以及 1 列的分頁標籤（改為原樣傳給下層）；band 只剩 Ferris｜寵物｜記憶與大腦，第 3 欄的門檻從 170 欄降到 86 欄，一列摘要只顯示寵物名與等級。沒有 autopilot 時也不顯示速度。
