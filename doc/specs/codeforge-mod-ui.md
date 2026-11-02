@@ -102,15 +102,17 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   實例，鏈上排在上面的 plugin 不呼叫 `next(e)` 就輪不到 forge-stats；心跳看不到這件事，那種情況下 statusline 仍會縮、寵物
   哪裡都不顯示（BACKLOG B34）。autopilot 的分頁列用 `await next(e)` 疊在 forge-stats 之上（BL-0352），不受影響。
 - **分頁版 band（forge-tabs，2026-10-31）**：owner 定案 band 一列＝autopilot indicator＋分頁（現況／待決／派工／審查／forge），
-  autopilot 以 `maxRows`/`bodyColumns` 分配空間給下層。forge-stats 依 `maxRows` 分級：1 列＝分頁標籤（一列以 key 標角色的 `Box`：
-  speed／trend／sep／pet，各包一個純文字 `Text`，autopilot 依 key 上色，`c5165cf`）、2–5 列或不到 26 欄＝一列摘要、6–11 列＝16×6 迷你 Ferris
+  autopilot 以 `maxRows`/`bodyColumns` 分配空間給下層。forge-stats 依 `maxRows` 分級：1 列＝不畫、原樣 `next(e)`（分頁標籤歸 autopilot；
+  原本回以 key 標角色的 `Box` 標籤，B32 移除）、2–5 列或不到 26 欄＝一列摘要（只有寵物名與等級）、6–11 列＝16×6 迷你 Ferris
   （`village.sprite_mini`）、12 列以上＝完整版。band 的 blit 尺寸跟著畫上去的那一版。autopilot 只問 1 列（標籤）與總列數 −2（≥12
-  才展開），所以迷你與摘要兩級只在沒有 autopilot 時出現（B31 的降級原則：每一項都要能單獨跑）。規則見
+  才展開；速度上線後不再問 1 列），所以迷你與摘要兩級只在沒有 autopilot 時出現（B31 的降級原則：每一項都要能單獨跑）。規則見
   `doc/plans/2026-10-31-forge-tabs.md` §2.5。
-- **依寬度排欄（forge-columns，2026-10-31）**：迷你與完整版依 `bodyColumns` 排 1～5 欄，左到右即優先序：Ferris｜寵物 30
-  （名字等級、村莊、XP、ATK/DEF/HP、SUP/VER）｜速度 34｜最近請求 ≥46（吃掉多的寬度）｜記憶與大腦 28；24 寬 Ferris 的門檻
-  24／56／92／140／170 欄（不到 26 欄仍是一列摘要）。規則見 `doc/plans/2026-10-31-forge-columns.md` §2.5。
-- **TUI**：mod pane 放一眼看懂的 widget（寵物、tok/s、縮圖）；需要操作的完整介面留給 `codeforge attach`
+- **依寬度排欄（forge-columns，2026-10-31；B32 後）**：迷你與完整版依 `bodyColumns` 排 1～3 欄，左到右即優先序：Ferris｜寵物 30
+  （名字等級、村莊、XP、ATK/DEF/HP、SUP/VER）｜記憶與大腦 28；24 寬 Ferris 的門檻 24／56／86 欄（不到 26 欄仍是一列摘要）。
+  原本的速度 34 與最近請求 ≥46 兩欄連同 `turn.step` 量測整包移給 autopilot 的 live mod（B32，owner 卡 d-7b0f7a4a；量法見
+  autopilot BL-0359，正確口徑出自 codeforge `405b214` 的 `stepRate`）。沒有 autopilot 時 forge-stats 也不顯示速度。
+  `doc/plans/2026-10-31-forge-columns.md` §2.5 的速度與最近請求兩欄已失效。
+- **TUI**：mod pane 放一眼看懂的 widget（寵物、縮圖；tok/s 歸 autopilot）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 
 ## 8. 待實測

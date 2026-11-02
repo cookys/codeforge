@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { bandLayout, displayWidth, halfBlockCells, rgbHex, tabLabel, tabParts, parseSessionView, parseSprite, sanitizeSessionId } from '../hooks/model'
+import { bandLayout, halfBlockCells, rgbHex, parseSessionView, parseSprite, sanitizeSessionId } from '../hooks/model'
 import { FERRIS_MINI } from './ferris-mini'
 import { FERRIS } from './ferris-sprite'
 import { VECTORS } from './session-id-vectors'
@@ -94,34 +94,21 @@ test('sanitizeSessionId matches codeforge on the shared vectors', () => {
   for (const v of VECTORS) expect(sanitizeSessionId(v.input)).toBe(v.expected)
 })
 
-test('bandLayout adds columns in priority order as the width allows, 1 to 5', () => {
+test('bandLayout adds columns in priority order as the width allows, 1 to 3: no speed or request table (B32)', () => {
   const ids = (cols: number, sprite = 24) => bandLayout(cols, sprite).map(c => c.id).join(' ')
-  // each threshold and one cell below it (24-wide Ferris: 24, 56, 92, 140, 170)
+  // each threshold and one cell below it (24-wide Ferris: 24, 56, 86)
   expect(ids(23)).toBe('')
   expect(ids(24)).toBe('ferris')
   expect(ids(55)).toBe('ferris')
   expect(ids(56)).toBe('ferris pet')
-  expect(ids(91)).toBe('ferris pet')
-  expect(ids(92)).toBe('ferris pet speed')
-  expect(ids(139)).toBe('ferris pet speed')
-  expect(ids(140)).toBe('ferris pet speed recent')
-  expect(ids(169)).toBe('ferris pet speed recent')
-  expect(ids(170)).toBe('ferris pet speed recent memory')
+  expect(ids(85)).toBe('ferris pet')
+  expect(ids(86)).toBe('ferris pet memory')
+  expect(ids(300)).toBe('ferris pet memory')
   // the 16-wide mini Ferris moves every threshold down by 8
-  expect(ids(162, 16)).toBe('ferris pet speed recent memory')
-  expect(ids(161, 16)).toBe('ferris pet speed recent')
-})
-
-test('bandLayout gives the spare width to the request table only, and always fills to the edge with it', () => {
-  const total = (cols: ReturnType<typeof bandLayout>) => cols.reduce((n, c) => n + c.width, 0) + 2 * (cols.length - 1)
-  const five = bandLayout(200, 24)
-  expect(five.map(c => c.width)).toEqual([24, 30, 34, 76, 28])
-  expect(total(five)).toBe(200)
-  const four = bandLayout(150, 24)
-  expect(four.find(c => c.id === 'recent')?.width).toBe(56)
-  expect(total(four)).toBe(150)
-  // without the table the columns keep their widths
-  expect(bandLayout(120, 24).map(c => c.width)).toEqual([24, 30, 34])
+  expect(ids(78, 16)).toBe('ferris pet memory')
+  expect(ids(77, 16)).toBe('ferris pet')
+  // the columns keep their widths: nothing takes the spare width
+  expect(bandLayout(200, 24).map(c => c.width)).toEqual([24, 30, 28])
 })
 
 test('parseSessionView reads this session only', () => {
@@ -156,12 +143,12 @@ test('the stored pane layout opens the pane at session start', async ($, on) => 
   expect(w.opened).toBe(1)
 })
 
-test('the band draws 1 to 5 columns by width: Ferris, pet, speed, recent requests, memory', async ($, on) => {
+test('the band draws 1 to 3 columns by width: Ferris, pet, memory; never speed or requests (B32)', async ($, on) => {
   world(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const cells0 = halfBlockCells(parseSprite(FERRIS)!, 0).cells
-  // one marker Text per column
-  const MARK = { pet: /^Ferris$/, speed: /^Speed$/, recent: /^Recent requests$/, memory: /^memory/ } as const
+  // one marker Text per column; speed and the request table must never show
+  const MARK = { pet: /^Ferris$/, memory: /^memory/, speed: /Speed|tok\/s|ϟ/, recent: /^Recent requests$/ } as const
   const shows = async (cols: number) => {
     const m = await $.ui.mount(band(cols))
     const r = await m.find({ type: 'Raster' })
@@ -173,9 +160,8 @@ test('the band draws 1 to 5 columns by width: Ferris, pet, speed, recent request
     await m.unmount()
     return seen.join(' ')
   }
-  expect(await shows(170)).toBe('pet speed recent memory')
-  expect(await shows(145)).toBe('pet speed recent')
-  expect(await shows(100)).toBe('pet speed')
+  expect(await shows(200)).toBe('pet memory')
+  expect(await shows(90)).toBe('pet memory')
   expect(await shows(60)).toBe('pet')
   expect(await shows(30)).toBe('')
 })
@@ -245,35 +231,6 @@ async function onlyText(ui: { find: (q: { type: string; text?: RegExp }) => Prom
   return t!.text
 }
 
-test('tabLabel takes the longest form that fits: pet, then sparkline, then the bare speed', () => {
-  const spark = '▁▂▃▅▇'
-  const full = tabLabel(30, 93, spark, 'Ferris Lv.1')
-  expect(full).toBe('ϟ 93 tok/s ▁▂▃▅▇ · Ferris Lv.1')
-  expect(displayWidth(full)).toBe(30)
-  expect(tabLabel(29, 93, spark, 'Ferris Lv.1')).toBe('ϟ 93 tok/s ▁▂▃▅▇')
-  expect(tabLabel(16, 93, spark, 'Ferris Lv.1')).toBe('ϟ 93 tok/s ▁▂▃▅▇')
-  expect(tabLabel(15, 93, spark, 'Ferris Lv.1')).toBe('ϟ 93 tok/s')
-  expect(tabLabel(10, 93, spark, 'Ferris Lv.1')).toBe('ϟ 93 tok/s')
-  expect(tabLabel(9, 93, spark, 'Ferris Lv.1')).toBe('ϟ93')
-  // no sparkline yet: the pet follows the speed directly
-  expect(tabLabel(30, 93, '', 'Ferris Lv.1')).toBe('ϟ 93 tok/s · Ferris Lv.1')
-  // a wide pet name counts two cells a character
-  expect(tabLabel(30, 93, spark, '鐵匠 Lv.1')).toBe('ϟ 93 tok/s ▁▂▃▅▇ · 鐵匠 Lv.1')
-  expect(tabLabel(26, 93, spark, '鐵匠 Lv.1')).toBe('ϟ 93 tok/s ▁▂▃▅▇')
-})
-
-test('the label splits at its first " · ": speed and sparkline before it, never a separator inside (autopilot colours the two parts)', () => {
-  const SPEED_PART = /^ϟ ?(\d+|—)( tok\/s( [▁▂▃▄▅▆▇█]+)?)?$/
-  for (const tps of [null, 0, 93, 12345.6, Infinity])
-    for (const spark of ['', '▁▂▃▅▇'])
-      for (const pet of [null, 'Ferris Lv.1', 'a · b Lv.2'])
-        for (const cols of [4, 9, 15, 16, 29, 30, 60]) {
-          const label = tabLabel(cols, tps, spark, pet)
-          const at = label.indexOf(' · ')
-          expect(SPEED_PART.test(at < 0 ? label : label.slice(0, at))).toBe(true)
-        }
-})
-
 test('rgbHex turns the village colour into #rrggbb and refuses anything else', () => {
   expect(rgbHex([215, 95, 0])).toBe('#d75f00')
   expect(rgbHex([0, 0, 0])).toBe('#000000')
@@ -282,11 +239,10 @@ test('rgbHex turns the village colour into #rrggbb and refuses anything else', (
   expect(rgbHex([1, 2])).toBe(null)
 })
 
-test('the band colours by meaning: speed in suggestion (the running colour of autopilot), the pet in its village colour, lights by state', async ($, on) => {
+test('the band colours by meaning: the pet in its village colour, lights by state', async ($, on) => {
   world(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const m = await $.ui.mount(band(170))
-  expect((await m.find({ type: 'Text', text: /^ϟ $/ }))?.props.color).toBe('suggestion')
   expect((await m.find({ type: 'Text', text: /^Ferris$/ }))?.props.color).toBe('#d75f00')
   // memory active and brain ok: both lights green
   const lights = await m.findAll({ type: 'Text', text: /^● $/ })
@@ -294,86 +250,30 @@ test('the band colours by meaning: speed in suggestion (the running colour of au
   await m.unmount()
 })
 
-test('tabParts keys each part, a space going with the part after it', () => {
-  const parts = tabParts(30, 93, '▁▂▃▅▇', 'Ferris Lv.1')
-  expect(parts).toEqual([
-    { key: 'speed', text: 'ϟ 93 tok/s' },
-    { key: 'trend', text: ' ▁▂▃▅▇' },
-    { key: 'sep', text: ' · ' },
-    { key: 'pet', text: 'Ferris Lv.1' },
-  ])
-  expect(tabParts(16, 93, '▁▂▃▅▇', 'Ferris Lv.1').map(p => p.key)).toEqual(['speed', 'trend'])
-  expect(tabParts(30, 93, '', 'Ferris Lv.1').map(p => p.key)).toEqual(['speed', 'sep', 'pet'])
-  expect(tabParts(9, 93, '▁▂▃▅▇', 'Ferris Lv.1')).toEqual([{ key: 'speed', text: 'ϟ93' }])
-})
-
-test('one row is a tab label: a row of keyed Boxes, one plain Text each, shortening with the width', async ($, on) => {
+test('one row passes on: the tab label is autopilot\'s since the speed moved there (B32)', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  // no request timed yet: the speed is a dash and there is no sparkline
-  const cases: [number, string[], string][] = [
-    [30, ['speed', 'sep', 'pet'], 'ϟ — tok/s · Ferris Lv.3'],
-    [16, ['speed'], 'ϟ — tok/s'],
-    [8, ['speed'], 'ϟ—'],
-  ]
-  for (const [cols, keys, text] of cases) {
+  for (const cols of [30, 16, 8]) {
     const ui = await $.ui.mount(band(cols, { maxRows: 1 }))
     expect(await ui.find({ type: 'Raster' })).toBe(undefined)
-    const keyed = (await ui.findAll({ type: 'Box' })).map(b => b.props.key).filter(k => k !== undefined)
-    expect(keyed).toEqual(keys)
-    const texts = await ui.findAll({ type: 'Text' })
-    expect(texts.length).toBe(keys.length)
-    expect(texts.every(t => t.props.color === undefined)).toBe(true)
-    expect(texts.map(t => t.text).join('')).toBe(text)
+    expect(await ui.find({ type: 'Text' })).toBe(undefined)
+    // what draws beneath stands: forge-stats returned next(e)
+    expect((await ui.findAll({ type: 'Box' })).map(b => b.props.key)).toEqual(['beneath'])
     await ui.unmount()
   }
-})
-
-// What a plugin above receives from next(e) is the tree it parses; this replays autopilot's forgeSegments shape check
-// (mods/live/ui.ts, develop 3ecd193af): a row Box whose children array holds only Boxes, each with exactly one Text
-// whose children array holds only strings. A JSX child list from .map() left nested would fail it.
-test('the plugin above gets the label as a flat row of part Boxes, the shape autopilot parses', async ($, on) => {
-  world(on)
-  mock.clock(on, { now: 1_000_000 })
-  type N = { type?: string; props?: { key?: unknown }; children?: unknown }
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount(band(30, { maxRows: 1 }))
-  // drawn() is what the ui.render chain returned, validated, as plain data: what next(e) hands the plugin above
-  const root = (await ui.drawn()) as N
-  expect(root?.type).toBe('Box')
-  const kids = root?.children
-  expect(Array.isArray(kids)).toBe(true)
-  const parts = (kids as N[]).map(c => {
-    expect(c.type).toBe('Box')
-    expect(Array.isArray(c.children) && (c.children as unknown[]).length === 1).toBe(true)
-    const t = (c.children as N[])[0]!
-    expect(t.type).toBe('Text')
-    const strs = t.children
-    expect(Array.isArray(strs) && (strs as unknown[]).every(x => typeof x === 'string')).toBe(true)
-    return [c.props?.key, (strs as string[]).join('')]
-  })
-  expect(parts).toEqual([
-    ['speed', 'ϟ — tok/s'],
-    ['sep', ' · '],
-    ['pet', 'Ferris Lv.3'],
-  ])
-  await ui.unmount()
 })
 
 test('two to five rows, or a thin column, is a one-row summary Text', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  // the pet alone: no speed (B32)
   for (const target of [band(100, { maxRows: 3 }), band(20, { maxRows: 12 })]) {
     const ui = await $.ui.mount(target)
-    const text = await onlyText(ui)
-    expect(text.startsWith('ϟ ')).toBe(true)
+    expect(await onlyText(ui)).toBe('Ferris Lv.3')
     await ui.unmount()
   }
-  const wide = await $.ui.mount(band(100, { maxRows: 3 }))
-  expect((await onlyText(wide)).includes('Ferris Lv.3')).toBe(true)
-  await wide.unmount()
 })
 
 test('six to eleven rows draw the 16x6 mini Ferris, and its blits are mini-sized', async ($, on) => {
@@ -421,37 +321,28 @@ test('label then expanded in one render: the expanded call decides the band blit
   await full.unmount()
 })
 
-test('the label speaks of the last request long enough to time, not a lone tool call after it', async ($, on) => {
+test('forge-stats no longer times requests: a step passes through and the band shows no speed (B32)', async ($, on) => {
   world(on)
-  const spin = (ms: number) => {
-    const until = performance.now() + ms
-    while (performance.now() < until) {}
-  }
-  let n = 0
   on('turn.step', async function* () {
-    n += 1
-    const timed = n === 1 // the first step decodes for 250 ms; the second is a lone tool call, too short to time
-    yield { kind: 'text', index: 0, text: 'a' } as const
-    if (timed) spin(250)
-    yield { kind: 'text', index: 0, text: 'b' } as const
+    yield { kind: 'text', index: 0, text: 'ab' } as const
     return {
-      turnId: 't' + n,
+      turnId: 't1',
       index: 0,
       answer: 'ab',
       toolUses: [],
       stopReason: 'end_turn',
-      usage: { input_tokens: 10, output_tokens: timed ? 50 : 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' },
+      usage: { input_tokens: 10, output_tokens: 50, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' },
     } as const
   })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  for (const i of [1, 2]) {
-    const stream = $.turn.step({ turnId: 't' + i, index: 0, model: 'opus', messageCount: 1 })
-    for await (const _ of stream) {
-    }
-    await stream.result
+  const stream = $.turn.step({ turnId: 't1', index: 0, model: 'opus', messageCount: 1 })
+  const chunks: string[] = []
+  for await (const c of stream) if (c.kind === 'text') chunks.push(c.text)
+  expect(chunks).toEqual(['ab'])
+  await stream.result
+  for (const target of [band(200), band(100, { maxRows: 3 })]) {
+    const ui = await $.ui.mount(target)
+    expect(await ui.find({ type: 'Text', text: /tok\/s|ϟ/ })).toBe(undefined)
+    await ui.unmount()
   }
-  const ui = await $.ui.mount(band(30, { maxRows: 1 }))
-  const texts = await ui.findAll({ type: 'Text' })
-  expect(/^ϟ \d+ tok\/s/.test(texts.map(t => t.text).join(''))).toBe(true)
-  await ui.unmount()
 })

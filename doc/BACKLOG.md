@@ -175,7 +175,7 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 兩邊共識（fleet msg `01M69B3CY03VMC41QQJ1CEGWQ1`、`01M69B89Z5GRJE5Z9NHBDM19N4`）：
 - Rust 本體（記憶、ship、MUD）留在 codeforge repo；autopilot 是 Node、跨 harness、已公開，不帶進 Rust build 與 SQLite schema。
 - band 契約只剩一件事：forge 分頁點開時，autopilot 往下問一次展開區，codeforge 回 Ferris、寵物、記憶與大腦。
-  原本的分頁標籤契約（keyed Box，main `c5165cf`）隨速度一起退場，見 B32。
+  原本的分頁標籤契約（keyed Box，main `c5165cf`）隨速度一起退場（B32 已完成，見 CHANGELOG Unreleased 的 Removed）。
 - hooks 改由 autopilot 的 opt-in 清單註冊、不再寫全域 settings。ship 失敗責任：autopilot 只負責有呼叫、記結束碼、失敗看得到；
   重試與補送仍是 codeforge 的。
 - 降級：每一項都要能沒有 autopilot 單獨跑（forge-stats 沒有 host 時照現在自己畫；Solo Smith 定位不變）。
@@ -184,15 +184,6 @@ Items confirmed low-priority or blocked by external dependencies. Each item has 
 codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責任這四塊）。
 **hooks 段**: 2026-11-02 提前定好介面契約（7840hs 請求；owner 卡 d-0ce83828 選 C：只定契約）：`codeforge hook on <session-start|session-end|pre-compact>`，autopilot 用通用提供者清單 `hooks/hook-providers.json` 呼叫（autopilot 卡 d-92a2231d），codeforge install 依五項條件偵測、共用檔不自動清。契約：[`doc/plans/2026-11-02-autopilot-hook-bridge.md`](plans/2026-11-02-autopilot-hook-bridge.md)；專案：`doc/projects/2026-11-02-autopilot-hook-bridge/`。兩邊實作都等 alpha.7 之後，開工時再跑一次兩席 plan review。
 **Not done**: hooks 段只有契約、沒有 code；其他段的契約與實作都還沒開始；alpha.7 搬家期間不定掛載點（路徑會變好幾次）。
-
-## B32 — 速度（tok/s）整包移給 autopilot，forge-stats 拿掉速度與分頁標籤
-
-**Area**: `.claude/skills/forge-stats`（`turn.step` 量測、標籤、速度欄、最近請求表、Pane 的速度段）、README、CHANGELOG、`doc/specs/codeforge-mod-ui.md`
-**Decision**: owner 2026-11-01（卡 d-7b0f7a4a，選 A）：tok/s 是任何 mod 都量得到的 harness 遙測，跟記憶、寵物、Mnemos 無關，
-由 autopilot 自己量、自己畫（分頁列的 ϟ 標籤、速度欄、最近請求表），不再兩邊各量一次。forge-stats 只畫 Ferris、寵物、記憶與大腦，
-不回 maxRows=1 的標籤；沒有 autopilot 時 forge-stats 也不再顯示速度。現行算法已交給 autopilot（fleet msg `01M6A95050YK4D480QJXK54QDW`）。2026-11-02 修正：交出去的「第一塊 → 最後一塊」口徑在思考不顯示時會灌水，正確算法見 forge-stats `hooks/model.ts` 的 `stepRate`，已另行通知 autopilot。
-**Trigger**: autopilot 回報速度上線的 sha；在那之前 forge-stats 照舊回 keyed Box 標籤，避免兩邊都沒有速度的空窗。
-**Not done**: 移除程式與測試、改文件。autopilot 端登記為 BL-0359（develop `bca35c405`，交接文件 `docs/backlog/live-speed-handover-from-forge-stats.md`），排在 alpha.7 發布之後（同 BL-0358，避開 mods 路徑搬家），量法先照抄現行口徑；分頁標籤放不放寵物由 autopilot 做預覽給 owner 選。
 
 ## B33 — 專案範圍知識的正本改放 pm（跟著 repo 走、跨機器同步）
 
