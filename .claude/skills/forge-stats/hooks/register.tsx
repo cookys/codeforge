@@ -29,6 +29,7 @@ import {
   shortModel,
   sparkline,
   staleMinutes,
+  stepRate,
   summarize,
 } from './model'
 import { localeFrom, makeT } from './strings'
@@ -36,10 +37,8 @@ import type { Locale, T } from './strings'
 
 const PANE = 'forge-stats'
 const KEEP = 200
-// Below this decode window the rate is noise (one-chunk replies).
-const MIN_DECODE_MS = 150
 
-const steps = atom({ plugin: 'forge-stats', key: 'steps' } as const, [] as Step[], { shape: 'steps-1' })
+const steps = atom({ plugin: 'forge-stats', key: 'steps' } as const, [] as Step[], { shape: 'steps-2' }) // steps-2: rates from stepRate; steps-1 samples (first → last only) are dropped
 const pet = atom(
   { plugin: 'forge-stats', key: 'pet' } as const,
   { status: 'missing', readAt: 0, writtenAt: null, path: null, pet: null, village: null } as PetView,
@@ -379,18 +378,20 @@ export const register: Register = on => {
     return { text: t()('opened') }
   })
 
-  // Time every model request from its stream: send → first content chunk
-  // (thinking counts: `output_tokens` includes thinking), then → last chunk.
+  // Time every model request from its stream: send → first content chunk → last chunk. The rate's window
+  // is picked by stepRate (model.ts): hidden thinking is written before the first chunk, so it counts from send.
   on('turn.step', async function* ($, e, next) {
     const sent = performance.now()
     let first: number | null = null
     let last: number | null = null
+    let thinkingStreamed = false
     const stream = next(e)
     for await (const chunk of stream) {
       if (chunk.kind !== 'engine') {
         const now = performance.now()
         if (first === null) first = now
         last = now
+        if (chunk.kind === 'thinking' && chunk.text.length > 0) thinkingStreamed = true
       }
       yield chunk
     }
@@ -398,7 +399,8 @@ export const register: Register = on => {
     const usage = result.usage
     if (usage) {
       const outTokens = usage.output_tokens ?? 0
-      const decodeMs = first !== null && last !== null ? last - first : null
+      const serverToolMs = (result.serverToolUses ?? []).reduce((n, u) => n + (u.endedAt !== undefined ? Math.max(0, u.endedAt - u.startedAt) : 0), 0)
+      const { decodeMs, tps } = stepRate({ sent, first, last, outTokens, thinkingStreamed, serverToolMs })
       const step: Step = {
         at: Date.now(),
         model: usage.model ?? e.model,
@@ -406,7 +408,7 @@ export const register: Register = on => {
         ttftMs: first !== null ? first - sent : null,
         decodeMs,
         outTokens,
-        tps: decodeMs !== null && decodeMs >= MIN_DECODE_MS && outTokens > 0 ? outTokens / (decodeMs / 1000) : null,
+        tps,
       }
       await update($, steps, list => [...list, step].slice(-KEEP))
     }

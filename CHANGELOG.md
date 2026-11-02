@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Doppelganger 分身怪 🪞（B10）**：daemon scanner 新增跨檔重複程式碼區塊偵測（8 個保留行、略過註解／import／瑣碎行，每次最多 3 隻，名稱 `dup @ <a> ↔ <b>`）；分身怪被擊殺時依 proposal A/A/A 分裂（每次 1 隻、到第 2 代為止、stats × 0.7），Doppelganger Ward 生效期間不分裂。`mobs` 新增 `parent_id`、`generation` 欄位（自動升級）。`codeforge inventory` 拿掉 Ward「尚未實作」的警語。scanner 改為依檔名排序走訪，超過 1000 檔時收進來的檔案在每台機器都一樣。
 - **`install --replace-statusline`** takes over a `statusLine` / `subagentStatusLine` that another tool set, without touching any hook. Before, the only way was `--force`, which also clears every hook entry, codeforge's or not; the conflict error and the bootstrap hint now point at the new flag (B28).
 
+### Fixed
+
+- **forge-stats 速度欄灌水**：模型的思考不顯示時（思考文字不串流），思考的 token 在第一塊可見內容之前就寫完了，舊算法只拿「第一塊 → 最後一塊」的時間去除全部輸出 token，曾顯示 3578 tok/s（實際約 83）。現在沒有思考文字串流時改從送出算起（含讀 prompt 的時間，是下限而非高估），並扣掉 API 自己跑工具（advisor）的時間；舊的計時樣本在升級時清掉。
+
 ## [0.0.7] - 2026-11-02
 
 Install is safe on a shared `~/.claude/settings.json` — a symlink into a dotfiles repo, or a git-tracked file

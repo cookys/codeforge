@@ -7,7 +7,8 @@ export type Step = {
   isSubagent: boolean
   /** Request sent → first content chunk; null when nothing streamed. */
   ttftMs: number | null
-  /** First content chunk → last chunk. */
+  /** The writing window (see `stepRate` in hooks/model.ts): first chunk → last chunk when thinking streamed as text,
+   *  else send → last chunk; minus the API's own tool time (the advisor). */
   decodeMs: number | null
   outTokens: number
   /** outTokens / decode time; null when too short to measure. */
