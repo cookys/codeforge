@@ -1,6 +1,6 @@
 # Proposal — Doppelganger Split Mechanic
 
-**Status**: Decided 2026-11-02（見文末 Decision）
+**Status**: Implemented 2026-11-02（見文末 Decision；實作依 [`doc/plans/2026-11-02-doppelganger-split.md`](../plans/2026-11-02-doppelganger-split.md)）
 **Blocks**: `SuppressDoppelgangerSplit` runtime consumer (storage 已就位於 Phase 3e)
 **Spec touchpoint**: `doc/specs/codeforge-mud-engine.md` §2 line 130
 
@@ -76,3 +76,11 @@ user 這裡提供答案後，下個 session 可直接接 Ward runtime。預設�
 - **範圍追加**：scanner 原本沒有任何重複程式碼 heuristic，分身怪從來不會生成（Abstract Gem 因此拿不到、Ward 做不出來）。本次一併加上重複區塊偵測，讓整條路徑玩得到。
 
 執行計畫改由 [`doc/plans/2026-11-02-doppelganger-split.md`](../plans/2026-11-02-doppelganger-split.md) 承接；上方「下個 session 執行計畫」段保留為歷史。
+
+## Implementation notes（2026-11-02）
+
+與本文原文的差異：
+
+- 本文沒有偵測段；實作加上 scanner 的跨檔重複區塊 heuristic（`src/daemon/dup_detect.rs`），規則見 plan §3.1。
+- 子代與 parent **同名**（不是另取 `#clone-1` 之類的名字），所以子代活著時 scanner 不會重生本體；`difficulty` 繼承 parent（本文未規定）。
+- 分裂寫在 `daemon::combat::run_tick`（本文 P2 寫的位置），欄位為 `mobs.parent_id` 與 `mobs.generation`（本文 P3）。

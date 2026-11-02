@@ -3,10 +3,11 @@
 //! Per tick: load alive mobs in pet's zone, sort by the active Strategy's
 //! priority, run one attack per mob with Strategy-scaled damage, apply
 //! counter-damage with Strategy-scaled absorption, mark defeats. Loot rolls
-//! + XP award live in `loot.rs`. A defeated Doppelganger below
-//! `MAX_SPLIT_GENERATION` spawns one weaker child in the same transaction
-//! unless a `SuppressDoppelgangerSplit` effect (Doppelganger Ward) is live
-//! (B10).
+//! + XP award live in `loot.rs`.
+//!
+//! A defeated Doppelganger below `MAX_SPLIT_GENERATION` spawns one weaker
+//! child in the same transaction unless a `SuppressDoppelgangerSplit`
+//! effect (Doppelganger Ward) is live (B10).
 //!
 //! RNG is deterministic: `Xorshift64*` seeded per-mob from `(tick_count, mob.id)`.
 //! The `tick_count` source is critical — using `tick_at` seconds produces

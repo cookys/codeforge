@@ -128,20 +128,6 @@ fn render_recipes(out: &mut impl Write, recipes: &[Recipe]) -> Result<()> {
             ings.join(" + "),
             effect,
         )?;
-        // Phase 3e: surface items whose runtime consumer isn't wired
-        // yet so players don't think the item is broken. Ward can be
-        // crafted + used (effect row inserts correctly) but until the
-        // doppelganger split mechanic lands (see
-        // `doc/proposals/2026-04-18-doppelganger-split.md`) there's
-        // nothing to suppress.
-        if r.product.name == "Doppelganger Ward" {
-            writeln!(
-                out,
-                "        {}",
-                "（注意：split 機制尚未實作；此 item 可使用但 effect 無 runtime 消費者）"
-                    .with(Color::AnsiValue(244))
-            )?;
-        }
     }
     writeln!(out)?;
     Ok(())
@@ -175,6 +161,17 @@ mod tests {
         assert_eq!(rows[0].0, "crystal");
         assert_eq!(rows[1].0, "fragment");
         assert_eq!(rows[2].0, "gem");
+    }
+
+    #[test]
+    fn recipes_no_longer_warn_that_ward_is_inert() {
+        // B10 wired the split mechanic; the Phase 3e "not implemented"
+        // caveat under Doppelganger Ward must be gone.
+        let mut buf: Vec<u8> = Vec::new();
+        render_recipes(&mut buf, recipes()).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        assert!(text.contains("Doppelganger Ward"));
+        assert!(!text.contains("尚未實作"), "got: {text}");
     }
 
     #[test]
