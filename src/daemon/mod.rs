@@ -12,6 +12,7 @@
 
 pub mod catchup;
 pub mod combat;
+pub mod dup_detect;
 pub mod ecs;
 pub mod events;
 pub mod first_events;
