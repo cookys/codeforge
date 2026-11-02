@@ -101,7 +101,7 @@ src/
     view.rs         ← pet view snapshot `<live_base>/codeforge/pet.json` (codeforge.pet-view/1) for UI readers
     sprite.rs       ← pixel sprites for pet.json `village.sprite` (Ferris 24×24, 2 frames) + contract validator
     ability.rs      ← ability unlock catalog (display-only; combat effects not yet wired)
-  daemon/           ← Phase 2 MUD engine: tick loop, ECS, event_inbox, combat, mob_scanner, loot, strategy, mood, lifecycle
+  daemon/           ← Phase 2 MUD engine: tick loop, ECS, event_inbox, combat, mob_scanner + dup_detect (Doppelganger), loot, strategy, mood, lifecycle
   combat (in daemon/) ← auto-combat resolution
   mnemos/           ← ship transport/digest/config/state/cite/evidence (Mnemos source role)
   clan/             ← CodePower clan content provider skeleton (not yet wired to village.rs)

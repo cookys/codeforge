@@ -5,6 +5,10 @@
 //! counter-damage with Strategy-scaled absorption, mark defeats. Loot rolls
 //! + XP award live in `loot.rs`.
 //!
+//! A defeated Doppelganger below `MAX_SPLIT_GENERATION` spawns one weaker
+//! child in the same transaction unless a `SuppressDoppelgangerSplit`
+//! effect (Doppelganger Ward) is live (B10).
+//!
 //! RNG is deterministic: `Xorshift64*` seeded per-mob from `(tick_count, mob.id)`.
 //! The `tick_count` source is critical — using `tick_at` seconds produces
 //! seed collisions across catchup ticks that fire within the same second
@@ -15,7 +19,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 
 use super::ecs::{GameWorld, PetIdentity, PetStats, PetStrategy, PetVitals};
-use super::mob::MobKind;
+use super::mob::{child_stats, MobKind, MAX_SPLIT_GENERATION};
 use super::strategy::Strategy;
 
 /// Max mobs attacked per tick. Protects the 10ms tick budget against a
@@ -81,6 +85,10 @@ pub struct AliveMob {
     pub atk: u32,
     pub def: u32,
     pub difficulty: u32,
+    /// B10: repo-relative origin, copied to a split child.
+    pub origin_path: Option<String>,
+    /// B10: 0 = scanner-spawned, +1 per Doppelganger split.
+    pub generation: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -97,6 +105,8 @@ pub struct CombatSummary {
     pub hits: usize,
     pub defeats: Vec<DefeatedMob>,
     pub pet_damage_taken: u32,
+    /// B10: Doppelganger children spawned this tick.
+    pub splits: usize,
 }
 
 // ─── Formula ────────────────────────────────────────────────────────
@@ -177,6 +187,14 @@ pub fn run_tick(
         now,
     )?;
 
+    // B10 Doppelganger Ward: one read per tick, same pattern as above.
+    let suppress_split = crate::craft::is_effect_active(
+        conn,
+        crate::craft::EffectKind::SuppressDoppelgangerSplit,
+        &zone_id,
+        now,
+    )?;
+
     mobs.sort_by_key(|m| (strategy.priority_order_ctx(m.kind, &zone_id, &zones), m.id));
 
     let mut summary = CombatSummary::default();
@@ -194,8 +212,18 @@ pub fn run_tick(
             let damage = compute_damage(pet_atk, strategy, roll_mult);
             let new_hp = mob.hp.saturating_sub(damage);
             if new_hp == 0 {
+                // Order matters: the child reuses the parent's name, and
+                // the alive-unique index would IGNORE its INSERT while the
+                // parent is still alive. The child is not in `mobs`, so it
+                // is not attacked this tick.
                 mark_defeated(conn, mob.id, now)?;
                 defeated = true;
+                if mob.kind == MobKind::Doppelganger
+                    && mob.generation < MAX_SPLIT_GENERATION
+                    && !suppress_split
+                {
+                    summary.splits += spawn_split_child(conn, &mob, now)?;
+                }
             } else {
                 update_mob_hp(conn, mob.id, new_hp)?;
             }
@@ -271,7 +299,8 @@ pub(crate) fn compute_counter(mob_atk: u32, pet_def: u32, strategy: Strategy) ->
 
 fn load_alive_mobs(conn: &Connection, zone_id: &str, cap: usize) -> Result<Vec<AliveMob>> {
     let mut stmt = conn.prepare(
-        "SELECT id, zone_id, kind, name, hp, hp_max, atk, def, difficulty
+        "SELECT id, zone_id, kind, name, hp, hp_max, atk, def, difficulty,
+                origin_path, generation
          FROM mobs
          WHERE zone_id = ?1 AND defeated_at IS NULL
          ORDER BY id
@@ -288,11 +317,14 @@ fn load_alive_mobs(conn: &Connection, zone_id: &str, cap: usize) -> Result<Vec<A
             r.get::<_, i64>(6)? as u32,
             r.get::<_, i64>(7)? as u32,
             r.get::<_, i64>(8)? as u32,
+            r.get::<_, Option<String>>(9)?,
+            r.get::<_, i64>(10)? as u32,
         ))
     })?;
     let mut out = Vec::with_capacity(cap.min(64));
     for row in rows {
-        let (id, zone_id, k, name, hp, hp_max, atk, def, difficulty) = row?;
+        let (id, zone_id, k, name, hp, hp_max, atk, def, difficulty, origin_path, generation) =
+            row?;
         let kind = MobKind::from_str(&k).unwrap_or(MobKind::Ghost);
         out.push(AliveMob {
             id,
@@ -304,9 +336,39 @@ fn load_alive_mobs(conn: &Connection, zone_id: &str, cap: usize) -> Result<Vec<A
             atk,
             def,
             difficulty,
+            origin_path,
+            generation,
         });
     }
     Ok(out)
+}
+
+/// B10: insert the split child of a just-defeated Doppelganger. Same zone,
+/// kind, name and origin as the parent; stats from [`child_stats`];
+/// difficulty inherited. Returns rows inserted (0 if a same-named mob is
+/// already alive — the alive-unique index keeps one per name).
+fn spawn_split_child(conn: &Connection, parent: &AliveMob, now: i64) -> Result<usize> {
+    let (hp, atk, def) = child_stats(parent.hp_max, parent.atk, parent.def);
+    let n = conn.execute(
+        "INSERT OR IGNORE INTO mobs
+             (zone_id, kind, name, hp, hp_max, atk, def, difficulty,
+              spawned_at, origin_path, parent_id, generation)
+         VALUES (?1, ?2, ?3, ?4, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        rusqlite::params![
+            parent.zone_id,
+            parent.kind.as_str(),
+            parent.name,
+            hp as i64,
+            atk as i64,
+            def as i64,
+            parent.difficulty as i64,
+            now,
+            parent.origin_path,
+            parent.id,
+            (parent.generation + 1) as i64,
+        ],
+    )?;
+    Ok(n)
 }
 
 fn update_mob_hp(conn: &Connection, id: i64, hp: u32) -> Result<()> {
@@ -847,5 +909,157 @@ mod tests {
             aggro_taken > defensive_taken,
             "Aggressive ({aggro_taken}) should take more counter than Defensive ({defensive_taken})"
         );
+    }
+
+    // ─── Doppelganger split (B10) ──────────────────────────────
+
+    fn spawn_dop(conn: &Connection, generation: u32, hp_max: u32) -> i64 {
+        conn.execute(
+            "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, difficulty,
+                               spawned_at, origin_path, generation)
+             VALUES ('rust', 'doppelganger', 'dup @ src/a.rs ↔ src/b.rs', 1, ?1, 15, 3, 4,
+                     100, 'src/a.rs', ?2)",
+            rusqlite::params![hp_max as i64, generation as i64],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    /// Run ticks until something dies; returns that tick's summary.
+    fn tick_until_defeat(conn: &Connection, world: &mut GameWorld) -> CombatSummary {
+        for t in 1..200 {
+            let s = run_tick(conn, world, t, 9_000).unwrap();
+            if !s.defeats.is_empty() {
+                return s;
+            }
+        }
+        panic!("nothing was defeated within 200 ticks");
+    }
+
+    type MobRow = (
+        i64,
+        String,
+        u32,
+        u32,
+        u32,
+        u32,
+        u32,
+        Option<String>,
+        Option<i64>,
+        u32,
+    );
+
+    fn alive_rows(conn: &Connection) -> Vec<MobRow> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, hp, hp_max, atk, def, difficulty, origin_path, parent_id,
+                        generation
+                 FROM mobs WHERE defeated_at IS NULL ORDER BY id",
+            )
+            .unwrap();
+        stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, i64>(2)? as u32,
+                r.get::<_, i64>(3)? as u32,
+                r.get::<_, i64>(4)? as u32,
+                r.get::<_, i64>(5)? as u32,
+                r.get::<_, i64>(6)? as u32,
+                r.get(7)?,
+                r.get(8)?,
+                r.get::<_, i64>(9)? as u32,
+            ))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+    }
+
+    #[test]
+    fn doppelganger_defeat_spawns_weaker_child() {
+        let (conn, mut world) = fresh();
+        let parent = spawn_dop(&conn, 0, 80);
+        let s = tick_until_defeat(&conn, &mut world);
+        assert_eq!(s.splits, 1);
+        let alive = alive_rows(&conn);
+        assert_eq!(alive.len(), 1, "got {alive:?}");
+        let (_, name, hp, hp_max, atk, def, diff, origin, parent_id, gen) = alive[0].clone();
+        assert_eq!(name, "dup @ src/a.rs ↔ src/b.rs");
+        assert_eq!(origin.as_deref(), Some("src/a.rs"));
+        assert_eq!(parent_id, Some(parent));
+        assert_eq!(gen, 1);
+        // ceil(x * 0.7): 80 → 56, 15 → 11, 3 → 3 (2.1 ceil); difficulty inherited.
+        assert_eq!((hp, hp_max, atk, def, diff), (56, 56, 11, 3, 4));
+    }
+
+    #[test]
+    fn doppelganger_split_stops_after_second_generation() {
+        let (conn, mut world) = fresh();
+        spawn_dop(&conn, 0, 80);
+        tick_until_defeat(&conn, &mut world); // gen 0 → gen 1
+        let child = alive_rows(&conn)[0].0;
+        conn.execute("UPDATE mobs SET hp = 1 WHERE id = ?1", [child])
+            .unwrap();
+        let s = tick_until_defeat(&conn, &mut world); // gen 1 → gen 2
+        assert_eq!(s.splits, 1);
+        let rows = alive_rows(&conn);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].8, Some(child));
+        assert_eq!(rows[0].9, 2);
+        assert_eq!(rows[0].3, 40); // ceil(56 * 0.7)
+        conn.execute("UPDATE mobs SET hp = 1 WHERE id = ?1", [rows[0].0])
+            .unwrap();
+        let s = tick_until_defeat(&conn, &mut world); // gen 2 dies for good
+        assert_eq!(s.splits, 0);
+        assert!(alive_rows(&conn).is_empty());
+    }
+
+    fn add_ward(conn: &Connection, zone: Option<&str>, expires_at: i64) {
+        conn.execute(
+            "INSERT INTO active_effects
+                 (effect_kind, zone_id, applied_at, expires_at, source_item)
+             VALUES ('suppress_doppelganger_split', ?1, 0, ?2, 'Doppelganger Ward')",
+            rusqlite::params![zone, expires_at],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn ward_for_zone_suppresses_split() {
+        let (conn, mut world) = fresh();
+        add_ward(&conn, Some("rust"), i64::MAX);
+        spawn_dop(&conn, 0, 80);
+        let s = tick_until_defeat(&conn, &mut world);
+        assert_eq!(s.splits, 0);
+        assert!(alive_rows(&conn).is_empty());
+    }
+
+    #[test]
+    fn global_ward_suppresses_split() {
+        let (conn, mut world) = fresh();
+        add_ward(&conn, None, i64::MAX);
+        spawn_dop(&conn, 0, 80);
+        let s = tick_until_defeat(&conn, &mut world);
+        assert_eq!(s.splits, 0);
+    }
+
+    #[test]
+    fn expired_ward_no_longer_suppresses_split() {
+        let (conn, mut world) = fresh();
+        add_ward(&conn, Some("rust"), 1_000); // tests run at now = 9_000
+        spawn_dop(&conn, 0, 80);
+        let s = tick_until_defeat(&conn, &mut world);
+        assert_eq!(s.splits, 1);
+        assert_eq!(alive_rows(&conn).len(), 1);
+    }
+
+    #[test]
+    fn other_kinds_never_split() {
+        let (conn, mut world) = fresh();
+        spawn_mob(&conn, "rust", MobKind::Zombie, "z", 1, 1, 1);
+        let s = tick_until_defeat(&conn, &mut world);
+        assert_eq!(s.splits, 0);
+        assert!(alive_rows(&conn).is_empty());
     }
 }

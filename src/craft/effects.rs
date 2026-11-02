@@ -22,8 +22,9 @@ pub enum EffectKind {
     /// `daemon::mob_scanner` skips Ghost spawns in this zone. If
     /// `zone_id` is None on the row, applies globally.
     SuppressGhostSpawn,
-    /// `daemon::mob` skips Doppelganger split on death when live.
-    /// (Daemon wiring deferred — storage only in 3e MVP.)
+    /// `daemon::combat` skips the Doppelganger split on defeat when live
+    /// (B10). Does not stop the scanner from spawning generation-0
+    /// Doppelgangers. `zone_id` None on the row applies globally.
     SuppressDoppelgangerSplit,
 }
 

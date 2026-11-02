@@ -12,6 +12,7 @@
 
 | Project | Description | Completed |
 |---------|------------|-----------|
+| [doppelganger-split](_archive/2026-11-02-doppelganger-split/README.md) | B10 分身怪 🪞：scanner 跨檔重複程式碼偵測（8 保留行視窗、略過註解／瑣碎行、import／屬性切斷、每檔每 hash 一處、O(hits) 鏈延伸、每次 ≤3 隻、名稱 `dup @ a ↔ b` 不隨長度變）+ 擊殺分裂 A/A/A（每次 1 隻、到第 2 代、stats ×0.7）+ Doppelganger Ward 生效 + `mobs.parent_id`／`generation`。plan review g1+g2（14 條全採納）、U1 consult、hetero code review 3 輪（g1/g2 修、g3 延後 B37）。實測 46 ms／425 ms | 2026-11-02 ✅ |
 | [install-stable-paths](_archive/2026-11-01-install-stable-paths/README.md) | B35 — install／bootstrap 對共用 settings.json 安全：`codeforge hook` 轉發（指令不帶本機路徑與版號）、marker `codeforge@1`、寫入穿透 symlink、共用檔偵測與警告、共用檔的 `cleanupPeriodDays` 只在 `--cleanup-period-days` 時寫入。plan review g1+g2 凍結（13 條全採納）、hetero code review g2 SHIP-AS-IS（gpt-6-astra low／grok-4.7 high，g1 抓到旗標被忽略）。v0.0.7 | 2026-11-02 ✅ |
 | [statusline-band](_archive/2026-10-31-statusline-band/README.md) | forge-stats band（Ferris／寵物／速度／最近請求／記憶與大腦，依寬度 1–5 欄、依列數分 label/summary/mini/full 四級）+ `/forge-stats layout band\|pane` + mod 心跳；statusline 偵測同 session 心跳縮成精簡版。後續演進成 autopilot 分頁列裡的 forge 分頁（`05a06af`、keyed Box 標籤 `c5165cf`）。owner 2026-11-01 目視通過。速度移交 autopilot → B32，納編 → B31 | 2026-11-01 ✅ |
 | [pixel-pet](_archive/2026-10-31-pixel-pet/README.md) | Ferris 24×24 兩幀像素 sprite（`pet.json` `village.sprite`）+ forge-stats 面板 Raster 半格待機動畫；mod 收進 `.claude/skills/forge-stats/` | 2026-10-31 |

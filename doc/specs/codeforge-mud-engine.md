@@ -11,7 +11,7 @@
 > - **STALE — MOB 掃描頻率（§2 MOB 生成規則）**：不是「每 tick(60s) 掃」，而是**每 10 tick**掃一次（`mob_scanner.rs: SCAN_EVERY_N_TICKS = 10`，`should_scan_this_tick`）。
 > - **STALE — Elite 門檻（§2）**：scanner 不算 cyclomatic complexity；用 file-level branching keyword 計數，門檻是 **branches ≥ 20**（`ELITE_BRANCH_THRESHOLD = 20`），非「複雜度 >10」。
 > - **NOT YET IMPLEMENTED — Pet Ability 戰鬥效果（§2.5）**：Quick Eye 命中率、Focus Strike Boss 暴擊、Tome Sense 掉率等 ability 效果**未實裝**。`pet/ability.rs` 只是 display-only catalog，用來在 XP bar 旁顯示「下一個解鎖」；`combat.rs` 無 skill/ability 邏輯。§2.5 的 `hit_chance *= 1.3` / `damage *= 2.0` pseudocode 是 ability 設計，不是 live tick 公式（實際 hit_chance 只用 `(atk+ver)/(def+difficulty)` clamp [0.05,0.95]，與 strategy/ability 無關）→ BACKLOG B18。
-> - **STALE — MOB 種類（§2）**：scanner 實際只產 4 種 MOB —— Zombie（TODO/FIXME≥5）、Boss（fn≥100 行）、Elite（branch keyword≥20）、Ghost（dead code）。§2 表列的 **Doppelganger 🪞（duplicate code block）與 Void Creature 🕳️（missing test coverage → drain DEF）皆未實作**（`src/daemon/mob.rs` 標 Phase 3 deferred），scanner 無對應 heuristic。
+> - **STALE — MOB 種類（§2）**：scanner 實際產 5 種 MOB —— Zombie（TODO/FIXME≥5）、Boss（fn≥100 行）、Elite（branch keyword≥20）、Ghost（dead code）、Doppelganger（跨檔重複程式碼區塊，B10 2026-11-02）。§2 表列的 **Void Creature 🕳️（missing test coverage → drain DEF）仍未實作**（`src/daemon/mob.rs` 標 Phase 3 deferred），scanner 無對應 heuristic。
 > - **STALE — 村莊清單（§2.5 Lv50 legendary 表）**：實際村莊就 5 個（rust / python / typescript / go / javascript）。§2.5 列的 **ML 🧠 與 開源基金會 🐙 村莊不存在**；javascript 反而沒有 legendary 條目。整張 Lv50 legendary 表為設計稿，未實裝。
 
 ## Vision
@@ -157,19 +157,25 @@ codeforge statusline  # ← 已完成
 
 ### MOB 生成規則
 
-**As-shipped**（`src/daemon/mob_scanner.rs`）—— 每 **10 個 tick**（tick 間隔 60s，故 ≈10 分鐘）掃描一次 current Zone，產 **4 種** MOB：
+**As-shipped**（`src/daemon/mob_scanner.rs`）—— 每 **10 個 tick**（tick 間隔 60s，故 ≈10 分鐘）掃描一次 current Zone，產 **5 種** MOB：
 
 ```
 TODO / FIXME count >= 5          → Zombie Horde 🧟 (弱，數量多)
 Function length > 100 lines      → Boss Mob 🐉    (需要多 tick 才打完)
 branching-keyword count >= 20    → Elite Mob ⚔️  (高 HP，多 EXP；branch-count proxy，非真 cyclomatic)
 Dead code (unused)               → Ghost 👻       (容易一擊必殺)
+Duplicate code block (跨檔)      → Doppelganger 🪞 (分裂，清不完)
 ```
+
+**Doppelganger 細節**（B10，`src/daemon/dup_detect.rs` + `combat.rs`；設計與 review 紀錄：`doc/plans/2026-11-02-doppelganger-split.md`）：
+
+- **偵測**：兩個不同檔案出現同一段連續 8 個「保留行」（略過空行、註解、`}` 等瑣碎行；import、`pub use`、屬性、decorator 會切斷區塊），且這 8 行 ≥ 200 bytes、至少 4 行不同。同檔內重複、`@generated`／`DO NOT EDIT` 與 `*.min.js`／`*.d.ts`／`*.pb.go`／`*_pb2.py` 不算。每次 scan 最多 3 隻，名稱 `dup @ <a> ↔ <b>`（兩個相對路徑依 byte 序），origin_path = a；重複區塊變長變短名稱不變。scanner 每次最多讀 32 MiB、重複索引最多 4 MiB。
+- **分裂**：被擊殺時，第 0、1 代會在同一 tick 生出下一代（同名、同 origin、hp_max／atk／def × 0.7 向上取整且 ≥ 1、difficulty 繼承、記 `parent_id`／`generation`）；第 2 代被殺不再分裂。子代掉落同 Doppelganger loot 表。
+- **清不完**：子代與本體同名，所以子代活著時 scanner 不會重生本體；第 2 代死後若重複程式碼還在，下一次 scan 重生第 0 代——修掉重複才會停。
 
 **Planned（Phase 3，未實作；`MobKind` enum 已留位但 scanner 無 heuristic）**：
 
 ```
-Duplicate code block             → Doppelganger 🪞 (分裂，清不完)
 Missing test coverage            → Void Creature 🕳️ (drain DEF)
 ```
 
@@ -397,6 +403,8 @@ Statusline 模式（簡化）：
   2× Abstract Gem       → 1× Doppelganger Ward
                            （使用後：Doppelganger 不分裂，持續 2 天）
 ```
+
+Doppelganger Ward 只擋擊殺時的分裂，不擋 scanner 生成第 0 代（B10 起生效；之前只能合成與使用、沒有作用）。
 
 - 所有材料已在現有 Loot 系統中（不需新增 MOB 類型）
 - 純本地 SQLite 操作，無需網路

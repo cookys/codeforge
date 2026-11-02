@@ -4,10 +4,10 @@
 //! pet's inventory, and inserts a row into `active_effects`. Zone scope
 //! comes from the pet's current village (Phase 3a `pet.village`).
 //!
-//! Daemon reads: `daemon::mob_scanner` checks `is_effect_active(
-//! SuppressGhostSpawn, zone, now)` before generating Ghost MOBs.
-//! The two other effects (ReduceDifficulty, SuppressDoppelgangerSplit)
-//! are stored today; their runtime consumers land in later phases.
+//! Daemon reads (all via `is_effect_active(kind, zone, now)`):
+//! `daemon::mob_scanner` drops new Ghost spawns (SuppressGhostSpawn);
+//! `daemon::combat` lowers mob difficulty (ReduceDifficulty) and skips
+//! the Doppelganger split on defeat (SuppressDoppelgangerSplit, B10).
 
 use anyhow::{bail, Result};
 

@@ -1,0 +1,277 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "B10-doppelganger",
+  "logical_plan_id": "doppelganger-split-2026-11-02",
+  "session_id": "e6514bd9-6849-44e5-81a8-8036ac718696",
+  "session_key": "83ce526db492f6cffa50e614332133314d17e824978b12abd248db66a4cbad39",
+  "generation": 2,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": true,
+  "policy_reason": "generation_cap_requires_depth_0_adjudication",
+  "rubric_sha256": "fdef94caf10a780bf737fafce7fab4ef41e068255260d94ff73737205730bde1",
+  "manifest_sha256": "a213668c52c61321aad672b64a5207591971c9b156e61edfd136b0522ce79295",
+  "plan_sha256": "bf1eab6e8141c88839cce3c08d3c91ef10a4655c160944295606009275d24d20",
+  "growth_ratio": {
+    "numerator": 18229,
+    "denominator": 14432
+  },
+  "growth_warning": true,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "astra_plan_chair",
+      "target_id": "astra_plan_chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6-astra",
+          "operation": "plan-review",
+          "request_digest": "a5fc5fc0aa83d86115f6009f7f456ee3befd0e7e203bc242a34b8b74c8471f48"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "7df0cfb92926e2e10bdf140be8c39c8aaa1292a56d95814bbaa7725f1cd732cf",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-codex-YKmwyH/stdout",
+          "digest": "7df0cfb92926e2e10bdf140be8c39c8aaa1292a56d95814bbaa7725f1cd732cf"
+        },
+        "receipt_digest": "db2c723be6e173441a1fbe157f3777222cf41ea333be0d2c6f7829e2f8529f0c"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "grok",
+          "model": "grok-4.7",
+          "operation": "plan-review",
+          "request_digest": "e71acbac16abf8588278e3df36314d2d635821d5d6e0c26b43cd273e2b6270b7"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "179869587d84f51b82721c90490ffbc61fdb97783f8e54c1b83ba02bf5746695",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-log-WH6NGj",
+          "digest": "179869587d84f51b82721c90490ffbc61fdb97783f8e54c1b83ba02bf5746695"
+        },
+        "receipt_digest": "7cd6de8625a5995f198e20c72ac3499b965af404382bcda8e7acef3cee19f017"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "astra_plan_chair",
+      "target_id": "astra_plan_chair",
+      "family": "openai",
+      "verdict": "STOP"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "family": "xai",
+      "verdict": "CONDITIONAL"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "§3.1 每個 hash 的出現位置上限與跨檔配對",
+      "claim": "同一檔案的重複位置可以占滿全部 8 個名額，使確實存在的跨檔重複完全無法生成分身怪。",
+      "evidence": "若 a.rs 含同一個合格的 8 行區塊 8 次，b.rs 含該區塊 1 次，依計畫會先保留 a.rs 的 8 個位置，再忽略 b.rs 的位置。配對階段排除同檔配對，結果為 0 隻。此輸入只有兩個小檔案，不涉及讀檔或索引預算耗盡。",
+      "evidence_reference": "計畫 §3.1「每個 hash 最多記錄 8 個出現位置」「留下最前面的 8 個」「只配不同檔」；§4 P1 測試 6 未涵蓋單檔先占滿 bucket。",
+      "repair": "在固定容量內優先保留不同檔案的代表位置，例如先為最多 8 個不同檔案各保留一個位置；明確定義額外位置的保留策略，並加入 a.rs 重複 8 次、b.rs 重複 1 次仍生成分身怪的測試。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "astra_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6-astra"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "9acfa9f1719d15a482e24db9f3ceda528d4b6a85503d60dd5ad425bdb06a546f"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "§3.1 Rust import 邊界分類與跨行狀態",
+      "claim": "Rust 帶可見性修飾的 use 宣告不符合列出的邊界規則，純 import 重複仍會生成分身怪。",
+      "evidence": "兩個檔案各含相同的 8 行不同 pub use 宣告，總長超過 200 bytes，即符合視窗門檻；這些行不以 use 開頭，也不是註解、屬性或瑣碎行，因此依其餘行保留規則進入索引。pub(crate) use 與帶可見性修飾的 grouped use 同樣未被規則涵蓋。",
+      "evidence_reference": "計畫 §3.1 逐行分類的 Rust 邊界僅列 use、mod 與 extern crate；跨行 import 狀態僅列 use …{；凍結 rubric R1 排除只有 import 的重複。",
+      "repair": "明確讓 Rust use 邊界辨識涵蓋 pub 與 pub(...) 可見性前綴，並將同一辨識結果用於 grouped use 跨行狀態；加入單行及跨行公開 re-export 的純 import 負例。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "astra_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6-astra"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "be23708ecf62fa46f60c5419ec24ced9fad46004765cd1ae9a7bfd38316a9635"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "§3.1 每個 hash 的出現位置上限與只配不同檔",
+      "claim": "同一個 hash 的 8 個位置名額會被排序在前的單一檔案裡重複出現的同一視窗占滿，另一檔的相同區塊被直接忽略；8 個位置都在同一檔時跨檔配對為空，兩檔含同一段合格程式碼仍得到 0 隻分身怪。",
+      "evidence": "§3.1 寫明每個 hash 最多留 8 個出現位置，檔案依排序先後處理，額滿後的出現直接忽略且不替換。同一合格 stanza 在檔 A 以視窗長度為週期連寫 8 次時，這 8 個位置的 hash 相同且都落在 A，檔 B 的那一次變成第 9 個被丟掉。配對又只配不同檔，於是這個 hash 貢獻 0 對。測試 6 只覆蓋 12 個檔各出現一次，抓不到這個填滿方式。延續長度靠的是相鄰起點的不同視窗 hash，不是同一個 hash 的多個 offset，所以同一檔留多個相同 hash 對長度沒有幫助。",
+      "evidence_reference": "計畫 §3.1 雜湊與驗證、只抓跨檔；§4 P1 測試 6",
+      "repair": "每個 hash 每個檔最多留 1 個最早的保留行位置，全 scan 最多 8 個不同檔，仍依相對路徑排序取前面的檔，額滿只忽略、不重建。補測試：檔 A 將一段至少 8 行、至少 200 bytes、至少 4 行不同的程式連寫 8 次，檔 B 只寫 1 次，結果仍正好 1 隻，且名稱由這兩個路徑決定。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "c9703cf16bc9d09ec3213698ee760e35bcebb588b4a4fc0f7f57adfc6dbe2c35"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "§3.1 邊界行與跨行 use 狀態",
+      "claim": "匯入邊界只寫了不帶可見度的 use、mod …;、extern crate。帶 pub 或 pub(crate) 等前綴的匯入與跨行 pub use 群組不會進入邊界狀態，內文會被當成保留行程式碼，兩檔相同就會生成分身怪。",
+      "evidence": "分類表的 Rust 規則是 use 接空白、mod …;、extern crate；跨行狀態的開頭也是 use …{ 且未以分號結尾。trim 之後 pub use …;、pub(crate) use、pub(super) use、pub(in …) use、pub extern crate、pub mod foo; 以及 pub use foo::{ … }; 都不符合這些開頭。測試 3 與子案例 (b) 只要求一般 import 與不帶可見度的 grouped use。一行 pub use 長路徑約數十字元，8 行且至少 4 行不同即可同時過 200 bytes 與 4 行門檻；跨行群組的項目行也會整段入窗。這正是 R1 禁止的匯入型假重複。",
+      "evidence_reference": "計畫 §3.1 逐行分類表與跨行狀態；§4 P1 測試 3(b)",
+      "repair": "分類前先剝掉行首一個可見度前綴（pub、pub(crate)、pub(super)，或 pub(in 後直到配對的右括號），再套用現有的 use、extern crate、mod …; 與跨行 use 群組規則；整段當邊界，不入視窗。測試 3 增加兩檔各一段至少 8 行的 pub use 單行群，以及兩檔各一段跨行 pub(crate) use { … };，兩者都必須是 0 隻。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "332f3413269f989db4a3a0d347c6652a328f28b59876048803c964c82bd2f45e"
+    },
+    {
+      "rubric_id": "R3",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "§3.1 檔案對組內的延續合併",
+      "claim": "每個 hash 最多 28 對只封住單一 hash 的扇出。同一對檔案上，所有視窗命中合在一起仍可隨索引預算線性變大；若組內兩兩檢查 offset 是否同時加一，工作量是平方。排序後只比相鄰項則會把交錯對齊的長鏈切短。",
+      "evidence": "讀檔 32 MiB、索引 4 MiB、每 hash 8 個位置都有寫到，配對生成本身是每個 hash 常數對。但兩份相同內容會讓幾乎每個視窗起點都成為該檔案對的一個命中，命中數跟保留行數同階；保留行最短約 3 個英數字元，4 MiB 預算下可到約 10^6 個命中。§3.1 只說組內按 (ka, kb) 排序、兩邊 offset 同時加一才算延續。排序後的相鄰項在 (0,0)、(0,100)、(1,1)、(1,101) 這種雙對齊下都不是加一，長鏈會被切成單窗，最長塊行數被低估，前 3 名會選錯對。正確的兩兩掃描則是平方，R3 要擋的就是大量相同片段。",
+      "evidence_reference": "計畫 §3.1 配對與合併、預算；§3.1 選出與命名的最長塊排序",
+      "repair": "每個檔案對把命中 (ka, kb) 放進集合，每個點最多沿 (ka+1, kb+1) 延伸一次並標記已拜訪，整組 O(n)。不要對組內命中做兩兩比較，也不要只看排序後的相鄰項。P1 不必加計時測試。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "db5f16c63511fe0214de102030db84a14832e572d943e019462c05ce8459c9be"
+    },
+    {
+      "rubric_id": "R2",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "§3.1 配對變數 a、命名用的字典序，以及 §3.2 與測試 10 的走訪順序",
+      "claim": "配對把 a 定義成走訪 idx 較小的檔，命名與 origin_path 又把 a 定義成相對路徑字典序較小的檔。巢狀路徑上這兩個順序相反。測試 10 的全域字典序也不是 §3.2 每個目錄依檔名排序的深度優先。",
+      "evidence": "同層的 a.rs 與 a/b.rs：路徑字串序是 a.rs 在前，因為點的位元組小於斜線；走訪時目錄名 a 小於檔名 a.rs，深度優先會先遇到 a/b.rs。R2 要求名稱與 origin_path 只由這一對相對路徑決定。若輸出改用走訪 idx，多一個無關目錄就可能對調 a，舊名字那隻還活著時再掃會再插入一隻。測試 10 用字典序最後兩檔超出 1000 上限來解釋抓不到，只有全部檔案在同一目錄時才與目錄內檔名排序相同。另外現有 collect_source_files 是堆疊 pop；若只把 entries 排序後依序 push，子目錄處理順序會再反一次。扁平目錄的測試 5 與測試 10 都看不出這個反序。",
+      "evidence_reference": "計畫 §3.1 配對與選出與命名；§3.2 第 1 點；§4 測試 10；src/daemon/mob_scanner.rs 的 collect_source_files",
+      "repair": "對外名稱與 origin_path 固定為字典序較小的 scan-root 相對路徑（斜線分隔），與走訪 idx 脫鉤；idx 只用來讓同一對檔進一個分組。走訪要依檔名升序處理，不能沿用現在的 LIFO 直接 push。測試 10 註明 fixture 是單一目錄，並另加 a.rs 對 a/b.rs：名稱必須是 dup @ a.rs ↔ a/b.rs，origin_path 為 a.rs。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "a5d5e2f87c006b8f0047f9bb5735fb199282695c2cfa9ee42f739e6f3f84e904"
+    }
+  ],
+  "backlog_candidates": [
+    {
+      "fingerprint": "db5f16c63511fe0214de102030db84a14832e572d943e019462c05ce8459c9be",
+      "rubric_id": "R3",
+      "affected_surface": "§3.1 檔案對組內的延續合併",
+      "claim": "每個 hash 最多 28 對只封住單一 hash 的扇出。同一對檔案上，所有視窗命中合在一起仍可隨索引預算線性變大；若組內兩兩檢查 offset 是否同時加一，工作量是平方。排序後只比相鄰項則會把交錯對齊的長鏈切短。",
+      "evidence_reference": "計畫 §3.1 配對與合併、預算；§3.1 選出與命名的最長塊排序",
+      "disposition": null
+    },
+    {
+      "fingerprint": "a5d5e2f87c006b8f0047f9bb5735fb199282695c2cfa9ee42f739e6f3f84e904",
+      "rubric_id": "R2",
+      "affected_surface": "§3.1 配對變數 a、命名用的字典序，以及 §3.2 與測試 10 的走訪順序",
+      "claim": "配對把 a 定義成走訪 idx 較小的檔，命名與 origin_path 又把 a 定義成相對路徑字典序較小的檔。巢狀路徑上這兩個順序相反。測試 10 的全域字典序也不是 §3.2 每個目錄依檔名排序的深度優先。",
+      "evidence_reference": "計畫 §3.1 配對與選出與命名；§3.2 第 1 點；§4 測試 10；src/daemon/mob_scanner.rs 的 collect_source_files",
+      "disposition": null
+    }
+  ],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": null,
+  "reviewed_at": "2026-11-02T04:49:53.387Z"
+}
