@@ -1,0 +1,333 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "B10-doppelganger",
+  "logical_plan_id": "doppelganger-split-2026-11-02",
+  "session_id": "e6514bd9-6849-44e5-81a8-8036ac718696",
+  "session_key": "83ce526db492f6cffa50e614332133314d17e824978b12abd248db66a4cbad39",
+  "generation": 1,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": false,
+  "policy_reason": "depth_0_adjudication_required",
+  "rubric_sha256": "fdef94caf10a780bf737fafce7fab4ef41e068255260d94ff73737205730bde1",
+  "manifest_sha256": "a213668c52c61321aad672b64a5207591971c9b156e61edfd136b0522ce79295",
+  "plan_sha256": "a7b5e98d133d380832dec63a23aedcb2ec5e1a1ba031f1c28ab84a53dd727e6f",
+  "growth_ratio": {
+    "numerator": 1,
+    "denominator": 1
+  },
+  "growth_warning": false,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "astra_plan_chair",
+      "target_id": "astra_plan_chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6-astra",
+          "operation": "plan-review",
+          "request_digest": "4165008f9dbc93785682a5d10cbf01a29f87f5e509373605eb354e6c301a0923"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "85690001740026ab2ddba798fa6add900b0b23da548e366256d10c137054802d",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-codex-is2Wpv/stdout",
+          "digest": "85690001740026ab2ddba798fa6add900b0b23da548e366256d10c137054802d"
+        },
+        "receipt_digest": "7da560e4a6dedb723373b981d58b3212e239ec121a68dc9f4ed7df0cc3e1e3fd"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "grok",
+          "model": "grok-4.7",
+          "operation": "plan-review",
+          "request_digest": "6a6925b7db587f02819ce32a1411b1ecb70464eeba5a1684fb4c98baff9f25da"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "5e6c42d3746202c16f1961fbda30e299d7976614fecd50f08fea36be26c00693",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-log-IIVu8b",
+          "digest": "5e6c42d3746202c16f1961fbda30e299d7976614fecd50f08fea36be26c00693"
+        },
+        "receipt_digest": "9165a94a5f530b5bd2a1e426361047da24a4fb9d66745f881d36cd7e35ec0ffb"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "astra_plan_chair",
+      "target_id": "astra_plan_chair",
+      "family": "openai",
+      "verdict": "CONDITIONAL"
+    },
+    {
+      "seat_id": "grok_deep_reviewer",
+      "target_id": "grok_deep_reviewer",
+      "family": "xai",
+      "verdict": "STOP"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "Plan §3.1 名額、§3.2 step 2、P1",
+      "claim": "The plan specifies contradictory collection caps; following §3.2 permanently reduces existing mobs to 17 even when no duplicates exist.",
+      "evidence": "§3.1 collects 20 existing mobs and truncates only after the actual doppelganger count is known. §3.2 instead caps collection at MAX_MOBS_PER_SCAN − MAX_DOPPELGANGERS_PER_SCAN, which is 17. Discarded candidates cannot fill unused slots. P1 test 7 only checks that the total is at most 20.",
+      "evidence_reference": "Plan §3.1 名額; §3.2 steps 2–4; §4 P1 test 7",
+      "repair": "Make §3.2 collect up to 20 existing candidates and apply the §3.1 final allocation formula. Add assertions that sufficient existing candidates yield 20 total mobs with zero, one, two, and three doppelgangers.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "astra_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6-astra"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "4dc5dc3519b268b282be3c6b2f30f094376032fcf25d72ead92fa2530d7fd931"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "Plan §3.1 line classification",
+      "claim": "The specified line-prefix classifier admits comment-only and import-only multiline content as duplicate code.",
+      "evidence": "An unstarred block comment containing eight distinct prose lines totaling over 200 bytes retains every interior line because only the opening and closing markers are skipped. Likewise, a multiline Rust grouped use declaration cuts the window at its opening line but retains eight long imported identifiers on subsequent lines. Two such files satisfy the duplicate threshold without executable code.",
+      "evidence_reference": "Plan §3.1 註解行 and 邊界行 rules; §4 P1 test 3",
+      "repair": "Specify lightweight state tracking for multiline block comments and continued import or attribute declarations, excluding their complete spans. Extend P1 test 3 with unstarred block-comment bodies and multiline grouped imports exceeding both thresholds.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "astra_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6-astra"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "a041e20d499dfd2781ed1d0e34dc4ebad1f9365658a4981aa7761af045f02bb8"
+    },
+    {
+      "rubric_id": "R3",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Plan §3.1 hash occurrence suppression",
+      "claim": "The implementation must retain suppression state after dropping an over-frequency hash.",
+      "evidence": "The plan specifies HashMap<u64, Vec<(file_idx, kept_line_idx)>> and says to discard the entire hash after eight occurrences. Removing that entry permits occurrence ten to recreate it; twelve identical files can consequently leave a three-occurrence candidate, contrary to P1 test 6.",
+      "evidence_reference": "Plan §3.1 雜湊與驗證; §4 P1 test 6",
+      "repair": "Use a saturated bucket state or a scan-lifetime rejected-hash set charged to the bounded index. Verify that occurrences after the ninth never reactivate a rejected hash.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "astra_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6-astra"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "e6b6409a9960d1107a37bb0a951b3c2abda6296f98440d44659649b00e2e8064"
+    },
+    {
+      "rubric_id": "R11",
+      "class": "future",
+      "severity": "non-blocking",
+      "affected_surface": "Plan §3.6 and P4 documentation scope",
+      "claim": "The documentation checklist omits supplied comments that will become stale when this feature ships.",
+      "evidence": "EffectKind::SuppressDoppelgangerSplit still states that daemon wiring is deferred and storage-only. The scanner module introduction describes duplicate detection as future token hashing. Neither file is included among §3.6 comment updates, and the proposal is referenced without an explicit completion update.",
+      "evidence_reference": "src/craft/effects.rs: EffectKind::SuppressDoppelgangerSplit documentation; src/daemon/mob_scanner.rs: module introduction; Plan §3.6",
+      "repair": "Extend P4 to update these comments and reconcile the proposal with the shipped heuristic and split behavior before running check-doc-drift.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "astra_plan_chair",
+          "runner": "codex",
+          "model": "gpt-6-astra"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "9f949a5db42b485f8fab62042d44287ef29c9641f7164db84e8c9e7db665a2ab"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "src/daemon/mob_scanner.rs duplicate-window index and P1 test 6",
+      "claim": "同一視窗 hash 出現超過 8 次就整筆丟棄，會讓已經有兩個檔含同一段合格程式碼的輸入產出 0 隻分身怪。R1 的不產生條件只有瑣碎行、import、屬性、註解與同檔重複，沒有高頻樣板。",
+      "evidence": "§3.1 規定同一 hash 超過 DUP_MAX_OCCURRENCES（8）就把整個 hash 丟掉，並用這個前提推出每 hash 配對最多 28。§4 P1 測試 6 把同一段程式碼放進 12 個檔，預期 0 隻。這 12 個檔仍滿足 R1 的正條件：至少一對檔含至少 8 個保留行、至少 200 bytes、至少 4 行不同的同一段。R3 只要求出現次數有上限且工作量不得變成平方或無上限；依相對路徑排序後每個 hash 只留 8 個出現位置再配對，配對仍最多 28，而且仍會產生分身怪。測試 6 會把與 R1 相反的預期寫進下一階段。",
+      "evidence_reference": "plan §3.1 DUP_MAX_OCCURRENCES paragraph and pair-count sentence; plan §4 P1 test 6; frozen rubric R1 exception list and R3",
+      "repair": "每個 hash 依 scan root 相對路徑與保留行號排序後最多留 8 個出現位置，只對這 8 個做跨檔配對，再套用既有的檔案對排序與最多 3 隻。12 個檔含同一段時結果須為至少 1 隻、至多 3 隻，名稱集合由留下的路徑對決定，且與建立檔案的順序無關。改寫 P1 測試 6 的預期，不要再預期 0 隻。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "40ff8206be4d4ecc64eaf8e0c24d7f3eb48936a1c35c1fde4024a4de477ba80d"
+    },
+    {
+      "rubric_id": "R2",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "src/daemon/mob_scanner.rs collect_source_files truncation order",
+      "claim": "§3.2 同時要求走訪當下排序，又寫只排序截斷後的結果。檔數超過 1000 時，被掃進上限的子集仍依 read_dir 順序改變，分身名稱與 origin_path 就不是路徑對的純函數。",
+      "evidence": "§3.2 第 1 點前半要每個目錄的 read_dir 先依檔名排序，再把 1000 檔上限套在該順序上。同一句括號卻寫只排截斷後的結果，被截掉的子集仍然不確定。現行 collect_source_files 用 stack 直接消費 read_dir，滿 MAX_FILES_TO_SCAN（1000）就 break，順序本來就依平台而變。§6 諮詢第 8 點已採納排序必須在上限之前，括號仍留下被否決的做法。P1 測試 5 只比較同一小樹的不同建立順序，檔數低於上限時先截斷再排序也會通過，測不到子集漂移。",
+      "evidence_reference": "plan §3.2 item 1 including the parenthetical; plan §6 consult row 8; src/daemon/mob_scanner.rs collect_source_files and MAX_FILES_TO_SCAN; plan §4 P1 test 5",
+      "repair": "刪掉只排截斷後結果那句。每個目錄先收下全部 entries、依檔名排序，再依該順序處理檔案與子目錄；MAX_FILES_TO_SCAN 只作用在這個已排序走訪上。補測試：1001 個來源檔，只有字典序最後的檔能形成合格跨檔重複，兩個 tempdir 以不同順序建立檔案，mob 名稱、origin_path 與順序必須相同。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "9e3e4558a469b4f84ee256b075352c5fa8efdc2053218c9eed09c9d267bb0ff9"
+    },
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "src/daemon/mob_scanner.rs scan_dir mob quota assembly",
+      "claim": "既有四種怪的名額有兩套互斥算法。兩套同時讀會在沒有任何重複時最多只留下 17 隻，低於現行 MAX_MOBS_PER_SCAN（20）。",
+      "evidence": "§3.1 要既有 heuristic 收到 20 隻才停止收集，讀檔迴圈繼續餵重複索引，最後取前 (MAX_MOBS_PER_SCAN 減實際分身數) 筆再接上分身，沒用完的名額回補。§3.2 第 2 點卻把 per-file heuristic 上限改成 MAX_MOBS_PER_SCAN 減 MAX_DOPPELGANGERS_PER_SCAN，也就是固定 17。迴圈只留下 17 筆時，後面的 take(20) 補不回沒收集到的 3 筆，所以零重複時總數是 17。現行 scan_dir 是 specs 滿 20 才 break，沒有預扣 3 個空位。P1 測試 7 只斷言有分身且總數不超過 20；30 個殭屍檔且沒有合格重複時仍要 20 隻，這條沒有測試。照 §3.2 實作可以通過測試 7 並同時違反 R4 前半。",
+      "evidence_reference": "plan §3.1 quota paragraph; plan §3.2 steps 2 and 4; plan §4 P1 test 7; src/daemon/mob_scanner.rs scan_dir break on specs.len() >= MAX_MOBS_PER_SCAN (20) and plan constant MAX_DOPPELGANGERS_PER_SCAN = 3",
+      "repair": "讀檔迴圈在既有 heuristic 滿 20 後只停止收集，繼續為重複索引讀檔。配對後令 d 為實際分身數且 d 至多 3，輸出為既有結果的前 (20 - d) 筆再接上這 d 隻。移除 §3.2 的固定預扣 3。補 P1 測試：至少 30 個殭屍檔、沒有合格跨檔重複，斷言恰好 20 隻且沒有 Doppelganger。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "59dd403f86ffe78c324aaab765825f8feaace13a99ee96f1068956b8e4cf248d"
+    },
+    {
+      "rubric_id": "R11",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "doc/proposals/2026-04-18-doppelganger-split.md, src/craft/effects.rs, src/daemon/mob_scanner.rs module docs",
+      "claim": "P4 文件清單沒有 rubric 點名的 proposal，也沒有改到仍寫著分裂尚未接線的 effects 註解與 scanner 模組首段。只做 §3.6 可以讓部分 drift 檢查通過，R11 要求的表面仍與實作不一致。",
+      "evidence": "R11 要求 spec、proposal、inventory 警語、模組註解、CHANGELOG 與實作一致。§3.6 列了 spec、inventory.rs 警語、use_item.rs、mob.rs 與 CHANGELOG，沒有列 doc/proposals/2026-04-18-doppelganger-split.md。供應的 src/craft/effects.rs 對 SuppressDoppelgangerSplit 的註解仍是 Daemon wiring deferred、storage only in 3e MVP。src/daemon/mob_scanner.rs 模組首段仍把 duplicates 放在 Phase 3+ 的 token hashing。這兩處都不在 §3.6。",
+      "evidence_reference": "plan §3.6; frozen rubric R11; src/craft/effects.rs EffectKind::SuppressDoppelgangerSplit doc comment; src/daemon/mob_scanner.rs module header",
+      "repair": "P4 加入 proposal、effects.rs 的 SuppressDoppelgangerSplit 註解、mob_scanner.rs 模組首段，改寫成與 §3.1 到 §3.5 相同的已實作事實：scanner 會生成第 0 代，Ward 只在擊殺時抑制分裂。check-doc-drift 要涵蓋這些句子。",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "grok_deep_reviewer",
+          "runner": "grok",
+          "model": "grok-4.7"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "38e61d64694ccc99824346cd1a8bb2bbe423529fd125ba51b374976eb42c6d05"
+    }
+  ],
+  "backlog_candidates": [
+    {
+      "fingerprint": "e6b6409a9960d1107a37bb0a951b3c2abda6296f98440d44659649b00e2e8064",
+      "rubric_id": "R3",
+      "affected_surface": "Plan §3.1 hash occurrence suppression",
+      "claim": "The implementation must retain suppression state after dropping an over-frequency hash.",
+      "evidence_reference": "Plan §3.1 雜湊與驗證; §4 P1 test 6",
+      "disposition": null
+    },
+    {
+      "fingerprint": "9f949a5db42b485f8fab62042d44287ef29c9641f7164db84e8c9e7db665a2ab",
+      "rubric_id": "R11",
+      "affected_surface": "Plan §3.6 and P4 documentation scope",
+      "claim": "The documentation checklist omits supplied comments that will become stale when this feature ships.",
+      "evidence_reference": "src/craft/effects.rs: EffectKind::SuppressDoppelgangerSplit documentation; src/daemon/mob_scanner.rs: module introduction; Plan §3.6",
+      "disposition": null
+    },
+    {
+      "fingerprint": "38e61d64694ccc99824346cd1a8bb2bbe423529fd125ba51b374976eb42c6d05",
+      "rubric_id": "R11",
+      "affected_surface": "doc/proposals/2026-04-18-doppelganger-split.md, src/craft/effects.rs, src/daemon/mob_scanner.rs module docs",
+      "claim": "P4 文件清單沒有 rubric 點名的 proposal，也沒有改到仍寫著分裂尚未接線的 effects 註解與 scanner 模組首段。只做 §3.6 可以讓部分 drift 檢查通過，R11 要求的表面仍與實作不一致。",
+      "evidence_reference": "plan §3.6; frozen rubric R11; src/craft/effects.rs EffectKind::SuppressDoppelgangerSplit doc comment; src/daemon/mob_scanner.rs module header",
+      "disposition": null
+    }
+  ],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": 2,
+  "reviewed_at": "2026-11-02T04:31:24.134Z"
+}

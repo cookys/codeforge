@@ -1,0 +1,55 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "doppelganger-split-2026-11-02",
+ "generation": 1,
+ "findings": [
+  {
+   "fingerprint": "4dc5dc3519b268b282be3c6b2f30f094376032fcf25d72ead92fa2530d7fd931",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Correct: §3.1 and §3.2 gave conflicting caps. §3.2 fixed pre-reservation of 17 removed; single rule: collect up to 20, output first 20-d plus d doppelgangers. Tests 11/12 added."
+  },
+  {
+   "fingerprint": "a041e20d499dfd2781ed1d0e34dc4ebad1f9365658a4981aa7761af045f02bb8",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Correct: prefix-only classification lets multiline block comments and grouped imports through. §3.1 gains cross-line state tracking (block comments, py triple quotes, multiline use/import/export, multiline rs attributes); test 3 gains two sub-cases."
+  },
+  {
+   "fingerprint": "e6b6409a9960d1107a37bb0a951b3c2abda6296f98440d44659649b00e2e8064",
+   "candidate_blocker": false,
+   "disposition": "accepted_nonblocking",
+   "rationale": "Resolved by the 40ff8206 change: a full bucket ignores further occurrences and is never removed, so it cannot be recreated."
+  },
+  {
+   "fingerprint": "9f949a5db42b485f8fab62042d44287ef29c9641f7164db84e8c9e7db665a2ab",
+   "candidate_blocker": false,
+   "disposition": "accepted_nonblocking",
+   "rationale": "Correct: effects.rs and mob_scanner.rs module header and the proposal added to §3.6."
+  },
+  {
+   "fingerprint": "40ff8206be4d4ecc64eaf8e0c24d7f3eb48936a1c35c1fde4024a4de477ba80d",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Correct against frozen R1, which does not exempt high-frequency code. Changed to keep the first 8 occurrences in sorted (path, line) order and ignore later ones; test 6 now expects 1-3 deterministic mobs."
+  },
+  {
+   "fingerprint": "9e3e4558a469b4f84ee256b075352c5fa8efdc2053218c9eed09c9d267bb0ff9",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Correct: the parenthetical read as an instruction. Rewritten so sorting happens only during traversal before the 1000-file cap; test 10 with 1001 files added."
+  },
+  {
+   "fingerprint": "59dd403f86ffe78c324aaab765825f8feaace13a99ee96f1068956b8e4cf248d",
+   "candidate_blocker": true,
+   "disposition": "accepted_blocker",
+   "rationale": "Same defect as 4dc5dc35; folded identically."
+  },
+  {
+   "fingerprint": "38e61d64694ccc99824346cd1a8bb2bbe423529fd125ba51b374976eb42c6d05",
+   "candidate_blocker": false,
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same as 9f949a5d; folded identically."
+  }
+ ]
+}

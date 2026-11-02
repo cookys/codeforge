@@ -36,7 +36,8 @@ pub const CARD_WIDTH: usize = 58;
 /// Ghost so the line reads dangerous-first, matching the spec sample.
 /// Labels kept short — the full "X 擊殺：N" form overflows CARD_WIDTH
 /// once four columns are joined. Header row states "擊殺" once, body
-/// uses label + count.
+/// uses label + count. Doppelganger (B10) is deliberately not a column:
+/// a fifth one does not fit CARD_WIDTH.
 const KIND_COLUMNS: &[(&str, &str)] = &[
     ("boss", "Boss"),
     ("elite", "Elite"),

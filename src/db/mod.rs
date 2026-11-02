@@ -85,6 +85,7 @@ pub mod migrations {
     pub fn run(conn: &Connection) -> Result<()> {
         conn.execute_batch(include_str!("schema.sql"))?;
         upgrade_mobs_origin_path(conn)?;
+        upgrade_mobs_split_columns(conn)?;
         upgrade_pet_snapshot_mood(conn)?;
         upgrade_pet_snapshot_strategy(conn)?;
         upgrade_game_world_concept_count(conn)?;
@@ -100,6 +101,23 @@ pub mod migrations {
         let has_column = column_exists(conn, "mobs", "origin_path")?;
         if !has_column {
             conn.execute("ALTER TABLE mobs ADD COLUMN origin_path TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    /// B10 upgrade: Doppelganger split lineage. `parent_id` is NULL for
+    /// scanner-spawned mobs; `generation` is 0 for them and +1 per split.
+    /// Greenfield installs get both via CREATE TABLE; each column is
+    /// guarded separately so a half-upgraded DB still converges.
+    fn upgrade_mobs_split_columns(conn: &Connection) -> Result<()> {
+        if !column_exists(conn, "mobs", "parent_id")? {
+            conn.execute("ALTER TABLE mobs ADD COLUMN parent_id INTEGER", [])?;
+        }
+        if !column_exists(conn, "mobs", "generation")? {
+            conn.execute(
+                "ALTER TABLE mobs ADD COLUMN generation INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
         }
         Ok(())
     }
@@ -1183,5 +1201,80 @@ mod tests {
             .query_row("PRAGMA journal_mode", [], |r| r.get(0))
             .unwrap();
         assert_eq!(mode, "wal");
+    }
+
+    fn mob_columns(conn: &Connection) -> Vec<String> {
+        conn.prepare("PRAGMA table_info(mobs)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn b10_upgrade_adds_split_columns_and_keeps_rows() {
+        // Pre-B10 DB: mobs has origin_path but no parent_id / generation.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE mobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                zone_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                name TEXT NOT NULL,
+                hp INTEGER NOT NULL,
+                hp_max INTEGER NOT NULL,
+                atk INTEGER NOT NULL,
+                def INTEGER NOT NULL,
+                difficulty INTEGER NOT NULL DEFAULT 1,
+                spawned_at INTEGER NOT NULL,
+                defeated_at INTEGER,
+                origin_path TEXT
+             );
+             INSERT INTO mobs
+                (zone_id, kind, name, hp, hp_max, atk, def, spawned_at, origin_path)
+                VALUES ('rust', 'doppelganger', 'old', 80, 80, 15, 10, 100, 'src/a.rs');",
+        )
+        .unwrap();
+
+        migrations::run(&conn).unwrap();
+        migrations::run(&conn).unwrap(); // idempotent
+
+        let cols = mob_columns(&conn);
+        assert!(cols.contains(&"parent_id".to_string()));
+        assert!(cols.contains(&"generation".to_string()));
+        let (name, parent, gen): (String, Option<i64>, i64) = conn
+            .query_row(
+                "SELECT name, parent_id, generation FROM mobs WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(name, "old");
+        assert_eq!(parent, None);
+        assert_eq!(gen, 0);
+    }
+
+    #[test]
+    fn b10_greenfield_mobs_has_split_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrations::run(&conn).unwrap();
+        let cols = mob_columns(&conn);
+        assert!(cols.contains(&"parent_id".to_string()));
+        assert!(cols.contains(&"generation".to_string()));
+        // Scanner-style INSERT without the new columns still works and
+        // defaults generation to 0.
+        conn.execute(
+            "INSERT INTO mobs (zone_id, kind, name, hp, hp_max, atk, def, spawned_at)
+             VALUES ('rust', 'zombie', 'z', 30, 30, 12, 5, 1)",
+            [],
+        )
+        .unwrap();
+        let gen: i64 = conn
+            .query_row("SELECT generation FROM mobs WHERE name = 'z'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(gen, 0);
     }
 }
