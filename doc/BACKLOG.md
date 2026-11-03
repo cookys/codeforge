@@ -217,6 +217,16 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
 **Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
 
+## B42 — G38 本機 release 流程 review 列為後續的項目
+
+**Area**: `install.sh`、`scripts/package.sh`、`scripts/release-local.sh`
+**Premise**: autopilot 四席審查 G38 第 1 輪（範圍 `70f541d..213a746`，full_range_sha256 fc0b0322）判為可延後的項目：
+- 3bd8512b／d04d809f：`CODEFORGE_DOWNLOAD_BASE` 不是預設值時，install.sh 往 stderr 印一行提示，讓使用者看得出下載來源被換掉。
+- d5e5ae1f：aarch64 的 binary 用主機的 `strip` 處理不了（印「strip skipped」）。release profile 已設 `strip = "symbols"`，影響應該很小；要補就在 cross 映像內 strip，或改用 `aarch64-linux-gnu-strip`。
+- b83770c7：package.sh 的 smoke 只在 target 等於主機時才跑，等於預設只驗 x86_64；aarch64 要實跑需要 qemu-user 或 aarch64 主機。
+**Trigger**: 下次改 install.sh 或 release 流程，或 fleet 有了 aarch64 主機／qemu 時。
+**Not done**: 只記錄。
+
 ## B41 — G36 第 2–5 階段 review 列為後續的項目
 
 **Area**: `src/usage/collect.rs`、`src/usage/store.rs` 測試
