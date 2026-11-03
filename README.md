@@ -31,8 +31,10 @@ For a step-by-step walkthrough, see [`doc/getting-started.md`](doc/getting-start
 curl -sSL https://raw.githubusercontent.com/cookys/codeforge/main/install.sh | sh
 ```
 
-Downloads the prebuilt binary for Linux/macOS (x86_64 or arm64) and
-installs to `~/.cargo/bin` or `~/.local/bin`. Respects
+Downloads the prebuilt binary for Linux (x86_64 or aarch64) and
+installs to `~/.cargo/bin` or `~/.local/bin`. Releases ship Linux binaries only (since v0.0.9); on
+macOS or anything else, build from source: `cargo install --git https://github.com/cookys/codeforge --locked`
+(install.sh and `codeforge self-update` print the same instruction there). Respects
 `CODEFORGE_VERSION`, `CODEFORGE_INSTALL_DIR`, `CODEFORGE_FORCE` env vars.
 
 **Option 2 — `cargo binstall` (Rust users, no compile)**
@@ -121,13 +123,9 @@ statusLine already set by something else) is reported and skipped, not fatal —
 the rest still run. Re-run it any time; on each machine's clone do
 `git pull && codeforge bootstrap`.
 
-**macOS first-run note:** if Gatekeeper blocks the binary, run once:
-
-```bash
-xattr -d com.apple.quarantine "$(command -v codeforge)"
-```
-
-(Code-signing/notarization deferred until v1.0.)
+**macOS:** no prebuilt binary is published (since v0.0.9); `cargo install --git
+https://github.com/cookys/codeforge --locked` builds it, and `--force` updates it later. A binary
+built from source is not quarantined, so Gatekeeper does not block it.
 
 ## Uninstall
 

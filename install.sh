@@ -57,8 +57,12 @@ arch=$(uname -m)
 
 case "$os" in
     Linux)  os_part=unknown-linux-gnu ;;
-    Darwin) os_part=apple-darwin ;;
-    *)      err "unsupported OS: $os. Supported: Linux, Darwin (macOS)." ;;
+    Darwin) err "no prebuilt macOS binary: releases ship Linux x86_64 and aarch64 only (since v0.0.9).
+On macOS, build from source with Rust (https://rustup.rs):
+  cargo install --git https://github.com/${REPO} --locked" ;;
+    *)      err "unsupported OS: $os. Prebuilt binaries: Linux x86_64 and aarch64.
+Elsewhere, build from source with Rust:
+  cargo install --git https://github.com/${REPO} --locked" ;;
 esac
 
 case "$arch" in

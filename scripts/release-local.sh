@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # Local release (PM G38: no hosted CI).
 #
-#   ./scripts/release-local.sh [--out <dir>] [--publish [--allow-missing]]
+#   ./scripts/release-local.sh [--out <dir>] [--publish]
 #
-# 1. Builds every release target this host can build through scripts/package.sh, with the MSRV
+# The release target set is Linux x86_64 and aarch64 (operator decision d-c5c1bdae: no macOS
+# binaries; install.sh and self-update point other platforms at `cargo install --git`).
+#
+# 1. Builds every release target through scripts/package.sh, with the MSRV
 #    toolchain (Cargo.toml rust-version, as the hosted release job did). Linux targets are built
 #    with `cross` (podman or docker) and must need glibc <= 2.35 (Ubuntu 22.04, the floor the
 #    hosted runners gave); a host-glibc build is refused.
 # 2. Verifies the result the way a user meets it: install.sh installs this host's target from a
 #    local server (CODEFORGE_DOWNLOAD_BASE) into a temp dir, and the binary must print the version.
 #    Other targets are checked for their ELF machine.
-# 3. Writes RELEASE.txt: files, sha256, glibc needs, and the targets it could not build.
+# 3. Writes RELEASE.txt: files, sha256 and glibc needs.
 #
 # Everything is built and verified in a staging dir of this run only; the verified files are then
 # copied to <out> (default: dist). <out> is replaced, so it must be absent, empty, or hold a
@@ -21,20 +24,17 @@
 # HEAD tagged v<version>, and origin's tag v<version> pointing at HEAD too — checked before the
 # build and again right before the upload. The draft goes to the GitHub repo of `origin`, passed to
 # gh as --repo github.com/<owner>/<repo>; a GH_REPO naming another repo is refused. Turning the
-# draft into a release is the operator's step. --publish refuses while a target is missing unless
-# --allow-missing is given. macOS targets (x86_64/aarch64-apple-darwin) cannot be built here.
+# draft into a release is the operator's step.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 out="dist"
 publish=0
-allow_missing=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) out="$2"; shift 2 ;;
     --publish) publish=1; shift ;;
-    --allow-missing) allow_missing=1; shift ;;
-    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "release-local: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -71,7 +71,6 @@ version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 msrv=$(grep -m1 '^rust-version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 max_glibc="2.35"
 linux=(x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)
-missing=(x86_64-apple-darwin aarch64-apple-darwin)
 host="$(rustc -vV | sed -n 's/^host: //p')"
 
 if [ "$publish" = 1 ]; then
@@ -88,9 +87,6 @@ if [ "$publish" = 1 ]; then
   fi
   # gh --verify-tag checks only that origin has a tag of that name: check where it points.
   check_remote_tag
-  if [ "${#missing[@]}" -gt 0 ] && [ "$allow_missing" = 0 ]; then
-    fail "not buildable here: ${missing[*]} (pass --allow-missing to publish without them)"
-  fi
 fi
 
 # <out> is replaced at the end: never a directory with other content (`--out .` is the checkout)
@@ -165,7 +161,7 @@ server_pid=""
 {
   echo
   echo "install.sh verified on $host: $installed"
-  echo "not built here: ${missing[*]:-none}"
+  echo "targets: ${linux[*]}"
 } >>"$report"
 cat "$report" >&2
 
