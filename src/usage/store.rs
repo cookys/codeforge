@@ -94,6 +94,37 @@ fn sidecars(dir: &Path, notes: &mut Vec<String>) -> Result<()> {
     Ok(())
 }
 
+/// Held while a collect runs (`<usage dir>/collect.lock`, flock'd); released on drop. Its own
+/// file, so taking or dropping it touches no lock SQLite holds.
+pub struct CollectLock(#[allow(dead_code)] Option<std::fs::File>);
+
+/// Take the collect lock. `wait` false: `None` when another collect holds it.
+#[cfg(unix)]
+pub fn collect_lock(dir: &Path, wait: bool) -> Result<Option<CollectLock>> {
+    use std::os::unix::io::AsRawFd;
+    let f = open_entry(&dir.join("collect.lock"), "collect.lock", false, true)?
+        .context("無法建立 collect.lock")?;
+    check_and_tighten(&f, "collect.lock", false, 0o600, &mut Vec::new())?;
+    let op = if wait {
+        libc::LOCK_EX
+    } else {
+        libc::LOCK_EX | libc::LOCK_NB
+    };
+    // SAFETY: a valid open fd; the lock is released when the fd closes.
+    if unsafe { libc::flock(f.as_raw_fd(), op) } != 0 {
+        if wait {
+            anyhow::bail!("無法取得 collect.lock");
+        }
+        return Ok(None);
+    }
+    Ok(Some(CollectLock(Some(f))))
+}
+
+#[cfg(not(unix))]
+pub fn collect_lock(_dir: &Path, _wait: bool) -> Result<Option<CollectLock>> {
+    Ok(Some(CollectLock(None)))
+}
+
 /// Prepare modes in order, then open. Returns the connection and the mode notes. Error texts
 /// name the entry (`usage`, `usage.db`, …), never the local path.
 pub fn open(dir: &Path) -> Result<(Connection, Vec<String>)> {
@@ -326,5 +357,21 @@ mod tests {
             );
             drop(conn);
         }
+    }
+
+    #[test]
+    fn a_running_collect_makes_a_quiet_one_skip_and_a_waiting_one_wait() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = usage_dir(base.path());
+        drop(open(&dir).unwrap());
+        let held = collect_lock(&dir, false).unwrap().expect("free");
+        assert!(collect_lock(&dir, false).unwrap().is_none(), "busy → skip");
+        let d = dir.clone();
+        let waiter = std::thread::spawn(move || collect_lock(&d, true).unwrap().is_some());
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(!waiter.is_finished(), "a waiting collect waits");
+        drop(held);
+        assert!(waiter.join().unwrap());
+        assert!(collect_lock(&dir, false).unwrap().is_some(), "free again");
     }
 }

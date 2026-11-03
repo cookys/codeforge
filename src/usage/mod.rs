@@ -4,6 +4,7 @@
 //! statusline, read back for the usage row.
 
 pub mod alias;
+pub mod autocollect;
 pub mod collect;
 pub mod price;
 pub mod quota;
