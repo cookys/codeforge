@@ -225,6 +225,7 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 - a364a204：`the_open_connection_keeps_its_shm_lock` 的第二輪多半仍走新建路徑（最後一條連線關閉時 SQLite 會 checkpoint 並刪掉 -wal/-shm）；要測到「重開既有 sidecar」，drop 前另開一條連線留住它，或設 PERSIST_WAL。
 - 47336cc9：預檢到 SQLite 開 -wal/-shm 之間有 TOCTOU 窗口（`SQLITE_OPEN_NOFOLLOW` 只保護主 db）。利用它需要同 uid 且能寫 0700 目錄的程序，不是新的權限邊界，列為已知殘餘風險。
 - 8f1b90b2：本機配額快照的 `resets_at`／`written_at_ms` 超出範圍時，整份 summary 驗證失敗（`usage collect` 每次都報錯），而不是只略過那個帳號；可在 build 時略過該帳號列。
+- `codeforge usage` 表格用 `format!("{:<10}")` 補空白，算的是字元數不是顯示寬度：中文表頭（日期、輸入、輸出…）讓欄位對不齊（2026-11-03 首次實機安裝時看到）。改用顯示寬度補齊（`unicode-width` 或與 forge-stats 相同的寬度表）。
 **Trigger**: 下次動 `codeforge usage` 的收集器，或在非 unix 平台建置測試；8f1b90b2 在第一次看到 `usage collect` 因配額快照驗證失敗時。
 **Not done**: 只記錄；詳情見 autopilot lane/g36rest 第 2、3 輪的 finding。
 
