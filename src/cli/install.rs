@@ -645,7 +645,8 @@ fn patch_hooks(
     //       product-wide hooks that should run in EVERY project —
     //       emit-session, session-digest; the SessionStart local-recall injector
     //       (`codeforge memory context --hook`); and the memory pipeline
-    //       `codeforge dream --quiet` → `codeforge ship --no-hook` SessionEnd chain.
+    //       `codeforge dream --quiet` → `codeforge ship --no-hook` →
+    //       `codeforge usage collect --quiet` (G36) SessionEnd chain.
     //       dream distills L0→L1 per-project (hook CWD = project root); ship then
     //       forwards the day's L1 to Mnemos. ship --no-hook self-gates on Mnemos
     //       opt-in (see MnemosConfig::opted_in), so codeforge-only users keep
@@ -727,6 +728,15 @@ fn patch_hooks(
                     ),
                     hook_entry(
                         "codeforge ship --no-hook 2>/dev/null || true",
+                        30000,
+                        marker,
+                    ),
+                    // G36: incremental usage collect (numbers only) + summary.json.
+                    // A first collect over a large history can outlive the hook
+                    // timeout; each file commits on its own, so the next session
+                    // continues where this one stopped.
+                    hook_entry(
+                        "codeforge usage collect --quiet 2>/dev/null || true",
                         30000,
                         marker,
                     ),
@@ -1194,9 +1204,17 @@ mod tests {
             ss_cmds.contains("codeforge mnemos-cli context --hook"),
             "missing central-recall downlink (P1.2)"
         );
-        // Global SessionEnd chain: emit-session, session-digest, dream, ship (4).
+        // Global SessionEnd chain: emit-session, session-digest, dream, ship, usage collect (5).
         let session_end = &s["hooks"]["SessionEnd"][0]["hooks"];
-        assert_eq!(session_end.as_array().unwrap().len(), 4);
+        assert_eq!(session_end.as_array().unwrap().len(), 5);
+        let last = session_end.as_array().unwrap().last().unwrap();
+        assert!(
+            last["command"]
+                .as_str()
+                .unwrap()
+                .contains("codeforge usage collect --quiet"),
+            "usage collect runs last in SessionEnd (G36)"
+        );
         let cmds = serde_json::to_string(session_end).unwrap();
         assert!(cmds.contains("emit-session"), "missing emit-session");
         assert!(cmds.contains("session-digest"), "missing session-digest");
@@ -1413,8 +1431,8 @@ mod tests {
         let inner = se[0]["hooks"].as_array().unwrap();
         assert_eq!(
             inner.len(),
-            4,
-            "emit-session + session-digest + dream + ship"
+            5,
+            "emit-session + session-digest + dream + ship + usage collect"
         );
         let all = serde_json::to_string(&s["hooks"]).unwrap();
         assert!(
