@@ -26,8 +26,23 @@ fn say(quiet: bool, msg: &str) {
     }
 }
 
+/// Releases ship prebuilt Linux x86_64 and aarch64 binaries only (operator decision, v0.0.9):
+/// on any other OS there is nothing to download, so say so instead of failing on a missing asset.
+fn no_prebuilt_hint(os: &str) -> Option<String> {
+    if os == "linux" {
+        return None;
+    }
+    Some(format!(
+        "{os} 沒有預編譯 binary：release 只提供 Linux x86_64／aarch64（自 v0.0.9 起不再發 macOS）。\n\
+         請改用原始碼更新：cargo install --git https://github.com/{REPO_OWNER}/{REPO_NAME} --locked --force"
+    ))
+}
+
 /// `codeforge self-update` — see module docs.
 pub fn run(opts: SelfUpdateOpts) -> Result<()> {
+    if let Some(hint) = no_prebuilt_hint(std::env::consts::OS) {
+        anyhow::bail!(hint);
+    }
     let current = self_update::cargo_crate_version!();
 
     let updater = self_update::backends::github::Update::configure()
@@ -74,4 +89,23 @@ pub fn run(opts: SelfUpdateOpts) -> Result<()> {
 }
 
 const NO_RELEASE_HINT: &str =
-    "無法取得 release —— 確認 https://github.com/cookys/codeforge/releases 已發布版本（首發 v0.0.5）";
+    "無法取得 release 或本平台的檔案 —— 確認 https://github.com/cookys/codeforge/releases \
+     已發布版本（首發 v0.0.5）；預編譯檔只有 Linux x86_64／aarch64，其他平台請用 \
+     cargo install --git https://github.com/cookys/codeforge --locked --force";
+
+#[cfg(test)]
+mod tests {
+    use super::no_prebuilt_hint;
+
+    #[test]
+    fn only_linux_has_prebuilt_binaries() {
+        assert!(no_prebuilt_hint("linux").is_none());
+        for os in ["macos", "windows", "freebsd"] {
+            let hint = no_prebuilt_hint(os).expect("non-linux gets a hint");
+            assert!(hint.starts_with(os), "{hint}");
+            assert!(hint.contains(
+                "cargo install --git https://github.com/cookys/codeforge --locked --force"
+            ));
+        }
+    }
+}
