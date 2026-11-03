@@ -417,6 +417,9 @@ codeforge usage push                    # validate summary.json and `fleet uploa
 - The statusline usage row shows this session's 5h / 7d / ctx bars, then every other account seen in the
   last 6 h as `alias NN% countdown`. Each statusline run writes its account's quota snapshot; the alias is
   `AUTOPILOT_ACCOUNT` when set (autopilot's account-pinned dispatch), else a hash of the config dir.
+- Collection needs no hook: the statusline starts a background `codeforge usage collect --quiet` at most
+  every 15 minutes (`CODEFORGE_USAGE_AUTOCOLLECT=0` turns that off); the SessionEnd hook, when installed,
+  also runs it.
 - The collector reads only the numeric usage fields of `~/.claude/projects/**` (and `CLAUDE_CONFIG_DIR`) and
   Codex `~/.codex/sessions/**` transcripts, incrementally, into `<data_dir>/usage/usage.db` (0600). No
   prompt, path or email is stored; a project is its directory's last name.

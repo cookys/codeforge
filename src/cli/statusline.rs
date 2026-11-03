@@ -36,6 +36,17 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             &crate::usage::alias::path_hash8(&config_dir),
             now_ms,
         );
+        // G36: a background `usage collect` at most every 15 min (no SessionEnd hook needed).
+        // Never from a test build: current_exe() would be the test harness.
+        #[cfg(not(test))]
+        crate::usage::autocollect::maybe_trigger(
+            &crate::usage::summary::summary_dir(&live_base),
+            std::env::var(crate::usage::autocollect::ENV_OFF)
+                .ok()
+                .as_deref(),
+            now_ms,
+            crate::usage::autocollect::spawn_collect,
+        );
         read_mod_heartbeat(&live_base, raw_sid, now_ms)
     };
     let conn = ctx.open_db()?;

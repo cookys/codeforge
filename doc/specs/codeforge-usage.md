@@ -12,7 +12,7 @@
 |---|---|---|
 | 配額快照 | 每次 statusline（有 `rate_limits` 時） | `<live_base>/codeforge/usage/quota/<alias>.json` |
 | 用量列 | 每次 statusline | 本 session 的 5h／7d／ctx 長條，後接其他帳號 `別名 NN% 倒數` |
-| 收集 | `codeforge usage`、`usage collect`、SessionEnd hook | `<data_dir>/usage/usage.db` |
+| 收集 | `codeforge usage`、`usage collect`、statusline 背景觸發（每 15 分鐘至多一次）、SessionEnd hook | `<data_dir>/usage/usage.db` |
 | 摘要 | 每次收集之後 | `<live_base>/codeforge/usage/summary.json` |
 | 推送 | `codeforge usage push` | `fleet upload`，印出 blob sha |
 | 面板分頁 | forge-stats pane 的「用量」分頁（`/forge-stats usage` 直接開到這頁） | 只讀 `summary.json`：帳號 5h／7d 與倒數、今天（UTC）各 model 的 token 與 API 等值；摘要超過 1 小時就提示執行 `codeforge usage`，不自己呼叫 codeforge |
@@ -98,5 +98,14 @@ codeforge usage push                # 印出 blob sha
 用量分頁讀檔有上限：必須是一般檔案、不是 symlink、不超過 256 KiB（`USAGE_MAX_BYTES`），內容不符
 `codeforge.usage-summary/1` 契約（別名、model id、數字）就整份不顯示，只說讀不懂。
 
-`codeforge install --hooks` 把 `usage collect --quiet` 接在 SessionEnd 的 `ship --no-hook` 之後；
-第一次收集若超過 hook 時限，已完成的檔案已各自 commit，下次 session 接著做。
+不需要任何 hook 的觸發：每次 `codeforge statusline` render 都對
+`<live_base>/codeforge/usage/collect.stamp`（0600，`O_NOFOLLOW`）取非阻塞 flock、讀出上次觸發
+時間；距今至少 15 分鐘（或時間在未來：時鐘倒退不會卡死）就寫入現在時間，並在背景 spawn
+`codeforge usage collect --quiet`（自己的 process group、stdio 導到 null、不等待）。每次 render
+只多一次開檔、一次 flock、一次讀取。`CODEFORGE_USAGE_AUTOCOLLECT=0` 關閉（目前只在 unix）。
+
+collect 本身持有 `<data_dir>/usage/collect.lock`（flock）：`collect --quiet` 遇到另一個還在跑就
+直接跳過，`codeforge usage`、`usage push` 與不帶 `--quiet` 的 collect 會等它跑完。
+
+`codeforge install --hooks` 另外把 `usage collect --quiet` 接在 SessionEnd 的 `ship --no-hook`
+之後；第一次收集若超過 hook 時限，已完成的檔案已各自 commit，下次接著做。
