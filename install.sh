@@ -11,6 +11,10 @@
 #                           ~/.local/bin (created if missing).
 #   CODEFORGE_FORCE         Set to 1 to reinstall even if same version
 #                           is already present.
+#   CODEFORGE_DOWNLOAD_BASE Where release assets are fetched from, as
+#                           <base>/v<version>/<archive>. Default: this repo's
+#                           GitHub releases. For verifying a release before it
+#                           is published (scripts/release-local.sh).
 
 set -eu
 
@@ -115,7 +119,8 @@ fi
 
 archive="codeforge-${version}-${target}.tar.gz"
 sha_file="${archive}.sha256"
-url="https://github.com/${REPO}/releases/download/v${version}/${archive}"
+base="${CODEFORGE_DOWNLOAD_BASE:-https://github.com/${REPO}/releases/download}"
+url="${base}/v${version}/${archive}"
 sha_url="${url}.sha256"
 
 tmp=$(mktemp -d 2>/dev/null || mktemp -d -t cf-install)
@@ -158,6 +163,8 @@ case ":$PATH:" in
     *)
         say ""
         say "NOTE: $install_dir is not on your \$PATH."
+        # display text only: the literal `~` is what the user reads, nothing is expanded
+        # shellcheck disable=SC2088
         case "${SHELL:-}" in
             */zsh)  rc="~/.zshrc" ;;
             */bash) rc="~/.bashrc" ;;

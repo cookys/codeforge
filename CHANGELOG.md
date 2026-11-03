@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-11-03
+
+Usage tracking (G36: per-account quota, transcript token counts, cost estimate, forge-stats 用量 tab, statusline-triggered
+background collect); forge-stats as a global plugin (G33); one TUI guideline (G34); and a local release pipeline
+replacing hosted CI (G38) — this is the first release built and verified locally.
+
+### Added
+- **Local release pipeline** (PM G38) — `scripts/release-local.sh` builds the linux x86_64 and
+  aarch64 tarballs with `cross` (podman/docker) and the MSRV toolchain, refuses a binary needing glibc
+  newer than 2.35 (the cross builds need 2.18), verifies `install.sh` end to end from a local server,
+  and only ever creates a draft release. `scripts/package.sh` is the one packaging path;
+  `scripts/check-all.sh` now also runs `cargo deny`, `shellcheck install.sh` and the MSRV release smoke.
+  `install.sh` gains `CODEFORGE_DOWNLOAD_BASE` (default: this repo's GitHub releases).
+- **`codeforge usage`** (PM G36) — per-account quota on the statusline usage row (`alias NN% countdown`
+  for every other account seen in 6 h; alias from `AUTOPILOT_ACCOUNT` or a config-dir hash), an
+  incremental collector over Claude Code and Codex transcripts that keeps numbers only
+  (`<data_dir>/usage/usage.db`, 0600), an API-equivalent cost estimate, `summary.json` with an exact,
+  value-checked schema, and `codeforge usage push` (`fleet upload`). `install --hooks` adds
+  `usage collect --quiet` to the SessionEnd chain. The forge-stats pane gains a 用量 / Usage tab
+  (`/forge-stats usage`) that reads `summary.json` bounded and never spawns codeforge. Without any hook,
+  the statusline starts a background `usage collect --quiet` at most every 15 minutes
+  (`CODEFORGE_USAGE_AUTOCOLLECT=0` turns it off); a collect already running makes it skip. Spec:
+  `doc/specs/codeforge-usage.md`.
+- **Fleet summary in forge-stats** (PM G33) — the band's one-line summary leads with the fleet from autopilot's
+  `autopilot.fleet` state: `fleet ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.1`, widest form that fits, dropping from the end
+  (pet, then ⧗ ● ⊘ ✗, then the word) down to the most severe count. With autopilot, the summary is the band's second
+  row under autopilot's tab bar (the heartbeat now says `summary_row: true`); with 7+/13+ rows it sits above the
+  mini/full columns. No autopilot: the pet alone, as before.
+- **`doc/specs/tui-guideline.md`** — one TUI guideline for the statusline, forge-stats, autopilot's live mod and the
+  fleet views; `scripts/ansi2html.py` turns a tmux capture into a coloured HTML preview.
+
+### Changed
+- **forge-stats is a global plugin** — moved from `.claude/skills/forge-stats/` (codeforge clone only) to
+  `plugins/forge-stats/`, listed by the repo's marketplace. Install: `claude plugin marketplace add <codeforge>` then
+  `claude plugin install forge-stats@codeforge`.
+- forge-stats draws the one-line summary at one row too (it passed one row on before).
+
 ## [0.0.8] - 2026-11-03
 
 Model speed moves to autopilot's live mod (B32); duplicate code spawns Doppelgangers (B10); install can take over a

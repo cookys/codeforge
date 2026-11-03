@@ -20,6 +20,7 @@ mod platform;
 mod power;
 mod snapshot;
 mod tui;
+mod usage;
 mod world;
 
 use anyhow::Result;

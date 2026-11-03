@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Local quality gate — the replacement for GitHub CI (which burns Actions quota).
 #
-# Runs, in order: pinned fmt check → clippy -D warnings → cargo test → cjk-safe → doc-drift.
+# Runs, in order: pinned fmt check → clippy -D warnings → cargo test (through the flake guard:
+# a failed test is rerun once; one that then passes is recorded in target/flaky-tests.log and
+# named on stderr, never hidden) → cjk-safe → doc-drift → cargo deny (licenses) → shellcheck
+# install.sh → release smoke (the x86_64-unknown-linux-gnu tarball built with the MSRV toolchain
+# through scripts/package.sh, unpacked and run). Together: every job of .github/workflows/ci.yml
+# and release-smoke.yml.
 # On Windows (Git Bash) it then repeats clippy + test on Linux through WSL, so the Unix code
 # paths are still exercised. macOS cannot be covered locally.
 #
@@ -53,14 +58,29 @@ step "fmt (pinned)"
 step "clippy -D warnings (${TC:-default toolchain})"
 "${CARGO[@]}" clippy --all-targets -- -D warnings
 
-step "cargo test (${TC:-default toolchain})"
-"${CARGO[@]}" test
+step "cargo test (${TC:-default toolchain}, flake guard)"
+./scripts/test-flake-guard.sh "${CARGO[@]}"
 
 step "cjk-safe"
 ./scripts/check-cjk-safe.sh
 
 step "doc-drift"
 python3 scripts/check-doc-drift.py 2>/dev/null || python scripts/check-doc-drift.py
+
+step "cargo deny (licenses)"
+cargo deny check licenses
+
+step "shellcheck install.sh"
+shellcheck install.sh
+
+# The MSRV, from Cargo.toml's rust-version: the release build must compile with it.
+MSRV=$(grep -m1 '^rust-version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+if [ "$IS_WINDOWS" = 0 ]; then
+  step "release smoke (x86_64-unknown-linux-gnu, toolchain $MSRV)"
+  SMOKE_OUT=$(mktemp -d)
+  ./scripts/package.sh x86_64-unknown-linux-gnu --toolchain "$MSRV" --out "$SMOKE_OUT" >/dev/null
+  rm -rf "$SMOKE_OUT"
+fi
 
 if [ "$IS_WINDOWS" = 1 ] && [ "$WITH_WSL" = 1 ]; then
   if command -v wsl.exe >/dev/null 2>&1 && wsl.exe -e true >/dev/null 2>&1; then
@@ -74,7 +94,7 @@ if [ "$IS_WINDOWS" = 1 ] && [ "$WITH_WSL" = 1 ]; then
       cd "$(wslpath -u "$1")"
       export CARGO_TARGET_DIR="$HOME/.cache/codeforge-check-target"
       cargo clippy --all-targets -- -D warnings
-      cargo test
+      ./scripts/test-flake-guard.sh cargo
     ' _ "$(pwd -W)"
   else
     echo

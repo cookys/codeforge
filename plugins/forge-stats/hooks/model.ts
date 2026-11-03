@@ -222,8 +222,10 @@ export const heartbeatPath = (base: string, sid: string) => `${base}/codeforge/m
 export const sessionViewPath = (base: string, sid: string) => `${base}/codeforge/session/${sanitizeSessionId(sid)}.json`
 
 /** The heartbeat line, as `codeforge statusline` reads it. */
+// `summary_row: true` tells autopilot's band this forge-stats draws the one-line summary on the band's second row (PM G33; TUI guideline §1.1 rule 3). An older
+// forge-stats answered a one-row ask with a speed label, so autopilot hands that row only to a heartbeat that says so.
 export function heartbeatText(sid: string, now: number, layout: Layout): string {
-  return JSON.stringify({ schema: HEARTBEAT_SCHEMA, session_id: sid, written_at_ms: now, layout })
+  return JSON.stringify({ schema: HEARTBEAT_SCHEMA, session_id: sid, written_at_ms: now, layout, summary_row: true })
 }
 
 export const BAND_MIN_ROWS = 12
@@ -303,4 +305,193 @@ export function bandTier(maxRows: number, bodyColumns: number, hasMini: boolean)
 export function rgbHex(rgb: readonly number[]): string | null {
   if (rgb.length !== 3 || !rgb.every(c => Number.isInteger(c) && c >= 0 && c <= 255)) return null
   return '#' + rgb.map(c => c.toString(16).padStart(2, '0')).join('')
+}
+
+// ---- the fleet summary (PM G33; TUI guideline §2.2) ----
+// autopilot's live mod publishes `autopilot.fleet` (its fleet.ts FleetSummary, `v: 1`) in `$.state`; this mod only reads it. Anything else (no autopilot, another `v`,
+// a wrong shape) is no summary: the fleet part is not drawn.
+export type FleetCounts = { needYou: number; failed: number; stuck: number; running: number; waiting: number }
+export type FleetSummary = { v: 1; fetchedMs: number | null; error: string | null; totals: FleetCounts }
+const COUNT_KEYS = ['needYou', 'failed', 'stuck', 'running', 'waiting'] as const
+const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0
+export function parseFleet(value: unknown): FleetSummary | null {
+  if (typeof value !== 'object' || value === null) return null
+  const v = value as Record<string, unknown>
+  if (v.v !== 1 || typeof v.totals !== 'object' || v.totals === null) return null
+  const t = v.totals as Record<string, unknown>
+  if (!COUNT_KEYS.every(k => isCount(t[k]))) return null
+  // the fetch fields decide ✓ against ?: each must be present with its own type, or the whole atom is not taken (a missing or odd `error` must never read as
+  // "no error", a NaN time never as "fetched")
+  if (!('fetchedMs' in v) || !(v.fetchedMs === null || (typeof v.fetchedMs === 'number' && Number.isFinite(v.fetchedMs)))) return null
+  if (!('error' in v) || !(v.error === null || typeof v.error === 'string')) return null
+  const fetchedMs = v.fetchedMs as number | null
+  const error = typeof v.error === 'string' && v.error !== '' ? v.error : null
+  return { v: 1, fetchedMs, error, totals: { needYou: t.needYou as number, failed: t.failed as number, stuck: t.stuck as number, running: t.running as number, waiting: t.waiting as number } }
+}
+
+// One part of the summary line: a glyph in its state colour, a number or word in the default colour, a dim separator. Colours are theme keys (guideline §3.3-4).
+export type SummaryPart = { text: string; color?: 'warning' | 'error' | 'suggestion' | 'inactive' | 'success'; dim?: boolean }
+// the state glyphs of the shared table (guideline §3.1), most severe first: ▲ need_you, ✗ failed, ⊘ stalled, ● running, ⧗ waiting
+const COUNTS: readonly { key: keyof FleetCounts; glyph: string; color: SummaryPart['color'] }[] = [
+  { key: 'needYou', glyph: '▲', color: 'warning' },
+  { key: 'failed', glyph: '✗', color: 'error' },
+  { key: 'stuck', glyph: '⊘', color: 'error' },
+  { key: 'running', glyph: '●', color: 'suggestion' },
+  { key: 'waiting', glyph: '⧗', color: 'inactive' },
+]
+const partsWidth = (parts: readonly SummaryPart[]) => parts.reduce((n, p) => n + displayWidth(p.text), 0)
+
+// The line, widest form first, the first that fits `cols` wins (guideline §2.2):
+//   艦隊 ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.3
+// dropping from the end: the pet, then ⧗, ●, ⊘, ✗ (each only while a more severe count stays), then the word, leaving the most severe non-zero count alone.
+// No count: 「艦隊 ✓」 only after a fetch that succeeded, 「艦隊 ?」 when the last fetch failed or none succeeded yet. No summary (`fleet` null): the pet alone.
+// null when nothing fits or there is nothing to draw: the caller passes the row on (`next(e)`), never draws a blank row.
+export function summaryParts(fleet: FleetSummary | null, petTag: string | null, cols: number, word: string): SummaryPart[] | null {
+  const sep: SummaryPart = { text: ' · ', dim: true }
+  const pet: SummaryPart[] = petTag === null ? [] : [{ text: petTag }]
+  const forms: SummaryPart[][] = []
+  if (fleet === null) {
+    if (pet.length > 0) forms.push(pet)
+  } else {
+    const label: SummaryPart = { text: word, dim: true }
+    const counts = COUNTS.filter(c => fleet.totals[c.key] > 0).map(c => [{ text: ' ' }, { text: c.glyph, color: c.color }, { text: String(fleet.totals[c.key]) }] as SummaryPart[])
+    if (counts.length === 0) {
+      const mark: SummaryPart = fleet.error === null && fleet.fetchedMs !== null ? { text: '✓', color: 'success' } : { text: '?', color: 'inactive' }
+      const line = [label, { text: ' ' }, mark]
+      if (pet.length > 0) forms.push([...line, sep, ...pet])
+      forms.push(line)
+    } else {
+      const withWord = (n: number) => [label, ...counts.slice(0, n).flat()]
+      if (pet.length > 0) forms.push([...withWord(counts.length), sep, ...pet])
+      for (let n = counts.length; n >= 1; n--) forms.push(withWord(n))
+      forms.push(counts[0].slice(1)) // the most severe count alone, no word
+    }
+  }
+  for (const f of forms) if (partsWidth(f) <= cols) return f
+  return null
+}
+
+// ---- the usage summary (PM G36): `codeforge usage collect` writes <live_base>/codeforge/usage/summary.json (`codeforge.usage-summary/1`,
+// codeforge doc/specs/codeforge-usage.md). This mod only reads it, bounded, and never spawns codeforge: past USAGE_STALE_MS the tab names `codeforge usage`. ----
+export const USAGE_SCHEMA = 'codeforge.usage-summary/1'
+export const USAGE_MAX_BYTES = 256 * 1024
+export const USAGE_STALE_MS = 60 * 60_000
+export const usageSummaryPath = (base: string) => `${base}/codeforge/usage/summary.json`
+export type UsageWindow = { pct: number; resetsAtMs: number }
+export type UsageAccount = { alias: string; writtenAt: number; fiveHour: UsageWindow | null; sevenDay: UsageWindow | null }
+/** One model's totals for the day; `cost` is the priced part (null when no row of it is priced), `unpriced` its rows without a price. */
+export type UsageModel = { model: string; tokens: number; requests: number; cost: number | null; unpriced: number }
+export type UsageView = {
+  /** ok: read and valid; missing: no file; bad: too large, a link, unreadable or off-contract. */
+  status: 'ok' | 'missing' | 'bad'
+  generatedAt: number | null
+  accounts: UsageAccount[]
+  /** The UTC day the models are for (summary days are UTC). */
+  day: string
+  models: UsageModel[]
+}
+// contract:begin — `codeforge.usage-summary/1`, strict JSON. Must equal codeforge's `summary::contract()` (src/usage/summary.rs):
+// a cargo test reads this block and compares, so the pane and the writer cannot drift apart.
+export const USAGE_CONTRACT = {
+  "schema": "codeforge.usage-summary/1",
+  "top": ["schema", "generated_at_ms", "host", "prices_as_of", "accounts", "days"],
+  "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
+  "window": ["pct", "resets_at"],
+  "day": ["day", "source", "account", "model", "speed", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests", "cost_usd"],
+  "counts": ["input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests"],
+  "sources": ["claude", "codex"],
+  "speeds": ["standard", "fast"],
+  "pct_max": 1.5,
+  "alias": "^[a-z0-9-]{1,24}$",
+  "model": "^[A-Za-z0-9._-]{1,64}$",
+  "host": "^host-[0-9a-f]{8}$",
+  "uint_max": 9007199254740991,
+  "max_accounts": 64,
+  "max_days": 10000
+} as const
+// contract:end
+
+const C = USAGE_CONTRACT
+const ALIAS_RE = new RegExp(C.alias)
+const MODEL_RE = new RegExp(C.model)
+const HOST_RE = new RegExp(C.host)
+/** An integer in 0..=uint_max (2^53-1): `Number.isInteger(1e100)` is true, so the bound is checked too. */
+const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= C.uint_max
+/** A real calendar date `YYYY-MM-DD` (not 2026-02-30). */
+const isDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+  const d = new Date(v + 'T00:00:00Z')
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+}
+/** Exactly these keys: none missing, none extra. */
+const exactKeys = (v: unknown, keys: readonly string[]): v is Record<string, unknown> =>
+  isObj(v) && Object.keys(v).length === keys.length && keys.every(k => k in v)
+const inSet = (v: unknown, set: readonly string[]) => typeof v === 'string' && set.includes(v)
+
+function usageWindow(v: unknown): UsageWindow | null | undefined {
+  if (v === null) return null
+  if (!exactKeys(v, C.window)) return undefined
+  if (typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || v.pct > C.pct_max || !isUint(v.resets_at)) return undefined
+  return { pct: v.pct, resetsAtMs: (v.resets_at as number) * 1000 }
+}
+
+/** Parse the summary text; `text === null` means no file. Every rule of `summary::validate` applies; anything off the contract makes the whole summary
+ *  `bad`: nothing half-read is drawn. */
+export function parseUsage(text: string | null, now: number): UsageView {
+  const day = new Date(now).toISOString().slice(0, 10)
+  const empty: UsageView = { status: 'missing', generatedAt: null, accounts: [], day, models: [] }
+  if (text === null) return empty
+  const bad: UsageView = { ...empty, status: 'bad' }
+  if (text.length > USAGE_MAX_BYTES) return bad
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return bad
+  }
+  if (!exactKeys(raw, C.top) || raw.schema !== C.schema || !isUint(raw.generated_at_ms)) return bad
+  if (typeof raw.host !== 'string' || !HOST_RE.test(raw.host) || !isDay(raw.prices_as_of)) return bad
+  if (!Array.isArray(raw.accounts) || raw.accounts.length > C.max_accounts || !Array.isArray(raw.days) || raw.days.length > C.max_days) return bad
+  const accounts: UsageAccount[] = []
+  for (const a of raw.accounts) {
+    if (!exactKeys(a, C.account) || typeof a.alias !== 'string' || !ALIAS_RE.test(a.alias) || !isUint(a.written_at_ms)) return bad
+    const fiveHour = usageWindow(a.five_hour)
+    const sevenDay = usageWindow(a.seven_day)
+    if (fiveHour === undefined || sevenDay === undefined) return bad
+    accounts.push({ alias: a.alias, writtenAt: a.written_at_ms, fiveHour, sevenDay })
+  }
+  const byModel = new Map<string, UsageModel>()
+  for (const d of raw.days) {
+    if (!exactKeys(d, C.day) || !isDay(d.day) || !inSet(d.source, C.sources) || !inSet(d.speed, C.speeds)) return bad
+    if (typeof d.account !== 'string' || !ALIAS_RE.test(d.account) || typeof d.model !== 'string' || !MODEL_RE.test(d.model)) return bad
+    if (!C.counts.every(k => isUint(d[k]))) return bad
+    const cost = d.cost_usd
+    if (!(cost === null || (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0))) return bad
+    if (d.day !== day) continue
+    const m = byModel.get(d.model) ?? { model: d.model, tokens: 0, requests: 0, cost: null, unpriced: 0 }
+    m.tokens += (['input', 'output', 'cache_write_5m', 'cache_write_1h', 'cache_read'] as const).reduce((s, k) => s + (d[k] as number), 0)
+    m.requests += d.requests as number
+    if (cost === null) m.unpriced += 1
+    else m.cost = (m.cost ?? 0) + cost
+    byModel.set(d.model, m)
+  }
+  // the costliest first; unpriced models after the priced ones, by tokens
+  const models = [...byModel.values()].sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1) || b.tokens - a.tokens)
+  return { status: 'ok', generatedAt: raw.generated_at_ms, accounts, day, models }
+}
+
+/** 1234 → 1234, 12_345 → 12.3K, 1_234_567 → 1.2M */
+export function compactCount(n: number): string {
+  if (n < 10_000) return String(n)
+  if (n < 1_000_000) return (n / 1e3).toFixed(1) + 'K'
+  return (n / 1e6).toFixed(1) + 'M'
+}
+
+/** A countdown to `atMs`: `2h10m`, `45m`, `3d4h`; `—` once past. */
+export function countdown(atMs: number, now: number): string {
+  const m = Math.floor((atMs - now) / 60_000)
+  if (m < 0) return GLYPH.empty
+  if (m < 60) return `${m}m`
+  if (m < 24 * 60) return `${Math.floor(m / 60)}h${m % 60}m`
+  return `${Math.floor(m / 1440)}d${Math.floor((m % 1440) / 60)}h`
 }

@@ -21,7 +21,18 @@ import {
   sessionViewPath,
   rgbHex,
   staleMinutes,
+  BAND_MIN_ROWS,
+  MINI_MIN_ROWS,
+  parseFleet,
+  summaryParts,
+  USAGE_MAX_BYTES,
+  USAGE_STALE_MS,
+  compactCount,
+  countdown,
+  parseUsage,
+  usageSummaryPath,
 } from './model'
+import type { UsageView } from './model'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -33,6 +44,17 @@ const pet = atom(
   { shape: 'pet-3' },
 )
 const session = atom({ plugin: 'forge-stats', key: 'session' } as const, null as SessionView | null, { shape: 'session-1' })
+
+// autopilot's fleet summary (its live mod writes `autopilot.fleet`; PM G33a). Read only, never written; no autopilot or another shape is no summary. Not declared as a
+// plugin dependency: forge-stats stands alone (B31), and a missing plugin must not keep it from loading.
+async function readFleet($: EngineInterface) {
+  try {
+    const got = await ($.state.get as (ref: { plugin: string; key: string }) => Promise<{ value: unknown }>)({ plugin: 'autopilot', key: 'fleet' })
+    return parseFleet(got.value)
+  } catch (_e) {
+    return null
+  }
+}
 
 // Module variables: recomputed on every session.start (a reload runs it again).
 let locale: Locale = 'en'
@@ -98,7 +120,7 @@ async function stepSprite($: EngineInterface) {
   if (sprite === null) return
   spriteFrame = (spriteFrame + 1) % sprite.frames.length
   const { cells } = halfBlockCells(sprite, spriteFrame)
-  if (cells !== lastCells) {
+  if (paneTab === 'pet' && cells !== lastCells) {
     lastCells = cells
     // literal routing at the call site (pixel-pet plan §2.5); must match PANE and SPRITE_KEY
     await $.ui.blit({ requestId: 'forge-stats', key: 'pet-sprite', cells })
@@ -211,6 +233,86 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
   return out
 }
 
+// ---- the 用量 / usage tab (PM G36 phase 4): accounts, then today's models, read from codeforge's summary.json ----
+type PaneTab = 'pet' | 'usage'
+let paneTab: PaneTab = 'pet'
+
+// Bounded: a regular file that is not a link and at most USAGE_MAX_BYTES, checked before the read and again on the text. Never spawns codeforge.
+async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
+  const bases = liveBase !== null ? [liveBase] : await liveBases($)
+  for (const b of bases) {
+    const path = usageSummaryPath(b)
+    const st = await $.fs.stat(path).catch(() => undefined)
+    if (st === undefined) continue
+    if (st.isLink || st.kind !== 'file' || st.size > USAGE_MAX_BYTES) return parseUsage('', now) // present but not readable as the contract says: bad
+    try {
+      const text = await $.fs.read(path)
+      return parseUsage(typeof text === 'string' ? text : '', now)
+    } catch {
+      return parseUsage('', now)
+    }
+  }
+  return parseUsage(null, now)
+}
+
+const money = (c: number) => '$' + c.toFixed(2)
+const lineWidth = (l: Line) => l.reduce((n, x) => n + displayWidth(x.text), 0)
+
+function usageLines(view: UsageView, cols: number, tr: T, now: number): Line[] {
+  if (view.status !== 'ok') return [[seg('  ' + (view.status === 'bad' ? tr('usageBad') : tr('usageMissing')), 'dim')]]
+  const out: Line[] = []
+  const age = view.generatedAt === null ? 0 : now - view.generatedAt
+  if (age > USAGE_STALE_MS) out.push([seg('  ' + tr('usageAge', { n: Math.floor(age / 60_000) }) + ' · ' + tr('usageRefresh'), 'dim')])
+  out.push([seg(tr('usageAccounts'), 'dim')])
+  if (view.accounts.length === 0) out.push([seg('  ' + tr('usageNoAccounts'), 'dim')])
+  for (const a of view.accounts) {
+    const win = (label: string, w: UsageView['accounts'][number]['fiveHour'], withReset: boolean): Seg[] =>
+      w === null
+        ? [seg(`  ${label} `, 'dim'), seg(GLYPH.empty, 'dim')]
+        : [seg(`  ${label} `, 'dim'), seg(`${Math.floor(w.pct * 100)}%`), ...(withReset ? [seg(' ' + countdown(w.resetsAtMs, now), 'dim')] : [])]
+    const name = seg('  ' + padRight(a.alias, KEY_W))
+    // the widest form that fits: both windows with countdowns, then without, then 5h alone; a field is dropped whole, never cut
+    const forms: Line[] = [
+      [name, ...win('5h', a.fiveHour, true), ...win('7d', a.sevenDay, true)],
+      [name, ...win('5h', a.fiveHour, false), ...win('7d', a.sevenDay, false)],
+      [name, ...win('5h', a.fiveHour, false)],
+      [name],
+    ]
+    out.push(forms.find(f => lineWidth(f) <= cols) ?? [name])
+  }
+  out.push([seg(tr('usageToday', { day: view.day }), 'dim')])
+  if (view.models.length === 0) out.push([seg('  ' + tr('usageNone'), 'dim')])
+  // model | tokens | requests | cost; the name takes what the numbers leave. Narrow (< 50) drops the requests column so a model id stays readable.
+  const withReq = cols >= 50
+  const nameW = Math.max(8, cols - 2 - 8 - (withReq ? 7 : 0) - 10)
+  let total = 0
+  let priced = false
+  let unpriced = 0
+  for (const m of view.models) {
+    const name = displayWidth(m.model) > nameW ? [...m.model].slice(0, nameW - 1).join('') + '…' : m.model
+    const cost = m.cost === null ? GLYPH.empty : (m.unpriced > 0 ? '≥' : '') + money(m.cost)
+    const req = withReq ? [seg(padLeft(`${m.requests}${tr('usageReq')}`, 7), 'dim')] : []
+    out.push([seg('  ' + padRight(name, nameW)), seg(padLeft(compactCount(m.tokens), 8)), ...req, seg(padLeft(cost, 10))])
+    if (m.cost !== null) {
+      total += m.cost
+      priced = true
+    }
+    unpriced += m.unpriced
+  }
+  if (view.models.length > 0) {
+    const sum = priced ? (unpriced > 0 ? '≥' : '') + money(total) : GLYPH.empty
+    const head = '  ' + tr('usageTotal', { cost: sum })
+    const note = unpriced > 0 ? tr('usageUnpriced', { n: unpriced }) : null
+    // the unpriced note on the same line when it fits, else on its own: neither is ever cut
+    if (note !== null && displayWidth(head + ' · ' + note) <= cols) out.push([seg(head, 'dim'), seg(' · ' + note, 'dim')])
+    else {
+      out.push([seg(head, 'dim')])
+      if (note !== null) out.push([seg('  ' + note, 'dim')])
+    }
+  }
+  return out
+}
+
 // band columns: at most 12 rows each, beside the 12-row Ferris
 
 function bandPetLines(view: PetView, width: number, tr: T, short = false): Line[] {
@@ -296,6 +398,12 @@ export const register: Register = on => {
       await writeHeartbeat($)
       return { text: t()('layoutSet', { layout: arg }) }
     }
+    // `/forge-stats usage` / `/forge-stats pet` open the pane on that tab (a path that needs no pointer)
+    if (verb === 'usage' || verb === 'pet') {
+      paneTab = verb
+      if (verb === 'pet') lastCells = null
+      void $.ui.invalidate('ui.render')
+    }
     await $.ui.open({ id: PANE, title: t()('title') })
     void refreshPet($)
     return { text: t()('opened') }
@@ -321,8 +429,16 @@ export const register: Register = on => {
     const side = sprite !== null && cols >= sprite.width + 2 + 28
     const petPart = sprite === null ? petLines(p, cols, tr, Date.now()) : petLines(p, side ? cols - sprite.width - 2 : cols, tr, Date.now(), false)
 
-    const lines: Line[] = [rule(tr('pet'), cols)]
-    if (sprite === null) lines.push(...petPart)
+    const now = Date.now()
+    const usage = paneTab === 'usage' ? await readUsage($, now) : null
+    const lines: Line[] = []
+    if (usage !== null) {
+      const age = usage.generatedAt === null ? null : Math.floor((now - usage.generatedAt) / 60_000)
+      lines.push(rule(tr('usage'), cols, age === null ? undefined : tr('usageAge', { n: age })), ...usageLines(usage, cols, tr, now))
+    } else {
+      lines.push(rule(tr('pet'), cols))
+      if (sprite === null) lines.push(...petPart)
+    }
 
     const draw = (s: Seg, i: number) => {
       const k = "s" + i
@@ -347,8 +463,31 @@ export const register: Register = on => {
         {l.map(draw)}
       </Box>
     )
+    // the tab strip: Buttons where the surface has them (a press switches the tab), plain Text otherwise; the active tab bold, the other dim
+    const Button = 'Button' in els ? els.Button : undefined
+    const tabs: [PaneTab, string][] = [['pet', tr('tabPet')], ['usage', tr('tabUsage')]]
+    const select = (id: PaneTab) => {
+      if (paneTab === id) return
+      paneTab = id
+      if (id === 'pet') lastCells = null
+      void $.ui.invalidate('ui.render')
+    }
+    const strip = (
+      <Box key="tabs" flexDirection="row" gap={2}>
+        {tabs.map(([id, label]) => {
+          const text = id === paneTab ? <Text bold>{label}</Text> : <Text dimColor>{label}</Text>
+          return Button !== undefined ? (
+            <Button key={'tab-' + id} onPress={() => select(id)}>
+              {text}
+            </Button>
+          ) : (
+            <Box key={'tab-' + id}>{text}</Box>
+          )
+        })}
+      </Box>
+    )
     let petBlock = null
-    if (sprite !== null && Raster !== undefined) {
+    if (usage === null && sprite !== null && Raster !== undefined) {
       const frame = halfBlockCells(sprite, spriteFrame)
       lastCells = frame.cells
       const art = <Raster key={SPRITE_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
@@ -368,6 +507,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
+        {strip}
         {lines.map((l, i) => row(l, 'l' + i))}
         {petBlock}
       </Box>
@@ -390,16 +530,30 @@ export const register: Register = on => {
     if (tier === 'full' && (full === null || Raster === undefined)) tier = 'summary'
     if (tier === 'mini' && (mini === null || Raster === undefined)) tier = 'summary'
     const sprite = tier === 'full' ? full : tier === 'mini' ? mini : null
+    const tr = t()
+    const fleet = await readFleet($)
+    // the one-line summary (TUI guideline §2.2): fleet counts, then the pet; the widest form that fits, never wider than the row (bodyColumns may run ~2 wider)
+    const summaryRow = (k: string, withPet: boolean) => {
+      const petTag = withPet && p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
+      const parts = summaryParts(fleet, petTag, Math.max(0, props.bodyColumns - 2), tr('fleet'))
+      if (parts === null) return null
+      return (
+        <Box key={k} flexDirection="row">
+          {parts.map((s, i) => (
+            <Text key={'f' + i} {...(s.color ? { color: s.color } : {})} {...(s.dim ? { dimColor: true } : {})}>
+              {s.text}
+            </Text>
+          ))}
+        </Box>
+      )
+    }
     if (sprite === null || Raster === undefined) {
       bandId = null
       bandSprite = null
-      // one row is the tab label, autopilot's own since the speed moved there (B32): pass it on
-      const petTag = p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
-      if (tier === 'label' || petTag === null) return next(e)
-      // the summary has the row to itself and is cut at its end
-      return <Text wrap="truncate-end">{petTag}</Text>
+      // 1–5 rows (or no sprite): one summary row. With autopilot this is the row it hands down under its tab row (summary_row in the heartbeat); with nothing to
+      // draw the row is passed on, never left blank.
+      return summaryRow('summary', true) ?? next(e)
     }
-    const tr = t()
     const lights = await read($, session)
     const layoutCols = bandLayout(props.bodyColumns, sprite.width)
     const frame = halfBlockCells(sprite, spriteFrame % sprite.frames.length)
@@ -426,7 +580,9 @@ export const register: Register = on => {
       </Box>
     )
 
-    return (
+    // the fleet outranks the pet (guideline §2.1): a summary row on top when there is a summary and a row to spare above the tier's minimum (mini >= 7, full >= 13)
+    const top = fleet !== null && props.maxRows > (tier === 'mini' ? MINI_MIN_ROWS : BAND_MIN_ROWS) ? summaryRow('fleet', false) : null
+    const columns = (
       <Box flexDirection="row" gap={BAND_GAP}>
         {layoutCols.map(c => {
           switch (c.id) {
@@ -438,6 +594,12 @@ export const register: Register = on => {
               return column(bandMemoryLines(lights, tr), c.width, 'memory')
           }
         })}
+      </Box>
+    )
+    return top === null ? columns : (
+      <Box flexDirection="column">
+        {top}
+        {columns}
       </Box>
     )
   })
