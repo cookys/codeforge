@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.9] - 2026-11-03
+
+Usage tracking (G36: per-account quota, transcript token counts, cost estimate, forge-stats 用量 tab, statusline-triggered
+background collect); forge-stats as a global plugin (G33); one TUI guideline (G34); and a local release pipeline
+replacing hosted CI (G38) — this is the first release built and verified locally.
+
 ### Added
 - **Local release pipeline** (PM G38) — `scripts/release-local.sh` builds the linux x86_64 and
   aarch64 tarballs with `cross` (podman/docker) and the MSRV toolchain, refuses a binary needing glibc
