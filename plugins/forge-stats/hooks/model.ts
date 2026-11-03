@@ -370,3 +370,128 @@ export function summaryParts(fleet: FleetSummary | null, petTag: string | null, 
   for (const f of forms) if (partsWidth(f) <= cols) return f
   return null
 }
+
+// ---- the usage summary (PM G36): `codeforge usage collect` writes <live_base>/codeforge/usage/summary.json (`codeforge.usage-summary/1`,
+// codeforge doc/specs/codeforge-usage.md). This mod only reads it, bounded, and never spawns codeforge: past USAGE_STALE_MS the tab names `codeforge usage`. ----
+export const USAGE_SCHEMA = 'codeforge.usage-summary/1'
+export const USAGE_MAX_BYTES = 256 * 1024
+export const USAGE_STALE_MS = 60 * 60_000
+export const usageSummaryPath = (base: string) => `${base}/codeforge/usage/summary.json`
+export type UsageWindow = { pct: number; resetsAtMs: number }
+export type UsageAccount = { alias: string; writtenAt: number; fiveHour: UsageWindow | null; sevenDay: UsageWindow | null }
+/** One model's totals for the day; `cost` is the priced part (null when no row of it is priced), `unpriced` its rows without a price. */
+export type UsageModel = { model: string; tokens: number; requests: number; cost: number | null; unpriced: number }
+export type UsageView = {
+  /** ok: read and valid; missing: no file; bad: too large, a link, unreadable or off-contract. */
+  status: 'ok' | 'missing' | 'bad'
+  generatedAt: number | null
+  accounts: UsageAccount[]
+  /** The UTC day the models are for (summary days are UTC). */
+  day: string
+  models: UsageModel[]
+}
+// contract:begin — `codeforge.usage-summary/1`, strict JSON. Must equal codeforge's `summary::contract()` (src/usage/summary.rs):
+// a cargo test reads this block and compares, so the pane and the writer cannot drift apart.
+export const USAGE_CONTRACT = {
+  "schema": "codeforge.usage-summary/1",
+  "top": ["schema", "generated_at_ms", "host", "prices_as_of", "accounts", "days"],
+  "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
+  "window": ["pct", "resets_at"],
+  "day": ["day", "source", "account", "model", "speed", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests", "cost_usd"],
+  "counts": ["input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests"],
+  "sources": ["claude", "codex"],
+  "speeds": ["standard", "fast"],
+  "pct_max": 1.5,
+  "alias": "^[a-z0-9-]{1,24}$",
+  "model": "^[A-Za-z0-9._-]{1,64}$",
+  "host": "^host-[0-9a-f]{8}$",
+  "uint_max": 9007199254740991,
+  "max_accounts": 64,
+  "max_days": 10000
+} as const
+// contract:end
+
+const C = USAGE_CONTRACT
+const ALIAS_RE = new RegExp(C.alias)
+const MODEL_RE = new RegExp(C.model)
+const HOST_RE = new RegExp(C.host)
+/** An integer in 0..=uint_max (2^53-1): `Number.isInteger(1e100)` is true, so the bound is checked too. */
+const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= C.uint_max
+/** A real calendar date `YYYY-MM-DD` (not 2026-02-30). */
+const isDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+  const d = new Date(v + 'T00:00:00Z')
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+}
+/** Exactly these keys: none missing, none extra. */
+const exactKeys = (v: unknown, keys: readonly string[]): v is Record<string, unknown> =>
+  isObj(v) && Object.keys(v).length === keys.length && keys.every(k => k in v)
+const inSet = (v: unknown, set: readonly string[]) => typeof v === 'string' && set.includes(v)
+
+function usageWindow(v: unknown): UsageWindow | null | undefined {
+  if (v === null) return null
+  if (!exactKeys(v, C.window)) return undefined
+  if (typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || v.pct > C.pct_max || !isUint(v.resets_at)) return undefined
+  return { pct: v.pct, resetsAtMs: (v.resets_at as number) * 1000 }
+}
+
+/** Parse the summary text; `text === null` means no file. Every rule of `summary::validate` applies; anything off the contract makes the whole summary
+ *  `bad`: nothing half-read is drawn. */
+export function parseUsage(text: string | null, now: number): UsageView {
+  const day = new Date(now).toISOString().slice(0, 10)
+  const empty: UsageView = { status: 'missing', generatedAt: null, accounts: [], day, models: [] }
+  if (text === null) return empty
+  const bad: UsageView = { ...empty, status: 'bad' }
+  if (text.length > USAGE_MAX_BYTES) return bad
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return bad
+  }
+  if (!exactKeys(raw, C.top) || raw.schema !== C.schema || !isUint(raw.generated_at_ms)) return bad
+  if (typeof raw.host !== 'string' || !HOST_RE.test(raw.host) || !isDay(raw.prices_as_of)) return bad
+  if (!Array.isArray(raw.accounts) || raw.accounts.length > C.max_accounts || !Array.isArray(raw.days) || raw.days.length > C.max_days) return bad
+  const accounts: UsageAccount[] = []
+  for (const a of raw.accounts) {
+    if (!exactKeys(a, C.account) || typeof a.alias !== 'string' || !ALIAS_RE.test(a.alias) || !isUint(a.written_at_ms)) return bad
+    const fiveHour = usageWindow(a.five_hour)
+    const sevenDay = usageWindow(a.seven_day)
+    if (fiveHour === undefined || sevenDay === undefined) return bad
+    accounts.push({ alias: a.alias, writtenAt: a.written_at_ms, fiveHour, sevenDay })
+  }
+  const byModel = new Map<string, UsageModel>()
+  for (const d of raw.days) {
+    if (!exactKeys(d, C.day) || !isDay(d.day) || !inSet(d.source, C.sources) || !inSet(d.speed, C.speeds)) return bad
+    if (typeof d.account !== 'string' || !ALIAS_RE.test(d.account) || typeof d.model !== 'string' || !MODEL_RE.test(d.model)) return bad
+    if (!C.counts.every(k => isUint(d[k]))) return bad
+    const cost = d.cost_usd
+    if (!(cost === null || (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0))) return bad
+    if (d.day !== day) continue
+    const m = byModel.get(d.model) ?? { model: d.model, tokens: 0, requests: 0, cost: null, unpriced: 0 }
+    m.tokens += (['input', 'output', 'cache_write_5m', 'cache_write_1h', 'cache_read'] as const).reduce((s, k) => s + (d[k] as number), 0)
+    m.requests += d.requests as number
+    if (cost === null) m.unpriced += 1
+    else m.cost = (m.cost ?? 0) + cost
+    byModel.set(d.model, m)
+  }
+  // the costliest first; unpriced models after the priced ones, by tokens
+  const models = [...byModel.values()].sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1) || b.tokens - a.tokens)
+  return { status: 'ok', generatedAt: raw.generated_at_ms, accounts, day, models }
+}
+
+/** 1234 → 1234, 12_345 → 12.3K, 1_234_567 → 1.2M */
+export function compactCount(n: number): string {
+  if (n < 10_000) return String(n)
+  if (n < 1_000_000) return (n / 1e3).toFixed(1) + 'K'
+  return (n / 1e6).toFixed(1) + 'M'
+}
+
+/** A countdown to `atMs`: `2h10m`, `45m`, `3d4h`; `—` once past. */
+export function countdown(atMs: number, now: number): string {
+  const m = Math.floor((atMs - now) / 60_000)
+  if (m < 0) return GLYPH.empty
+  if (m < 60) return `${m}m`
+  if (m < 24 * 60) return `${Math.floor(m / 60)}h${m % 60}m`
+  return `${Math.floor(m / 1440)}d${Math.floor((m % 1440) / 60)}h`
+}
