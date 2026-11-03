@@ -424,6 +424,9 @@ codeforge usage push                    # validate summary.json and `fleet uploa
   billed this way, and models without a price row (all Codex models) show `—`.
 - `summary.json` (per-day × model totals and per-account quota, no projects or paths) is the only thing
   `usage push` sends.
+- In Claude Code, the forge-stats pane has a **用量 / Usage** tab (`/forge-stats usage` opens it): accounts with
+  their 5h / 7d windows, today's (UTC) models with tokens and the API-equivalent cost, and the summary's age —
+  past an hour it says to run `codeforge usage`. It only reads `summary.json`; it never runs codeforge.
 
 ## Data & Privacy
 
