@@ -38,6 +38,8 @@ cargo build --release          # release build → target/release/codeforge
 cargo check                    # fast type-check (no binary)
 cargo test                     # run tests
 cargo clippy                   # lint
+./scripts/check-all.sh         # local gate (no hosted CI): fmt, clippy --all-targets, test via the flake guard, cjk-safe, doc-drift
+./scripts/test-flake-guard.sh  # cargo test; a failure is rerun once, a flake is recorded in target/flaky-tests.log (never hidden)
 
 # Formatting — ALWAYS via the pinned wrapper, NEVER bare `cargo fmt`
 ./scripts/fmt.sh               # format in place (pinned rustfmt, self-installs)

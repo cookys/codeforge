@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Local quality gate — the replacement for GitHub CI (which burns Actions quota).
 #
-# Runs, in order: pinned fmt check → clippy -D warnings → cargo test → cjk-safe → doc-drift.
+# Runs, in order: pinned fmt check → clippy -D warnings → cargo test (through the flake guard:
+# a failed test is rerun once; one that then passes is recorded in target/flaky-tests.log and
+# named on stderr, never hidden) → cjk-safe → doc-drift.
 # On Windows (Git Bash) it then repeats clippy + test on Linux through WSL, so the Unix code
 # paths are still exercised. macOS cannot be covered locally.
 #
@@ -53,8 +55,8 @@ step "fmt (pinned)"
 step "clippy -D warnings (${TC:-default toolchain})"
 "${CARGO[@]}" clippy --all-targets -- -D warnings
 
-step "cargo test (${TC:-default toolchain})"
-"${CARGO[@]}" test
+step "cargo test (${TC:-default toolchain}, flake guard)"
+./scripts/test-flake-guard.sh "${CARGO[@]}"
 
 step "cjk-safe"
 ./scripts/check-cjk-safe.sh
@@ -74,7 +76,7 @@ if [ "$IS_WINDOWS" = 1 ] && [ "$WITH_WSL" = 1 ]; then
       cd "$(wslpath -u "$1")"
       export CARGO_TARGET_DIR="$HOME/.cache/codeforge-check-target"
       cargo clippy --all-targets -- -D warnings
-      cargo test
+      ./scripts/test-flake-guard.sh cargo
     ' _ "$(pwd -W)"
   else
     echo
