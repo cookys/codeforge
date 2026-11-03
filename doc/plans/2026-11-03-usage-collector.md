@@ -22,6 +22,8 @@ limit", without logins, credential files, OTel export, prompts or paths leaving 
 3. `<live_base>/codeforge/usage/summary.json` carries per-account quota and per-day × model totals
    and nothing else; `codeforge usage push` uploads it and prints the sha.
 4. No file outside the listed globs is opened; no text field of a transcript is kept.
+5. Every file G36 creates — `usage.db` (+ `-wal`/`-shm`), quota snapshots, `summary.json` — is
+   mode 0600, and the directories it creates are 0700, set at creation (not chmod after).
 
 ## Non-goals (v1)
 
@@ -50,7 +52,7 @@ When either is present, write `<live_base>/codeforge/usage/quota/<alias>.json`:
  "five_hour":{"pct":0.32,"resets_at":1793680000},"seven_day":{"pct":0.75,"resets_at":1793860000}}
 ```
 
-tmp file + rename (several sessions share one alias). The statusline is a one-shot process, so
+tmp file (created 0600) + rename (several sessions share one alias). The statusline is a one-shot process, so
 throttling reads the file on disk: rewrite only when its `written_at_ms` is older than 30 s or the
 percentages changed. Failure never changes rendering or exit.
 
@@ -70,6 +72,8 @@ regular files only (no symlinks), parsed as `serde_json::Value`, bad ones skippe
 ### 4. Collector (`src/usage/collect.rs`, `codeforge usage collect`)
 
 Store: `~/.codeforge/usage.db` (machine-wide, beside `ship-failed/`), WAL, migrations inline.
+The db and its `-wal`/`-shm` files are 0600 (umask 077 around the open, then verified); a db found
+with wider bits is tightened and the fix reported once on stderr.
 
 | Source | Glob (exactly) | Read | Dedup |
 |---|---|---|---|
@@ -104,7 +108,9 @@ more; v1 applies the flat rate and says so. Unknown model (incl. every Codex mod
   sha8(hostname)), `accounts` (fresh quota snapshots), `days` (last 7 × source × account × model
   token totals + estimated cost). No project, path, prompt or email.
 - `codeforge usage push`: collect, write summary, `fleet upload --mime application/json`, print the
-  sha. Missing `fleet` → a clear error, exit 1.
+  sha. Missing `fleet` → a clear error, exit 1. Before uploading, the payload is checked against an
+  allow-list of keys (the schema above); any other key → refuse to push.
+- `summary.json` is written 0600 via tmp + rename. `host` is never the hostname itself.
 
 ### 7. forge-stats pane tab (after G33 — now on develop)
 
@@ -130,7 +136,8 @@ window, 6 h); row rendering at 144/100/56/24 columns with 0–3 other accounts, 
 rule; bounded snapshot read (symlink, >4 KiB, 17 files, bad JSON); collector (dedup by requestId,
 incremental offset, truncation → reread, subagent glob, codex cumulative diff, no text stored —
 assert the db holds no string longer than a model id); price (known, unknown → null, fast, cache);
-summary schema has no project/path keys.
+summary schema has no project/path keys; push refuses a payload with an unknown key; file modes
+(0600 files, 0700 dirs, including the db's -wal/-shm) checked by stat in tests.
 
 ## Phases
 
