@@ -7,8 +7,9 @@
 > verified locally by `scripts/release-local.sh` (linux x86_64/aarch64 via `cross`, glibc <= 2.35,
 > `install.sh` verified from a local server via `CODEFORGE_DOWNLOAD_BASE`), which creates the draft;
 > publishing it is the operator's step. A pushed tag no longer starts `release.yml`
-> (`workflow_dispatch` only, build-only). The local gate is `scripts/check-all.sh`. macOS assets
-> await an operator decision. The sections below describe the hosted pipeline as first built.
+> (`workflow_dispatch` only, build-only). The local gate is `scripts/check-all.sh`. Releases ship
+> Linux x86_64 and aarch64 only (operator decision d-c5c1bdae, from v0.0.9): install.sh and
+> `codeforge self-update` tell macOS and other platforms to `cargo install --git`. The sections below describe the hosted pipeline as first built.
 
 ## 0. Decision summary
 
