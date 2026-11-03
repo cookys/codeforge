@@ -256,6 +256,7 @@ async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
 }
 
 const money = (c: number) => '$' + c.toFixed(2)
+const lineWidth = (l: Line) => l.reduce((n, x) => n + displayWidth(x.text), 0)
 
 function usageLines(view: UsageView, cols: number, tr: T, now: number): Line[] {
   if (view.status !== 'ok') return [[seg('  ' + (view.status === 'bad' ? tr('usageBad') : tr('usageMissing')), 'dim')]]
@@ -265,9 +266,19 @@ function usageLines(view: UsageView, cols: number, tr: T, now: number): Line[] {
   out.push([seg(tr('usageAccounts'), 'dim')])
   if (view.accounts.length === 0) out.push([seg('  ' + tr('usageNoAccounts'), 'dim')])
   for (const a of view.accounts) {
-    const win = (label: string, w: UsageView['accounts'][number]['fiveHour']): Seg[] =>
-      w === null ? [seg(`  ${label} `, 'dim'), seg(GLYPH.empty, 'dim')] : [seg(`  ${label} `, 'dim'), seg(`${Math.floor(w.pct * 100)}%`), seg(' ' + countdown(w.resetsAtMs, now), 'dim')]
-    out.push([seg('  ' + padRight(a.alias, KEY_W)), ...win('5h', a.fiveHour), ...win('7d', a.sevenDay)])
+    const win = (label: string, w: UsageView['accounts'][number]['fiveHour'], withReset: boolean): Seg[] =>
+      w === null
+        ? [seg(`  ${label} `, 'dim'), seg(GLYPH.empty, 'dim')]
+        : [seg(`  ${label} `, 'dim'), seg(`${Math.floor(w.pct * 100)}%`), ...(withReset ? [seg(' ' + countdown(w.resetsAtMs, now), 'dim')] : [])]
+    const name = seg('  ' + padRight(a.alias, KEY_W))
+    // the widest form that fits: both windows with countdowns, then without, then 5h alone; a field is dropped whole, never cut
+    const forms: Line[] = [
+      [name, ...win('5h', a.fiveHour, true), ...win('7d', a.sevenDay, true)],
+      [name, ...win('5h', a.fiveHour, false), ...win('7d', a.sevenDay, false)],
+      [name, ...win('5h', a.fiveHour, false)],
+      [name],
+    ]
+    out.push(forms.find(f => lineWidth(f) <= cols) ?? [name])
   }
   out.push([seg(tr('usageToday', { day: view.day }), 'dim')])
   if (view.models.length === 0) out.push([seg('  ' + tr('usageNone'), 'dim')])

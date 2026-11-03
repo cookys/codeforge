@@ -25,53 +25,106 @@ pub fn usage_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("usage")
 }
 
+/// How an entry of the store is opened: never through a symlink (`O_NOFOLLOW`), never blocking
+/// on a FIFO (`O_NONBLOCK`); the handle must then be a real dir / regular file, and a wider mode
+/// is tightened on that handle (`fchmod`), so nothing is ever changed through a link.
 #[cfg(unix)]
-fn tighten(path: &Path, mode: u32, notes: &mut Vec<String>) -> Result<()> {
+fn open_entry(path: &Path, name: &str, dir: bool, create: bool) -> Result<Option<std::fs::File>> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut o = std::fs::OpenOptions::new();
+    o.read(true);
+    let mut flags = libc::O_NOFOLLOW | libc::O_NONBLOCK;
+    if dir {
+        flags |= libc::O_DIRECTORY;
+    } else if create {
+        o.write(true).create(true).mode(0o600);
+    }
+    match o.custom_flags(flags).open(path) {
+        Ok(f) => Ok(Some(f)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !create => Ok(None),
+        // O_NOFOLLOW answers ELOOP for a link, or ENOTDIR with O_DIRECTORY: name the link as such
+        Err(_) if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) => {
+            anyhow::bail!("用量儲存區的 {name} 是 symlink，拒絕使用")
+        }
+        Err(e) if e.raw_os_error() == Some(libc::ENOTDIR) => {
+            anyhow::bail!("用量儲存區的 {name} 不是目錄，拒絕使用")
+        }
+        Err(e) => anyhow::bail!("無法開啟用量儲存區的 {name}（{:?}）", e.kind()),
+    }
+}
+
+#[cfg(unix)]
+fn check_and_tighten(
+    f: &std::fs::File,
+    name: &str,
+    dir: bool,
+    mode: u32,
+    notes: &mut Vec<String>,
+) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    let Ok(meta) = std::fs::symlink_metadata(path) else {
-        return Ok(());
+    let meta = f
+        .metadata()
+        .map_err(|e| anyhow::anyhow!("無法讀取 {name} 的屬性（{:?}）", e.kind()))?;
+    let kind_ok = if dir {
+        meta.is_dir()
+    } else {
+        meta.file_type().is_file()
     };
+    if !kind_ok {
+        let want = if dir { "目錄" } else { "一般檔案" };
+        anyhow::bail!("用量儲存區的 {name} 不是{want}，拒絕使用");
+    }
     let have = meta.permissions().mode() & 0o777;
     if have & !mode != 0 {
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
-            .with_context(|| format!("無法收緊權限：{}", path.display()))?;
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+        f.set_permissions(std::fs::Permissions::from_mode(mode))
+            .map_err(|e| anyhow::anyhow!("無法收緊 {name} 的權限（{:?}）", e.kind()))?;
         notes.push(format!("{name}: {have:o} → {mode:o}"));
     }
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn tighten(_path: &Path, _mode: u32, _notes: &mut Vec<String>) -> Result<()> {
+/// The sidecars SQLite makes beside the db: refused when not regular files, tightened when wider.
+#[cfg(unix)]
+fn sidecars(dir: &Path, notes: &mut Vec<String>) -> Result<()> {
+    for name in ["usage.db-wal", "usage.db-shm"] {
+        if let Some(f) = open_entry(&dir.join(name), name, false, false)? {
+            check_and_tighten(&f, name, false, 0o600, notes)?;
+        }
+    }
     Ok(())
 }
 
-/// Prepare modes in order, then open. Returns the connection and the mode notes.
+/// Prepare modes in order, then open. Returns the connection and the mode notes. Error texts
+/// name the entry (`usage`, `usage.db`, …), never the local path.
 pub fn open(dir: &Path) -> Result<(Connection, Vec<String>)> {
     let mut notes = Vec::new();
     #[cfg(unix)]
     {
-        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+        use std::os::unix::fs::DirBuilderExt;
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
             .create(dir)
-            .with_context(|| format!("無法建立用量目錄：{}", dir.display()))?;
-        tighten(dir, 0o700, &mut notes)?;
-        let db = dir.join("usage.db");
-        std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(0o600)
-            .open(&db)
-            .with_context(|| format!("無法建立用量資料庫：{}", db.display()))?;
-        tighten(&db, 0o600, &mut notes)?;
-        tighten(&dir.join("usage.db-wal"), 0o600, &mut notes)?;
-        tighten(&dir.join("usage.db-shm"), 0o600, &mut notes)?;
+            .map_err(|e| anyhow::anyhow!("無法建立用量目錄（{:?}）", e.kind()))?;
+        let d = open_entry(dir, "usage", true, false)?.context("用量目錄不見了")?;
+        check_and_tighten(&d, "usage", true, 0o700, &mut notes)?;
+        let db = open_entry(&dir.join("usage.db"), "usage.db", false, true)?
+            .context("無法建立 usage.db")?;
+        check_and_tighten(&db, "usage.db", false, 0o600, &mut notes)?;
+        sidecars(dir, &mut notes)?;
     }
     #[cfg(not(unix))]
-    std::fs::create_dir_all(dir)?;
-    let conn = Connection::open(dir.join("usage.db"))?;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| anyhow::anyhow!("無法建立用量目錄（{:?}）", e.kind()))?;
+    // SQLite opens the path itself: NOFOLLOW so it never follows a link swapped in after the check
+    use rusqlite::OpenFlags;
+    let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
+        | OpenFlags::SQLITE_OPEN_CREATE
+        | OpenFlags::SQLITE_OPEN_NO_MUTEX
+        | OpenFlags::SQLITE_OPEN_NOFOLLOW;
+    let conn = Connection::open_with_flags(dir.join("usage.db"), flags)
+        .map_err(|e| anyhow::anyhow!("無法開啟 usage.db（SQLite {:?}）", e.sqlite_error_code()))?;
+
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA busy_timeout = 5000;
@@ -99,10 +152,7 @@ pub fn open(dir: &Path) -> Result<(Connection, Vec<String>)> {
     )?;
     // the first write creates -wal/-shm: they take the db's 0600; check once more
     #[cfg(unix)]
-    {
-        tighten(&dir.join("usage.db-wal"), 0o600, &mut notes)?;
-        tighten(&dir.join("usage.db-shm"), 0o600, &mut notes)?;
-    }
+    sidecars(dir, &mut notes)?;
     Ok((conn, notes))
 }
 
@@ -159,5 +209,69 @@ mod tests {
     fn data_dir_override() {
         assert_eq!(data_dir(Some("/x/d")), PathBuf::from("/x/d"));
         assert!(data_dir(None).ends_with("codeforge"));
+    }
+
+    #[test]
+    fn a_fifo_or_link_in_the_store_is_refused_without_blocking_or_chmod_through_it() {
+        let base = tempfile::tempdir().unwrap();
+        // a FIFO where the db goes: refused at once (O_NONBLOCK), not opened by SQLite
+        let dir = usage_dir(base.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        let fifo =
+            std::ffi::CString::new(dir.join("usage.db").as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: a valid NUL-terminated path.
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        let t = std::time::Instant::now();
+        let err = open(&dir).unwrap_err().to_string();
+        assert!(t.elapsed() < std::time::Duration::from_secs(2));
+        assert!(
+            err.contains("usage.db") && err.contains("不是一般檔案"),
+            "{err}"
+        );
+        // a FIFO sidecar is opened read-only, which blocks without O_NONBLOCK
+        let base = tempfile::tempdir().unwrap();
+        let dir = usage_dir(base.path());
+        drop(open(&dir).unwrap());
+        let _ = std::fs::remove_file(dir.join("usage.db-wal"));
+        let wal = std::ffi::CString::new(dir.join("usage.db-wal").as_os_str().as_encoded_bytes())
+            .unwrap();
+        // SAFETY: a valid NUL-terminated path.
+        assert_eq!(unsafe { libc::mkfifo(wal.as_ptr(), 0o600) }, 0);
+        let t = std::time::Instant::now();
+        let err = open(&dir).unwrap_err().to_string();
+        assert!(t.elapsed() < std::time::Duration::from_secs(2));
+        assert!(
+            err.contains("usage.db-wal") && err.contains("不是一般檔案"),
+            "{err}"
+        );
+        // a symlinked sidecar: refused, and the file it points at keeps its mode
+        let base = tempfile::tempdir().unwrap();
+        let dir = usage_dir(base.path());
+        drop(open(&dir).unwrap());
+        let target = base.path().join("elsewhere");
+        std::fs::write(&target, b"").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let _ = std::fs::remove_file(dir.join("usage.db-wal"));
+        std::os::unix::fs::symlink(&target, dir.join("usage.db-wal")).unwrap();
+        let err = open(&dir).unwrap_err().to_string();
+        assert!(
+            err.contains("usage.db-wal") && err.contains("symlink"),
+            "{err}"
+        );
+        assert_eq!(mode(&target), 0o644, "chmod went through the link");
+        // a symlinked usage dir: refused, its target untouched
+        let base = tempfile::tempdir().unwrap();
+        let real = base.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::os::unix::fs::symlink(&real, usage_dir(base.path())).unwrap();
+        let err = open(&usage_dir(base.path())).unwrap_err().to_string();
+        assert!(err.contains("symlink"), "{err}");
+        assert_eq!(mode(&real), 0o755);
+        // no error, cause chain included, names the local path
+        let full = format!("{:?}", open(&usage_dir(base.path())).unwrap_err());
+        assert!(!full.contains(base.path().to_str().unwrap()), "{full}");
+        let home = dirs::home_dir().unwrap();
+        assert!(!full.contains(home.to_str().unwrap()), "{full}");
     }
 }

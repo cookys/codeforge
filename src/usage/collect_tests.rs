@@ -72,7 +72,7 @@ fn append(path: &Path, text: &str) {
 
 fn run(e: &Env, snaps: &[Snapshot]) -> Connection {
     let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
-    let rs = roots(&[e.cfg.clone()], Some(&e.codex));
+    let rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
     collect(&mut conn, &rs, snaps, NOW).unwrap();
     conn
 }
@@ -233,7 +233,7 @@ fn an_uncommitted_collect_leaves_no_trace() {
         &e.cfg.join("projects/p/s.jsonl"),
         &claude("req_x", 10, 10, json!({})),
     );
-    let rs = roots(&[e.cfg.clone()], None);
+    let rs = roots(std::slice::from_ref(&e.cfg), None);
     collect(&mut conn, &rs, &[], NOW).unwrap();
     assert_eq!(
         totals(&conn),
@@ -401,7 +401,7 @@ fn nothing_outside_the_globs_or_behind_a_link_is_read() {
         &e.cfg.join("projects/p/notes.txt"),
         &claude("req_txt", 500, 500, json!({})),
     );
-    let rs = roots(&[e.cfg.clone()], None);
+    let rs = roots(std::slice::from_ref(&e.cfg), None);
     let names: Vec<String> = sources(&rs[0])
         .iter()
         .map(|p| name_of(p).to_string())
@@ -428,7 +428,7 @@ fn a_root_takes_the_alias_of_the_snapshot_naming_it() {
         &e.cfg.join("projects/p/s.jsonl"),
         &claude("req_1", 1, 1, json!({})),
     );
-    let rs = roots(&[e.cfg.clone()], None);
+    let rs = roots(std::slice::from_ref(&e.cfg), None);
     let hash = rs[0].hash.clone();
     let snap = |alias: &str, root: Option<&str>, at: i64| Snapshot {
         alias: alias.into(),
@@ -494,4 +494,178 @@ fn a_home_dir_cwd_is_stored_as_tilde_and_old_files_are_not_read() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].project, "~");
     assert_eq!(rows[0].requests, 1);
+}
+
+#[test]
+fn a_line_longer_than_the_bound_is_read_through_and_dropped() {
+    // the reader: a long line is consumed whole, not kept, and the next line is intact
+    let data = b"aaaaaaaaaaaaaaaaaaaa\nok\ntail";
+    let mut r = std::io::BufReader::with_capacity(4, &data[..]);
+    let mut buf = Vec::new();
+    assert_eq!(next_line(&mut r, &mut buf, 8).unwrap(), Some((21, false)));
+    assert!(buf.is_empty() && buf.capacity() <= 8);
+    assert_eq!(next_line(&mut r, &mut buf, 8).unwrap(), Some((3, true)));
+    assert_eq!(buf, b"ok\n");
+    assert_eq!(
+        next_line(&mut r, &mut buf, 8).unwrap(),
+        None,
+        "unterminated tail waits"
+    );
+    // a collect: a usage line over MAX_LINE is not counted, the next one is, the cursor passes both
+    let e = env();
+    let f = e.cfg.join("projects/p/s.jsonl");
+    let pad = "x".repeat(MAX_LINE);
+    write(
+        &f,
+        &(claude("req_big", 999, 999, json!({"pad": pad})) + &claude("req_ok", 1, 1, json!({}))),
+    );
+    let conn = run(&e, &[]);
+    assert_eq!(
+        totals(&conn),
+        (
+            Tokens {
+                input: 1,
+                output: 1,
+                ..Default::default()
+            },
+            1
+        )
+    );
+    let off: i64 = conn
+        .query_row("SELECT offset FROM sources", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(off as u64, std::fs::metadata(&f).unwrap().len());
+}
+
+fn iso(ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms)
+        .unwrap()
+        .to_rfc3339()
+}
+
+fn codex_events(e: &Env, uuid: &str, events: &[(i64, u64)]) -> PathBuf {
+    let f = e.codex.join(format!(
+        "sessions/2026/11/03/rollout-2026-11-03T10-00-00-{uuid}.jsonl"
+    ));
+    let mut s = json!({"timestamp": TS, "type": "turn_context", "payload": {"model": "gpt-6.1-sol", "cwd": "/w/proj"}}).to_string() + "\n";
+    for (ms, out) in events {
+        s += &(json!({"timestamp": iso(*ms), "type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 0, "cached_input_tokens": 0, "cache_write_input_tokens": 0, "output_tokens": out}}}}).to_string() + "\n");
+    }
+    write(&f, &s);
+    f
+}
+
+fn run_at(e: &Env, now: i64) -> (Connection, Report) {
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    let rep = collect(&mut conn, &rs, &[], now).unwrap();
+    (conn, rep)
+}
+
+#[test]
+fn a_codex_cumulative_from_before_the_horizon_is_the_base_not_new_usage() {
+    let e = env();
+    let day = 86_400_000;
+    codex_events(
+        &e,
+        "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0002",
+        &[(NOW - (HORIZON_DAYS + 5) * day, 1000), (NOW - day, 1100)],
+    );
+    let (conn, _) = run_at(&e, NOW);
+    assert_eq!(totals(&conn).0.output, 100);
+}
+
+#[test]
+fn a_codex_session_resumed_after_its_base_was_pruned_counts_only_the_increase() {
+    let e = env();
+    let day = 86_400_000;
+    let t0 = NOW - 45 * day;
+    let f = codex_events(&e, "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0003", &[(t0, 1000)]);
+    let (conn, _) = run_at(&e, t0 + day);
+    assert_eq!(totals(&conn).0.output, 1000);
+    drop(conn);
+    // 44 days later, nothing new: the session's base is pruned
+    let (conn, _) = run_at(&e, NOW);
+    let n: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM codex_sessions WHERE seen_ms > 0",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 0, "base pruned");
+    drop(conn);
+    // the session goes on: only the increase is new usage
+    append(&f, &(json!({"timestamp": iso(NOW - 3_600_000), "type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": 0, "cached_input_tokens": 0, "cache_write_input_tokens": 0, "output_tokens": 1100}}}}).to_string() + "\n"));
+    let (conn, _) = run_at(&e, NOW);
+    assert_eq!(totals(&conn).0.output, 1100, "1000 earlier + 100 now");
+}
+
+#[test]
+fn counts_off_the_bound_are_skipped_and_an_overflowing_bucket_rolls_the_file_back() {
+    let e = env();
+    let big = i64::MAX as u64;
+    let f = e.cfg.join("projects/p/s.jsonl");
+    write(
+        &f,
+        &(claude("req_m1", big, big, json!({}))
+            + &claude("req_m2", big, big, json!({}))
+            + &claude("req_ok", MAX_COUNT, 1, json!({}))),
+    );
+    let (conn, rep) = run_at(&e, NOW);
+    assert_eq!(rep.skipped, 0);
+    assert_eq!(
+        totals(&conn),
+        (
+            Tokens {
+                input: MAX_COUNT,
+                output: 1,
+                ..Default::default()
+            },
+            1
+        )
+    );
+    // the report still builds
+    let rows = rows_since(&conn, "2000-01-01").unwrap();
+    crate::usage::summary::validate(&crate::usage::summary::build(
+        &rows,
+        &[],
+        "host-1a2b3c4d",
+        NOW,
+    ))
+    .unwrap();
+    // a bucket one add away from i64::MAX: the add is refused, the file's whole transaction rolls back
+    conn.execute("UPDATE buckets SET input = ?1", [i64::MAX - 5])
+        .unwrap();
+    drop(conn);
+    append(&f, &claude("req_more", 10, 1, json!({})));
+    let (conn, rep) = run_at(&e, NOW);
+    assert_eq!(rep.skipped, 1);
+    let (input, req): (i64, i64) = conn
+        .query_row("SELECT input, requests FROM buckets", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(
+        (input, req),
+        (i64::MAX - 5, 1),
+        "nothing of the file counted"
+    );
+    let n: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM requests WHERE request_id LIKE 'req_more%'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 0);
+    // and the sums over it saturate instead of wrapping
+    let rows = rows_since(&conn, "2000-01-01").unwrap();
+    let v = crate::usage::summary::build(
+        &[rows[0].clone(), rows[0].clone(), rows[0].clone()],
+        &[],
+        "host-1a2b3c4d",
+        NOW,
+    );
+    assert_eq!(v["days"][0]["input"], json!(u64::MAX));
 }

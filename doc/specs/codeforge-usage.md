@@ -44,7 +44,17 @@ stderr 提一次。
 - 增量：只讀換行結尾的行，每個檔一個 transaction；head = 前 min(4096, offset) bytes 的 sha256，
   改寫、縮短、換 inode 就從頭讀（去重保證不重算）。
 - 計數：Claude 同一 request id 逐欄取最大值；Codex 只加 session 累計值超過已計的部分。
-- 時間：35 天以前的紀錄不計，35 天沒寫過的檔不讀；去重資料保留 40 天。
+- 時間：35 天以前的紀錄不計，35 天沒寫過的檔不讀；去重資料保留 40 天。Codex 在 35 天以前的
+  累計值不計入，但仍當作 session 的基準；基準被修剪（session 靜默超過 40 天）後檔案又長了，就
+  從頭重讀那個檔，舊累計值再次成為基準。
+- 上限：單行最多 16 MiB（`MAX_LINE`，實際帶用量的行最長約 8 MB），更長的整行讀過丟棄、不計；
+  單一計數最多 2^40（`MAX_COUNT`），超過的那筆略過；bucket 用 checked add，溢位就整個檔案
+  rollback、這次略過。報表端加總一律 saturating。
+- 儲存區：目錄、`usage.db`、`-wal`、`-shm` 都以 `O_NOFOLLOW | O_NONBLOCK` 開 handle 檢查，
+  是 symlink 或不是目錄／一般檔案就拒絕，權限只在 handle 上收緊（不會順著 link 改）；SQLite
+  以 `SQLITE_OPEN_NOFOLLOW` 開檔。
+- 錯誤訊息只寫檔名（`usage.db`、`summary.json`）、欄位位置與錯誤類別，不帶本機路徑，不回顯
+  意外的欄位名稱，也不轉發 fleet 的 stderr。
 
 ## 成本估算
 
@@ -75,6 +85,11 @@ codeforge usage collect --quiet     # hook 用
 codeforge usage push                # 印出 blob sha
 /forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```
+
+`summary.json` 的契約以 `src/usage/summary.rs` 的 `contract()` 為準；forge-stats 的
+`USAGE_CONTRACT`（`plugins/forge-stats/hooks/model.ts`，`contract:begin`／`contract:end` 之間）
+必須和它相同，cargo test 會讀出來比對，兩邊不會各自漂移。帳號列依寬度降級：先省略倒數，再省略
+7d，欄位整個省略、不截半。
 
 用量分頁讀檔有上限：必須是一般檔案、不是 symlink、不超過 256 KiB（`USAGE_MAX_BYTES`），內容不符
 `codeforge.usage-summary/1` 契約（別名、model id、數字）就整份不顯示，只說讀不懂。
