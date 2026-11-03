@@ -1,9 +1,10 @@
 name: Release
 
+# PM G38: releases are built and verified locally (scripts/release-local.sh), which creates the
+# draft. A pushed tag no longer starts this workflow, so it cannot race the local draft. Run by
+# hand it only builds the targets as artifacts (the publish job needs a tag push). The whole
+# .github/workflows dir is retired after the first local release is published.
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       dry_run:
