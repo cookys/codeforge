@@ -2,7 +2,7 @@
 
 > 適用於所有我們出貨的終端介面，包括 codeforge statusline、forge-stats（band／pane）、autopilot live mod（band、分頁列、pane、待決卡）和艦隊畫面（G23 分頁、G33 band 欄）。
 > 目的是讓同一個符號、同一個顏色、同一個字在每個畫面上都是同一個意思；畫面再窄、再矮，最重要的那件事也還看得到。
-> 這份文件是規範的單一來源。autopilot 的 `docs/plans/2026-10-13-live-pane-design-system.md`（以下簡稱 DS）負責 live mod 內部的實作細節。兩者衝突時以本文為準，並回頭修正 DS。
+> 這份文件是規範的單一來源（`doc/specs/codeforge-mod-ui.md` §5 已改成指向本文）。autopilot 的 `docs/plans/2026-10-13-live-pane-design-system.md`（以下簡稱 DS）負責 live mod 內部的實作細節。兩者衝突時以本文為準，並回頭修正 DS。
 > 狀態：v1（PM G34，2026-11-03）。本文所說的「現況」都附出處，數字以程式碼為準。
 
 ## 1. 空間合約：誰擁有哪幾列、哪幾欄
@@ -17,7 +17,7 @@
 | AbovePrompt band | autopilot live mod，在上；forge-stats，在下 | autopilot 的 band 是 1 列（`BAND_ROWS = 1`），分頁打開時往下長；forge-stats 拿到的是 autopilot 傳下來的 `maxRows`／`bodyColumns` | live mod 是全域 plugin；forge-stats 在 G33 之後也改成全域 |
 | 提示列 | Claude Code | — | — |
 | statusline | codeforge statusline（Rust，一次性的行程） | 完整版 5 列；精簡或無寵物時 2 列 | 全域 settings.json，每個 session 都有 |
-| 側邊 pane | live mod（`autopilot-live`）或 forge-stats（`/forge-stats layout pane`） | 整個畫面高 | 寬度 ≥144 且全螢幕時，live mod 才會自動開 pane |
+| pane | live mod（`autopilot-live`）或 forge-stats（`/forge-stats layout pane`） | Claude Code 決定：寬終端時停靠在側邊（docked），否則疊在對話區上（inline）；兩種都經 `e.props.bodyColumns`／`scroll.bodyRows` 拿到尺寸 | live 在寬度 ≥144 且全螢幕時自動開；其餘手動 |
 
 規則：
 
@@ -41,7 +41,7 @@
 | `78–85` | Ferris｜寵物 | Ferris｜寵物｜記憶與大腦 |
 | `≥86` | Ferris｜寵物｜記憶與大腦 | 同左 |
 
-G33 的艦隊欄排在記憶與大腦後面，放得下才畫，寬度由 G33 定，並回填到這張表。
+艦隊資訊依 §2.1 比寵物和 Ferris 重要，所以不跟著欄位排：forge-stats 在迷你版和完整版時，第一列先畫一行艦隊摘要（§2.2 格式，不含寵物；有 atom 才畫），各欄從第二列起排，可用列數減 1。
 
 **必查寬度的結果**（≥12 列）：
 
@@ -53,9 +53,13 @@ G33 的艦隊欄排在記憶與大腦後面，放得下才畫，寬度由 G33 �
 | 100 | `80–119` 級 | 同上（G33 艦隊欄放得下才加） | 預設寬度；`≥90` 畫右欄寵物圖 | 可畫；不會自動打開 |
 | 144+ | `120–159` 級；`≥160` 全部 | 同上 | 同上 | 全螢幕時 live pane 自動打開（`PANE_MIN_COLUMNS = 144`） |
 
-autopilot band 寬度不夠時的捨棄順序（live `model.ts` band 寬度表）：配額 → 截短 stage → 單元進度條 → `⊘` 數 → `●` 數 → 縮短判定字。判定符號、`ⓘ`、`⚑N` 永遠不捨。
+autopilot band 寬度不夠時的捨棄順序，依 §2.1：配額 → 截短 stage → 單元進度條 → `●` 數 → `⊘` 數 → 縮短判定字。判定符號、`ⓘ`、`⚑N` 永遠不捨。現況偏差：live `model.ts` band 寬度表先拿 `⊘` 再拿 `●`，跟優先序相反，列入 §12。
 
-**pane 類畫面**（live 各分頁含艦隊、待決卡、forge-stats pane）：預設寬 76，最窄 20（`paneWidth`）。任何寬度都照 §6「一個項目一列」排；寬度 <20 時不畫。
+**pane 類畫面**（live 各分頁含艦隊、待決卡、forge-stats pane）：寬度取 `bodyColumns`（live 預設 76，最窄 20，`paneWidth`），任何寬度都照 §6「一個項目一列」排。pane **沒有高度分級**：內容比 `scroll.bodyRows` 高時捲動（live 用引擎的捲動，待決分頁自己捲），pane 被縮小也一樣。現況偏差：forge-stats pane 至少畫 30 欄（`register.tsx` 的 `Math.max(30, bodyColumns - 2)`），pane 比 30 欄窄時會超寬，列入 §12。
+
+**statusline**：寬度是 `CODEFORGE_WIDTH`（預設 100），不是終端寬，也沒有高度輸入；列數固定（完整版 5 列、精簡版 2 列）。每一列在寬度內依自己的降級層級排（`statusline.rs`，例如第 3 列的 Level 1–6，依序拿掉中央燈號、版本等），`<90` 拿掉右欄寵物圖（`ART_THRESHOLD`）。設成 24／56／86 時走同一套降級；最後一層以字元數截（`.chars().take`），是 §6.3 的偏差，列入 §12。
+
+
 
 ### 1.3 高度分級（band）
 
@@ -66,6 +70,8 @@ autopilot band 寬度不夠時的捨棄順序（live `model.ts` band 寬度表�
 | 2–5 | 一行摘要 | 分頁列，加上分頁打開時的內容 |
 | 6–11 | 迷你 Ferris（16×6）加各欄 | 同上 |
 | ≥12 | 完整版 | forge 分頁內容最多 12 列（`FORGE_FULL_ROWS`） |
+
+forge 分頁打開但下方不到 12 列時，autopilot 只畫自己的速度圖，不呼叫 forge-stats（它拿到 0 列）；其他分頁打開時也一樣不呼叫。
 
 現況（`register.ts` band hook）：autopilot 只在 **forge 分頁打開**且下方有 ≥12 列、≥26 欄時才呼叫 forge-stats；分頁沒開時只回傳自己那一列，所以平常看不到 forge-stats。PM 已裁定改成上面的「第 2 列給下層」（B），由 G33a 實作，autopilot 審查。forge 分頁打開時維持現況：下方 ≥12 列才呼叫，forge-stats 拿到的是完整版。
 
@@ -109,7 +115,7 @@ forge-stats 拿到 1–5 列時畫一行摘要（有 autopilot 時就是分頁�
 
 | 狀態 id | 符號 | ASCII 備援 | 顏色（主題鍵） | zh-TW | en | 意思 |
 |---|---|---|---|---|---|---|
-| need_you | ▲ | `!!` | warning | 要你處理 | needs you | 等你決定或核准 |
+| need_you | ▲ | `^` | warning | 要你處理 | needs you | 等你決定或核准 |
 | failed | ✗ | `x` | error | 失敗 | failed | 結束了，而且失敗 |
 | stalled | ⊘ | `~` | error | 疑似卡住 | stalled | 安靜太久，可能卡住 |
 | findings | △ | `!` | 預設文字色 | 待修 | to fix | 審查有發現，作者在修 |
@@ -121,7 +127,7 @@ forge-stats 拿到 1–5 列時畫一行摘要（有 autopilot 時就是分頁�
 | skipped | ∅ | `/` | inactive | 不需要 | not needed | 不需要做，略過 |
 | unknown | ? | `?` | inactive | 未知 | unknown | 讀不到狀態 |
 
-ASCII 備援只在終端畫不出單格符號時使用；Unicode 的替代符號 `◍`（⊘ 的替代）和 `!`（△ 的替代）是 live `GLYPHS.fallback`，跟上表的 ASCII 欄是兩件事。
+ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`）。只在終端畫不出單格符號時使用；Unicode 的替代符號 `◍`（⊘ 的替代）和 `!`（△ 的替代）是 live `GLYPHS.fallback`，跟上表的 ASCII 欄是兩件事。
 
 嚴重度由高到低：`need_you > failed > stalled > findings > running > waiting > stopped > pending > done > skipped > unknown`。合併多個狀態時取最嚴重的（`worst()`）。`unknown` 排最後，所以缺一個對應不會蓋掉真正的問題。
 
@@ -131,20 +137,20 @@ ASCII 備援只在終端畫不出單格符號時使用；Unicode 的替代符號
 
 ### 3.3 規則
 
-1. **一個符號只有一個意思**：狀態、結構、圖表三組不能共用符號（I20；捲軸是唯一登記過的例外）。新畫面不能另外發明符號；需要新意思時，先改這張表。
+1. **一個符號只有一個意思**：狀態、結構、圖表三組不能共用符號（I20；捲軸是登記過的例外）。圖例分頁的名稱 `?` 跟「未知」同一個字，是第二個登記的例外：分頁名是位置，不是狀態，旁邊永遠有其他分頁名。新畫面不能另外發明符號；需要新意思時，先改這張表。
 2. **符號一定只佔 1 格**。驗證狀態（live `GLYPHS.verified`）：2026-10-13 在 owner 的 ssh + tmux 驗過的有 `⊘ △ ○ ◌ ∅ ◦ › ━ ◐ ◍`；待 owner 驗證（`pending-owner`）的有 `↓ ★ ⧗`，以及 `↑`（新增，尚未登記）。其他符號是 live 改版前就在用、沒有個別紀錄的舊符號，比照 `pending-owner`，下次 owner 跑 glyph-check 時一起驗。新符號加進 `NEW_GLYPHS` 時要附 `verified`，填 `YYYY-MM-DD <終端>`，或在 owner 驗證前填 `pending-owner`。驗證方式：owner 在真實終端（ssh + tmux）跑 `node mods/live/glyph-check.js`。East Asian Ambiguous 的符號在 CJK 終端可能變成 2 格，一律要驗。
 3. **禁用 emoji**：`\p{Extended_Pictographic}`、U+FE0F、U+20E3 都不能出現（`EMOJI_BANNED`）。唯一例外是 `detail` 列。
 4. **顏色只能用主題鍵**：`warning`、`error`、`success`、`suggestion`、`inactive`、`subtle`、`claude`、`merged`，全部透過 `PALETTE` 角色取用。不用原始 RGB，不用背景色，不用 inverse。唯一例外是寵物像素圖（Raster 半格，xterm-256 色）。
-5. **黃色每個畫面只出現一次**：只用在要人處理的那件事。粗體只用白名單（`BOLD_USES`）。
+5. **黃色每一列最多一個**：只用在要人處理的那件事。band 有兩列時，autopilot 那列和 forge-stats 那列各自最多一個。粗體只用白名單（`BOLD_USES`）。
 
 ### 3.4 現況偏差（要遷移，不在 G34 改）
 
 | 位置 | 現況 | 衝突 | 遷移方向 |
 |---|---|---|---|
-| forge-stats 記憶／大腦燈號 | `●` 綠／灰 | `●` 在共用表裡是「執行中」 | 正常改成 `✓`（success）；沒資料改成 `—`；字樣保留 |
-| statusline 大腦燈號 | `● ◐ ○ ◌`，原始 RGB | `◐` 是「你在這裡」，`○` 是「未開始」，`◌` 是「已停」 | 正常 `✓`、降級 `△`、離線 `✗`、還沒檢查 `○`；顏色改用 ANSI 基本色 |
-| statusline 量表 | `▮▯` | 共用表的量表是 `▰▱` | 改成 `▰▱` |
-| statusline 上游 | `⇡⇣` | 共用表的落後是 `↓` | 改成 `↑N ↓N`；`↑` 先登記進 live `GLYPHS.structure`（`ahead`），並列入 glyph-check |
+| forge-stats 記憶／大腦燈號 | `●` 綠／灰（`model.ts` `GLYPH.latest`） | `●` 在共用表裡是「執行中」 | 健康狀態不是工作狀態，不借用狀態符號：只畫字樣（例如 `記憶 正常`、`大腦 離線`），用主題色；沒資料寫 `—` |
+| statusline 大腦燈號 | `● ◐ ○ ◌`，原始 RGB（`statusline.rs` brain lights，`BRAIN_GREEN` 等） | `◐` 是「你在這裡」，`○` 是「未開始」，`◌` 是「已停」 | 同上：只畫字樣（正常、降級、離線、未檢查），顏色依 §5 的 ANSI 對照 |
+| statusline 量表 | `▮▯`（`statusline.rs` 用量列） | 共用表的量表是 `▰▱` | 改成 `▰▱` |
+| statusline 上游 | `⇡⇣`（`statusline.rs` `git_ahead_behind`） | 共用表的落後是 `↓` | 改成 `↑N ↓N`；`↑` 先登記進 live `GLYPHS.structure`（`ahead`），並列入 glyph-check |
 
 ## 4. 正體中文文案
 
@@ -152,12 +158,21 @@ ASCII 備援只在終端畫不出單格符號時使用；Unicode 的替代符號
 2. **台灣用語**：設定、回報、檔案、預設、專案、資料、執行中、已進行。不用簡體或中國用語（缺省、默認、文件夾、信息）。
 3. **句子要有主詞或受詞**，不寫只剩動詞的命令句。
 4. **不拼接翻譯片段**：語序寫在同一個字串裡（`{age} 前`），佔位符兩個語系要一致（`gen-locales --check`）。
-5. **長度**：鍵欄標籤 ≤12 格（中文 ≤6 字）；分頁名 2 個字；狀態字見 §3.1，不另外發明。
-6. **時間與數字**：`3 分鐘`、`2h05m 前`、百分比取整數、金額 `$175.33`、sha 取 8 位，全部經格式化函式處理（I8）。
+5. **長度**：鍵欄標籤 ≤12 格（中文 ≤6 字）；分頁名是 2 個中文字，或登記過的符號（`?` 圖例、`ϟ` 速度）；狀態字見 §3.1，不另外發明。
+6. **時間與數字**：經過時間和年齡一律用精簡格式，最多兩個單位（`8h05m`、`3m`，live `fmtd`）；年齡加「前」（`2h05m 前`），寫在同一個翻譯字串裡。百分比取整數、金額 `$175.33`、sha 取 8 位。全部經格式化函式處理（I8）。
 
 ## 5. 淺色／深色終端
 
-1. 只用主題鍵，終端換深淺主題時會自動調整（§3.3-4）。statusline 不是 mod，拿不到主題鍵，所以改用 ANSI 16 色的基本色，不寫死 RGB（§3.4 遷移）。
+1. 只用主題鍵，終端換深淺主題時會自動調整（§3.3-4）。statusline 不是 mod，拿不到主題鍵，所以改用 ANSI 基本色（終端依自己的深淺主題調色），不寫死 RGB（§3.4 遷移）。對照：
+
+   | 主題鍵 | statusline ANSI |
+   |---|---|
+   | warning | 33 黃 |
+   | error | 31 紅 |
+   | success | 32 綠 |
+   | suggestion | 34 藍 |
+   | inactive、subtle | 預設前景色加 2（dim）；不用 90 亮黑，它在淺色底上幾乎看不見 |
+   | claude、merged | 35 洋紅 |
 2. `dim` 是字重，不是顏色。在淺色底上，`dim` 加 `inactive` 會太淡，所以重要資訊不能只靠 dim 表示。
 3. 截圖審查時（§9），深色和淺色各附一張。至少要證明 `inactive`、`subtle`、`warning` 在淺色底上讀得出來。
 
@@ -183,7 +198,7 @@ ASCII 備援只在終端畫不出單格符號時使用；Unicode 的替代符號
 2. **有人看才抓**：資料只在有讀者時才抓。例如艦隊資料只在艦隊分頁正在顯示，或 forge-stats band 的心跳是新的時候才抓（G33）。
 3. **輸出要有上限**：外部輸出依 UTF-8 位元組設上限（艦隊 `FLEET_MAX_BYTES = 2_000_000`；被引擎截斷時直接拒收）；接受的列數也要設上限（艦隊 `FLEET_MAX_ROWS = 300`），超過的部分只計數。新的資料來源要在設計時寫明這兩個數字。
 4. **頻率**（現況）：live mod 每 5 秒一個 tick（`TICK_MS`）；艦隊 TTL 30 秒（`FLEET_TTL_MS`，`fleet.ts`）；forge-stats 寵物 15 秒、Ferris 動畫 0.5 秒、心跳 2 秒（`register.tsx` 的 `$.clock.every`）。引擎上限（mod-ui spec，CC 2.1.314）：`invalidate` 每秒最多 10 次（顯示中的 pane 是 30 次），一個 hook 的時間預算是 10 秒。
-5. **statusline**：它是一次性的行程，`refreshInterval` 約 2 秒就跑一次，每次都要很快。網路查詢只讀快取，不在熱路徑上等待（已經是這樣）。現況偏差：每次執行都會跑 `git branch`、`git rev-list`、`claude --version`，以後要改成讀快取，以 cwd 加 `.git/HEAD` 的 mtime 當 key。
+5. **statusline**：它是一次性的行程，`refreshInterval` 約 2 秒就跑一次，每次都要很快。網路查詢只讀快取，不在熱路徑上等待（已經是這樣：README「hot path … only reads the cache」，`mnemos::health::maybe_spawn_probe` 在背景探測）。現況偏差：每次執行都會跑 `git branch`、`git rev-list`、`claude --version`，以後要改成讀快取：key 是 cwd 加上 HEAD 解析出的 sha 和上游 ref 的 sha（不能只看 `.git/HEAD` 的 mtime，commit、fetch、push 都不會動它），另加約 30 秒的 TTL。
 
 ## 9. 審查截圖
 
@@ -196,23 +211,25 @@ ASCII 備援只在終端畫不出單格符號時使用；Unicode 的替代符號
 
 ```sh
 tmux new-session -d -s cap -x 100 -y 40
-tmux send-keys -t cap "claude --plugin-dir <worktree> --strict-mcp-config --mcp-config '{\"mcpServers\":{}}'" Enter
+tmux send-keys -t cap "claude --plugin-dir <worktree> [--plugin-dir <第二個 worktree>] --strict-mcp-config --mcp-config '{\"mcpServers\":{}}'" Enter
 # 等畫面穩定，操作到要拍的狀態（必要時手動打開 pane）
 tmux capture-pane -p -e -t cap > cap.ansi
 tmux capture-pane -p    -t cap > cap.txt
-python3 scripts/ansi2html.py cap.ansi > cap.html          # 淺色底加 --light
+python3 <codeforge>/scripts/ansi2html.py cap.ansi > cap.html   # <codeforge> 是 codeforge clone 的路徑
 fleet upload cap.html --name <名稱>.html --mime text/html --summary "<說明>"
 fleet upload cap.txt  --name <名稱>.txt  --mime text/plain --summary "<說明>"
 tmux kill-session -t cap
 ```
 
-回報裡附兩個 blob sha。`--plugin-dir` 指向開發中的 worktree 時，引擎會在該目錄產生 `tsconfig.json`，拍完要刪掉。
+回報裡附兩個 blob sha。`--plugin-dir` 指向開發中的 worktree 時，引擎會在該目錄產生 `tsconfig.json`，拍完要刪掉。兩個 plugin 都在開發中時（例如 G33 同時改 live mod 和 forge-stats），各給一個 `--plugin-dir`；已安裝的那個會被開發中的版本取代。
+
+淺色截圖：先在臨時 session 裡用 `/theme` 把 Claude Code 主題切成淺色，再拍，HTML 加 `--light`。只把深色截圖套上淺色 HTML 底色，證明不了主題鍵在淺色主題下讀得出來。
 
 ## 10. 無障礙：不能只靠顏色
 
 1. 狀態的符號、顏色、字樣三者同時出現（DS §3.2，I21）。只有兩種精簡場合可以省略字樣：同狀態 chip 下的項目，以及 band 的數字徽章。兩者旁邊的符號都已經表達了狀態。
 2. 圖例（`?` 分頁）列出每個符號和它的字樣（I15）。
-3. `NO_COLOR`：環境變數非空時生效。statusline 已經遵守：改成純文字，燈號改成文字，例如 `memory:active`。mod 的規則是：不設任何顏色與 dim，粗體保留；寵物像素圖（Raster）不畫，改畫文字（例如 `Ferris Lv.3`）。live mod 和 forge-stats 目前都還沒做，列為後續工作（§12）。
+3. `NO_COLOR`：環境變數非空時生效。statusline 已經遵守（`statusline.rs` `color_enabled`）：改成純文字，燈號改成文字，例如 `memory:active`。mod 的規則是：不設任何顏色與 dim，粗體保留；寵物像素圖（Raster）不畫，改畫文字（例如 `Ferris Lv.3`）。live mod 和 forge-stats 目前都還沒做，列為後續工作（§12）。
 4. 要人處理的事，除了黃色，還要有粗體或 `▲` 其中之一。
 
 ## 11. 機械化檢查（已有／待補）
@@ -221,7 +238,7 @@ tmux kill-session -t cap
 |---|---|---|
 | 一符號一意思、單格寬、禁 emoji | live `ui-lint` L3、I5、I20；`glyph-check.js` | 已有（live） |
 | 只用主題鍵、粗體白名單 | live L1、L8、L9 | 已有（live） |
-| 行寬 ≤ 欄寬 | live「widths 60/76/90」測試 | 已有（live）；forge-stats 待補 |
+| 行寬 ≤ 欄寬 | live「widths 60/76/90」測試 | 已有（live）；待補：寬度 20（pane 最窄）、24、56（band 必查寬度），以及 forge-stats |
 | 數字經格式化函式 | live I8 | 已有（live） |
 | 文案長度、語系一致 | `gen-locales --check` | 已有（live）；forge-stats `strings.ts` 待補 |
 | 截斷帶 `…`、左截 id | live I8 | 已有（live） |
@@ -240,4 +257,11 @@ tmux kill-session -t cap
 | mod 遵守 `NO_COLOR` | §10 | live、forge-stats | 設 `NO_COLOR=1` 的測試：沒有顏色屬性、沒有 Raster |
 | statusline 不再每次執行都跑 `git`、`claude --version` | §8 | codeforge | 快取命中時沒有子行程（測試以假的 PATH 驗證） |
 | forge-stats 行寬檢查、文案檢查 | §11 | codeforge | 新增測試 |
+| forge-stats 改成全域 plugin（不只 codeforge clone 載入） | §1.1 | G33 | 在非 codeforge repo 的 session 裡看得到 forge-stats |
+| forge-stats 迷你版和完整版第一列畫艦隊摘要 | §1.2 | G33 | 測試：有 atom 時第一列是摘要，各欄少 1 列 |
+| live band 捨棄順序改成先 `●` 後 `⊘` | §1.2 | live（另開單） | band 寬度測試 |
+| forge-stats pane 不再至少畫 30 欄 | §1.2、§7 | codeforge | 寬度 20 的行寬測試 |
+| statusline 截斷改用顯示寬度 | §1.2、§6.3 | codeforge | 中文內容在窄寬度下不超寬的測試 |
+| 舊符號和 `↑` 登記進 live `NEW_GLYPHS`／glyph-check，owner 驗證 | §3.3 | live＋owner | `verified` 欄位齊全 |
+| `codeforge-mod-ui.md` §5 改成指向本文 | 前言 | 本單（G34） | 已改 |
 
