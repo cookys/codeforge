@@ -221,8 +221,12 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 
 **Area**: `src/usage/collect.rs`、`src/usage/store.rs` 測試
 **Premise**: autopilot 四席審查第 2 輪（範圍 `d754c4c..22e90c4`）判為後續、不擋合併的項目：659de784、383eb39a（Codex 基準被修剪後從頭重讀的邊界情況）、6635affb（bucket 溢位的檔案每次 collect 都會重試、每次都被略過）、247999e5（store 測試用到 unix-only API 的部分要加 `#[cfg(unix)]`）、38b0450a（`MAX_LINE`／`MAX_COUNT` 等上限的調整）。
-**Trigger**: 下次動 `codeforge usage` 的收集器，或在非 unix 平台建置測試。
-**Not done**: 只記錄；詳情見 autopilot lane/g36rest 第 2 輪的 finding。
+第 3 輪（SHIP-AS-IS，範圍 `22e90c4..979a0d2`）的 Suggestion：
+- a364a204：`the_open_connection_keeps_its_shm_lock` 的第二輪多半仍走新建路徑（最後一條連線關閉時 SQLite 會 checkpoint 並刪掉 -wal/-shm）；要測到「重開既有 sidecar」，drop 前另開一條連線留住它，或設 PERSIST_WAL。
+- 47336cc9：預檢到 SQLite 開 -wal/-shm 之間有 TOCTOU 窗口（`SQLITE_OPEN_NOFOLLOW` 只保護主 db）。利用它需要同 uid 且能寫 0700 目錄的程序，不是新的權限邊界，列為已知殘餘風險。
+- 8f1b90b2：本機配額快照的 `resets_at`／`written_at_ms` 超出範圍時，整份 summary 驗證失敗（`usage collect` 每次都報錯），而不是只略過那個帳號；可在 build 時略過該帳號列。
+**Trigger**: 下次動 `codeforge usage` 的收集器，或在非 unix 平台建置測試；8f1b90b2 在第一次看到 `usage collect` 因配額快照驗證失敗時。
+**Not done**: 只記錄；詳情見 autopilot lane/g36rest 第 2、3 輪的 finding。
 
 ## B39 — G36 第 1 階段 review 的後續（statusline 配額列）
 
