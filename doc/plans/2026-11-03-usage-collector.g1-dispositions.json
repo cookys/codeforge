@@ -1,0 +1,107 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "codeforge:g36-usage-collector",
+ "generation": 1,
+ "findings": [
+  {
+   "fingerprint": "c81050d79aec887c68531f97374c4e70c8619937b105d4e85e4ac2b4b054690e",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 89d5d9cf: opaque source_id, no path persisted; success criterion 4 extended to paths."
+  },
+  {
+   "fingerprint": "7202cb7bcc6d9c423d898ae111489a92ffb2b2d5a5d03322f896bdd48d04192f",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded \u00a74 field table: cwd listed as inspected, only its last component persisted; length-based check replaced by a seeded-marker test with a negative control."
+  },
+  {
+   "fingerprint": "a8e444ca8fa79ded302716a11d75c9923bd2cefacf5751caca8cf86a7f7b5afc",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as a53b6048 (containment incl. intermediate directory links)."
+  },
+  {
+   "fingerprint": "716493dff43ffb64d3d0d6eb097a9622d9492ca6b4299352f790fb807110fec9",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded \u00a76: exact nested schema enumerated; recursive unknown-key/type rejection; upload of exactly the validated bytes; tests for extra keys in accounts and days."
+  },
+  {
+   "fingerprint": "699fec7e105f11e7e739883a02f24d134820845387c26971baebb24e11c9e73a",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded \u00a72 and criterion 5: wider-mode snapshot rewritten regardless of throttle; dirs tightened; db, -wal/-shm and dirs tightened after open with one stderr note; tests widen modes."
+  },
+  {
+   "fingerprint": "066f5e7ea552700a15c4f8bfb7584ad1b282eb8d16bdb42685b9390cc467071d",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded \u00a74 Incremental reads: only newline-terminated lines consumed, tail kept; buckets, dedup rows and cursor in one transaction; tests for a split record and an interrupted collect."
+  },
+  {
+   "fingerprint": "66270fbfd0483c123db3b2766b7786cf09cec7c6d834eb3789aed13599472cbf",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded \u00a74 Replay and dedup: 35-day aggregation horizon below the 40-day dedup retention; Codex per-session-id highest counted cumulative (copies, replacement, decreases add nothing); tests listed."
+  },
+  {
+   "fingerprint": "96a20efc39f000861bf1b51ce667ce7887417cf5d4944c74f5aea54971438c13",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 48f18c67."
+  },
+  {
+   "fingerprint": "e11b68d65bf808f6cbd0424274d7b89509e84bb8b0d1059bcd6538fc7e9d578e",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded \u00a74 Buckets: speed added to the bucket key so fast and standard tokens stay apart; test with a mixed day."
+  },
+  {
+   "fingerprint": "89d5d9cf76c581500dd865f6a5ed908866d3b7590dd99977731bb3621fe8bf1f",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded \u00a74: per-file state keyed by source_id = sha256(canonical path); path in memory only; privacy test seeds the project slug and parent dirs and asserts absence in db/wal/summary bytes."
+  },
+  {
+   "fingerprint": "12ca42a8ad8c729467979bac518a2fe26cd41f5c38514fabac43382de183334f",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 7202cb7b."
+  },
+  {
+   "fingerprint": "a53b60480f793dc1ffddd895aed22baac602ebfcf26c0045138e2e8287db42e9",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded \u00a74 Containment: symlink_metadata walk, never descend a symlinked dir or take a symlinked file, O_NOFOLLOW|O_NONBLOCK open, regular-file handle, canonical-root prefix check; tests for symlinked dir/file, FIFO, settings.json."
+  },
+  {
+   "fingerprint": "a6d25b07aff83ab44d6e2674cd5b7c288237c53b3f17f64417ff06b1419be55f",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 716493df."
+  },
+  {
+   "fingerprint": "2961704115cd4603d3f973fec186b72acbd9b0c63814e888bff76b738a2a35cb",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded criterion 5: db pre-created with OpenOptions mode 0600 (SQLite unix VFS gives -wal/-shm the db mode), no umask; quota/summary reuse crate::live::write_live_json."
+  },
+  {
+   "fingerprint": "aebcffebdefd04f8df74f94a78295782af882c36a093262d3265174b30177ec5",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 066f5e7e."
+  },
+  {
+   "fingerprint": "c3e2dd334378fee1dad6c2534b0f87f0cb8ecafe67f9c6fb524415291e3fa340",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 66270fbf, plus head = sha256(first 4 KiB) detects a same-inode shrink-and-regrow."
+  },
+  {
+   "fingerprint": "48f18c676c03581be70c2ff85e0914307b6d2d4c2892ae91d945c396ba2cb225",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded \u00a72: live base is already resolved on every statusline run before G36 (write_live_context; TUI guideline \u00a77 deviation); G36 reuses the process-cached result and adds no spawn; record_quota takes the dir as a parameter (pinned by test)."
+  },
+  {
+   "fingerprint": "3ccdb12c7212a465dbdaed895a863bc64ef3ab31ecc52915003685bb62d14176",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded \u00a73: selection order (name sort, first 16, display most constrained first). Guideline colour/width conformance is checked in the phase 1 implementation review, which has the spec."
+  },
+  {
+   "fingerprint": "d7c0a13c43755db1ba600f2a560625f5446d71928cca9ec3b5cf656f0fed30d7",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded \u00a75: explicit cost formula, the multiplier applies to all components only on fast-tier models, non-eligible fast test, source named as file and section of the bundled claude-api reference."
+  },
+  {
+   "fingerprint": "31f983febb57bd16a4a94e6a7f74950b12183a601f6505aa514506a1cd5f282e",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded \u00a76/\u00a77: every codeforge usage / usage collect writes summary.json; the tab shows its age and names the refresh command after 1 h."
+  }
+ ]
+}

@@ -1,0 +1,501 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "g36-usage-collector",
+  "logical_plan_id": "codeforge:g36-usage-collector",
+  "session_id": "g36-pr2-e6514bd9",
+  "session_key": "656c1d596dca8d17159ff44682c4adb151d48726bf0c2709064cd3b74ccd62b9",
+  "generation": 2,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": true,
+  "policy_reason": "generation_cap_requires_depth_0_adjudication",
+  "rubric_sha256": "fdab2bd45c64c4b96d779797bfdab308fe87a5381e9ea08aa6f8be5ea6776270",
+  "manifest_sha256": "f29ee7bcda4ca28dcc6cd03bcfae98fb86a1fdc18c0aa7fffc7294fa65cfb31d",
+  "plan_sha256": "34325f8fb892c3c97da73c1756be724dedc5c37a803ffa8faeb9859a93b7f9ad",
+  "growth_ratio": {
+    "numerator": 8983,
+    "denominator": 9057
+  },
+  "growth_warning": false,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6.1-sol",
+          "operation": "plan-review",
+          "request_digest": "3f1a7ecc94e27e3f49aebaee6e2ab80488de1b91ae43634f01398c5d4fcf14dc"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "cd14f231990210106c319c32eb7dd96b54a8c777be883e41cc9249b7f38ed5eb",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-codex-60pMyQ/stdout",
+          "digest": "cd14f231990210106c319c32eb7dd96b54a8c777be883e41cc9249b7f38ed5eb"
+        },
+        "receipt_digest": "dca2c688c0166a2e780e421edd4e348c59064a061146ce7c9ffe8e00a2fb9bbc"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "fable",
+      "target_id": "fable",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "claude-native",
+          "model": "claude-fable-5-1",
+          "operation": "plan-review",
+          "request_digest": "80c969c5e8601160ca42aeba7d84e79495698662b234f74e7fae8c9b21b959e0"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "4bcd49ee50fff8cadd8b99a11f2a4512a73881ae6bddcf4d60389aaaa4567d5b",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-log-TmtbrA",
+          "digest": "4bcd49ee50fff8cadd8b99a11f2a4512a73881ae6bddcf4d60389aaaa4567d5b"
+        },
+        "receipt_digest": "842a9a21698ec9b42fcc6dc9977195b78ba97fde4962c41203a2ced9a4e8818e"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "family": "openai",
+      "verdict": "STOP"
+    },
+    {
+      "seat_id": "fable",
+      "target_id": "fable",
+      "family": "anthropic",
+      "verdict": "CONDITIONAL"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R6",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "Phase 2 Claude aggregation and persistent deduplication",
+      "claim": "Deduplicating solely by requestId does not define correct accounting for several usage-bearing lines belonging to one response.",
+      "evidence": "The plan says Claude request ids count once, lists requestId as the only inspected response identifier, and specifies no consolidation or update rule. A second usage-bearing line with the same requestId is therefore indistinguishable from a replay and can be discarded even when it contributes additional usage.",
+      "evidence_reference": "R6; Phase 2 source table, Replay and Buckets",
+      "repair": "Define the aggregation identity and merge rules for multiple messages and revisions sharing a requestId before fixing the dedup schema. Add fixtures covering distinct usage-bearing messages, repeated lines and later usage updates, with explicit expected totals.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "965bcf2f62886955baea756d96731a7071b103de3db5258db709558ae2f13135"
+    },
+    {
+      "rubric_id": "R5",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "Phase 2 opening an existing usage.db and creating SQLite sidecars",
+      "claim": "The specified repair order permits sidecars to be created with wider permissions when an existing database has wider permissions.",
+      "evidence": "The plan pre-creates the database using OpenOptions::mode(0o600), opens SQLite, and only then checks and tightens the database and sidecars. Creation mode does not change an existing file's permissions. Under the plan's stated VFS inheritance behavior, an existing 0644 database can consequently produce 0644 sidecars before repair.",
+      "evidence_reference": "Success criterion 5; Phase 2 opening paragraph",
+      "repair": "Verify and tighten the existing database and its containing directory before SQLite opens it or creates sidecars. Repair existing sidecars before use, retain creation-time restrictive modes, and test initialization from a widened database while observing sidecar creation.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "10b22070a7d44af042bbe9051913e5eecbcc9dfcbb226dad00613aff6350bd7d"
+    },
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "Phase 3 summary generation and push validation",
+      "claim": "The key and type allow-list does not prevent transcript-derived string values from carrying paths or email addresses into the upload.",
+      "evidence": "Phase 2 persists message.model, and Phase 3 exports it as days.model while explicitly supporting unknown models. An unknown model string containing a path or email still satisfies the described string type and key checks; setting cost_usd to null does not remove that value.",
+      "evidence_reference": "Phase 2 Claude source table; Phase 3 unknown-model policy, exact summary schema and usage push validation",
+      "repair": "Define value constraints as part of the export schema. Export recognized canonical model identifiers and map unrecognized values to a fixed unknown label or opaque hash. Validate those constraints before upload and add negative controls containing paths and email addresses in otherwise allowed string fields.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "911b114277fbee7c76a16789fe329981012952c19bb2f742f06f72193560352c"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "Phase 2 buckets (account column), Phase 1 snapshot schema, summary.json accounts/days join",
+      "claim": "Transcript account attribution is env-dependent and nondeterministic: the Claude alias is a single per-process value (AUTOPILOT_ACCOUNT if valid, else acct-sha8 of the default config dir), but a collect run scans two Claude roots (CLAUDE_CONFIG_DIR and ~/.claude), so the plan does not say which root receives AUTOPILOT_ACCOUNT, and the same root gets a different alias depending on the environment of whichever process ran collect first (hook inside account B session vs plain shell). Because request ids are counted once globally, the first run permanently owns the attribution. Separately, with G37 one-config-dir-per-account, a collect run from a plain shell only sees ~/.claude, so other accounts' transcripts are never collected, and summary.json accounts (alias from the session env) will not join with days (alias from the collect env).",
+      "evidence": "Phase 1: 'Alias: AUTOPILOT_ACCOUNT if ^[a-z0-9-]{1,24}$, else acct- + sha8(canonical config dir, default ~/.claude)'. Phase 2 Containment: 'Roots: CLAUDE_CONFIG_DIR and ~/.claude'. Buckets: 'Transcript account = its root's alias'. Replay: 'Claude request ids count once'. Phase 4-5: hook runs 'codeforge usage collect --quiet' after ship, i.e. inside the session env. Limits only covers the several-tokens-in-one-dir case, not this one.",
+      "evidence_reference": "Plan sections Phase 1 (Alias), Phase 2 (Containment, Replay, Buckets), Phase 4-5 (install chain), Limits",
+      "repair": "Decide and write down an env-independent root-to-alias mapping before phase 2 starts: (1) collect never derives a transcript alias from AUTOPILOT_ACCOUNT; (2) the statusline, which knows both the alias and its config dir, adds root: sha8(canonical config dir) to the quota snapshot (still no path, consistent with R3); (3) collect maps each root to the alias of the snapshot whose root hash matches, else acct-<sha8>, and stores the mapping so attribution is stable across runs; (4) define the bounded root list that covers G37's per-account dirs (default dir + CLAUDE_CONFIG_DIR + an explicit documented list such as CODEFORGE_USAGE_CLAUDE_DIRS with a cap, agreed with G37); (5) add a test: two collect runs with different AUTOPILOT_ACCOUNT / CLAUDE_CONFIG_DIR values over the same fixture roots produce identical account columns, and summary accounts aliases join days aliases.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "af319ab4c4f5c5f3a00f81bdf2e18a9d726f8d0b5a6e5f180db92784ed4800d9"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 1 quota snapshot <alias>.json (codeforge.quota/1), privacy test fixtures",
+      "claim": "The plan enumerates read and persisted fields for the collector but not for the quota snapshot: the statusline input also carries session_id, transcript_path, cwd, workspace and model, and the plan never states that only rate_limits percentages and resets_at are copied, nor does the privacy marker test cover snapshot bytes.",
+      "evidence": "Success criterion 1 says 'Statusline runs with rate_limits write a quota snapshot per account' with no key list; the only hint of the snapshot shape is the accounts entry in the summary.json example. The Tests section's privacy fixture checks usage.db, -wal and summary.json raw bytes, not the snapshot file.",
+      "evidence_reference": "Plan Success criteria 1, Phase 1 'Snapshot' bullet, Tests 'Privacy'",
+      "repair": "List the exact snapshot keys (schema, alias, root, written_at_ms, five_hour{pct,resets_at}, seven_day{pct,resets_at}|null) and the exact statusline input fields read (rate_limits.* only). Extend the privacy test with a statusline input whose session_id, transcript_path, cwd and workspace carry markers and assert the snapshot bytes contain none; negative control copies cwd into the snapshot and must go red.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "614eca82a8307b3670649d2dfee93d20078b327763772fd5b670b397095576f1"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 2 Claude parser, dedup table",
+      "claim": "Dedup by requestId is stated but the plan does not say which of the several lines of one response supplies the counts (first seen, last, or per-counter max), what happens to assistant lines with no requestId (synthetic or API-error entries) and how cache_creation breakdown absence falls back to cache_creation_input_tokens. If the lines of one response ever differ in output_tokens, first-wins undercounts and a response split across two collects is attributed by whichever half came first.",
+      "evidence": "Replay: 'Claude request ids count once and are kept 40 days'. Inspected fields list message.usage.cache_creation.ephemeral_5m/1h_input_tokens only. Tests: 'requestId dedup; subagent once; a record split across collects once' cover a split line, not a multi-line response split across collects, and no fixture has lines of one request with differing usage.",
+      "evidence_reference": "Plan Phase 2 table (Claude row), Replay bullet, Tests 'Accounting'",
+      "repair": "Verify on real transcripts during the spike whether the usage block is identical on every line of a response; specify the rule (recommended: per requestId take the per-counter max within a transaction and keep the stored max, which is correct under either shape and idempotent across rereads), skip lines without requestId, and define the fallback to cache_creation_input_tokens as cache_write_5m when the breakdown object is absent. Add fixtures for differing-usage lines, a response whose lines straddle a collect boundary, and a line without requestId.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "8a3ab233ae016e755f554c499104f0c7de6823a3813a66f5eb29f5b3df6b907f"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 2 incremental cursor (head hash)",
+      "claim": "head = sha256(first 4 KiB) changes on every append while a file is still shorter than 4 KiB, so every small or young transcript is reread from offset 0 on each collect. Rereads are idempotent thanks to dedup, so this is a cost and not a double count, but it makes the cursor test 'head changes reread without recount' trivially true for small files and hides a real rotation signal.",
+      "evidence": "Incremental bullet: 'Per source: inode, size, offset, head = sha256(first 4 KiB)... new head -> reread from 0'. No special case for size below 4 KiB.",
+      "evidence_reference": "Plan Phase 2 'Incremental' bullet",
+      "repair": "Define head as sha256 of the first min(4096, committed_offset) bytes together with the hashed length, and only compare it when the hashed length is unchanged; add a fixture with a 1 KiB file that grows across three collects and assert the cursor advances without a reread.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "d2192a77f29227b066b9968f1bf97adcdff47022856b84ac5ef4e8edc29c6254"
+    },
+    {
+      "rubric_id": "R5",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 2 usage.db open sequence, -wal/-shm creation",
+      "claim": "The WAL and SHM inherit the database file's mode at creation, which only guarantees 0600 if an already-existing wider db is tightened before SQLite opens it; the plan's order ('pre-created ... then db, sidecars and dir are checked and tightened') leaves a window where a run against a pre-existing 0644 db creates a 0644 -wal at first write and tightens it only afterwards.",
+      "evidence": "Phase 2 Store paragraph: 'pre-created with OpenOptions::mode(0o600) before SQLite opens it (the unix VFS gives -wal/-shm the db's mode); then db, sidecars and dir are checked and tightened.' The create-with-mode step only applies to a new file; tightening is sequenced after open. Tests list 'widened modes repaired' but not the first-write ordering.",
+      "evidence_reference": "Plan Phase 2 'Store' paragraph, Tests 'Modes'",
+      "repair": "Sequence it as: create-or-chmod the db file to 0600 and the dir to 0700, then open the connection, then check existing -wal/-shm. Add a test that starts from a 0644 db with a 0644 stale -wal, runs collect, performs a write so a WAL exists, and stats db, -wal and -shm at 0600; plus one stderr note. Note that write_live_json already satisfies this for snapshots and summary.json (tempfile 0600 + DirBuilder mode 0700).",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "6307b95b6c43ab988790a666fd6180aecd1708546edf3db6aeb263255c6f50c3"
+    },
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 3 push validation, fleet upload invocation, summary.json location",
+      "claim": "The push allow-list checks keys and types but not string contents, so a free-form model string (Codex turn_context.model is user-typed config; a proxy can set any Claude model name) or an unexpected alias could carry arbitrary text off the machine while passing validation. The plan also does not state where summary.json lives or how the bytes are handed to fleet upload, so a local absolute path (home dir, username) could ride along as upload metadata.",
+      "evidence": "Phase 3: 'validate recursively against the schema (unknown key or wrong type anywhere -> refuse), fleet upload --mime application/json of exactly those bytes'. Summary example shows model and alias as plain strings; no charset, length or enum constraint is given. Phase 3 and 4-5 reference summary.json without a path; the pane tab does a 'bounded read of summary.json'.",
+      "evidence_reference": "Plan Phase 3 (schema block, usage push bullet), Phase 4-5 pane tab bullet",
+      "repair": "Extend the allow-list with value constraints: alias matches ^[a-z0-9-]{1,24}$ or acct-/codex-/host- + 8 hex; model matches ^[A-Za-z0-9._-]{1,64}$; day matches YYYY-MM-DD; source in {claude,codex}; speed in {standard,fast}; numbers finite and non-negative; cost_usd number or null. Refuse otherwise (test each). State the summary.json path and pass the bytes to fleet upload via stdin or a fixed basename so no local path is sent; assert in a test with a fake fleet binary that argv and stdin contain no home-dir component.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "b22a51c81ea21f18ffb2d25811427eec72b2a72470ec8c9bfb90bdf50efe074f"
+    },
+    {
+      "rubric_id": "R3",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 1 snapshot reader, Phase 3 summary accounts",
+      "claim": "Alias validation happens at write time only; the reader takes any *.json stem in the quota dir and the summary copies aliases from snapshot contents, so a stray or hand-edited file could inject a non-conforming identifier into the row and into the pushed payload. The write-side guarantee is correct but the read side is the cheap closure of 'an invalid value can never be written'.",
+      "evidence": "Phase 1 Read: 'name-sorted, first 16 *.json ... bad ones skipped' (bad is defined by size and file type, not by name or alias shape). Phase 3 accounts entries carry alias from snapshots. The push validation finding above would catch this at push time but not on the statusline row.",
+      "evidence_reference": "Plan Phase 1 'Read' bullet, Phase 3 summary accounts",
+      "repair": "On read, accept a snapshot only if the file stem equals the alias in its body and matches the alias grammar (user alias regex or acct-/codex- + 8 hex) and the schema string is codeforge.quota/1; skip otherwise. Add a negative test with a file named after an email-shaped string.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "0f09b1aa45aaf9257a7debac92e9399a2e166ba60e4435de23cef9abe4c16f2d"
+    },
+    {
+      "rubric_id": "R8",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 3 price table, codeforge usage totals",
+      "claim": "Per-row cost is null for unknown models, but the plan does not define day, project or grand totals when some rows are null; summing null as 0 silently violates 'null never 0'. Also, cache-read pricing is expressed as a rule plus two exceptions (Opus 5.5 0.20, Fable 5.1 0.25) and fast mode as a model-conditional multiplier, so a future price refresh can revert an exception without a test noticing.",
+      "evidence": "Phase 3: 'Unknown model (incl. all Codex) -> null, shown -'; 'r_cr = 0.1*r_in except Opus 5.5 $0.20, Fable 5.1 $0.25; m = 2 for fast on Opus 5.5/5/4.8'. Tests 'Price: known, unknown -> null, fast eligible / not, cache rates' do not mention totals over mixed rows.",
+      "evidence_reference": "Plan Phase 3 price bullet, Tests 'Price'",
+      "repair": "Define totals as the sum over known rows with an explicit partial marker (e.g. '>= 1.23 (2 models unpriced)') and null when no row is priced; test a mixed day. Store per-model in, out, cache_write_5m, cache_write_1h, cache_read rates and the fast multiplier as data rows (no rule-plus-exception code path) and pin the exception models in the cache-rate test with the source table line cited next to PRICES_AS_OF.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "a479186772cdde2e531a219592a14fa43eb773c1f684d26c71281d8f28cc7e79"
+    },
+    {
+      "rubric_id": "R7",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 1 usage row rendering (both layouts)",
+      "claim": "Staleness, bounded reads, throttling and failure isolation are specified and testable, but the width-degradation rule for the appended account entries is only 'in the room left': it does not say whether an entry that does not fit is omitted whole or truncated, what the drop order is as width shrinks, and how the once-per-row colour rule interacts when the own bars already consume the yellow slot.",
+      "evidence": "Phase 1 Row bullet: 'own bars unchanged, then other accounts in the room left; red >= 95 %, yellow >= 80 % once per row counting the own bars, the rest bold'. Tests: 'row widths and colours' without the degradation cases listed. doc/specs/tui-guideline.md was not supplied, so conformance could not be checked here.",
+      "evidence_reference": "Plan Phase 1 'Row' bullet, Tests 'Phase 1'",
+      "repair": "State: entries are whole or omitted (never truncated mid-token), the most constrained accounts are kept first, and a red entry is never demoted to bold by the once-per-row rule (only yellow is rationed). Add width fixtures at the guideline breakpoints for both layouts and cite the guideline section numbers in the test names.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "bdcf0214d55c62264a1de6c39f0f46c852559404bd7bf4c931526e5fd0780efe"
+    },
+    {
+      "rubric_id": "R9",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 2 store location, directory tightening, test isolation",
+      "claim": "usage.db and summary.json are placed directly in ~/.codeforge, which is the shared brain parent (brain_dir = ~/.codeforge/brain) rather than the data dir used by the existing state db (CODEFORGE_DATA_DIR, default ~/.local/share/codeforge). The 'dirs tightened to 0700' rule would therefore chmod a shared directory, and the plan names no env override, so collector tests either touch the real home or need an ad-hoc hook.",
+      "evidence": "Phase 2 Store: '~/.codeforge/usage.db ... then db, sidecars and dir are checked and tightened'. Context file src/db/mod.rs: brain_dir = home/.codeforge/brain; db_path = CODEFORGE_DATA_DIR or data_local_dir/codeforge/state.db. No override for the usage store appears in the plan.",
+      "evidence_reference": "Plan Phase 2 'Store' paragraph; src/db/mod.rs Context::load (brain_dir, data_dir)",
+      "repair": "Put all G36 files under a dedicated directory (e.g. <data_dir>/usage/ or ~/.codeforge/usage/) so the 0700 tightening applies only to a G36-owned dir, and resolve its root through the same CODEFORGE_DATA_DIR override as src/db/mod.rs so tests run in a tempdir. Record the chosen path in doc/specs/codeforge-usage.md and in the forge-stats tab's read path.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "cc6ffa0a0e4dc75a262af24a267eaff64a68321698a14e13ed0c6351ad2c9ecc"
+    }
+  ],
+  "backlog_candidates": [
+    {
+      "fingerprint": "614eca82a8307b3670649d2dfee93d20078b327763772fd5b670b397095576f1",
+      "rubric_id": "R1",
+      "affected_surface": "Phase 1 quota snapshot <alias>.json (codeforge.quota/1), privacy test fixtures",
+      "claim": "The plan enumerates read and persisted fields for the collector but not for the quota snapshot: the statusline input also carries session_id, transcript_path, cwd, workspace and model, and the plan never states that only rate_limits percentages and resets_at are copied, nor does the privacy marker test cover snapshot bytes.",
+      "evidence_reference": "Plan Success criteria 1, Phase 1 'Snapshot' bullet, Tests 'Privacy'",
+      "disposition": null
+    },
+    {
+      "fingerprint": "8a3ab233ae016e755f554c499104f0c7de6823a3813a66f5eb29f5b3df6b907f",
+      "rubric_id": "R6",
+      "affected_surface": "Phase 2 Claude parser, dedup table",
+      "claim": "Dedup by requestId is stated but the plan does not say which of the several lines of one response supplies the counts (first seen, last, or per-counter max), what happens to assistant lines with no requestId (synthetic or API-error entries) and how cache_creation breakdown absence falls back to cache_creation_input_tokens. If the lines of one response ever differ in output_tokens, first-wins undercounts and a response split across two collects is attributed by whichever half came first.",
+      "evidence_reference": "Plan Phase 2 table (Claude row), Replay bullet, Tests 'Accounting'",
+      "disposition": null
+    },
+    {
+      "fingerprint": "d2192a77f29227b066b9968f1bf97adcdff47022856b84ac5ef4e8edc29c6254",
+      "rubric_id": "R6",
+      "affected_surface": "Phase 2 incremental cursor (head hash)",
+      "claim": "head = sha256(first 4 KiB) changes on every append while a file is still shorter than 4 KiB, so every small or young transcript is reread from offset 0 on each collect. Rereads are idempotent thanks to dedup, so this is a cost and not a double count, but it makes the cursor test 'head changes reread without recount' trivially true for small files and hides a real rotation signal.",
+      "evidence_reference": "Plan Phase 2 'Incremental' bullet",
+      "disposition": null
+    },
+    {
+      "fingerprint": "6307b95b6c43ab988790a666fd6180aecd1708546edf3db6aeb263255c6f50c3",
+      "rubric_id": "R5",
+      "affected_surface": "Phase 2 usage.db open sequence, -wal/-shm creation",
+      "claim": "The WAL and SHM inherit the database file's mode at creation, which only guarantees 0600 if an already-existing wider db is tightened before SQLite opens it; the plan's order ('pre-created ... then db, sidecars and dir are checked and tightened') leaves a window where a run against a pre-existing 0644 db creates a 0644 -wal at first write and tightens it only afterwards.",
+      "evidence_reference": "Plan Phase 2 'Store' paragraph, Tests 'Modes'",
+      "disposition": null
+    },
+    {
+      "fingerprint": "b22a51c81ea21f18ffb2d25811427eec72b2a72470ec8c9bfb90bdf50efe074f",
+      "rubric_id": "R4",
+      "affected_surface": "Phase 3 push validation, fleet upload invocation, summary.json location",
+      "claim": "The push allow-list checks keys and types but not string contents, so a free-form model string (Codex turn_context.model is user-typed config; a proxy can set any Claude model name) or an unexpected alias could carry arbitrary text off the machine while passing validation. The plan also does not state where summary.json lives or how the bytes are handed to fleet upload, so a local absolute path (home dir, username) could ride along as upload metadata.",
+      "evidence_reference": "Plan Phase 3 (schema block, usage push bullet), Phase 4-5 pane tab bullet",
+      "disposition": null
+    },
+    {
+      "fingerprint": "0f09b1aa45aaf9257a7debac92e9399a2e166ba60e4435de23cef9abe4c16f2d",
+      "rubric_id": "R3",
+      "affected_surface": "Phase 1 snapshot reader, Phase 3 summary accounts",
+      "claim": "Alias validation happens at write time only; the reader takes any *.json stem in the quota dir and the summary copies aliases from snapshot contents, so a stray or hand-edited file could inject a non-conforming identifier into the row and into the pushed payload. The write-side guarantee is correct but the read side is the cheap closure of 'an invalid value can never be written'.",
+      "evidence_reference": "Plan Phase 1 'Read' bullet, Phase 3 summary accounts",
+      "disposition": null
+    },
+    {
+      "fingerprint": "a479186772cdde2e531a219592a14fa43eb773c1f684d26c71281d8f28cc7e79",
+      "rubric_id": "R8",
+      "affected_surface": "Phase 3 price table, codeforge usage totals",
+      "claim": "Per-row cost is null for unknown models, but the plan does not define day, project or grand totals when some rows are null; summing null as 0 silently violates 'null never 0'. Also, cache-read pricing is expressed as a rule plus two exceptions (Opus 5.5 0.20, Fable 5.1 0.25) and fast mode as a model-conditional multiplier, so a future price refresh can revert an exception without a test noticing.",
+      "evidence_reference": "Plan Phase 3 price bullet, Tests 'Price'",
+      "disposition": null
+    },
+    {
+      "fingerprint": "bdcf0214d55c62264a1de6c39f0f46c852559404bd7bf4c931526e5fd0780efe",
+      "rubric_id": "R7",
+      "affected_surface": "Phase 1 usage row rendering (both layouts)",
+      "claim": "Staleness, bounded reads, throttling and failure isolation are specified and testable, but the width-degradation rule for the appended account entries is only 'in the room left': it does not say whether an entry that does not fit is omitted whole or truncated, what the drop order is as width shrinks, and how the once-per-row colour rule interacts when the own bars already consume the yellow slot.",
+      "evidence_reference": "Plan Phase 1 'Row' bullet, Tests 'Phase 1'",
+      "disposition": null
+    },
+    {
+      "fingerprint": "cc6ffa0a0e4dc75a262af24a267eaff64a68321698a14e13ed0c6351ad2c9ecc",
+      "rubric_id": "R9",
+      "affected_surface": "Phase 2 store location, directory tightening, test isolation",
+      "claim": "usage.db and summary.json are placed directly in ~/.codeforge, which is the shared brain parent (brain_dir = ~/.codeforge/brain) rather than the data dir used by the existing state db (CODEFORGE_DATA_DIR, default ~/.local/share/codeforge). The 'dirs tightened to 0700' rule would therefore chmod a shared directory, and the plan names no env override, so collector tests either touch the real home or need an ad-hoc hook.",
+      "evidence_reference": "Plan Phase 2 'Store' paragraph; src/db/mod.rs Context::load (brain_dir, data_dir)",
+      "disposition": null
+    }
+  ],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": null,
+  "reviewed_at": "2026-11-03T03:02:43.012Z"
+}
