@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`<data_dir>/usage/usage.db`, 0600), an API-equivalent cost estimate, `summary.json` with an exact,
   value-checked schema, and `codeforge usage push` (`fleet upload`). `install --hooks` adds
   `usage collect --quiet` to the SessionEnd chain. The forge-stats pane gains a 用量 / Usage tab
-  (`/forge-stats usage`) that reads `summary.json` bounded and never spawns codeforge. Spec:
+  (`/forge-stats usage`) that reads `summary.json` bounded and never spawns codeforge. Without any hook,
+  the statusline starts a background `usage collect --quiet` at most every 15 minutes
+  (`CODEFORGE_USAGE_AUTOCOLLECT=0` turns it off); a collect already running makes it skip. Spec:
   `doc/specs/codeforge-usage.md`.
 - **Fleet summary in forge-stats** (PM G33) — the band's one-line summary leads with the fleet from autopilot's
   `autopilot.fleet` state: `fleet ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.1`, widest form that fits, dropping from the end

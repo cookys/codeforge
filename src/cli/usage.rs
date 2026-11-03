@@ -1,7 +1,7 @@
 //! `codeforge usage` (G36 plan, phase 3): collect, write `summary.json`, print a table.
 
 use crate::usage::{collect, price, quota, store, summary};
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -16,9 +16,18 @@ fn now_ms() -> i64 {
 }
 
 /// Collect every root, write the summary; returns the connection for the caller's report.
-fn collect_and_summarize(quiet: bool) -> Result<(rusqlite::Connection, PathBuf)> {
+/// `wait` false: when another collect is running, return `None` at once (the background
+/// statusline trigger and the SessionEnd hook); otherwise wait for it.
+fn collect_and_summarize(
+    quiet: bool,
+    wait: bool,
+) -> Result<Option<(rusqlite::Connection, PathBuf)>> {
     let data = store::data_dir(std::env::var("CODEFORGE_DATA_DIR").ok().as_deref());
-    let (mut conn, notes) = store::open(&store::usage_dir(&data))?;
+    let dir = store::usage_dir(&data);
+    let (mut conn, notes) = store::open(&dir)?;
+    let Some(_lock) = store::collect_lock(&dir, wait)? else {
+        return Ok(None);
+    };
     if !notes.is_empty() {
         eprintln!("codeforge usage: 已收緊檔案權限（{}）", notes.join("、"));
     }
@@ -62,7 +71,11 @@ fn collect_and_summarize(quiet: bool) -> Result<(rusqlite::Connection, PathBuf)>
             rep.files, rep.skipped
         );
     }
-    Ok((conn, path))
+    Ok(Some((conn, path)))
+}
+
+fn collected(quiet: bool) -> Result<(rusqlite::Connection, PathBuf)> {
+    collect_and_summarize(quiet, true)?.context("collect 沒有結果")
 }
 
 fn compact(n: u64) -> String {
@@ -80,18 +93,18 @@ fn money(c: Option<f64>) -> String {
 pub fn run(action: Action) -> Result<()> {
     match action {
         Action::Collect { quiet } => {
-            collect_and_summarize(quiet)?;
+            collect_and_summarize(quiet, !quiet)?;
             Ok(())
         }
         Action::Push => {
-            let (_conn, path) = collect_and_summarize(true)?;
+            let (_conn, path) = collected(true)?;
             let dir = path.parent().map(PathBuf::from).unwrap_or_default();
             let sha = summary::push(&dir, "fleet")?;
             println!("{sha}");
             Ok(())
         }
         Action::Show { days, by, json } => {
-            let (conn, _) = collect_and_summarize(true)?;
+            let (conn, _) = collected(true)?;
             let days = days.clamp(1, collect::HORIZON_DAYS as u32);
             let since = (chrono::Utc::now() - chrono::Duration::days(days as i64 - 1))
                 .format("%Y-%m-%d")
