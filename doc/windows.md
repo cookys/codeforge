@@ -5,7 +5,7 @@ Claude Code wiring → `init` / `learn` / `adopt` / `dream` / `memory search` / 
 `doctor` / `daemon start|status|stop`. The full test suite passes locally on Windows (no Windows CI job).
 
 > **Not yet available on Windows:** the `curl … | sh` installer and `cargo binstall` (no Windows
-> release asset is published — `release.yml` builds Linux/macOS only). Build from source as below.
+> release asset is published — releases ship Linux x86_64/aarch64 only). Build from source as below.
 
 ## 1. Prerequisites
 

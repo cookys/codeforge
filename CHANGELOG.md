@@ -7,11 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Linux-only releases** — `scripts/release-local.sh` builds and publishes Linux x86_64 and aarch64
+  only (`--allow-missing` is gone). On macOS and other platforms, `install.sh` exits with the
+  `cargo install --git https://github.com/cookys/codeforge --locked` instruction instead of a 404, and
+  `codeforge self-update` says the same before contacting GitHub.
+
 ## [0.0.9] - 2026-11-03
 
 Usage tracking (G36: per-account quota, transcript token counts, cost estimate, forge-stats 用量 tab, statusline-triggered
 background collect); forge-stats as a global plugin (G33); one TUI guideline (G34); and a local release pipeline
 replacing hosted CI (G38) — this is the first release built and verified locally.
+
+### Removed
+- **macOS binaries** — from this release on, releases ship Linux x86_64 and aarch64 only. On macOS, build
+  from source: `cargo install --git https://github.com/cookys/codeforge --locked` (add `--force` to update an
+  existing install). A 0.0.8 macOS binary's `codeforge self-update` fails to find a darwin asset; this is why.
 
 ### Added
 - **Local release pipeline** (PM G38) — `scripts/release-local.sh` builds the linux x86_64 and
