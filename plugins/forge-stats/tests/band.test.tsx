@@ -341,6 +341,8 @@ test('parseFleet takes autopilot.fleet v 1 only; summaryParts gives the widest f
     const t = summaryParts(all, 'Ferris Lv.3', cols, 'fleet')?.map(p => p.text).join('') ?? ''
     expect(/[▲✗⊘●⋯][^ ]/.test(t)).toBe(false)
     expect(/ {3}/.test(t)).toBe(false)
+    // a label belongs to its chip (§3.5 rule 2): the word is followed by exactly one space, never the two-space chip gap
+    if (t.startsWith('fleet')) expect(/^fleet [▲✗⊘●⋯] /.test(t)).toBe(true)
   }
   // colours are the shared table's theme keys; the word and separator dim
   const parts = summaryParts(f, 'Ferris Lv.3', 80, 'fleet')!
