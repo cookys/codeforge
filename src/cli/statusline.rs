@@ -27,6 +27,13 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
+        // G36: this account's quota snapshot out, the other accounts' back in.
+        data.others = record_quota(
+            &data,
+            &crate::usage::quota::quota_dir(&live_base),
+            &crate::usage::alias::current_claude_alias(),
+            now_ms,
+        );
         read_mod_heartbeat(&live_base, raw_sid, now_ms)
     };
     let conn = ctx.open_db()?;
@@ -267,6 +274,90 @@ struct StatusInput {
     five_hour_resets_at: Option<i64>,
     seven_day_pct: Option<f64>,
     seven_day_resets_at: Option<i64>,
+    /// G36: the other accounts' fresh quota snapshots, most constrained first.
+    others: Vec<crate::usage::quota::Snapshot>,
+}
+
+// ─── G36 per-account quota (doc/plans/2026-11-03-usage-collector.md §2–3) ─────
+
+/// Write this account's quota snapshot when Claude Code reported `rate_limits`
+/// (throttled, 0600), then read the other accounts' snapshots back. Never fails
+/// the statusline: a write or read error only means fewer accounts shown.
+fn record_quota(
+    data: &StatusInput,
+    dir: &std::path::Path,
+    alias: &str,
+    now_ms: i64,
+) -> Vec<crate::usage::quota::Snapshot> {
+    use crate::usage::quota::{read_others, write_snapshot, Snapshot, Window};
+    let window = |pct: Option<f64>, at: Option<i64>| match (pct, at) {
+        (Some(pct), Some(resets_at)) => Some(Window { pct, resets_at }),
+        _ => None,
+    };
+    let snap = Snapshot {
+        alias: alias.to_string(),
+        written_at_ms: now_ms,
+        five_hour: window(data.five_hour_pct, data.five_hour_resets_at),
+        seven_day: window(data.seven_day_pct, data.seven_day_resets_at),
+    };
+    if snap.five_hour.is_some() || snap.seven_day.is_some() {
+        let _ = write_snapshot(dir, &snap);
+    }
+    read_others(dir, alias, now_ms)
+}
+
+/// The other accounts on the usage row: ` · alias NN% countdown` per account, most
+/// constrained first, as many as fit in `avail` visible cells (an account that does
+/// not fit with its countdown is tried without it; the first that does not fit ends
+/// the list). Red at 95 %, yellow at 80 % for the first such account only (TUI
+/// guideline: one yellow per row), the rest bold. `yellow_taken`: the row already
+/// shows a yellow (this session's own bars, see [`own_bars_yellow`]).
+fn others_segment(
+    others: &[crate::usage::quota::Snapshot],
+    now_s: i64,
+    avail: usize,
+    yellow_taken: bool,
+) -> String {
+    let mut out = String::new();
+    let mut used = 0usize;
+    let mut yellow_used = yellow_taken;
+    for s in others {
+        let Some((_label, w)) = s.constrained(now_s) else {
+            continue;
+        };
+        let pct = format!("{:.0}%", w.pct * 100.0);
+        let remain = fmt_remaining_at(w.resets_at, now_s);
+        let pct_c = if w.pct >= 0.95 {
+            tc(&pct, BAR_HIGH)
+        } else if w.pct >= 0.80 && !yellow_used {
+            yellow_used = true;
+            tc(&pct, BAR_MID)
+        } else if w.pct >= 0.80 {
+            tc_bold(&pct, BAR_LBL)
+        } else {
+            tc(&pct, BAR_LBL)
+        };
+        let sep = tc(" · ", DELIM);
+        let head_w = 3 + vis(&s.alias) + 1 + vis(&pct);
+        let full_w = head_w + 1 + vis(&remain);
+        let (piece, w_piece) = if used + full_w <= avail {
+            (
+                format!(
+                    "{sep}{} {pct_c} {}",
+                    tc(&s.alias, BAR_LBL),
+                    tc(&remain, REMAIN)
+                ),
+                full_w,
+            )
+        } else if used + head_w <= avail {
+            (format!("{sep}{} {pct_c}", tc(&s.alias, BAR_LBL)), head_w)
+        } else {
+            break;
+        };
+        out.push_str(&piece);
+        used += w_piece;
+    }
+    out
 }
 
 /// Returns the rendered `StatusInput` plus the raw parsed JSON (or
@@ -324,6 +415,7 @@ fn read_status_input() -> (StatusInput, serde_json::Value) {
                 five_hour_resets_at,
                 seven_day_pct,
                 seven_day_resets_at,
+                others: Vec::new(),
             };
             return (input, v);
         }
@@ -659,8 +751,21 @@ fn pad_to_vis(s: &str, width: usize) -> String {
     }
 }
 
+/// True when this session's own usage bars already draw the yellow (`BAR_MID`,
+/// 50–80 % in `bar_rgb`), so the other accounts must not add a second one.
+fn own_bars_yellow(data: &StatusInput) -> bool {
+    [data.five_hour_pct, data.seven_day_pct, data.context_pct]
+        .into_iter()
+        .flatten()
+        .any(|p| bar_rgb(p) == BAR_MID)
+}
+
 fn fmt_remaining(resets_at: i64) -> String {
-    let secs = (resets_at - chrono::Utc::now().timestamp()).max(0) as u64;
+    fmt_remaining_at(resets_at, chrono::Utc::now().timestamp())
+}
+
+fn fmt_remaining_at(resets_at: i64, now_s: i64) -> String {
+    let secs = (resets_at - now_s).max(0) as u64;
     if secs >= 86400 {
         format!("{}d{}h", secs / 86400, (secs % 86400) / 3600)
     } else if secs >= 3600 {
@@ -921,6 +1026,14 @@ fn render_strip<W: Write>(
     } else {
         usage_parts.join("   ")
     };
+    let usage_left = {
+        let room = width.saturating_sub(1 + ansi_vis(&usage_left) + 1);
+        let now_s = chrono::Utc::now().timestamp();
+        format!(
+            "{usage_left}{}",
+            others_segment(&data.others, now_s, room, own_bars_yellow(data))
+        )
+    };
     let usage_left_vis = ansi_vis(&usage_left);
     // Two hint forms, picked by available width
     let hint_long = "→ codeforge adopt";
@@ -1134,7 +1247,15 @@ fn render_full<W: Write>(
         if let Some(pct) = data.context_pct {
             parts.push(usage_bare("ctx", pct, None));
         }
-        let content = parts.join("  ");
+        let mut content = parts.join("  ");
+        let room = panel_w.saturating_sub(vis("│ ") + ansi_vis(&content) + vis("│") + 1);
+        let now_s = chrono::Utc::now().timestamp();
+        content.push_str(&others_segment(
+            &data.others,
+            now_s,
+            room,
+            own_bars_yellow(data),
+        ));
         box_mid(&content, "│ ", "│")
     };
 
@@ -2209,5 +2330,172 @@ mod tests {
             s[mpos..vpos].contains('─'),
             "mnemos 與版號之間應有 fill dash(證明版號在 fill 右側),got: {s:?}"
         );
+    }
+
+    // ── G36 per-account quota ───────────────────────────────────────────────
+
+    fn quota_snap(alias: &str, pct: f64, resets_at: i64) -> crate::usage::quota::Snapshot {
+        crate::usage::quota::Snapshot {
+            alias: alias.into(),
+            written_at_ms: 0,
+            five_hour: None,
+            seven_day: Some(crate::usage::quota::Window { pct, resets_at }),
+        }
+    }
+
+    const Q_NOW: i64 = 1_793_600_000;
+
+    #[test]
+    fn others_segment_fits_its_room_and_drops_from_the_end() {
+        let others = [
+            quota_snap("acct-b", 0.81, Q_NOW + 3 * 86400 + 7200),
+            quota_snap("acct-c", 0.12, Q_NOW + 4 * 3600),
+        ];
+        let full = strip_ansi(&others_segment(&others, Q_NOW, 200, false));
+        assert_eq!(full, " · acct-b 81% 3d2h · acct-c 12% 4h0m");
+        // every room: never wider than given
+        for room in 0..60 {
+            let got = strip_ansi(&others_segment(&others, Q_NOW, room, false));
+            assert!(vis(&got) <= room, "room {room}: {got:?}");
+        }
+        // room for the first with its countdown and the second without
+        assert_eq!(
+            strip_ansi(&others_segment(&others, Q_NOW, 31, false)),
+            " · acct-b 81% 3d2h · acct-c 12%"
+        );
+        // the first without its countdown only
+        assert_eq!(
+            strip_ansi(&others_segment(&others, Q_NOW, 14, false)),
+            " · acct-b 81%"
+        );
+        // no room at all
+        assert_eq!(others_segment(&others, Q_NOW, 12, false), "");
+    }
+
+    #[test]
+    fn others_segment_one_yellow_per_row_red_at_95() {
+        // other tests set NO_COLOR under ENV_LOCK; colour assertions must not race them
+        let _g = ENV_LOCK.lock().unwrap();
+        if !color_enabled() {
+            return; // NO_COLOR set for this test run: nothing coloured to check
+        }
+        let esc = |(r, g, b): Rgb| format!("\x1b[38;2;{r};{g};{b}m");
+        let others = [
+            quota_snap("acct-r", 0.97, Q_NOW + 60),
+            quota_snap("acct-y", 0.88, Q_NOW + 60),
+            quota_snap("acct-z", 0.84, Q_NOW + 60),
+        ];
+        let seg = others_segment(&others, Q_NOW, 200, false);
+        assert_eq!(seg.matches(&esc(BAR_MID)).count(), 1, "{seg:?}");
+        assert_eq!(seg.matches(&esc(BAR_HIGH)).count(), 1, "{seg:?}");
+        assert!(
+            seg.contains("\x1b[1m"),
+            "the second 80 % account is bold: {seg:?}"
+        );
+    }
+
+    #[test]
+    fn record_quota_writes_this_account_and_reads_the_others() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let now_ms = Q_NOW * 1000;
+        let other = quota_snap("acct-b", 0.4, Q_NOW + 600);
+        let other = crate::usage::quota::Snapshot {
+            written_at_ms: now_ms - 1000,
+            ..other
+        };
+        crate::live::write_live_json(&dir, "acct-b.json", &other.to_json()).unwrap();
+        // no rate_limits: nothing written, the others still read
+        let none = StatusInput::default();
+        let got = record_quota(&none, &dir, "acct-a", now_ms);
+        assert_eq!(
+            got.iter().map(|s| s.alias.as_str()).collect::<Vec<_>>(),
+            ["acct-b"]
+        );
+        assert!(!dir.join("acct-a.json").exists());
+        // rate_limits: this account's snapshot written, not shown among the others
+        let data = StatusInput {
+            seven_day_pct: Some(0.75),
+            seven_day_resets_at: Some(Q_NOW + 86400),
+            ..Default::default()
+        };
+        let got = record_quota(&data, &dir, "acct-a", now_ms);
+        assert_eq!(got.len(), 1);
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("acct-a.json")).unwrap())
+                .unwrap();
+        assert_eq!(v["seven_day"]["pct"], 0.75);
+        assert_eq!(v["five_hour"], serde_json::Value::Null);
+        // a missing dir is no error
+        assert!(record_quota(&none, &base.path().join("nope"), "acct-a", now_ms).is_empty());
+    }
+
+    #[test]
+    fn both_layouts_show_the_other_accounts() {
+        let data = StatusInput {
+            model: Some("Opus 5.5".into()),
+            seven_day_pct: Some(0.75),
+            seven_day_resets_at: Some(chrono::Utc::now().timestamp() + 86400),
+            others: vec![quota_snap(
+                "acct-b",
+                0.81,
+                chrono::Utc::now().timestamp() + 7200,
+            )],
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        render_compact(&mut buf, &data, 100).unwrap();
+        let text = strip_ansi(&String::from_utf8(buf).unwrap());
+        assert!(text.contains("· acct-b 81%"), "{text}");
+        for line in text.lines() {
+            assert!(vis(line) <= 100, "{line:?}");
+        }
+    }
+
+    #[test]
+    fn one_yellow_per_row_counts_this_sessions_own_bars() {
+        // other tests set NO_COLOR under ENV_LOCK; colour assertions must not race them
+        let _g = ENV_LOCK.lock().unwrap();
+        if !color_enabled() {
+            return;
+        }
+        let esc = format!("\x1b[38;2;{};{};{}m", BAR_MID.0, BAR_MID.1, BAR_MID.2);
+        let now = chrono::Utc::now().timestamp();
+        let row1 = |own: f64| -> String {
+            let data = StatusInput {
+                model: Some("Opus 5.5".into()),
+                seven_day_pct: Some(own),
+                seven_day_resets_at: Some(now + 86400),
+                others: vec![quota_snap("acct-b", 0.85, now + 7200)],
+                ..Default::default()
+            };
+            let mut buf = Vec::new();
+            render_compact(&mut buf, &data, 100).unwrap();
+            let text = String::from_utf8(buf).unwrap();
+            text.lines()
+                .find(|l| l.contains("acct-b"))
+                .unwrap_or_default()
+                .to_string()
+        };
+        let other_part = |r: &str| r[r.find("acct-b").unwrap()..].to_string();
+        // own 7d in the yellow band (50-80 %): the 85 % account is bold, not a second yellow
+        let r = row1(0.6);
+        assert!(
+            r[..r.find("acct-b").unwrap()].contains(&esc),
+            "own bar is yellow: {r:?}"
+        );
+        assert!(!other_part(&r).contains(&esc), "{r:?}");
+        assert!(other_part(&r).contains("\x1b[1m"), "{r:?}");
+        // own bars green: the other account takes the yellow
+        let r = row1(0.2);
+        assert!(other_part(&r).contains(&esc), "{r:?}");
+        assert!(own_bars_yellow(&StatusInput {
+            context_pct: Some(0.7),
+            ..Default::default()
+        }));
+        assert!(!own_bars_yellow(&StatusInput {
+            context_pct: Some(0.9),
+            ..Default::default()
+        }));
     }
 }

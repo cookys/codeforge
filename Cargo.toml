@@ -70,6 +70,10 @@ ulid = "1"
 
 # SHA-1 for Phase 3c commentary phrase dedup keys (hex-encoded, persisted)
 sha1 = "0.10"
+# O_NOFOLLOW / O_NONBLOCK for G36 bounded snapshot reads (already in the graph)
+libc = "0.2"
+# SHA-256 for G36 opaque aliases (config-dir / host hashes); already in the graph via rustls
+sha2 = "0.10"
 
 # Environment
 dotenvy = "0.15"
