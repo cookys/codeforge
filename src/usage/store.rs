@@ -150,9 +150,9 @@ pub fn open(dir: &Path) -> Result<(Connection, Vec<String>)> {
          CREATE TABLE IF NOT EXISTS roots (
              root_hash TEXT PRIMARY KEY, alias TEXT NOT NULL, seen_ms INTEGER NOT NULL);",
     )?;
-    // the first write creates -wal/-shm: they take the db's 0600; check once more
-    #[cfg(unix)]
-    sidecars(dir, &mut notes)?;
+    // No fd on usage.db, -wal or -shm is opened (or closed) from here on: closing any fd of a file
+    // drops every POSIX lock this process holds on it, including the connection's DMS lock on
+    // -shm. New -wal/-shm need no check: SQLite's unix VFS creates them with the db file's mode.
     Ok((conn, notes))
 }
 
@@ -273,5 +273,58 @@ mod tests {
         assert!(!full.contains(base.path().to_str().unwrap()), "{full}");
         let home = dirs::home_dir().unwrap();
         assert!(!full.contains(home.to_str().unwrap()), "{full}");
+    }
+
+    /// The connection's shared lock on the -shm DMS byte (offset 128), seen from another
+    /// process: true when a write lock there would conflict.
+    fn dms_locked_elsewhere(shm: &Path) -> bool {
+        let path = std::ffi::CString::new(shm.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: the child only calls open/fcntl/_exit (async-signal-safe) on memory prepared
+        // before the fork; the parent waits for it.
+        unsafe {
+            let pid = libc::fork();
+            assert!(pid >= 0);
+            if pid == 0 {
+                let fd = libc::open(path.as_ptr(), libc::O_RDWR);
+                if fd < 0 {
+                    libc::_exit(3);
+                }
+                let mut fl: libc::flock = std::mem::zeroed();
+                fl.l_type = libc::F_WRLCK as _;
+                fl.l_whence = libc::SEEK_SET as _;
+                fl.l_start = 128;
+                fl.l_len = 1;
+                if libc::fcntl(fd, libc::F_GETLK, &mut fl) != 0 {
+                    libc::_exit(4);
+                }
+                libc::_exit(if fl.l_type as libc::c_int == libc::F_UNLCK {
+                    0
+                } else {
+                    1
+                });
+            }
+            let mut status = 0;
+            libc::waitpid(pid, &mut status, 0);
+            let code = libc::WEXITSTATUS(status);
+            assert!(code <= 1, "child failed: {code}");
+            code == 1
+        }
+    }
+
+    #[test]
+    fn the_open_connection_keeps_its_shm_lock() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = usage_dir(base.path());
+        // twice: the second open finds existing -wal/-shm, the case a post-open check broke
+        for _ in 0..2 {
+            let (conn, _) = open(&dir).unwrap();
+            conn.execute("INSERT OR REPLACE INTO roots VALUES ('x', 'acct-a', 1)", [])
+                .unwrap();
+            assert!(
+                dms_locked_elsewhere(&dir.join("usage.db-shm")),
+                "DMS lock lost"
+            );
+            drop(conn);
+        }
     }
 }

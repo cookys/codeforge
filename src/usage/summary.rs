@@ -59,6 +59,8 @@ const DAY_KEYS: [&str; 12] = [
 const SOURCES: [&str; 2] = ["claude", "codex"];
 const SPEEDS: [&str; 2] = ["standard", "fast"];
 const PCT_MAX: f64 = 1.5;
+/// Every integer (counts, times, `resets_at`) is within 0..=2^53-1, exact in a JS number.
+pub const UINT_MAX: u64 = (1 << 53) - 1;
 /// The grammars `valid_alias`, `model_id` and `is_host` implement, as regexes for the pane.
 #[cfg(test)]
 const ALIAS_RE: &str = "^[a-z0-9-]{1,24}$";
@@ -74,7 +76,7 @@ pub fn contract() -> Value {
         "schema": SCHEMA,
         "top": TOP_KEYS, "account": ACCOUNT_KEYS, "window": WINDOW_KEYS, "day": DAY_KEYS,
         "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
-        "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE,
+        "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE, "uint_max": UINT_MAX,
         "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
     })
 }
@@ -142,10 +144,12 @@ pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Va
         .into_iter()
         .map(|((day, source, account, model, speed), (t, req))| {
             let cost = price::cost(&model, speed == "fast", &t);
+            // saturated sums are capped at the contract's integer bound, so the summary validates
+            let c = |n: u64| n.min(UINT_MAX);
             json!({
                 "day": day, "source": source, "account": account, "model": model, "speed": speed,
-                "input": t.input, "output": t.output, "cache_write_5m": t.cache_write_5m,
-                "cache_write_1h": t.cache_write_1h, "cache_read": t.cache_read, "requests": req,
+                "input": c(t.input), "output": c(t.output), "cache_write_5m": c(t.cache_write_5m),
+                "cache_write_1h": c(t.cache_write_1h), "cache_read": c(t.cache_read), "requests": c(req),
                 "cost_usd": cost,
             })
         })
@@ -184,8 +188,8 @@ fn obj<'a>(v: &'a Value, keys: &[&str], at: &str) -> Result<&'a Map<String, Valu
 }
 
 fn uint(v: &Value, at: &str) -> Result<()> {
-    if v.as_u64().is_none() {
-        bail!("{at}: 不是非負整數");
+    if v.as_u64().is_none_or(|n| n > UINT_MAX) {
+        bail!("{at}: 不是 0..=2^53-1 的整數");
     }
     Ok(())
 }
@@ -206,7 +210,7 @@ fn win(v: &Value, at: &str) -> Result<()> {
     let pct = m["pct"]
         .as_f64()
         .filter(|p| p.is_finite() && (0.0..=PCT_MAX).contains(p));
-    if pct.is_none() || m["resets_at"].as_i64().is_none() {
+    if pct.is_none() || m["resets_at"].as_u64().is_none_or(|n| n > UINT_MAX) {
         bail!("{at}: 值不合法");
     }
     Ok(())
@@ -440,6 +444,15 @@ mod tests {
         let mut v = good();
         v["accounts"][0]["five_hour"]["note"] = json!("x");
         cases.push(("key in a window", v));
+        let mut v = good();
+        v["days"][0]["input"] = json!(UINT_MAX + 1);
+        cases.push(("count past 2^53-1", v));
+        let mut v = good();
+        v["accounts"][0]["five_hour"]["resets_at"] = json!(UINT_MAX + 1);
+        cases.push(("resets_at past 2^53-1", v));
+        let mut v = good();
+        v["accounts"][0]["five_hour"]["resets_at"] = json!(-1);
+        cases.push(("negative resets_at", v));
         for (what, v) in cases {
             assert!(validate(&v).is_err(), "{what} passed");
         }

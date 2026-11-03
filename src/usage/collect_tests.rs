@@ -667,5 +667,10 @@ fn counts_off_the_bound_are_skipped_and_an_overflowing_bucket_rolls_the_file_bac
         "host-1a2b3c4d",
         NOW,
     );
-    assert_eq!(v["days"][0]["input"], json!(u64::MAX));
+    assert_eq!(
+        v["days"][0]["input"],
+        json!(crate::usage::summary::UINT_MAX),
+        "saturated, then capped at the contract bound"
+    );
+    crate::usage::summary::validate(&v).unwrap();
 }

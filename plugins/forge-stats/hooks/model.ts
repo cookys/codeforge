@@ -405,6 +405,7 @@ export const USAGE_CONTRACT = {
   "alias": "^[a-z0-9-]{1,24}$",
   "model": "^[A-Za-z0-9._-]{1,64}$",
   "host": "^host-[0-9a-f]{8}$",
+  "uint_max": 9007199254740991,
   "max_accounts": 64,
   "max_days": 10000
 } as const
@@ -414,7 +415,8 @@ const C = USAGE_CONTRACT
 const ALIAS_RE = new RegExp(C.alias)
 const MODEL_RE = new RegExp(C.model)
 const HOST_RE = new RegExp(C.host)
-const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
+/** An integer in 0..=uint_max (2^53-1): `Number.isInteger(1e100)` is true, so the bound is checked too. */
+const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= C.uint_max
 /** A real calendar date `YYYY-MM-DD` (not 2026-02-30). */
 const isDay = (v: unknown): v is string => {
   if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
@@ -429,7 +431,7 @@ const inSet = (v: unknown, set: readonly string[]) => typeof v === 'string' && s
 function usageWindow(v: unknown): UsageWindow | null | undefined {
   if (v === null) return null
   if (!exactKeys(v, C.window)) return undefined
-  if (typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || v.pct > C.pct_max || !Number.isInteger(v.resets_at)) return undefined
+  if (typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || v.pct > C.pct_max || !isUint(v.resets_at)) return undefined
   return { pct: v.pct, resetsAtMs: (v.resets_at as number) * 1000 }
 }
 

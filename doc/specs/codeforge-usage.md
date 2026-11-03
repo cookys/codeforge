@@ -52,7 +52,9 @@ stderr 提一次。
   rollback、這次略過。報表端加總一律 saturating。
 - 儲存區：目錄、`usage.db`、`-wal`、`-shm` 都以 `O_NOFOLLOW | O_NONBLOCK` 開 handle 檢查，
   是 symlink 或不是目錄／一般檔案就拒絕，權限只在 handle 上收緊（不會順著 link 改）；SQLite
-  以 `SQLITE_OPEN_NOFOLLOW` 開檔。
+  以 `SQLITE_OPEN_NOFOLLOW` 開檔。這些檢查都在 SQLite 開檔**之前**做；連線開著的期間不再對
+  db、`-wal`、`-shm` 開或關任何 fd（關掉同一檔案的任一 fd 會釋放本程序在其上的所有 POSIX
+  鎖，包括連線在 `-shm` 上的 DMS 鎖）。之後新建的 `-wal`／`-shm` 由 SQLite 沿用 db 的 0600。
 - 錯誤訊息只寫檔名（`usage.db`、`summary.json`）、欄位位置與錯誤類別，不帶本機路徑，不回顯
   意外的欄位名稱，也不轉發 fleet 的 stderr。
 
@@ -72,6 +74,8 @@ model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註
 ```
 
 每一層的 key、型別、值都驗證（別名格式、`host-` + 8 hex、model id 格式、日期、列舉、非負數）。
+所有整數（計數、時間、`resets_at`）都必須在 0..=2^53−1（`UINT_MAX`，JS number 能精確表示的
+範圍）；飽和後的加總寫出時壓在這個上限。
 `days` 是最近 7 天，專案已加總掉。`usage push` 讀回、驗證、把驗過的 bytes 以固定檔名
 `usage-summary.json` 交給 `fleet upload`，不送本機路徑。
 

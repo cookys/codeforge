@@ -217,6 +217,13 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
 **Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
 
+## B41 — G36 第 2–5 階段 review 列為後續的項目
+
+**Area**: `src/usage/collect.rs`、`src/usage/store.rs` 測試
+**Premise**: autopilot 四席審查第 2 輪（範圍 `d754c4c..22e90c4`）判為後續、不擋合併的項目：659de784、383eb39a（Codex 基準被修剪後從頭重讀的邊界情況）、6635affb（bucket 溢位的檔案每次 collect 都會重試、每次都被略過）、247999e5（store 測試用到 unix-only API 的部分要加 `#[cfg(unix)]`）、38b0450a（`MAX_LINE`／`MAX_COUNT` 等上限的調整）。
+**Trigger**: 下次動 `codeforge usage` 的收集器，或在非 unix 平台建置測試。
+**Not done**: 只記錄；詳情見 autopilot lane/g36rest 第 2 輪的 finding。
+
 ## B39 — G36 第 1 階段 review 的後續（statusline 配額列）
 
 **Area**: `src/usage/quota.rs`、`src/cli/statusline.rs`（`others_segment`、`own_bars_yellow`、`render_full`）
