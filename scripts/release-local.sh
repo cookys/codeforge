@@ -18,8 +18,10 @@
 #
 # It never publishes. --publish creates a DRAFT GitHub release v<version> from the staged,
 # verified files (re-checked against their .sha256 right before upload) and needs a clean tree,
-# HEAD tagged v<version>, and origin's tag v<version> pointing at HEAD too. Turning the draft into
-# a release is the operator's step. --publish refuses while a target is missing unless
+# HEAD tagged v<version>, and origin's tag v<version> pointing at HEAD too — checked before the
+# build and again right before the upload. The draft goes to the GitHub repo of `origin`, passed to
+# gh as --repo github.com/<owner>/<repo>; a GH_REPO naming another repo is refused. Turning the
+# draft into a release is the operator's step. --publish refuses while a target is missing unless
 # --allow-missing is given. macOS targets (x86_64/aarch64-apple-darwin) cannot be built here.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -38,6 +40,33 @@ while [ $# -gt 0 ]; do
 done
 fail() { echo "release-local: $*" >&2; exit 1; }
 
+# owner/repo of origin's GitHub URL (the URL git really uses: insteadOf expanded)
+origin_repo() {
+  local url
+  url=$(git remote get-url origin) || return 1
+  case "$url" in
+    git@github.com:*) url=${url#git@github.com:} ;;
+    https://github.com/*) url=${url#https://github.com/} ;;
+    ssh://git@github.com/*) url=${url#ssh://git@github.com/} ;;
+    *) return 1 ;;
+  esac
+  url=${url%/}
+  url=${url%.git}
+  [[ "$url" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 1
+  printf '%s\n' "$url"
+}
+
+# origin's tag v<version> (peeled for an annotated tag) must be the commit being released
+check_remote_tag() {
+  local remote remote_commit
+  remote=$(git ls-remote --tags origin "refs/tags/v$version" "refs/tags/v$version^{}") \
+    || fail "cannot read origin's tags"
+  remote_commit=$(printf '%s\n' "$remote" | awk -v r="refs/tags/v$version^{}" '$2 == r {print $1}')
+  [ -n "$remote_commit" ] || remote_commit=$(printf '%s\n' "$remote" | awk -v r="refs/tags/v$version" '$2 == r {print $1}')
+  [ "$remote_commit" = "$head" ] \
+    || fail "origin's tag v$version points at '${remote_commit:-nothing}', not HEAD $head"
+}
+
 version=$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 msrv=$(grep -m1 '^rust-version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 max_glibc="2.35"
@@ -50,12 +79,15 @@ if [ "$publish" = 1 ]; then
   head=$(git rev-parse HEAD)
   [ "$(git rev-parse -q --verify "refs/tags/v$version^{commit}")" = "$head" ] \
     || fail "--publish needs HEAD tagged v$version"
+  gh_repo=$(origin_repo) || fail "origin is not a GitHub repository URL: $(git remote get-url origin 2>/dev/null)"
+  if [ -n "${GH_REPO:-}" ]; then
+    want="${GH_REPO#https://}"
+    want="${want#github.com/}"
+    want="${want%.git}"
+    [ "$want" = "$gh_repo" ] || fail "GH_REPO=$GH_REPO is not origin's repository $gh_repo"
+  fi
   # gh --verify-tag checks only that origin has a tag of that name: check where it points.
-  remote=$(git ls-remote --tags origin "refs/tags/v$version" "refs/tags/v$version^{}")
-  remote_commit=$(printf '%s\n' "$remote" | awk -v r="refs/tags/v$version^{}" '$2 == r {print $1}')
-  [ -n "$remote_commit" ] || remote_commit=$(printf '%s\n' "$remote" | awk -v r="refs/tags/v$version" '$2 == r {print $1}')
-  [ "$remote_commit" = "$head" ] \
-    || fail "origin's tag v$version points at '${remote_commit:-nothing}', not HEAD $head"
+  check_remote_tag
   if [ "${#missing[@]}" -gt 0 ] && [ "$allow_missing" = 0 ]; then
     fail "not buildable here: ${missing[*]} (pass --allow-missing to publish without them)"
   fi
@@ -146,8 +178,10 @@ if [ "$publish" = 1 ]; then
   awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on {print}' CHANGELOG.md >"$notes"
   [ -s "$notes" ] || fail "CHANGELOG.md has no [$version] section"
   (cd "$stage" && sha256sum -c "${sums[@]}" >&2)
+  # the build took minutes: the tag must still point here when the draft is created
+  check_remote_tag
   upload=()
   for f in "${files[@]}"; do upload+=("$stage/$f"); done
-  gh release create "v$version" --draft --verify-tag --title "v$version" --notes-file "$notes" "${upload[@]}"
+  gh release create "v$version" --repo "github.com/$gh_repo" --draft --verify-tag --title "v$version" --notes-file "$notes" "${upload[@]}"
   echo "release-local: draft v$version created; publishing it is the operator's step" >&2
 fi
