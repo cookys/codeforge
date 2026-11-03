@@ -217,6 +217,13 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
 **Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
 
+## B40 — 一次無法重現的 cargo test 失敗（疑似 flaky）
+
+**Area**: 測試套件（名稱未知）
+**Premise**: 2026-11-03 commit 1fdd922 前跑全套，986 條中 1 條失敗；當時輸出只過濾留下 `test result` 摘要行，沒有保存完整 log，失敗的測試名稱無法回收（session 紀錄也查不到）。之後連跑 18 次全綠。嫌疑：`live::tests::missing_findmnt_falls_back_to_proc_mounts`（同日稍早也單獨失敗過一次、未重現），以及會改行程層級環境變數的測試（cargo test 平行執行時互相競爭）。PM 判定：在證明不是之前，當作 flaky 追蹤。
+**Trigger**: `target/flaky-tests.log` 出現 FLAKY 紀錄（`scripts/test-flake-guard.sh` 寫入，`check-all.sh` 的 test 步驟會經過它），或任何一次失敗後重跑通過。
+**Not done**: 已加 flake guard（失敗重跑一次、紀錄保留、不隱藏）；根因待第一筆紀錄出現後再查。
+
 ## B39 — G36 第 1 階段 review 的後續（statusline 配額列）
 
 **Area**: `src/usage/quota.rs`、`src/cli/statusline.rs`（`others_segment`、`own_bars_yellow`、`render_full`）
