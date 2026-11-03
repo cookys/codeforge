@@ -320,7 +320,11 @@ export function parseFleet(value: unknown): FleetSummary | null {
   if (v.v !== 1 || typeof v.totals !== 'object' || v.totals === null) return null
   const t = v.totals as Record<string, unknown>
   if (!COUNT_KEYS.every(k => isCount(t[k]))) return null
-  const fetchedMs = typeof v.fetchedMs === 'number' ? v.fetchedMs : null
+  // the fetch fields decide ✓ against ?: each must be present with its own type, or the whole atom is not taken (a missing or odd `error` must never read as
+  // "no error", a NaN time never as "fetched")
+  if (!('fetchedMs' in v) || !(v.fetchedMs === null || (typeof v.fetchedMs === 'number' && Number.isFinite(v.fetchedMs)))) return null
+  if (!('error' in v) || !(v.error === null || typeof v.error === 'string')) return null
+  const fetchedMs = v.fetchedMs as number | null
   const error = typeof v.error === 'string' && v.error !== '' ? v.error : null
   return { v: 1, fetchedMs, error, totals: { needYou: t.needYou as number, failed: t.failed as number, stuck: t.stuck as number, running: t.running as number, waiting: t.waiting as number } }
 }
