@@ -322,10 +322,10 @@ test('parseFleet takes autopilot.fleet v 1 only; summaryParts gives the widest f
   expect(summaryParts(parseFleet(FLEET), null, 18, '艦隊')?.map(p => p.text).join('')).toBe('艦隊 ▲ 1  ✗ 1  ⊘ 2')
   const f = parseFleet(FLEET)
   const text = (cols: number, pet: string | null = 'Ferris Lv.3') => summaryParts(f, pet, cols, 'fleet')?.map(p => p.text).join('')
-  expect(text(80)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⧗ 11 · Ferris Lv.3')
-  expect(text(43)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⧗ 11') // the pet goes first
-  expect(text(30)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⧗ 11') // 30 cells: fits exactly
-  expect(text(29)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4') // then ⧗
+  expect(text(80)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11 · Ferris Lv.3')
+  expect(text(43)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11') // the pet goes first
+  expect(text(30)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11') // 30 cells: fits exactly
+  expect(text(29)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4') // then ⋯
   expect(text(24)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4') // 24 cells: fits exactly
   expect(text(23)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2') // then ●
   expect(text(18)).toBe('fleet ▲ 1  ✗ 1') // then ⊘
@@ -339,12 +339,12 @@ test('parseFleet takes autopilot.fleet v 1 only; summaryParts gives the widest f
   const all = parseFleet({ ...FLEET, totals: { needYou: 1, failed: 1, stuck: 2, running: 4, waiting: 11 } })
   for (let cols = 0; cols <= 80; cols++) {
     const t = summaryParts(all, 'Ferris Lv.3', cols, 'fleet')?.map(p => p.text).join('') ?? ''
-    expect(/[▲✗⊘●⧗][^ ]/.test(t)).toBe(false)
+    expect(/[▲✗⊘●⋯][^ ]/.test(t)).toBe(false)
     expect(/ {3}/.test(t)).toBe(false)
   }
   // colours are the shared table's theme keys; the word and separator dim
   const parts = summaryParts(f, 'Ferris Lv.3', 80, 'fleet')!
-  expect(parts.filter(p => p.color).map(p => p.text + ':' + p.color)).toEqual(['▲:warning', '✗:error', '⊘:error', '●:suggestion', '⧗:inactive'])
+  expect(parts.filter(p => p.color).map(p => p.text + ':' + p.color)).toEqual(['▲:warning', '✗:error', '⊘:error', '●:suggestion', '⋯:inactive'])
   expect(parts.filter(p => p.dim).map(p => p.text)).toEqual(['fleet', ' · '])
   // no count: ✓ only after a fetch that succeeded; ? on an error or before any fetch
   const zero = { needYou: 0, failed: 0, stuck: 0, running: 0, waiting: 0 }
@@ -359,7 +359,7 @@ test('with autopilot\'s summary the one-row band draws the fleet counts before t
   world(on)
   mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  for (const [cols, want] of [[60, 'fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⧗ 11 · Ferris Lv.3'], [28, 'fleet ▲ 1  ✗ 1  ⊘ 2  ● 4'], [6, '▲ 1']] as const) {
+  for (const [cols, want] of [[60, 'fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11 · Ferris Lv.3'], [28, 'fleet ▲ 1  ✗ 1  ⊘ 2  ● 4'], [6, '▲ 1']] as const) {
     const ui = await $.ui.mount(band(cols, { maxRows: 1 }))
     expect(await summaryText(ui)).toBe(want)
     await ui.unmount()
