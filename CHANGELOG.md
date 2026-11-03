@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Local release pipeline** (PM G38) — `scripts/release-local.sh` builds the linux x86_64 and
+  aarch64 tarballs with `cross` (podman/docker) and the MSRV toolchain, refuses a binary needing glibc
+  newer than 2.35 (the cross builds need 2.18), verifies `install.sh` end to end from a local server,
+  and only ever creates a draft release. `scripts/package.sh` is the one packaging path;
+  `scripts/check-all.sh` now also runs `cargo deny`, `shellcheck install.sh` and the MSRV release smoke.
+  `install.sh` gains `CODEFORGE_DOWNLOAD_BASE` (default: this repo's GitHub releases).
 - **`codeforge usage`** (PM G36) — per-account quota on the statusline usage row (`alias NN% countdown`
   for every other account seen in 6 h; alias from `AUTOPILOT_ACCOUNT` or a config-dir hash), an
   incremental collector over Claude Code and Codex transcripts that keeps numbers only
