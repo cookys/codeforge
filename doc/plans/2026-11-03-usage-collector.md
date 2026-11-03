@@ -7,6 +7,7 @@
 > tab. Alias interface agreed with autopilot (G37): msg 01M6FKM6GMYRRV2S1269KEJWAC.
 > Inventory this builds on: G35 report (sources, fields, what is and is not knowable).
 > Size L. Branch `feature/g36-usage-collector` (on develop 0474820, after G33).
+> Plan review g1 (codex + Fable, 2026-11-03): 20 findings folded (3 blocking).
 
 ## Goal
 
@@ -21,9 +22,14 @@ limit", without logins, credential files, OTel export, prompts or paths leaving 
    cost, after an incremental collect that rereads only what changed.
 3. `<live_base>/codeforge/usage/summary.json` carries per-account quota and per-day × model totals
    and nothing else; `codeforge usage push` uploads it and prints the sha.
-4. No file outside the listed globs is opened; no text field of a transcript is kept.
+4. No file outside the listed globs is opened; no text field of a transcript is kept, and no
+   path (a source is known by the sha256 of its path).
 5. Every file G36 creates — `usage.db` (+ `-wal`/`-shm`), quota snapshots, `summary.json` — is
    mode 0600, and the directories it creates are 0700, set at creation (not chmod after).
+   `usage.db` is pre-created with `OpenOptions::mode(0o600)` before SQLite opens it (SQLite's unix
+   VFS gives `-wal`/`-shm` the db file's mode); after open, the db and any existing `-wal`/`-shm`
+   or directory with wider bits are tightened and the fix is reported once on stderr. No umask
+   change (process-global).
 
 ## Non-goals (v1)
 
@@ -59,6 +65,16 @@ percentages changed. Failure never changes rendering or exit.
 **Staleness**: a window whose `resets_at` is in the past is unknown (not shown); a snapshot older
 than 6 h drops out. Both tested.
 
+**No new subprocess.** The statusline already resolves `<live_base>` on every run before G36
+(`write_live_context` → `crate::live::resolve_live_base`, whose first probe runs `findmnt`; that
+per-run spawn is the deviation listed in TUI guideline §7, with its own fix direction). G36 reuses
+the resolved, process-cached base from the same run and adds no spawn of its own. A test pins the
+call shape: `record_quota` takes the quota dir as a parameter and resolves nothing.
+
+**Existing files.** A snapshot whose mode is wider than 0600 is rewritten regardless of the
+throttle; the writer (`crate::live::write_live_json`, reused) creates the tmp file 0600 and the
+directories 0700 and tightens an existing directory to 0700.
+
 ### 3. Usage row (both render paths)
 
 Row 1 of the no-pet layout (~l.902) and the boxed layout (~l.1120) is **replaced**, not added:
@@ -66,33 +82,66 @@ Row 1 of the no-pet layout (~l.902) and the boxed layout (~l.1120) is **replaced
 `· acct-b 81% 3d2h · acct-c 12% 4h` — each other fresh account's more constrained window.
 Colours per TUI guideline: yellow ≥ 80 %, red ≥ 95 %; at most one yellow per row (the others drop
 to bold). Width: other accounts drop from the end first (least used first), then ctx, then
-countdowns. Snapshot read is bounded: at most 16 files, each ≤ 4 KiB by metadata and by bytes read,
-regular files only (no symlinks), parsed as `serde_json::Value`, bad ones skipped.
+countdowns. Snapshot read is bounded: entries sorted by file name, the first 16 `*.json` taken, each opened
+with `O_NOFOLLOW | O_NONBLOCK`, then the handle must be a regular file ≤ 4 KiB, at most 4 KiB
+read, parsed as `serde_json::Value`; bad ones skipped (phase 1 review g1). Display order: most
+constrained first.
 
 ### 4. Collector (`src/usage/collect.rs`, `codeforge usage collect`)
 
 Store: `~/.codeforge/usage.db` (machine-wide, beside `ship-failed/`), WAL, migrations inline.
-The db and its `-wal`/`-shm` files are 0600 (umask 077 around the open, then verified); a db found
-with wider bits is tightened and the fix reported once on stderr.
 
-| Source | Glob (exactly) | Read | Dedup |
+**Fields.** Each transcript line is parsed as `serde_json::Value` and only these are inspected;
+everything else is never copied out of the parsed value:
+
+| Source | Glob (exactly) | Inspected | Persisted |
 |---|---|---|---|
-| Claude | `<config>/projects/*/*.jsonl`, `<config>/projects/*/*/subagents/*.jsonl` | `requestId`, `timestamp`, `message.model`, `message.usage.{input_tokens,output_tokens,cache_read_input_tokens,cache_creation.ephemeral_5m_input_tokens,ephemeral_1h_input_tokens,speed}` | `requestId` (one response is several lines with the same usage); table pruned past 40 days |
-| Codex | `<codex>/sessions/**/rollout-*.jsonl` | `turn_context.model`, `token_count.info.total_token_usage.*` | per file: diff of the cumulative total against the stored last total |
+| Claude | `<config>/projects/*/*.jsonl`, `<config>/projects/*/*/subagents/*.jsonl` | `requestId`, `timestamp`, `cwd`, `message.model`, `message.usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation.ephemeral_5m_input_tokens, cache_creation.ephemeral_1h_input_tokens, speed}` | request id (dedup), UTC day, model id, token counts, speed; `cwd` → its last component only |
+| Codex | `<codex>/sessions/YYYY/MM/DD/rollout-*.jsonl` (fixed depth 4) | `timestamp`, `turn_context.model`, `turn_context.cwd`, `token_count.info.total_token_usage.{input_tokens, cached_input_tokens, cache_write_input_tokens, output_tokens}` | session id (from the file name), UTC day, model id, token counts; `cwd` → last component only |
 
-Config dirs: `CLAUDE_CONFIG_DIR` (if set) and `~/.claude`, deduplicated by canonical path.
-Per file state: canonical path, inode, size, offset (+ last codex total). size < offset or inode
-changed → reread from 0. Lines are parsed as `serde_json::Value`; only the fields above are read
-and nothing textual is stored. Project dimension: the transcript's project folder name is a
-path-derived slug → stored locally as the repo **basename** only (`cwd` last component), used by
-`codeforge usage` and never pushed.
+The project dimension (cwd basename) is local only and never pushed.
 
-Buckets: `(day UTC, source, account, model, project) → input, output, cache_write_5m,
-cache_write_1h, cache_read, requests, fast_requests`.
+**Containment (a53b6048, a8e444ca).** Roots: `CLAUDE_CONFIG_DIR` (if set) and `~/.claude`, and
+`CODEX_HOME` or `~/.codex`, each canonicalized once and deduplicated. The walk uses
+`symlink_metadata` at every level and never descends into a symlinked directory or takes a
+symlinked file. Each file is opened `O_NOFOLLOW | O_NONBLOCK`; the handle must be a regular file;
+its canonical path must start with its canonical root, else it is skipped. Nothing outside the
+globs above is opened (no `settings.json`, `.credentials.json`, `auth.json`, …). Tests: a
+symlinked project dir and a symlinked `*.jsonl` pointing outside the root are not read; a FIFO
+named `*.jsonl` does not block.
+
+**No paths persisted (89d5d9cf, c81050d7).** Per-file state is keyed by `source_id` =
+sha256(canonical path) (64 hex); the path itself lives only in memory during a collect. A Claude
+project folder name is a slug of the absolute cwd, so it is never stored either.
+
+**Incremental reads (066f5e7e, aebcffeb).** Per `source_id`: inode, size, `offset`, `head` =
+sha256 of the first 4 KiB. A collect reads from `offset` and consumes only newline-terminated
+lines; an unterminated tail is left for the next collect. The bucket increments, the dedup rows
+and the new cursor are committed in one transaction, so an interrupted collect counts nothing
+twice and loses nothing. Size < offset, a changed inode or a changed `head` → reread from 0.
+
+**Replay and dedup (66270fbf, c3e2dd33).** Aggregation horizon: records older than 35 days are
+never counted. Claude: a request id is counted once (one response appears as several lines with
+the same usage); dedup rows are kept 40 days, longer than the horizon, so a reread from 0 cannot
+recount a pruned id. Codex: per rollout session id (from the file name, not the path) the highest
+cumulative total already counted is stored; a line adds only the part above it, so a copy, a
+replaced file or a reread adds nothing, and a cumulative value that goes down adds nothing.
+
+**Buckets (e11b68d6).** `(day UTC, source, account, model, project, speed) → input, output,
+cache_write_5m, cache_write_1h, cache_read, requests` — fast and standard tokens are kept apart so
+the fast multiplier applies only to fast tokens.
+
+**Account of a transcript**: the config-dir alias (`acct-` + hash8 of the root); Codex:
+`codex-` + hash8(codex root). See Limits.
 
 ### 5. Cost estimate (`src/usage/price.rs`)
 
-Data table, `PRICES_AS_OF = "2026-10-06"` (source: Anthropic pricing via the claude-api reference).
+Data table, `PRICES_AS_OF = "2026-10-06"`. Source: the bundled claude-api reference, "Current
+Models (cached: 2026-10-06)" table and `shared/prompt-caching.md` § Economics.
+Cost of a bucket = m × (input·r_in + output·r_out + cw5m·1.25·r_in + cw1h·2·r_in + cache_read·r_cr),
+where r_cr is the table's cache-read rate (0.1·r_in unless listed) and m = 2 for `speed = fast` on
+a model with a fast tier (Opus 5.5 / 5 / 4.8), else 1 — `fast` on another model gets no multiplier
+(tested).
 $/MTok input / output: Fable 5.1 10/50, Opus 5.5 4/20, Opus 5 5/25, Opus 4.8–4.6 5/25,
 Sonnet 5.5 2/10, Sonnet 5 2/10, Sonnet 4.6 3/15, Haiku 5.5 0.10/0.50, Haiku 4.5 1/5.
 Cache write 1.25× (5 m) / 2× (1 h) input; cache read 0.1× input except Opus 5.5 $0.20 and
@@ -103,19 +152,34 @@ more; v1 applies the flat rate and says so. Unknown model (incl. every Codex mod
 
 ### 6. `codeforge usage` / `--json` / `push`
 
-- `codeforge usage [--days N] [--by model|project|account] [--json]`: collect, then a table.
-- `summary.json` (`codeforge.usage-summary/1`): `generated_at_ms`, `host` (opaque: `host-` +
-  sha8(hostname)), `accounts` (fresh quota snapshots), `days` (last 7 × source × account × model
-  token totals + estimated cost). No project, path, prompt or email.
-- `codeforge usage push`: collect, write summary, `fleet upload --mime application/json`, print the
-  sha. Missing `fleet` → a clear error, exit 1. Before uploading, the payload is checked against an
-  allow-list of keys (the schema above); any other key → refuse to push.
-- `summary.json` is written 0600 via tmp + rename. `host` is never the hostname itself.
+- `codeforge usage [--days N] [--by model|project|account] [--json]`: collect, write
+  `summary.json`, then a table. `codeforge usage collect [--quiet]` also writes it.
+- `summary.json`, exact schema (every key listed; nothing else at any depth):
+
+```json
+{"schema":"codeforge.usage-summary/1","generated_at_ms":0,"host":"host-1a2b3c4d",
+ "prices_as_of":"2026-10-06",
+ "accounts":[{"alias":"acct-a","written_at_ms":0,
+              "five_hour":{"pct":0.32,"resets_at":0},"seven_day":{"pct":0.75,"resets_at":0}}],
+ "days":[{"day":"2026-11-03","source":"claude","account":"acct-a","model":"claude-opus-5-5",
+          "speed":"standard","input":0,"output":0,"cache_write_5m":0,"cache_write_1h":0,
+          "cache_read":0,"requests":0,"cost_usd":1.23}]}
+```
+
+  `host` = `host-` + sha8(hostname); `five_hour`/`seven_day` may be null; `cost_usd` may be null;
+  `days` covers the last 7 days. No project, path, prompt, email or hostname.
+- `codeforge usage push`: collect, write the summary, read it back, validate it against the schema
+  above **recursively** (an unknown key or a wrong type anywhere → refuse), then
+  `fleet upload --mime application/json` of exactly the validated bytes and print the sha. Missing
+  `fleet` → a clear error, exit 1. Tests: an extra key inside an `accounts` row and inside a `days`
+  row are both refused.
+- `summary.json` is written 0600 via tmp + rename (the shared writer).
 
 ### 7. forge-stats pane tab (after G33 — now on develop)
 
 A `用量 / usage` tab in the pane reads `summary.json` (bounded read) and draws the account lines
-and today's model totals. Never spawns codeforge. Band unchanged (decision d).
+and today's model totals, with the summary's age; older than 1 h it says so and names
+`codeforge usage` as the refresh. Never spawns codeforge. Band unchanged (decision d).
 
 ### 8. Install chain (code only, not active on this host)
 
@@ -131,13 +195,25 @@ SessionEnd chain. This host keeps no codeforge hooks, so collect runs on demand 
 
 ## Tests (each with a negative control)
 
-alias (valid env, invalid env → hash, default dir); snapshot write + throttle + staleness (expired
-window, 6 h); row rendering at 144/100/56/24 columns with 0–3 other accounts, colours, one-yellow
-rule; bounded snapshot read (symlink, >4 KiB, 17 files, bad JSON); collector (dedup by requestId,
-incremental offset, truncation → reread, subagent glob, codex cumulative diff, no text stored —
-assert the db holds no string longer than a model id); price (known, unknown → null, fast, cache);
-summary schema has no project/path keys; push refuses a payload with an unknown key; file modes
-(0600 files, 0700 dirs, including the db's -wal/-shm) checked by stat in tests.
+- alias: valid env, invalid env → hash, default dir.
+- quota: write + throttle + staleness (expired window, 6 h); a wider-mode snapshot is rewritten;
+  row rendering with 0–3 other accounts, colours, one yellow per row counting the own bars; FIFO
+  and symlink in the snapshot dir.
+- privacy: fixture transcripts carry distinctive markers in every text field (`message.content`,
+  tool input and output, file contents, the parent dirs of `cwd`, the project folder slug, an
+  email-shaped string); after collect, the raw bytes of `usage.db`, `-wal` and `summary.json` hold
+  none of them. Negative control: persisting one text field turns it red.
+- containment: symlinked project dir, symlinked `*.jsonl`, FIFO `*.jsonl`, a file outside the
+  globs (`settings.json`) — none read.
+- accounting: dedup by requestId; subagent transcript counted once; a record split across two
+  collects counted once; an interrupted collect (error before commit) leaves state unchanged;
+  truncation, inode change and head change → reread without recount; a Claude record older than
+  the horizon after a reread; Codex copy, replacement and decreasing cumulative.
+- price: known, unknown → null, fast on a fast-tier model, fast on another model (no multiplier),
+  cache write 5 m / 1 h, cache read; mixed fast and standard in one day.
+- summary: schema exact; push refuses an unknown key at the top level, in `accounts` and in
+  `days`; uploads the validated bytes.
+- modes: 0600 files, 0700 dirs, including the db's `-wal`/`-shm`, by stat; widened modes repaired.
 
 ## Phases
 
