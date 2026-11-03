@@ -55,7 +55,7 @@ build_cmd=("$tool")
 bin="$target_dir/$target/release/codeforge"
 
 if [ -n "$max_glibc" ]; then
-  need=$(readelf --dyn-syms -W "$bin" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1)
+  need=$(readelf --dyn-syms -W "$bin" | { grep -o 'GLIBC_[0-9][0-9.]*' || true; } | sed 's/GLIBC_//' | sort -uV | tail -1)
   if [ -n "$need" ] && [ "$(printf '%s\n%s\n' "$need" "$max_glibc" | sort -V | tail -1)" != "$max_glibc" ]; then
     echo "package: $target needs glibc $need, newer than the allowed $max_glibc" >&2
     exit 1
@@ -65,7 +65,9 @@ fi
 
 name="codeforge-${version}-${target}"
 stage="$(mktemp -d)"
-trap 'rm -rf "$stage"' EXIT
+check=""
+cleanup() { rm -rf "$stage"; if [ -n "$check" ]; then rm -rf "$check"; fi; }
+trap cleanup EXIT
 mkdir -p "$stage/$name" "$out"
 cp "$bin" "$stage/$name/codeforge"
 chmod +x "$stage/$name/codeforge"
@@ -80,7 +82,6 @@ if [ "$target" = "$host" ]; then
   check="$(mktemp -d)"
   tar xzf "$out/$name.tar.gz" -C "$check"
   got="$("$check/$name/codeforge" --version)"
-  rm -rf "$check"
   if [ "$got" != "codeforge $version" ]; then
     echo "package: the packed binary says '$got', expected 'codeforge $version'" >&2
     exit 1
