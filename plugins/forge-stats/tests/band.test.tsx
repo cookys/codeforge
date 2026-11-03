@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { bandLayout, halfBlockCells, rgbHex, parseSessionView, parseSprite, sanitizeSessionId } from '../hooks/model'
+import { bandLayout, halfBlockCells, rgbHex, parseFleet, parseSessionView, parseSprite, sanitizeSessionId, summaryParts } from '../hooks/model'
 import { FERRIS_MINI } from './ferris-mini'
 import { FERRIS } from './ferris-sprite'
 import { VECTORS } from './session-id-vectors'
@@ -125,7 +125,7 @@ test('the heartbeat is written at session start, before any tick, and every 2 s'
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const first = lastBeat(w)
-  expect(first).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_000_000, layout: 'band' })
+  expect(first).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_000_000, layout: 'band', summary_row: true })
   expect(w.writes.filter(x => x.path === HB)[0]!.text.length < 512).toBe(true)
   await clock.advance(2000)
   expect(lastBeat(w)?.written_at_ms).toBe(1_002_000)
@@ -213,7 +213,7 @@ test('/forge-stats layout switches, persists, and the beat follows', async ($, o
   expect(w.store.layout).toBe('pane')
   expect(w.opened).toBe(1)
   await clock.advance(2000)
-  expect(lastBeat(w)).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_002_000, layout: 'pane' })
+  expect(lastBeat(w)).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_002_000, layout: 'pane', summary_row: true })
   const bad = await $.command.run(cmd('layout sideways'))
   expect(bad.text?.includes('band|pane')).toBe(true)
   expect(w.store.layout).toBe('pane')
@@ -250,28 +250,122 @@ test('the band colours by meaning: the pet in its village colour, lights by stat
   await m.unmount()
 })
 
-test('one row passes on: the tab label is autopilot\'s since the speed moved there (B32)', async ($, on) => {
+// the summary row's text (TUI guideline §2.2): the Texts of the Box keyed `summary`; undefined when forge-stats passed the row on
+async function summaryText(ui: { findAll: (q: { type: string }) => Promise<{ props: { key?: string } }[]>; find: (q: { type: string }) => Promise<unknown> }) {
+  expect(await ui.find({ type: 'Raster' })).toBe(undefined)
+  const boxes = (await ui.findAll({ type: 'Box' })).map(b => b.props.key)
+  if (boxes.includes('beneath')) return undefined
+  expect(boxes).toEqual(['summary'])
+  const texts = (await ui.findAll({ type: 'Text' })) as unknown as { text: string }[]
+  return texts.map(t => t.text).join('')
+}
+
+test('one row is the summary row (autopilot hands it down under its tab row, summary_row in the heartbeat): the pet when it fits, else passed on (PM G33)', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  for (const cols of [30, 16, 8]) {
+  for (const [cols, want] of [[30, 'Ferris Lv.3'], [13, 'Ferris Lv.3'], [12, undefined], [8, undefined]] as const) {
     const ui = await $.ui.mount(band(cols, { maxRows: 1 }))
-    expect(await ui.find({ type: 'Raster' })).toBe(undefined)
-    expect(await ui.find({ type: 'Text' })).toBe(undefined)
-    // what draws beneath stands: forge-stats returned next(e)
-    expect((await ui.findAll({ type: 'Box' })).map(b => b.props.key)).toEqual(['beneath'])
+    expect(await summaryText(ui)).toBe(want) // 'Ferris Lv.3' is 11 cells; the row keeps a 2-cell margin
     await ui.unmount()
   }
 })
 
-test('two to five rows, or a thin column, is a one-row summary Text', async ($, on) => {
+test('two to five rows, or a thin column, is the same one-row summary', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  // the pet alone: no speed (B32)
+  // the pet alone: no speed (B32), no fleet summary without autopilot
   for (const target of [band(100, { maxRows: 3 }), band(20, { maxRows: 12 })]) {
     const ui = await $.ui.mount(target)
-    expect(await onlyText(ui)).toBe('Ferris Lv.3')
+    expect(await summaryText(ui)).toBe('Ferris Lv.3')
+    await ui.unmount()
+  }
+})
+
+// ---- the fleet summary (PM G33): autopilot's `autopilot.fleet` atom, read only ----
+const FLEET = { v: 1, fetchedMs: 999_000, error: null, capped: 0, totals: { needYou: 1, failed: 1, stuck: 2, running: 4, waiting: 11 }, lanes: [], topStuck: null }
+// inline plugins named autopilot that publish a summary at session start. A register runs in its own environment (no test variable, no code from strings), so each
+// value is written out in its source.
+const AUTOPILOT_V1 = {
+  name: 'autopilot',
+  register: ((on: any) => {
+    on('session.start', async ($: any, e: any, next: any) => {
+      await $.state.set({ plugin: 'autopilot', key: 'fleet' }, { v: 1, fetchedMs: 999000, error: null, capped: 0, totals: { needYou: 1, failed: 1, stuck: 2, running: 4, waiting: 11 }, lanes: [], topStuck: null })
+      return next(e)
+    })
+  }) as never,
+}
+const AUTOPILOT_V2 = {
+  name: 'autopilot',
+  register: ((on: any) => {
+    on('session.start', async ($: any, e: any, next: any) => {
+      await $.state.set({ plugin: 'autopilot', key: 'fleet' }, { v: 2, fetchedMs: 999000, error: null, capped: 0, totals: { needYou: 1, failed: 1, stuck: 2, running: 4, waiting: 11 }, lanes: [], topStuck: null })
+      return next(e)
+    })
+  }) as never,
+}
+
+test('parseFleet takes autopilot.fleet v 1 only; summaryParts gives the widest form that fits, dropping from the end and keeping the most severe count', () => {
+  expect(parseFleet(FLEET)?.totals).toEqual(FLEET.totals)
+  for (const bad of [null, 3, {}, { ...FLEET, v: 2 }, { ...FLEET, totals: { ...FLEET.totals, stuck: -1 } }, { ...FLEET, totals: { ...FLEET.totals, waiting: '1' } }]) expect(parseFleet(bad)).toBe(null)
+  const f = parseFleet(FLEET)
+  const text = (cols: number, pet: string | null = 'Ferris Lv.3') => summaryParts(f, pet, cols, 'fleet')?.map(p => p.text).join('')
+  expect(text(80)).toBe('fleet ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.3')
+  expect(text(26)).toBe('fleet ▲1 ✗1 ⊘2 ●4 ⧗11') // the pet goes first
+  expect(text(20)).toBe('fleet ▲1 ✗1 ⊘2 ●4') // then ⧗
+  expect(text(17)).toBe('fleet ▲1 ✗1 ⊘2 ●4') // 17 cells: fits exactly
+  expect(text(16)).toBe('fleet ▲1 ✗1 ⊘2') // then ●
+  expect(text(13)).toBe('fleet ▲1 ✗1')
+  expect(text(10)).toBe('fleet ▲1')
+  expect(text(5)).toBe('▲1') // the most severe count alone, no word
+  expect(text(1)).toBe(undefined) // nothing fits: the row is passed on
+  // the most severe non-zero count leads when ▲ is 0
+  const noNeed = parseFleet({ ...FLEET, totals: { needYou: 0, failed: 0, stuck: 2, running: 1, waiting: 0 } })
+  expect(summaryParts(noNeed, null, 3, 'fleet')?.map(p => p.text).join('')).toBe('⊘2')
+  // colours are the shared table's theme keys; the word and separator dim
+  const parts = summaryParts(f, 'Ferris Lv.3', 80, 'fleet')!
+  expect(parts.filter(p => p.color).map(p => p.text + ':' + p.color)).toEqual(['▲:warning', '✗:error', '⊘:error', '●:suggestion', '⧗:inactive'])
+  expect(parts.filter(p => p.dim).map(p => p.text)).toEqual(['fleet', ' · '])
+  // no count: ✓ only after a fetch that succeeded; ? on an error or before any fetch
+  const zero = { needYou: 0, failed: 0, stuck: 0, running: 0, waiting: 0 }
+  expect(summaryParts(parseFleet({ ...FLEET, totals: zero }), null, 40, 'fleet')?.map(p => p.text).join('')).toBe('fleet ✓')
+  expect(summaryParts(parseFleet({ ...FLEET, totals: zero, error: 'hub unreachable' }), null, 40, 'fleet')?.map(p => p.text).join('')).toBe('fleet ?')
+  expect(summaryParts(parseFleet({ ...FLEET, totals: zero, fetchedMs: null }), null, 40, 'fleet')?.map(p => p.text).join('')).toBe('fleet ?')
+  // no summary and no pet: nothing to draw
+  expect(summaryParts(null, null, 40, 'fleet')).toBe(null)
+})
+
+test('with autopilot\'s summary the one-row band draws the fleet counts before the pet (PM G33)', { plugins: [AUTOPILOT_V1] }, async ($, on) => {
+  world(on)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  for (const [cols, want] of [[60, 'fleet ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.3'], [22, 'fleet ▲1 ✗1 ⊘2 ●4'], [6, '▲1']] as const) {
+    const ui = await $.ui.mount(band(cols, { maxRows: 1 }))
+    expect(await summaryText(ui)).toBe(want)
+    await ui.unmount()
+  }
+})
+
+test('another summary version is no summary: the pet alone', { plugins: [AUTOPILOT_V2] }, async ($, on) => {
+  world(on)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount(band(60, { maxRows: 1 }))
+  expect(await summaryText(ui)).toBe('Ferris Lv.3')
+  await ui.unmount()
+})
+
+test('mini and full tiers put the fleet row on top only with a row to spare above the tier minimum (mini >= 7, full >= 13)', { plugins: [AUTOPILOT_V1] }, async ($, on) => {
+  world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  for (const [rows, top] of [[6, false], [7, true], [12, false], [13, true]] as const) {
+    const ui = await $.ui.mount(band(100, { maxRows: rows }))
+    expect(await ui.find({ type: 'Raster' }) !== undefined).toBe(true)
+    const keys = (await ui.findAll({ type: 'Box' })).map(b => b.props.key)
+    expect(keys.includes('fleet')).toBe(top)
     await ui.unmount()
   }
 })

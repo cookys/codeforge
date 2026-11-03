@@ -222,8 +222,10 @@ export const heartbeatPath = (base: string, sid: string) => `${base}/codeforge/m
 export const sessionViewPath = (base: string, sid: string) => `${base}/codeforge/session/${sanitizeSessionId(sid)}.json`
 
 /** The heartbeat line, as `codeforge statusline` reads it. */
+// `summary_row: true` tells autopilot's band this forge-stats draws the one-line summary on the band's second row (PM G33; TUI guideline §1.1 rule 3). An older
+// forge-stats answered a one-row ask with a speed label, so autopilot hands that row only to a heartbeat that says so.
 export function heartbeatText(sid: string, now: number, layout: Layout): string {
-  return JSON.stringify({ schema: HEARTBEAT_SCHEMA, session_id: sid, written_at_ms: now, layout })
+  return JSON.stringify({ schema: HEARTBEAT_SCHEMA, session_id: sid, written_at_ms: now, layout, summary_row: true })
 }
 
 export const BAND_MIN_ROWS = 12
@@ -303,4 +305,64 @@ export function bandTier(maxRows: number, bodyColumns: number, hasMini: boolean)
 export function rgbHex(rgb: readonly number[]): string | null {
   if (rgb.length !== 3 || !rgb.every(c => Number.isInteger(c) && c >= 0 && c <= 255)) return null
   return '#' + rgb.map(c => c.toString(16).padStart(2, '0')).join('')
+}
+
+// ---- the fleet summary (PM G33; TUI guideline §2.2) ----
+// autopilot's live mod publishes `autopilot.fleet` (its fleet.ts FleetSummary, `v: 1`) in `$.state`; this mod only reads it. Anything else (no autopilot, another `v`,
+// a wrong shape) is no summary: the fleet part is not drawn.
+export type FleetCounts = { needYou: number; failed: number; stuck: number; running: number; waiting: number }
+export type FleetSummary = { v: 1; fetchedMs: number | null; error: string | null; totals: FleetCounts }
+const COUNT_KEYS = ['needYou', 'failed', 'stuck', 'running', 'waiting'] as const
+const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0
+export function parseFleet(value: unknown): FleetSummary | null {
+  if (typeof value !== 'object' || value === null) return null
+  const v = value as Record<string, unknown>
+  if (v.v !== 1 || typeof v.totals !== 'object' || v.totals === null) return null
+  const t = v.totals as Record<string, unknown>
+  if (!COUNT_KEYS.every(k => isCount(t[k]))) return null
+  const fetchedMs = typeof v.fetchedMs === 'number' ? v.fetchedMs : null
+  const error = typeof v.error === 'string' && v.error !== '' ? v.error : null
+  return { v: 1, fetchedMs, error, totals: { needYou: t.needYou as number, failed: t.failed as number, stuck: t.stuck as number, running: t.running as number, waiting: t.waiting as number } }
+}
+
+// One part of the summary line: a glyph in its state colour, a number or word in the default colour, a dim separator. Colours are theme keys (guideline §3.3-4).
+export type SummaryPart = { text: string; color?: 'warning' | 'error' | 'suggestion' | 'inactive' | 'success'; dim?: boolean }
+// the state glyphs of the shared table (guideline §3.1), most severe first: ▲ need_you, ✗ failed, ⊘ stalled, ● running, ⧗ waiting
+const COUNTS: readonly { key: keyof FleetCounts; glyph: string; color: SummaryPart['color'] }[] = [
+  { key: 'needYou', glyph: '▲', color: 'warning' },
+  { key: 'failed', glyph: '✗', color: 'error' },
+  { key: 'stuck', glyph: '⊘', color: 'error' },
+  { key: 'running', glyph: '●', color: 'suggestion' },
+  { key: 'waiting', glyph: '⧗', color: 'inactive' },
+]
+const partsWidth = (parts: readonly SummaryPart[]) => parts.reduce((n, p) => n + displayWidth(p.text), 0)
+
+// The line, widest form first, the first that fits `cols` wins (guideline §2.2):
+//   艦隊 ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.3
+// dropping from the end: the pet, then ⧗, ●, ⊘, ✗ (each only while a more severe count stays), then the word, leaving the most severe non-zero count alone.
+// No count: 「艦隊 ✓」 only after a fetch that succeeded, 「艦隊 ?」 when the last fetch failed or none succeeded yet. No summary (`fleet` null): the pet alone.
+// null when nothing fits or there is nothing to draw: the caller passes the row on (`next(e)`), never draws a blank row.
+export function summaryParts(fleet: FleetSummary | null, petTag: string | null, cols: number, word: string): SummaryPart[] | null {
+  const sep: SummaryPart = { text: ' · ', dim: true }
+  const pet: SummaryPart[] = petTag === null ? [] : [{ text: petTag }]
+  const forms: SummaryPart[][] = []
+  if (fleet === null) {
+    if (pet.length > 0) forms.push(pet)
+  } else {
+    const label: SummaryPart = { text: word, dim: true }
+    const counts = COUNTS.filter(c => fleet.totals[c.key] > 0).map(c => [{ text: ' ' }, { text: c.glyph, color: c.color }, { text: String(fleet.totals[c.key]) }] as SummaryPart[])
+    if (counts.length === 0) {
+      const mark: SummaryPart = fleet.error === null && fleet.fetchedMs !== null ? { text: '✓', color: 'success' } : { text: '?', color: 'inactive' }
+      const line = [label, { text: ' ' }, mark]
+      if (pet.length > 0) forms.push([...line, sep, ...pet])
+      forms.push(line)
+    } else {
+      const withWord = (n: number) => [label, ...counts.slice(0, n).flat()]
+      if (pet.length > 0) forms.push([...withWord(counts.length), sep, ...pet])
+      for (let n = counts.length; n >= 1; n--) forms.push(withWord(n))
+      forms.push(counts[0].slice(1)) // the most severe count alone, no word
+    }
+  }
+  for (const f of forms) if (partsWidth(f) <= cols) return f
+  return null
 }
