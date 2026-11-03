@@ -48,12 +48,15 @@ pub fn claude_alias(env_account: Option<&str>, config_dir: &Path) -> String {
     }
 }
 
-/// This process's alias, read from the environment (the one place G36 reads it).
-pub fn current_claude_alias() -> String {
+/// This process's config dir and alias, read from the environment (the one place G36
+/// reads `AUTOPILOT_ACCOUNT`; the collector never does).
+pub fn current_claude_account() -> (PathBuf, String) {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let cfg = std::env::var("CLAUDE_CONFIG_DIR").ok();
     let acct = std::env::var(ACCOUNT_ENV).ok();
-    claude_alias(acct.as_deref(), &claude_config_dir(cfg.as_deref(), &home))
+    let dir = claude_config_dir(cfg.as_deref(), &home);
+    let alias = claude_alias(acct.as_deref(), &dir);
+    (dir, alias)
 }
 
 #[cfg(test)]

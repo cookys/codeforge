@@ -27,6 +27,7 @@ mod statusline;
 mod strategy;
 mod subagent_statusline;
 mod tui;
+mod usage;
 mod use_item;
 mod world;
 
@@ -246,6 +247,20 @@ pub enum Commands {
     },
     /// 腦部健康診斷：即時 probe + 本地/央腦全維度報告 + next-step 建議
     Doctor,
+    /// 用量：讀轉錄檔的數字欄位（增量）、寫 summary.json、印日 × model 表（API 等值估算）
+    Usage {
+        #[command(subcommand)]
+        action: Option<UsageAction>,
+        /// 顯示最近幾天（1–35）
+        #[arg(long, default_value = "7")]
+        days: u32,
+        /// 分組：model、project 或 account
+        #[arg(long, default_value = "model", value_parser = ["model", "project", "account"])]
+        by: String,
+        /// 輸出 JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -293,6 +308,18 @@ pub enum MnemosCliAction {
         #[arg(long)]
         verbose: bool,
     },
+}
+
+#[derive(Subcommand)]
+pub enum UsageAction {
+    /// 只收集並寫 summary.json（hook 用）
+    Collect {
+        /// 不印 stdout
+        #[arg(long)]
+        quiet: bool,
+    },
+    /// 收集、寫 summary.json，驗證後以 `fleet upload` 上傳，印出 blob sha
+    Push,
 }
 
 #[derive(Subcommand)]
@@ -477,6 +504,16 @@ pub fn run(cli: Cli) -> Result<()> {
             },
         ),
         Commands::Doctor => doctor::run(&ctx),
+        Commands::Usage {
+            action,
+            days,
+            by,
+            json,
+        } => usage::run(match action {
+            Some(UsageAction::Collect { quiet }) => usage::Action::Collect { quiet },
+            Some(UsageAction::Push) => usage::Action::Push,
+            None => usage::Action::Show { days, by, json },
+        }),
         Commands::MnemosCli { action } => mnemos_cli::run(
             &ctx,
             match action {
