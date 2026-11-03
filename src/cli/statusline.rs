@@ -310,11 +310,17 @@ fn record_quota(
 /// constrained first, as many as fit in `avail` visible cells (an account that does
 /// not fit with its countdown is tried without it; the first that does not fit ends
 /// the list). Red at 95 %, yellow at 80 % for the first such account only (TUI
-/// guideline: one yellow per row), the rest bold.
-fn others_segment(others: &[crate::usage::quota::Snapshot], now_s: i64, avail: usize) -> String {
+/// guideline: one yellow per row), the rest bold. `yellow_taken`: the row already
+/// shows a yellow (this session's own bars, see [`own_bars_yellow`]).
+fn others_segment(
+    others: &[crate::usage::quota::Snapshot],
+    now_s: i64,
+    avail: usize,
+    yellow_taken: bool,
+) -> String {
     let mut out = String::new();
     let mut used = 0usize;
-    let mut yellow_used = false;
+    let mut yellow_used = yellow_taken;
     for s in others {
         let Some((_label, w)) = s.constrained(now_s) else {
             continue;
@@ -745,6 +751,15 @@ fn pad_to_vis(s: &str, width: usize) -> String {
     }
 }
 
+/// True when this session's own usage bars already draw the yellow (`BAR_MID`,
+/// 50–80 % in `bar_rgb`), so the other accounts must not add a second one.
+fn own_bars_yellow(data: &StatusInput) -> bool {
+    [data.five_hour_pct, data.seven_day_pct, data.context_pct]
+        .into_iter()
+        .flatten()
+        .any(|p| bar_rgb(p) == BAR_MID)
+}
+
 fn fmt_remaining(resets_at: i64) -> String {
     fmt_remaining_at(resets_at, chrono::Utc::now().timestamp())
 }
@@ -1014,7 +1029,10 @@ fn render_strip<W: Write>(
     let usage_left = {
         let room = width.saturating_sub(1 + ansi_vis(&usage_left) + 1);
         let now_s = chrono::Utc::now().timestamp();
-        format!("{usage_left}{}", others_segment(&data.others, now_s, room))
+        format!(
+            "{usage_left}{}",
+            others_segment(&data.others, now_s, room, own_bars_yellow(data))
+        )
     };
     let usage_left_vis = ansi_vis(&usage_left);
     // Two hint forms, picked by available width
@@ -1232,7 +1250,12 @@ fn render_full<W: Write>(
         let mut content = parts.join("  ");
         let room = panel_w.saturating_sub(vis("│ ") + ansi_vis(&content) + vis("│") + 1);
         let now_s = chrono::Utc::now().timestamp();
-        content.push_str(&others_segment(&data.others, now_s, room));
+        content.push_str(&others_segment(
+            &data.others,
+            now_s,
+            room,
+            own_bars_yellow(data),
+        ));
         box_mid(&content, "│ ", "│")
     };
 
@@ -2328,25 +2351,25 @@ mod tests {
             quota_snap("acct-b", 0.81, Q_NOW + 3 * 86400 + 7200),
             quota_snap("acct-c", 0.12, Q_NOW + 4 * 3600),
         ];
-        let full = strip_ansi(&others_segment(&others, Q_NOW, 200));
+        let full = strip_ansi(&others_segment(&others, Q_NOW, 200, false));
         assert_eq!(full, " · acct-b 81% 3d2h · acct-c 12% 4h0m");
         // every room: never wider than given
         for room in 0..60 {
-            let got = strip_ansi(&others_segment(&others, Q_NOW, room));
+            let got = strip_ansi(&others_segment(&others, Q_NOW, room, false));
             assert!(vis(&got) <= room, "room {room}: {got:?}");
         }
         // room for the first with its countdown and the second without
         assert_eq!(
-            strip_ansi(&others_segment(&others, Q_NOW, 31)),
+            strip_ansi(&others_segment(&others, Q_NOW, 31, false)),
             " · acct-b 81% 3d2h · acct-c 12%"
         );
         // the first without its countdown only
         assert_eq!(
-            strip_ansi(&others_segment(&others, Q_NOW, 14)),
+            strip_ansi(&others_segment(&others, Q_NOW, 14, false)),
             " · acct-b 81%"
         );
         // no room at all
-        assert_eq!(others_segment(&others, Q_NOW, 12), "");
+        assert_eq!(others_segment(&others, Q_NOW, 12, false), "");
     }
 
     #[test]
@@ -2360,7 +2383,7 @@ mod tests {
             quota_snap("acct-y", 0.88, Q_NOW + 60),
             quota_snap("acct-z", 0.84, Q_NOW + 60),
         ];
-        let seg = others_segment(&others, Q_NOW, 200);
+        let seg = others_segment(&others, Q_NOW, 200, false);
         assert_eq!(seg.matches(&esc(BAR_MID)).count(), 1, "{seg:?}");
         assert_eq!(seg.matches(&esc(BAR_HIGH)).count(), 1, "{seg:?}");
         assert!(
@@ -2425,5 +2448,50 @@ mod tests {
         for line in text.lines() {
             assert!(vis(line) <= 100, "{line:?}");
         }
+    }
+
+    #[test]
+    fn one_yellow_per_row_counts_this_sessions_own_bars() {
+        if !color_enabled() {
+            return;
+        }
+        let esc = format!("\x1b[38;2;{};{};{}m", BAR_MID.0, BAR_MID.1, BAR_MID.2);
+        let now = chrono::Utc::now().timestamp();
+        let row1 = |own: f64| -> String {
+            let data = StatusInput {
+                model: Some("Opus 5.5".into()),
+                seven_day_pct: Some(own),
+                seven_day_resets_at: Some(now + 86400),
+                others: vec![quota_snap("acct-b", 0.85, now + 7200)],
+                ..Default::default()
+            };
+            let mut buf = Vec::new();
+            render_compact(&mut buf, &data, 100).unwrap();
+            let text = String::from_utf8(buf).unwrap();
+            text.lines()
+                .find(|l| l.contains("acct-b"))
+                .unwrap_or_default()
+                .to_string()
+        };
+        let other_part = |r: &str| r[r.find("acct-b").unwrap()..].to_string();
+        // own 7d in the yellow band (50-80 %): the 85 % account is bold, not a second yellow
+        let r = row1(0.6);
+        assert!(
+            r[..r.find("acct-b").unwrap()].contains(&esc),
+            "own bar is yellow: {r:?}"
+        );
+        assert!(!other_part(&r).contains(&esc), "{r:?}");
+        assert!(other_part(&r).contains("\x1b[1m"), "{r:?}");
+        // own bars green: the other account takes the yellow
+        let r = row1(0.2);
+        assert!(other_part(&r).contains(&esc), "{r:?}");
+        assert!(own_bars_yellow(&StatusInput {
+            context_pct: Some(0.7),
+            ..Default::default()
+        }));
+        assert!(!own_bars_yellow(&StatusInput {
+            context_pct: Some(0.9),
+            ..Default::default()
+        }));
     }
 }

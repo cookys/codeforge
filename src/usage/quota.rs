@@ -103,19 +103,34 @@ impl Snapshot {
     }
 }
 
-/// Read one snapshot file: a regular file (not a symlink), at most MAX_BYTES by
-/// metadata and by bytes read, JSON with the right schema. Anything else → None.
+/// Open for reading without following a symlink at the last component and without
+/// blocking on a FIFO: the checks then run on the opened handle, so a path swapped
+/// between a check and the open cannot redirect or stall the read.
+#[cfg(unix)]
+fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::File::open(path)
+}
+
+/// Read one snapshot file: opened with O_NOFOLLOW | O_NONBLOCK, then the handle must
+/// be a regular file of at most MAX_BYTES, and at most MAX_BYTES are read; JSON with
+/// the right schema. Anything else → None.
 fn read_bounded(path: &Path) -> Option<Snapshot> {
-    let meta = std::fs::symlink_metadata(path).ok()?;
+    let file = open_no_follow(path).ok()?;
+    let meta = file.metadata().ok()?;
     if !meta.file_type().is_file() || meta.len() > MAX_BYTES {
         return None;
     }
     let mut buf = Vec::new();
-    std::fs::File::open(path)
-        .ok()?
-        .take(MAX_BYTES + 1)
-        .read_to_end(&mut buf)
-        .ok()?;
+    file.take(MAX_BYTES + 1).read_to_end(&mut buf).ok()?;
     if buf.len() as u64 > MAX_BYTES {
         return None;
     }
@@ -338,6 +353,33 @@ mod tests {
             .into_iter()
             .map(|s| s.alias)
             .collect();
+        assert_eq!(got, ["acct-b"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_is_skipped_without_blocking() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("q");
+        let good = snap("acct-b", NOW_MS, Some((0.4, NOW_S + 60)), None);
+        crate::live::write_live_json(&dir, "acct-b.json", &good.to_json()).unwrap();
+        let fifo =
+            std::ffi::CString::new(dir.join("acct-f.json").as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: a valid NUL-terminated path; mkfifo has no other preconditions.
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        // no writer ever opens it: a blocking open would hang this test
+        let (tx, rx) = std::sync::mpsc::channel();
+        let d = dir.clone();
+        std::thread::spawn(move || {
+            let got: Vec<String> = read_others(&d, "acct-own", NOW_MS)
+                .into_iter()
+                .map(|s| s.alias)
+                .collect();
+            let _ = tx.send(got);
+        });
+        let got = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("read_others blocked on a FIFO");
         assert_eq!(got, ["acct-b"]);
     }
 
