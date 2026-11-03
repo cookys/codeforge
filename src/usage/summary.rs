@@ -18,8 +18,66 @@ type DayKey = (String, String, String, String, String);
 pub const SCHEMA: &str = "codeforge.usage-summary/1";
 pub const FILE: &str = "summary.json";
 pub const UPLOAD_NAME: &str = "usage-summary.json";
+
+// ---- the contract (`codeforge.usage-summary/1`): every rule `validate` applies, as data. The
+// forge-stats pane parses the same file; its copy (`USAGE_CONTRACT` in
+// plugins/forge-stats/hooks/model.ts) must equal `contract()` — a test compares the two. ----
 const MAX_ACCOUNTS: usize = 64;
 const MAX_DAYS_ROWS: usize = 10_000;
+const TOP_KEYS: [&str; 6] = [
+    "schema",
+    "generated_at_ms",
+    "host",
+    "prices_as_of",
+    "accounts",
+    "days",
+];
+const ACCOUNT_KEYS: [&str; 4] = ["alias", "written_at_ms", "five_hour", "seven_day"];
+const WINDOW_KEYS: [&str; 2] = ["pct", "resets_at"];
+const COUNT_KEYS: [&str; 6] = [
+    "input",
+    "output",
+    "cache_write_5m",
+    "cache_write_1h",
+    "cache_read",
+    "requests",
+];
+const DAY_KEYS: [&str; 12] = [
+    "day",
+    "source",
+    "account",
+    "model",
+    "speed",
+    "input",
+    "output",
+    "cache_write_5m",
+    "cache_write_1h",
+    "cache_read",
+    "requests",
+    "cost_usd",
+];
+const SOURCES: [&str; 2] = ["claude", "codex"];
+const SPEEDS: [&str; 2] = ["standard", "fast"];
+const PCT_MAX: f64 = 1.5;
+/// The grammars `valid_alias`, `model_id` and `is_host` implement, as regexes for the pane.
+#[cfg(test)]
+const ALIAS_RE: &str = "^[a-z0-9-]{1,24}$";
+#[cfg(test)]
+const MODEL_RE: &str = "^[A-Za-z0-9._-]{1,64}$";
+#[cfg(test)]
+const HOST_RE: &str = "^host-[0-9a-f]{8}$";
+
+/// The contract as data, compared against the pane's copy.
+#[cfg(test)]
+pub fn contract() -> Value {
+    json!({
+        "schema": SCHEMA,
+        "top": TOP_KEYS, "account": ACCOUNT_KEYS, "window": WINDOW_KEYS, "day": DAY_KEYS,
+        "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
+        "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE,
+        "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
+    })
+}
 
 /// `<live_base>/codeforge/usage`.
 pub fn summary_dir(live_base: &Path) -> PathBuf {
@@ -77,12 +135,8 @@ pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Va
                 r.speed.clone(),
             ))
             .or_default();
-        e.0.input += r.tokens.input;
-        e.0.output += r.tokens.output;
-        e.0.cache_write_5m += r.tokens.cache_write_5m;
-        e.0.cache_write_1h += r.tokens.cache_write_1h;
-        e.0.cache_read += r.tokens.cache_read;
-        e.1 += r.requests;
+        e.0.add(&r.tokens);
+        e.1 = e.1.saturating_add(r.requests);
     }
     let days: Vec<Value> = days
         .into_iter()
@@ -116,10 +170,10 @@ fn obj<'a>(v: &'a Value, keys: &[&str], at: &str) -> Result<&'a Map<String, Valu
     let Some(m) = v.as_object() else {
         bail!("{at}: 不是物件");
     };
-    for k in m.keys() {
-        if !keys.contains(&k.as_str()) {
-            bail!("{at}: 不允許的欄位 `{k}`");
-        }
+    // the unexpected key itself is never echoed: it is exactly what must not leave the machine
+    let extra = m.keys().filter(|k| !keys.contains(&k.as_str())).count();
+    if extra > 0 {
+        bail!("{at}: 有 {extra} 個不允許的欄位");
     }
     for k in keys {
         if !m.contains_key(*k) {
@@ -148,10 +202,10 @@ fn win(v: &Value, at: &str) -> Result<()> {
     if v.is_null() {
         return Ok(());
     }
-    let m = obj(v, &["pct", "resets_at"], at)?;
+    let m = obj(v, &WINDOW_KEYS, at)?;
     let pct = m["pct"]
         .as_f64()
-        .filter(|p| p.is_finite() && (0.0..=1.5).contains(p));
+        .filter(|p| p.is_finite() && (0.0..=PCT_MAX).contains(p));
     if pct.is_none() || m["resets_at"].as_i64().is_none() {
         bail!("{at}: 值不合法");
     }
@@ -160,18 +214,7 @@ fn win(v: &Value, at: &str) -> Result<()> {
 
 /// Keys, types and values, recursively. Anything else is refused.
 pub fn validate(v: &Value) -> Result<()> {
-    let top = obj(
-        v,
-        &[
-            "schema",
-            "generated_at_ms",
-            "host",
-            "prices_as_of",
-            "accounts",
-            "days",
-        ],
-        "summary",
-    )?;
+    let top = obj(v, &TOP_KEYS, "summary")?;
     if top["schema"] != SCHEMA {
         bail!("summary.schema: 不是 {SCHEMA}");
     }
@@ -190,11 +233,7 @@ pub fn validate(v: &Value) -> Result<()> {
     }
     for (i, a) in accounts.iter().enumerate() {
         let at = format!("summary.accounts[{i}]");
-        let m = obj(
-            a,
-            &["alias", "written_at_ms", "five_hour", "seven_day"],
-            &at,
-        )?;
+        let m = obj(a, &ACCOUNT_KEYS, &at)?;
         if !m["alias"].as_str().is_some_and(valid_alias) {
             bail!("{at}.alias: 不是合法別名");
         }
@@ -208,28 +247,11 @@ pub fn validate(v: &Value) -> Result<()> {
     }
     for (i, d) in days.iter().enumerate() {
         let at = format!("summary.days[{i}]");
-        let m = obj(
-            d,
-            &[
-                "day",
-                "source",
-                "account",
-                "model",
-                "speed",
-                "input",
-                "output",
-                "cache_write_5m",
-                "cache_write_1h",
-                "cache_read",
-                "requests",
-                "cost_usd",
-            ],
-            &at,
-        )?;
+        let m = obj(d, &DAY_KEYS, &at)?;
         if !m["day"].as_str().is_some_and(is_day) {
             bail!("{at}.day: 不是日期");
         }
-        if !matches!(m["source"].as_str(), Some("claude" | "codex")) {
+        if !m["source"].as_str().is_some_and(|s| SOURCES.contains(&s)) {
             bail!("{at}.source: 不是 claude/codex");
         }
         if !m["account"].as_str().is_some_and(valid_alias) {
@@ -242,17 +264,10 @@ pub fn validate(v: &Value) -> Result<()> {
         if !model_ok {
             bail!("{at}.model: 不符合 model id 格式");
         }
-        if !matches!(m["speed"].as_str(), Some("standard" | "fast")) {
+        if !m["speed"].as_str().is_some_and(|s| SPEEDS.contains(&s)) {
             bail!("{at}.speed: 不是 standard/fast");
         }
-        for k in [
-            "input",
-            "output",
-            "cache_write_5m",
-            "cache_write_1h",
-            "cache_read",
-            "requests",
-        ] {
+        for k in COUNT_KEYS {
             uint(&m[k], &format!("{at}.{k}"))?;
         }
         let c = &m["cost_usd"];
@@ -263,10 +278,11 @@ pub fn validate(v: &Value) -> Result<()> {
     Ok(())
 }
 
-/// Write `summary.json` (0600, dir 0700, tmp + rename).
+/// Write `summary.json` (0600, dir 0700, tmp + rename). Errors name the file, never its path,
+/// and carry no source (a source's text may hold the path).
 pub fn write(dir: &Path, v: &Value) -> Result<PathBuf> {
     crate::live::write_live_json(dir, FILE, v)
-        .with_context(|| format!("無法寫入 {}", dir.join(FILE).display()))?;
+        .map_err(|_| anyhow::anyhow!("無法寫入 summary.json"))?;
     Ok(dir.join(FILE))
 }
 
@@ -275,14 +291,18 @@ pub fn write(dir: &Path, v: &Value) -> Result<PathBuf> {
 /// Returns the blob sha the fleet printed.
 pub fn push(dir: &Path, fleet_bin: &str) -> Result<String> {
     let path = dir.join(FILE);
-    let bytes = std::fs::read(&path).with_context(|| format!("讀不到 {}", path.display()))?;
-    let v: Value = serde_json::from_slice(&bytes).context("summary.json 不是合法 JSON")?;
+    let bytes = std::fs::read(&path)
+        .map_err(|e| anyhow::anyhow!("讀不到 summary.json（{:?}）", e.kind()))?;
+    let v: Value = serde_json::from_slice(&bytes)
+        .map_err(|_| anyhow::anyhow!("summary.json 不是合法 JSON"))?;
     validate(&v).context("summary.json 未通過檢查，拒絕上傳")?;
     let mut tmp = tempfile::Builder::new()
         .prefix(".push.")
         .suffix(".json")
-        .tempfile_in(dir)?;
-    std::io::Write::write_all(&mut tmp, &bytes)?;
+        .tempfile_in(dir)
+        .map_err(|e| anyhow::anyhow!("無法建立上傳用的暫存檔（{:?}）", e.kind()))?;
+    std::io::Write::write_all(&mut tmp, &bytes)
+        .map_err(|e| anyhow::anyhow!("無法寫入上傳用的暫存檔（{:?}）", e.kind()))?;
     let out = std::process::Command::new(fleet_bin)
         .arg("upload")
         .arg(tmp.path())
@@ -296,16 +316,16 @@ pub fn push(dir: &Path, fleet_bin: &str) -> Result<String> {
         ])
         .output()
         .map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => {
-                anyhow::anyhow!("找不到 fleet 指令（{fleet_bin}）；無法上傳")
-            }
-            _ => anyhow::anyhow!("執行 fleet upload 失敗：{e}"),
+            std::io::ErrorKind::NotFound => anyhow::anyhow!("找不到 fleet 指令；無法上傳"),
+            k => anyhow::anyhow!("無法執行 fleet upload（{k:?}）"),
         })?;
+    // fleet's stderr is not echoed (it may name local paths): the exit code says enough
     if !out.status.success() {
-        bail!(
-            "fleet upload 失敗：{}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
+        let code = out
+            .status
+            .code()
+            .map_or_else(|| "signal".to_string(), |c| c.to_string());
+        bail!("fleet upload 失敗（exit {code}）");
     }
     let text = String::from_utf8_lossy(&out.stdout);
     text.split(|c: char| !c.is_ascii_hexdigit())
@@ -475,5 +495,104 @@ mod tests {
     fn host_alias_is_a_hash() {
         let h = host_alias("box.example");
         assert!(is_host(&h) && !h.contains("box"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn errors_name_files_and_fields_never_local_paths_or_raw_values() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("MARKERDIR/usage");
+        let home = dirs::home_dir().unwrap();
+        let clean = |e: anyhow::Error| {
+            let full = format!("{e:?}");
+            for bad in [
+                "MARKER",
+                "me@example.com",
+                home.to_str().unwrap(),
+                base.path().to_str().unwrap(),
+            ] {
+                assert!(!full.contains(bad), "{bad} in error: {full}");
+            }
+            full
+        };
+        // no summary yet
+        std::fs::create_dir_all(&dir).unwrap();
+        clean(push(&dir, "fleet").unwrap_err());
+        // an unexpected key is counted, not echoed
+        let mut v = good();
+        v["accounts"][0]["me@example.com"] = json!(1);
+        let full = clean(validate(&v).unwrap_err());
+        assert!(full.contains("1 個不允許的欄位"), "{full}");
+        // fleet missing, and fleet failing with a path on its stderr
+        write(&dir, &good()).unwrap();
+        clean(push(&dir, base.path().join("MARKERBIN/fleet").to_str().unwrap()).unwrap_err());
+        let fake = base.path().join("fleet-fail");
+        std::fs::write(
+            &fake,
+            format!(
+                "#!/bin/sh\necho 'cannot read {}/MARKERSECRET' >&2\nexit 3\n",
+                home.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let full = clean(push(&dir, fake.to_str().unwrap()).unwrap_err());
+        assert!(full.contains("exit 3"), "{full}");
+        // writing where a file stands in for the dir
+        let blocked = base.path().join("MARKERFILE");
+        std::fs::write(&blocked, b"").unwrap();
+        clean(write(&blocked.join("usage"), &good()).unwrap_err());
+    }
+
+    #[test]
+    fn the_pane_parses_by_the_same_contract() {
+        // plugins/forge-stats/hooks/model.ts carries the contract between two markers as strict JSON
+        let ts = include_str!("../../plugins/forge-stats/hooks/model.ts");
+        let block = ts
+            .split("// contract:begin")
+            .nth(1)
+            .and_then(|r| r.split("// contract:end").next())
+            .expect("contract block in model.ts");
+        let json = &block[block.find('{').unwrap()..=block.rfind('}').unwrap()];
+        let pane: Value = serde_json::from_str(json).expect("the block is strict JSON");
+        assert_eq!(pane, contract());
+    }
+
+    #[test]
+    fn the_contract_regexes_describe_the_grammar_functions() {
+        // no regex crate here: the samples pin each grammar's edges, the pane uses the regexes
+        assert_eq!(ALIAS_RE, "^[a-z0-9-]{1,24}$");
+        for (s, ok) in [
+            ("acct-1a2b3c4d", true),
+            ("a", true),
+            (&"a".repeat(24)[..], true),
+            (&"a".repeat(25)[..], false),
+            ("Acct", false),
+            ("a_b", false),
+            ("", false),
+        ] {
+            assert_eq!(valid_alias(s), ok, "{s}");
+        }
+        assert_eq!(MODEL_RE, "^[A-Za-z0-9._-]{1,64}$");
+        for (s, ok) in [
+            ("claude-opus-5-5", true),
+            ("gpt-6.1_x", true),
+            (&"a".repeat(64)[..], true),
+            (&"a".repeat(65)[..], false),
+            ("a/b", false),
+            ("a b", false),
+        ] {
+            assert_eq!(super::super::collect::model_id(Some(s)) == s, ok, "{s}");
+        }
+        assert_eq!(HOST_RE, "^host-[0-9a-f]{8}$");
+        for (s, ok) in [
+            ("host-1a2b3c4d", true),
+            ("host-1A2B3C4D", false),
+            ("host-1a2b3c4", false),
+            ("1a2b3c4d", false),
+        ] {
+            assert_eq!(is_host(s), ok, "{s}");
+        }
     }
 }

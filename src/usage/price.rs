@@ -71,6 +71,17 @@ pub struct Tokens {
     pub cache_read: u64,
 }
 
+impl Tokens {
+    /// Add another bucket's counts, saturating: a sum never wraps or panics.
+    pub fn add(&mut self, o: &Tokens) {
+        self.input = self.input.saturating_add(o.input);
+        self.output = self.output.saturating_add(o.output);
+        self.cache_write_5m = self.cache_write_5m.saturating_add(o.cache_write_5m);
+        self.cache_write_1h = self.cache_write_1h.saturating_add(o.cache_write_1h);
+        self.cache_read = self.cache_read.saturating_add(o.cache_read);
+    }
+}
+
 /// Estimated cost in dollars; `None` for a model without a price row (never 0).
 pub fn cost(model: &str, fast: bool, t: &Tokens) -> Option<f64> {
     let r = rates(model)?;

@@ -169,11 +169,17 @@ fn request_id(v: &Value) -> Option<&str> {
 
 /// (record ms, UTC day) of a line's `timestamp`, when within the horizon.
 fn when(v: &Value, now_ms: i64) -> Option<(i64, String)> {
+    stamp(v).filter(|(ms, _)| within(*ms, now_ms))
+}
+
+fn within(ms: i64, now_ms: i64) -> bool {
+    now_ms.saturating_sub(ms) <= HORIZON_DAYS * DAY_MS
+}
+
+/// (record ms, UTC day) of a line's `timestamp`, at any age.
+fn stamp(v: &Value) -> Option<(i64, String)> {
     let ts = chrono::DateTime::parse_from_rfc3339(v["timestamp"].as_str()?).ok()?;
     let ms = ts.timestamp_millis();
-    if now_ms - ms > HORIZON_DAYS * DAY_MS {
-        return None;
-    }
     Some((
         ms,
         ts.with_timezone(&chrono::Utc)
@@ -182,8 +188,16 @@ fn when(v: &Value, now_ms: i64) -> Option<(i64, String)> {
     ))
 }
 
-fn n(v: &Value) -> i64 {
-    v.as_u64().map_or(0, |x| x.min(i64::MAX as u64) as i64)
+/// The largest token count one record may carry (~1.1e12); a larger or non-integer value makes
+/// the record invalid (skipped), so no sum can approach i64.
+pub const MAX_COUNT: u64 = 1 << 40;
+
+/// A count field: absent → 0, a non-negative integer ≤ MAX_COUNT, else None (record skipped).
+fn n(v: &Value) -> Option<i64> {
+    if v.is_null() {
+        return Some(0);
+    }
+    v.as_u64().filter(|x| *x <= MAX_COUNT).map(|x| x as i64)
 }
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -228,7 +242,33 @@ struct Key<'a> {
     speed: &'a str,
 }
 
+/// Add to a bucket with checked arithmetic: an overflow is an error, which rolls the whole
+/// file's transaction back (the file is skipped, nothing half-counted).
 fn add_bucket(tx: &Transaction, k: &Key, c: Counts, requests: i64) -> Result<()> {
+    let have: Option<[i64; 6]> = tx
+        .query_row(
+            "SELECT input, output, cw5m, cw1h, read, requests FROM buckets
+             WHERE day = ?1 AND source = ?2 AND account = ?3 AND model = ?4 AND project = ?5
+               AND speed = ?6",
+            params![k.day, k.source, k.account, k.model, k.project, k.speed],
+            |r| {
+                Ok([
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ])
+            },
+        )
+        .optional()?;
+    if let Some(h) = have {
+        let add = [c.input, c.output, c.cw5m, c.cw1h, c.read, requests];
+        if h.iter().zip(add).any(|(a, b)| a.checked_add(b).is_none()) {
+            anyhow::bail!("用量計數溢位，這個檔案略過");
+        }
+    }
     tx.execute(
         "INSERT INTO buckets (day, source, account, model, project, speed,
                               input, output, cw5m, cw1h, read, requests)
@@ -266,14 +306,24 @@ fn claude_line(tx: &Transaction, v: &Value, account: &str, now_ms: i64) -> Resul
             n(&cc["ephemeral_1h_input_tokens"]),
         )
     } else {
-        (n(&u["cache_creation_input_tokens"]), 0)
+        (n(&u["cache_creation_input_tokens"]), Some(0))
     };
-    let line = Counts {
-        input: n(&u["input_tokens"]),
-        output: n(&u["output_tokens"]),
+    // any count off the bound makes the record invalid: skipped, never clamped
+    let (Some(input), Some(output), Some(cw5m), Some(cw1h), Some(read)) = (
+        n(&u["input_tokens"]),
+        n(&u["output_tokens"]),
         cw5m,
         cw1h,
-        read: n(&u["cache_read_input_tokens"]),
+        n(&u["cache_read_input_tokens"]),
+    ) else {
+        return Ok(());
+    };
+    let line = Counts {
+        input,
+        output,
+        cw5m,
+        cw1h,
+        read,
     };
     type Stored = (String, String, String, String, String, Counts);
     let stored: Option<Stored> = tx
@@ -407,15 +457,18 @@ fn codex_line(
     if !t.is_object() {
         return Ok(());
     }
-    let Some((ms, day)) = when(v, now_ms) else {
+    let Some((ms, day)) = stamp(v) else {
         return Ok(());
     };
-    let new = [
+    let (Some(i), Some(c), Some(w), Some(o)) = (
         n(&t["input_tokens"]),
         n(&t["cached_input_tokens"]),
         n(&t["cache_write_input_tokens"]),
         n(&t["output_tokens"]),
-    ];
+    ) else {
+        return Ok(());
+    };
+    let new = [i, c, w, o];
     let d: Vec<i64> = new.iter().zip(old).map(|(a, b)| (a - b).max(0)).collect();
     if d.iter().all(|x| *x == 0) {
         return Ok(());
@@ -426,6 +479,12 @@ fn codex_line(
         new[2].max(old[2]),
         new[3].max(old[3]),
     ];
+    if !within(ms, now_ms) {
+        // past the horizon: not counted, but it is the base the next cumulative is measured from
+        // (stamped now, so the dedup prune keeps it while the file is still being read)
+        seen(tx, top, &model, &project, now_ms)?;
+        return Ok(());
+    }
     seen(tx, top, &model, &project, ms)?;
     let c = Counts {
         // Codex input_tokens include the cached ones; they are priced as reads
@@ -447,12 +506,56 @@ fn codex_line(
     Ok(())
 }
 
-fn head_hash(path: &Path, len: u64) -> std::io::Result<String> {
-    let mut buf = Vec::with_capacity(len as usize);
-    quota::open_no_follow(path)?
-        .take(len)
-        .read_to_end(&mut buf)?;
+/// sha256 of the first `len` bytes, read from the open handle (no second open by path).
+fn head_hash(f: &std::fs::File, len: u64) -> std::io::Result<String> {
+    let mut buf = vec![0u8; len.min(HEAD_MAX) as usize];
+    #[cfg(unix)]
+    std::os::unix::fs::FileExt::read_exact_at(f, &mut buf, 0)?;
+    #[cfg(not(unix))]
+    {
+        let mut g = f;
+        g.seek(SeekFrom::Start(0))?;
+        g.read_exact(&mut buf)?;
+    }
     Ok(hex(&Sha256::digest(&buf)))
+}
+
+/// The longest line parsed (real transcripts carry usage on lines up to ~8 MB). A longer line
+/// is read through in BufReader-sized pieces and dropped: never kept, never counted.
+pub const MAX_LINE: usize = 16 << 20;
+
+/// The next newline-terminated line into `buf`: `Some((bytes consumed, kept))`, `kept` false
+/// when it was longer than `max` (then `buf` is empty). `None` at the end or before an
+/// unterminated tail, which waits for the next collect.
+fn next_line<R: BufRead>(
+    r: &mut R,
+    buf: &mut Vec<u8>,
+    max: usize,
+) -> std::io::Result<Option<(u64, bool)>> {
+    buf.clear();
+    let (mut n, mut keep) = (0u64, true);
+    loop {
+        let avail = r.fill_buf()?;
+        if avail.is_empty() {
+            return Ok(None);
+        }
+        let (take, done) = match avail.iter().position(|b| *b == b'\n') {
+            Some(i) => (i + 1, true),
+            None => (avail.len(), false),
+        };
+        if keep && buf.len() + take <= max {
+            buf.extend_from_slice(&avail[..take]);
+        } else if keep {
+            keep = false;
+            buf.clear();
+            buf.shrink_to(0);
+        }
+        r.consume(take);
+        n += take as u64;
+        if done {
+            return Ok(Some((n, keep)));
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -479,7 +582,7 @@ pub fn collect_file(
     if !canon.starts_with(&root.dir) {
         return Ok(false);
     }
-    let mut f = quota::open_no_follow(path)?;
+    let f = quota::open_no_follow(path)?;
     let meta = f.metadata()?;
     if !meta.file_type().is_file() {
         return Ok(false);
@@ -511,8 +614,7 @@ pub fn collect_file(
         .optional()?;
     let mut offset: u64 = 0;
     if let Some((sino, soff, slen, shead)) = &stored {
-        let same =
-            *sino == ino && (*soff as u64) <= size && head_hash(path, *slen as u64)? == *shead;
+        let same = *sino == ino && (*soff as u64) <= size && head_hash(&f, *slen as u64)? == *shead;
         if same {
             offset = *soff as u64;
         }
@@ -520,18 +622,31 @@ pub fn collect_file(
     if stored.is_some() && offset == size {
         return Ok(true);
     }
-    f.seek(SeekFrom::Start(offset))?;
-    let mut reader = BufReader::new(f.take(size - offset));
+    // a Codex session whose base was pruned (silent past DEDUP_KEEP_DAYS) and that grew again:
+    // read from the start, so its old cumulative, now past the horizon, is the base once more
+    if let (Some(sid), true) = (&session, offset > 0) {
+        let has_base = conn
+            .query_row(
+                "SELECT 1 FROM codex_sessions WHERE session_id = ?1",
+                [sid],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !has_base {
+            offset = 0;
+        }
+    }
+    (&f).seek(SeekFrom::Start(offset))?;
+    let mut reader = BufReader::new((&f).take(size - offset));
     let tx = conn.transaction()?;
     let mut consumed = offset;
     let mut buf = Vec::new();
-    loop {
-        buf.clear();
-        let got = reader.read_until(b'\n', &mut buf)?;
-        if got == 0 || buf.last() != Some(&b'\n') {
-            break; // an unterminated tail waits for the next collect
+    while let Some((got, kept)) = next_line(&mut reader, &mut buf, MAX_LINE)? {
+        consumed += got;
+        if !kept {
+            continue;
         }
-        consumed += got as u64;
         let Ok(v) = serde_json::from_slice::<Value>(&buf) else {
             continue;
         };
@@ -541,7 +656,7 @@ pub fn collect_file(
         }
     }
     let head_len = consumed.min(HEAD_MAX);
-    let head = head_hash(path, head_len)?;
+    let head = head_hash(&f, head_len)?;
     tx.execute(
         "INSERT INTO sources VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT (source_id) DO UPDATE SET inode = excluded.inode, size = excluded.size,

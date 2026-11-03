@@ -390,19 +390,51 @@ export type UsageView = {
   day: string
   models: UsageModel[]
 }
-const ALIAS_RE = /^[a-z0-9-]{1,24}$/
-const MODEL_RE = /^[A-Za-z0-9._-]{1,64}$/
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+// contract:begin — `codeforge.usage-summary/1`, strict JSON. Must equal codeforge's `summary::contract()` (src/usage/summary.rs):
+// a cargo test reads this block and compares, so the pane and the writer cannot drift apart.
+export const USAGE_CONTRACT = {
+  "schema": "codeforge.usage-summary/1",
+  "top": ["schema", "generated_at_ms", "host", "prices_as_of", "accounts", "days"],
+  "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
+  "window": ["pct", "resets_at"],
+  "day": ["day", "source", "account", "model", "speed", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests", "cost_usd"],
+  "counts": ["input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests"],
+  "sources": ["claude", "codex"],
+  "speeds": ["standard", "fast"],
+  "pct_max": 1.5,
+  "alias": "^[a-z0-9-]{1,24}$",
+  "model": "^[A-Za-z0-9._-]{1,64}$",
+  "host": "^host-[0-9a-f]{8}$",
+  "max_accounts": 64,
+  "max_days": 10000
+} as const
+// contract:end
+
+const C = USAGE_CONTRACT
+const ALIAS_RE = new RegExp(C.alias)
+const MODEL_RE = new RegExp(C.model)
+const HOST_RE = new RegExp(C.host)
 const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
-const DAY_KEYS = ['day', 'source', 'account', 'model', 'speed', 'input', 'output', 'cache_write_5m', 'cache_write_1h', 'cache_read', 'requests', 'cost_usd']
+/** A real calendar date `YYYY-MM-DD` (not 2026-02-30). */
+const isDay = (v: unknown): v is string => {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+  const d = new Date(v + 'T00:00:00Z')
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+}
+/** Exactly these keys: none missing, none extra. */
+const exactKeys = (v: unknown, keys: readonly string[]): v is Record<string, unknown> =>
+  isObj(v) && Object.keys(v).length === keys.length && keys.every(k => k in v)
+const inSet = (v: unknown, set: readonly string[]) => typeof v === 'string' && set.includes(v)
 
 function usageWindow(v: unknown): UsageWindow | null | undefined {
   if (v === null) return null
-  if (!isObj(v) || typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || !Number.isInteger(v.resets_at)) return undefined
+  if (!exactKeys(v, C.window)) return undefined
+  if (typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || v.pct > C.pct_max || !Number.isInteger(v.resets_at)) return undefined
   return { pct: v.pct, resetsAtMs: (v.resets_at as number) * 1000 }
 }
 
-/** Parse the summary text; `text === null` means no file. Any row off the contract makes the whole summary `bad`: nothing half-read is drawn. */
+/** Parse the summary text; `text === null` means no file. Every rule of `summary::validate` applies; anything off the contract makes the whole summary
+ *  `bad`: nothing half-read is drawn. */
 export function parseUsage(text: string | null, now: number): UsageView {
   const day = new Date(now).toISOString().slice(0, 10)
   const empty: UsageView = { status: 'missing', generatedAt: null, accounts: [], day, models: [] }
@@ -415,10 +447,12 @@ export function parseUsage(text: string | null, now: number): UsageView {
   } catch {
     return bad
   }
-  if (!isObj(raw) || raw.schema !== USAGE_SCHEMA || !isUint(raw.generated_at_ms) || !Array.isArray(raw.accounts) || !Array.isArray(raw.days)) return bad
+  if (!exactKeys(raw, C.top) || raw.schema !== C.schema || !isUint(raw.generated_at_ms)) return bad
+  if (typeof raw.host !== 'string' || !HOST_RE.test(raw.host) || !isDay(raw.prices_as_of)) return bad
+  if (!Array.isArray(raw.accounts) || raw.accounts.length > C.max_accounts || !Array.isArray(raw.days) || raw.days.length > C.max_days) return bad
   const accounts: UsageAccount[] = []
   for (const a of raw.accounts) {
-    if (!isObj(a) || typeof a.alias !== 'string' || !ALIAS_RE.test(a.alias) || !isUint(a.written_at_ms)) return bad
+    if (!exactKeys(a, C.account) || typeof a.alias !== 'string' || !ALIAS_RE.test(a.alias) || !isUint(a.written_at_ms)) return bad
     const fiveHour = usageWindow(a.five_hour)
     const sevenDay = usageWindow(a.seven_day)
     if (fiveHour === undefined || sevenDay === undefined) return bad
@@ -426,15 +460,14 @@ export function parseUsage(text: string | null, now: number): UsageView {
   }
   const byModel = new Map<string, UsageModel>()
   for (const d of raw.days) {
-    if (!isObj(d) || !DAY_KEYS.every(k => k in d)) return bad
-    if (typeof d.day !== 'string' || !DAY_RE.test(d.day) || typeof d.model !== 'string' || !MODEL_RE.test(d.model)) return bad
-    const counts = [d.input, d.output, d.cache_write_5m, d.cache_write_1h, d.cache_read, d.requests]
-    if (!counts.every(isUint)) return bad
+    if (!exactKeys(d, C.day) || !isDay(d.day) || !inSet(d.source, C.sources) || !inSet(d.speed, C.speeds)) return bad
+    if (typeof d.account !== 'string' || !ALIAS_RE.test(d.account) || typeof d.model !== 'string' || !MODEL_RE.test(d.model)) return bad
+    if (!C.counts.every(k => isUint(d[k]))) return bad
     const cost = d.cost_usd
     if (!(cost === null || (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0))) return bad
     if (d.day !== day) continue
     const m = byModel.get(d.model) ?? { model: d.model, tokens: 0, requests: 0, cost: null, unpriced: 0 }
-    m.tokens += (counts as number[]).slice(0, 5).reduce((s, n) => s + n, 0)
+    m.tokens += (['input', 'output', 'cache_write_5m', 'cache_write_1h', 'cache_read'] as const).reduce((s, k) => s + (d[k] as number), 0)
     m.requests += d.requests as number
     if (cost === null) m.unpriced += 1
     else m.cost = (m.cost ?? 0) + cost

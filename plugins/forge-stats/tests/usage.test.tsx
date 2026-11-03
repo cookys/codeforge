@@ -46,6 +46,18 @@ test('parseUsage takes today, sums per model, priced first, and refuses each con
     { ...summary(), days: [row({ input: -1 })] },
     { ...summary(), days: [row({ cost_usd: 'free' })] },
     { ...summary(), days: [{ day: DAY }] },
+    // as strict as codeforge's summary::validate (G36 r1 D)
+    { ...summary(), extra: 1 },
+    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: null, seven_day: null, email: 'x' }] },
+    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 1, note: 'x' }, seven_day: null }] },
+    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: { pct: 1.6, resets_at: 1 }, seven_day: null }] },
+    { ...summary(), days: [{ ...row({}), project: 'repo' }] },
+    { ...summary(), host: 'my-laptop' },
+    { ...summary(), prices_as_of: 'yesterday' },
+    { ...summary(), days: [row({ day: '2026-02-30' })] },
+    { ...summary(), days: [row({ source: 'gemini' })] },
+    { ...summary(), days: [row({ speed: 'turbo' })] },
+    { ...summary(), days: [row({ account: '/home/me' })] },
   ]
   for (const b of breaks) expect(parseUsage(JSON.stringify(b), NOW).status).toBe('bad')
   expect(parseUsage('{', NOW).status).toBe('bad')
@@ -168,5 +180,25 @@ test('a narrow pane drops the requests column and keeps the model id and the tot
   expect((await ui.find({ type: 'Text', text: /^  total ≥\$1\.50 · API-equivalent estimate$/ })) !== undefined).toBe(true)
   expect((await ui.find({ type: 'Text', text: /^  1 rows unpriced$/ })) !== undefined).toBe(true)
   await ui.unmount()
+})
+
+test('the account row drops countdowns, then 7d, as the pane narrows, and never cuts a field', async ($, on) => {
+  const both = summary({ accounts: [{ alias: 'acct-1a2b3c4d', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: Math.floor(Date.now() / 1000) + 7800 }, seven_day: { pct: 0.45, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 } }] })
+  base(on, JSON.stringify(both))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run(cmd('usage'))
+  const at = async (bodyColumns: number) => {
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
+    const got = {
+      reset: (await ui.find({ type: 'Text', text: /^ \d+h\d+m$|^ \d+d\d+h$/ })) !== undefined,
+      sevenDay: (await ui.find({ type: 'Text', text: /^  7d $/ })) !== undefined,
+      fiveHour: (await ui.find({ type: 'Text', text: /^30%$/ })) !== undefined,
+    }
+    await ui.unmount()
+    return got
+  }
+  expect(await at(70)).toEqual({ reset: true, sevenDay: true, fiveHour: true })
+  expect(await at(37)).toEqual({ reset: false, sevenDay: true, fiveHour: true })
+  expect(await at(30)).toEqual({ reset: false, sevenDay: false, fiveHour: true })
 })
 

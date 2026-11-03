@@ -107,12 +107,8 @@ pub fn run(action: Action) -> Result<()> {
                     _ => r.model.clone(),
                 };
                 let e = agg.entry((r.day.clone(), key)).or_default();
-                e.0.input += r.tokens.input;
-                e.0.output += r.tokens.output;
-                e.0.cache_write_5m += r.tokens.cache_write_5m;
-                e.0.cache_write_1h += r.tokens.cache_write_1h;
-                e.0.cache_read += r.tokens.cache_read;
-                e.1 += r.requests;
+                e.0.add(&r.tokens);
+                e.1 = e.1.saturating_add(r.requests);
                 e.2.push(price::cost(&r.model, r.speed == "fast", &r.tokens));
             }
             if json {
