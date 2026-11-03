@@ -158,6 +158,8 @@ case ":$PATH:" in
     *)
         say ""
         say "NOTE: $install_dir is not on your \$PATH."
+        # display text only: the literal `~` is what the user reads, nothing is expanded
+        # shellcheck disable=SC2088
         case "${SHELL:-}" in
             */zsh)  rc="~/.zshrc" ;;
             */bash) rc="~/.bashrc" ;;
