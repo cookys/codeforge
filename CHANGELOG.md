@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`codeforge usage`** (PM G36) — per-account quota on the statusline usage row (`alias NN% countdown`
+  for every other account seen in 6 h; alias from `AUTOPILOT_ACCOUNT` or a config-dir hash), an
+  incremental collector over Claude Code and Codex transcripts that keeps numbers only
+  (`<data_dir>/usage/usage.db`, 0600), an API-equivalent cost estimate, `summary.json` with an exact,
+  value-checked schema, and `codeforge usage push` (`fleet upload`). `install --hooks` adds
+  `usage collect --quiet` to the SessionEnd chain. The forge-stats pane gains a 用量 / Usage tab
+  (`/forge-stats usage`) that reads `summary.json` bounded and never spawns codeforge. Spec:
+  `doc/specs/codeforge-usage.md`.
 - **Fleet summary in forge-stats** (PM G33) — the band's one-line summary leads with the fleet from autopilot's
   `autopilot.fleet` state: `fleet ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.1`, widest form that fits, dropping from the end
   (pet, then ⧗ ● ⊘ ✗, then the word) down to the most severe count. With autopilot, the summary is the band's second
