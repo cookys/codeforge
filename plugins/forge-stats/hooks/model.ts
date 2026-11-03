@@ -331,13 +331,13 @@ export function parseFleet(value: unknown): FleetSummary | null {
 
 // One part of the summary line: a glyph in its state colour, a number or word in the default colour, a dim separator. Colours are theme keys (guideline §3.3-4).
 export type SummaryPart = { text: string; color?: 'warning' | 'error' | 'suggestion' | 'inactive' | 'success'; dim?: boolean }
-// the state glyphs of the shared table (guideline §3.1), most severe first: ▲ need_you, ✗ failed, ⊘ stalled, ● running, ⧗ waiting
+// the state glyphs of the shared table (guideline §3.1), most severe first: ▲ need_you, ✗ failed, ⊘ stalled, ● running, ⋯ waiting
 const COUNTS: readonly { key: keyof FleetCounts; glyph: string; color: SummaryPart['color'] }[] = [
   { key: 'needYou', glyph: '▲', color: 'warning' },
   { key: 'failed', glyph: '✗', color: 'error' },
   { key: 'stuck', glyph: '⊘', color: 'error' },
   { key: 'running', glyph: '●', color: 'suggestion' },
-  { key: 'waiting', glyph: '⧗', color: 'inactive' },
+  { key: 'waiting', glyph: '⋯', color: 'inactive' },
 ]
 /** Spacing rule (guideline §3.5): a chip is glyph, ONE half-width space, count (`⊘ 12`); chips are CHIP_GAP apart; the word and the first chip are one space apart. */
 export const CHIP_GAP = '  '
@@ -349,8 +349,8 @@ export function chipParts(glyph: string, color: SummaryPart['color'], value: str
 const partsWidth = (parts: readonly SummaryPart[]) => parts.reduce((n, p) => n + displayWidth(p.text), 0)
 
 // The line, widest form first, the first that fits `cols` wins (guideline §2.2):
-//   艦隊 ▲ 1  ✗ 1  ⊘ 2  ● 4  ⧗ 11 · Ferris Lv.3   (chip = glyph + one space + count; two spaces between chips; one space after the word)
-// dropping from the end: the pet, then ⧗, ●, ⊘, ✗ (each only while a more severe count stays), then the word, leaving the most severe non-zero count alone.
+//   艦隊 ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11 · Ferris Lv.3   (chip = glyph + one space + count; two spaces between chips; one space after the word)
+// dropping from the end: the pet, then ⋯, ●, ⊘, ✗ (each only while a more severe count stays), then the word, leaving the most severe non-zero count alone.
 // No count: 「艦隊 ✓」 only after a fetch that succeeded, 「艦隊 ?」 when the last fetch failed or none succeeded yet. No summary (`fleet` null): the pet alone.
 // null when nothing fits or there is nothing to draw: the caller passes the row on (`next(e)`), never draws a blank row.
 export function summaryParts(fleet: FleetSummary | null, petTag: string | null, cols: number, word: string): SummaryPart[] | null {

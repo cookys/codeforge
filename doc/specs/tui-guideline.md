@@ -100,15 +100,15 @@ autopilot band 第 1 列的格式（live `model.ts` `layoutBand`）：判定（�
 forge-stats 拿到 1–5 列時畫一行摘要（有 autopilot 時就是分頁列下面的第 2 列，§1.1 規則 3）。從左到右的格式固定，依 §2.1 的優先序排：
 
 ```
-艦隊 ▲ 1  ✗ 1  ⊘ 2  ● 4  ⧗ 11 · Ferris Lv.3
+艦隊 ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11 · Ferris Lv.3
 ```
 
 間距照 §3.5：每個計數是一個晶片（符號、半形空格、數字），晶片之間空兩格。
 
-- `▲` 要人處理（`blocked_human`）、`✗` 失敗、`⊘` 疑似卡住、`●` 執行中、`⧗` 等待中，都取自 `autopilot.fleet` atom（G33；`▲` 和 `✗` 的計數由 G33a 加進 atom）。數字為 0 的那一類不畫。
+- `▲` 要人處理（`blocked_human`）、`✗` 失敗、`⊘` 疑似卡住、`●` 執行中、`⋯` 等待中，都取自 `autopilot.fleet` atom（G33；`▲` 和 `✗` 的計數由 G33a 加進 atom）。數字為 0 的那一類不畫。
 - 「艦隊 ✓」只在五類都是 0，**而且**最後一次抓取成功、沒有 `error` 時才寫。抓取失敗時寫「艦隊 ?」。拿不到 atom（沒有 autopilot）時，整段艦隊不畫。
 - 待決卡數和 `⚑` 殘留屬於 autopilot 的分頁列，一行摘要不重複顯示。
-- 寬度不夠時，從尾端拿掉：寵物 → `⧗` → `●` → `⊘` → `✗` → 「艦隊」兩字 → `▲`。
+- 寬度不夠時，從尾端拿掉：寵物 → `⋯` → `●` → `⊘` → `✗` → 「艦隊」兩字 → `▲`。
 - **最窄形式**：最嚴重的那一個非零計數單獨一個（例如 `▲ 1`、`✗ 1`、`⊘ 2`）。這樣也放不下、只剩「艦隊」兩字，或沒有任何可畫的東西（沒有 atom，也沒有寵物）時，把這一列交回：原樣回傳 `next(e)`。不畫空白列。
 
 ## 3. 狀態符號與顏色：共用一張表
@@ -124,7 +124,7 @@ forge-stats 拿到 1–5 列時畫一行摘要（有 autopilot 時就是分頁�
 | stalled | ⊘ | `~` | error | 疑似卡住 | stalled | 安靜太久，可能卡住 |
 | findings | △ | `!` | 預設文字色 | 待修 | to fix | 審查有發現，作者在修 |
 | running | ● | `*` | suggestion | 執行中 | running | 正在進行 |
-| waiting | ⧗ | `w` | inactive | 等待中 | waiting | 已接手，在等某件事（背景工作、相依項目、空出的名額） |
+| waiting | ⋯ | `w` | inactive | 等待中 | waiting | 已接手，在等某件事（背景工作、相依項目、空出的名額） |
 | done | ✓ | `v` | success | 完成 | done | 已完成 |
 | pending | ○ | `o` | inactive | 未開始 | not started | 還沒開始 |
 | stopped | ◌ | `-` | inactive | 已停 | stopped | 沒做完就停了 |
@@ -144,7 +144,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 ### 3.3 規則
 
 1. **一個符號只有一個意思**：狀態、結構、圖表三組不能共用符號（I20；捲軸是登記過的例外）。圖例分頁的名稱 `?` 跟「未知」同一個字，是第二個登記的例外：分頁名是位置，不是狀態，旁邊永遠有其他分頁名。新畫面不能另外發明符號；需要新意思時，先改這張表。
-2. **符號一定只佔 1 格**。驗證狀態（live `GLYPHS.verified`）：2026-10-13 在 owner 的 ssh + tmux 驗過的有 `⊘ △ ○ ◌ ∅ ◦ › ━ ◐ ◍`；待 owner 驗證（`pending-owner`）的有 `↓ ★ ⧗`，以及 `↑`（新增，尚未登記）。其他符號是 live 改版前就在用、沒有個別紀錄的舊符號，比照 `pending-owner`，下次 owner 跑 glyph-check 時一起驗。新符號加進 `NEW_GLYPHS` 時要附 `verified`，填 `YYYY-MM-DD <終端>`，或在 owner 驗證前填 `pending-owner`。驗證方式：owner 在真實終端（ssh + tmux）跑 `node mods/live/glyph-check.js`。East Asian Ambiguous 的符號在 CJK 終端可能變成 2 格，一律要驗。
+2. **符號一定只佔 1 格**。驗證狀態（live `GLYPHS.verified`）：2026-10-13 在 owner 的 ssh + tmux 驗過的有 `⊘ △ ○ ◌ ∅ ◦ › ━ ◐ ◍`；待 owner 驗證（`pending-owner`）的有 `↓ ★ ⋯`，以及 `↑`（新增，尚未登記）。`⋯`（U+22EF，East Asian Width N）在 2026-11-04 取代原本的等待符號 `⧗`：owner 的終端字型把 `⧗` 畫得像 `✗`，等待會被看成失敗（PM 裁定；`◷` 已是「時間」、`◔` 太像 `◷`、`◌○◦` 已有其他意思）。其他符號是 live 改版前就在用、沒有個別紀錄的舊符號，比照 `pending-owner`，下次 owner 跑 glyph-check 時一起驗。新符號加進 `NEW_GLYPHS` 時要附 `verified`，填 `YYYY-MM-DD <終端>`，或在 owner 驗證前填 `pending-owner`。驗證方式：owner 在真實終端（ssh + tmux）跑 `node mods/live/glyph-check.js`。East Asian Ambiguous 的符號在 CJK 終端可能變成 2 格，一律要驗。
 3. **禁用 emoji**：`\p{Extended_Pictographic}`、U+FE0F、U+20E3 都不能出現（`EMOJI_BANNED`）。唯一例外是 `detail` 列。
 4. **顏色只能用主題鍵**：`warning`、`error`、`success`、`suggestion`、`inactive`、`subtle`、`claude`、`merged`，全部透過 `PALETTE` 角色取用。不用原始 RGB，不用背景色，不用 inverse。例外是寵物像素圖和地圖：它們是內容不是狀態（Raster 半格，xterm-256 色，見 `codeforge-mod-ui.md` §5）。
 5. **黃色每一列最多一個**：只用在要人處理的那件事。band 有兩列時，autopilot 那列和 forge-stats 那列各自最多一個。粗體只用白名單（`BOLD_USES`）。
