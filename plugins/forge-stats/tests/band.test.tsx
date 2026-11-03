@@ -309,6 +309,17 @@ const AUTOPILOT_V2 = {
 test('parseFleet takes autopilot.fleet v 1 only; summaryParts gives the widest form that fits, dropping from the end and keeping the most severe count', () => {
   expect(parseFleet(FLEET)?.totals).toEqual(FLEET.totals)
   for (const bad of [null, 3, {}, { ...FLEET, v: 2 }, { ...FLEET, totals: { ...FLEET.totals, stuck: -1 } }, { ...FLEET, totals: { ...FLEET.totals, waiting: '1' } }]) expect(parseFleet(bad)).toBe(null)
+  // review g1 (e4ebee78): odd fetch fields are no summary, so a broken atom can never draw ✓
+  const zeroed = { ...FLEET, totals: { needYou: 0, failed: 0, stuck: 0, running: 0, waiting: 0 }, fetchedMs: 1 }
+  const { error: _drop, ...noError } = zeroed
+  const { fetchedMs: _drop2, ...noTime } = zeroed
+  for (const bad of [noError, noTime, { ...zeroed, error: 42 }, { ...zeroed, error: false }, { ...zeroed, fetchedMs: NaN }, { ...zeroed, fetchedMs: Infinity }, { ...zeroed, fetchedMs: '1' }]) {
+    expect(parseFleet(bad)).toBe(null)
+    expect(summaryParts(parseFleet(bad), null, 40, 'fleet')).toBe(null) // nothing drawn: the row is passed on
+  }
+  expect(summaryParts(parseFleet(zeroed), null, 40, 'fleet')?.map(p => p.text).join('')).toBe('fleet ✓') // the good one still does
+  // the zh-TW word: 艦隊 is 4 cells
+  expect(summaryParts(parseFleet(FLEET), null, 13, '艦隊')?.map(p => p.text).join('')).toBe('艦隊 ▲1 ✗1 ⊘2')
   const f = parseFleet(FLEET)
   const text = (cols: number, pet: string | null = 'Ferris Lv.3') => summaryParts(f, pet, cols, 'fleet')?.map(p => p.text).join('')
   expect(text(80)).toBe('fleet ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.3')
