@@ -9,7 +9,7 @@ deterministic check here so they never recur unreliably.
 Why this exists: a non-deterministic LLM sweep cannot be a stopping gate — a
 "clean" round only means "this sample found nothing", never "nothing exists"
 (see .claude/doc-audit-state.json, 7-round trajectory). Deterministic checks
-turn the gate reliable. Run in CI + before doc-touching merges.
+turn the gate reliable. Run by scripts/check-all.sh (the merge gate).
 
 Exit 0 = all green. Exit 1 = at least one check failed (details printed).
 Checks: links · fences · version-sync · cli-surface · roadmap-consistency.

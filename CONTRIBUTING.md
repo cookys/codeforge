@@ -29,27 +29,34 @@ cargo test
 4. Run the quality gate locally before opening the PR (see below).
 5. Open a PR with a clear title and description. Link any related issues.
 
-## Quality gate
+## Quality gate — the merge gate
 
-One command runs every gate locally (pinned fmt, clippy `-D warnings`, tests, cjk-safe, doc-drift; on
-Windows it also runs a Linux pass through WSL):
+There is no hosted CI: `./scripts/check-all.sh` is the merge gate. A change merges only when it is
+green on the merge result, run by whoever merges. One command runs every gate locally (on Windows it
+also runs a Linux pass through WSL):
 
 ```bash
 ./scripts/check-all.sh                  # add --no-wsl to skip the Linux pass
 ./scripts/check-all.sh --install-hook   # make `git push` run it automatically (bypass: --no-verify)
 ```
 
-Note the project does not use GitHub Actions as its gate — run this yourself before pushing. What it
-runs, step by step:
+What it runs, step by step:
 
 ```bash
-cargo fmt --all -- --check
+./scripts/fmt.sh --check                    # pinned rustfmt, never a bare `cargo fmt`
 cargo clippy --all-targets -- -D warnings
-cargo test
-cargo deny check licenses    # if cargo-deny is installed
+./scripts/test-flake-guard.sh               # cargo test; a flake is rerun once and logged
+./scripts/check-cjk-safe.sh
+python3 scripts/check-doc-drift.py
+cargo deny check licenses
+shellcheck install.sh
+./scripts/package.sh x86_64-unknown-linux-gnu --toolchain <rust-version>   # MSRV release smoke
 ```
 
-CI runs the same checks on every PR. PRs cannot be merged with failing CI.
+It needs `cargo-deny`, `shellcheck` and the MSRV toolchain (`rust-version` in Cargo.toml) installed.
+A PR's author runs it before asking for review; the maintainer runs it again on the merge result.
+Releases are built and verified by `./scripts/release-local.sh` (see
+[`doc/specs/codeforge-release-pipeline.md`](doc/specs/codeforge-release-pipeline.md)).
 
 ## Reporting bugs
 
