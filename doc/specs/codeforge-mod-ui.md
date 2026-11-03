@@ -92,9 +92,12 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
 - **像素寵物（2026-10-31 上線）**：`village.sprite`（調色盤 + 每幀字元列，24×24 兩幀，`src/pet/sprite.rs`）。
   forge-stats 在 terminal surface 用 `Raster` 半格畫（一格 = 上下兩像素），`$.clock.every(500)` 換幀 `$.ui.blit`，
   cells 沒變就不送；其他 surface 與沒有 sprite 的村落畫 ASCII。對應規則見 `doc/plans/2026-10-31-pixel-pet.md` §2.5。
-- **mod 位置**：`.claude/skills/forge-stats/`（repo 內）。專案 skills 資料夾裡的 mod 由 Claude Code 自動載入、互動模式熱重載，
-  所以在 codeforge repo 開的 claude 都有面板。`CLAUDE_CODE_PLUGIN_DIRS` 不能寫在專案 settings（只讀環境變數或使用者設定）；
-  session 自己的 mods 資料夾綁 session id，`--resume` 後就不載入，不要放那裡。驗證：`claude plugin test .claude/skills/forge-stats`。
+- **mod 位置**（G33 起）：`plugins/forge-stats/`，由 repo 根目錄的 `.claude-plugin/marketplace.json` 列出，以目錄 marketplace
+  安裝成全域 plugin（`claude plugin marketplace add <codeforge>` + `claude plugin install forge-stats@codeforge`），每個專案的
+  session 都載入。marketplace 是目錄、來源是相對路徑，所以 plugin 直接從這個目錄讀，`/reload-plugins` 就吃到改動。
+  G33 以前放在 `.claude/skills/forge-stats/`，只有 codeforge clone 會載入；搬走後 clone 裡不會重複載入。
+  `CLAUDE_CODE_PLUGIN_DIRS` 不能寫在專案 settings；session 自己的 mods 資料夾綁 session id，`--resume` 後就不載入，不要放那裡。
+  驗證：`claude plugin test plugins/forge-stats`。
 - **band 版面（statusline-band，2026-10-31）**：`/forge-stats layout band|pane`（存 `$.store`，預設 band）。band 畫在
   prompt 正上方（AbovePrompt），分級與排欄見下面兩條；記憶與大腦讀 `codeforge/session/<sid>.json`。mod 每 2 秒寫
   `codeforge/mod-alive/<sid>.json` 心跳（`schema`、`session_id`、`written_at_ms`、`layout`）；statusline 讀到自己

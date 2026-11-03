@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Fleet summary in forge-stats** (PM G33) — the band's one-line summary leads with the fleet from autopilot's
+  `autopilot.fleet` state: `fleet ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.1`, widest form that fits, dropping from the end
+  (pet, then ⧗ ● ⊘ ✗, then the word) down to the most severe count. With autopilot, the summary is the band's second
+  row under autopilot's tab bar (the heartbeat now says `summary_row: true`); with 7+/13+ rows it sits above the
+  mini/full columns. No autopilot: the pet alone, as before.
+- **`doc/specs/tui-guideline.md`** — one TUI guideline for the statusline, forge-stats, autopilot's live mod and the
+  fleet views; `scripts/ansi2html.py` turns a tmux capture into a coloured HTML preview.
+
+### Changed
+- **forge-stats is a global plugin** — moved from `.claude/skills/forge-stats/` (codeforge clone only) to
+  `plugins/forge-stats/`, listed by the repo's marketplace. Install: `claude plugin marketplace add <codeforge>` then
+  `claude plugin install forge-stats@codeforge`.
+- forge-stats draws the one-line summary at one row too (it passed one row on before).
+
 ## [0.0.8] - 2026-11-03
 
 Model speed moves to autopilot's live mod (B32); duplicate code spawns Doppelgangers (B10); install can take over a
