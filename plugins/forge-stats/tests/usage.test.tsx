@@ -1,0 +1,172 @@
+// The 用量 / usage tab (PM G36 phase 4): a bounded read of codeforge's summary.json, accounts and today's models, the summary's age.
+import { expect, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
+
+import { countdown, parseUsage, USAGE_MAX_BYTES } from '../hooks/model'
+
+const LIVE = '/run/user/1000/autopilot'
+const cmd = (args: string) => ({ command: 'forge-stats', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }) as const
+const SUMMARY = LIVE + '/codeforge/usage/summary.json'
+const NOW = Date.parse('2026-11-03T12:00:00Z')
+const DAY = '2026-11-03'
+
+const row = (o: Record<string, unknown>) => ({
+  day: DAY, source: 'claude', account: 'acct-a', model: 'claude-opus-5-5', speed: 'standard',
+  input: 100, output: 50, cache_write_5m: 0, cache_write_1h: 0, cache_read: 850, requests: 3, cost_usd: 1.5, ...o,
+})
+const summary = (o: Record<string, unknown> = {}) => ({
+  schema: 'codeforge.usage-summary/1',
+  generated_at_ms: Date.now() - 5 * 60_000,
+  host: 'host-1a2b3c4d',
+  prices_as_of: '2026-10-06',
+  accounts: [{ alias: 'acct-a', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: Math.floor(Date.now() / 1000) + 7800 }, seven_day: null }],
+  days: [
+    row({ day: new Date().toISOString().slice(0, 10) }),
+    row({ day: new Date().toISOString().slice(0, 10), model: 'gpt-6.1-sol', source: 'codex', account: 'codex-1a2b3c4d', cost_usd: null, requests: 9 }),
+  ],
+  ...o,
+})
+
+test('parseUsage takes today, sums per model, priced first, and refuses each contract break', () => {
+  const v = parseUsage(
+    JSON.stringify({ ...summary(), days: [row({}), row({ speed: 'fast', cost_usd: 3 }), row({ model: 'gpt-6.1-sol', cost_usd: null }), row({ day: '2026-11-02', cost_usd: 99 })] }),
+    NOW,
+  )
+  expect(v.status).toBe('ok')
+  expect(v.day).toBe(DAY)
+  expect(v.models.map(m => m.model)).toEqual(['claude-opus-5-5', 'gpt-6.1-sol'])
+  expect(v.models[0]).toEqual({ model: 'claude-opus-5-5', tokens: 2000, requests: 6, cost: 4.5, unpriced: 0 })
+  expect(v.models[1].cost).toBe(null)
+  expect(v.accounts[0].fiveHour?.pct).toBe(0.3)
+  expect(parseUsage(null, NOW).status).toBe('missing')
+  const breaks: unknown[] = [
+    { ...summary(), schema: 'other/1' },
+    { ...summary(), accounts: [{ alias: 'me@example.com', written_at_ms: 1, five_hour: null, seven_day: null }] },
+    { ...summary(), days: [row({ model: '/home/me/x' })] },
+    { ...summary(), days: [row({ input: -1 })] },
+    { ...summary(), days: [row({ cost_usd: 'free' })] },
+    { ...summary(), days: [{ day: DAY }] },
+  ]
+  for (const b of breaks) expect(parseUsage(JSON.stringify(b), NOW).status).toBe('bad')
+  expect(parseUsage('{', NOW).status).toBe('bad')
+  expect(parseUsage(' '.repeat(USAGE_MAX_BYTES + 1), NOW).status).toBe('bad')
+})
+
+test('countdown reads minutes, hours and days, and a dash once past', () => {
+  expect(countdown(NOW + 45 * 60_000, NOW)).toBe('45m')
+  expect(countdown(NOW + 130 * 60_000, NOW)).toBe('2h10m')
+  expect(countdown(NOW + (3 * 24 + 4) * 3_600_000, NOW)).toBe('3d4h')
+  expect(countdown(NOW - 1, NOW)).toBe('—')
+})
+
+const PANE = {
+  plugin: 'forge-stats',
+  component: 'Pane',
+  requestId: 'forge-stats',
+  props: { title: 'Forge stats', isFocused: false, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+} as const
+
+// the engine beneath: HOME, the live pointer, no pet, and the summary as given (a string, or a stat override)
+const base = (on: Parameters<TestBody>[1], text: string | null, stat: Record<string, unknown> = {}) => {
+  on('command.register', () => ({ value: { command: 'forge-stats' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/t' : undefined }))
+  on('fs.stat', (_, e) => {
+    if (e.path === SUMMARY && text !== null) return { value: { kind: 'file', size: text.length, mtimeMs: 0, isLink: false, ...stat } }
+    throw new Error('ENOENT ' + e.path)
+  })
+  on('fs.read', (_, e) => {
+    if (e.path === '/home/t/.autopilot/live-pointer.json') return { value: JSON.stringify({ live_base: LIVE }) }
+    if (e.path === SUMMARY && text !== null) return { value: text }
+    throw new Error('ENOENT ' + e.path)
+  })
+}
+
+const openUsage = async ($: Parameters<TestBody>[0]) => {
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await ui.press({ key: 'tab-usage' })
+  return ui
+}
+
+test('the pane has a tab strip and the usage tab shows accounts and today\'s models', async ($, on) => {
+  base(on, JSON.stringify(summary()))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.findAll({ type: 'Button' })).length >= 2).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  await ui.press({ key: 'tab-usage' })
+  expect((await ui.find({ type: 'Text', text: /^Usage$/ }))?.props.bold).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /acct-a/ })) !== undefined).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /^30%$/ })) !== undefined).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /^ 2h\d+m$/ })) !== undefined).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /claude-opus-5-5/ })) !== undefined).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /\$1\.50/ })) !== undefined).toBe(true)
+  // the codex model has no price: a dash, and the total says it is partial
+  expect((await ui.find({ type: 'Text', text: /total ≥\$1\.50/ })) !== undefined).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /1 rows unpriced/ })) !== undefined).toBe(true)
+  // fresh: no refresh hint
+  expect(await ui.find({ type: 'Text', text: /to refresh/ })).toBe(undefined)
+  // and back to the pet
+  await ui.press({ key: 'tab-pet' })
+  expect(await ui.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  await ui.unmount()
+})
+
+test('a summary older than an hour names `codeforge usage` as the refresh', async ($, on) => {
+  base(on, JSON.stringify(summary({ generated_at_ms: Date.now() - 90 * 60_000 })))
+  const ui = await openUsage($)
+  const hint = await ui.find({ type: 'Text', text: /summary from 9\d min ago · run `codeforge usage` to refresh/ })
+  expect(hint?.props.dimColor).toBe(true)
+  await ui.unmount()
+})
+
+test('no summary file says how to make one', async ($, on) => {
+  base(on, null)
+  const ui = await openUsage($)
+  expect((await ui.find({ type: 'Text', text: /no usage summary yet: run `codeforge usage`/ })) !== undefined).toBe(true)
+  await ui.unmount()
+})
+
+test('a summary path that is a link is refused before reading', async ($, on) => {
+  base(on, JSON.stringify(summary()), { isLink: true })
+  const ui = await openUsage($)
+  expect((await ui.find({ type: 'Text', text: /unreadable/ })) !== undefined).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  await ui.unmount()
+})
+
+test('a summary larger than the bound is refused before reading', async ($, on) => {
+  base(on, JSON.stringify(summary()), { size: USAGE_MAX_BYTES + 1 })
+  const ui = await openUsage($)
+  expect((await ui.find({ type: 'Text', text: /unreadable/ })) !== undefined).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  await ui.unmount()
+})
+
+test('`/forge-stats usage` opens the pane on the usage tab, `/forge-stats pet` back', async ($, on) => {
+  base(on, JSON.stringify(summary()))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run(cmd('usage'))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Text', text: /acct-a/ })) !== undefined).toBe(true)
+  await $.command.run(cmd('pet'))
+  await ui.unmount()
+  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await again.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  await again.unmount()
+})
+
+test('a narrow pane drops the requests column and keeps the model id and the total whole', async ($, on) => {
+  base(on, JSON.stringify(summary()))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run(cmd('usage'))
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: 37 } })
+  expect((await ui.find({ type: 'Text', text: /claude-opus-5-5/ })) !== undefined).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /\d+req/ })).toBe(undefined)
+  expect((await ui.find({ type: 'Text', text: /^  total ≥\$1\.50 · API-equivalent estimate$/ })) !== undefined).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /^  1 rows unpriced$/ })) !== undefined).toBe(true)
+  await ui.unmount()
+})
+

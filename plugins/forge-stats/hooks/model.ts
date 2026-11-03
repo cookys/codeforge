@@ -370,3 +370,93 @@ export function summaryParts(fleet: FleetSummary | null, petTag: string | null, 
   for (const f of forms) if (partsWidth(f) <= cols) return f
   return null
 }
+
+// ---- the usage summary (PM G36): `codeforge usage collect` writes <live_base>/codeforge/usage/summary.json (`codeforge.usage-summary/1`,
+// codeforge doc/specs/codeforge-usage.md). This mod only reads it, bounded, and never spawns codeforge: past USAGE_STALE_MS the tab names `codeforge usage`. ----
+export const USAGE_SCHEMA = 'codeforge.usage-summary/1'
+export const USAGE_MAX_BYTES = 256 * 1024
+export const USAGE_STALE_MS = 60 * 60_000
+export const usageSummaryPath = (base: string) => `${base}/codeforge/usage/summary.json`
+export type UsageWindow = { pct: number; resetsAtMs: number }
+export type UsageAccount = { alias: string; writtenAt: number; fiveHour: UsageWindow | null; sevenDay: UsageWindow | null }
+/** One model's totals for the day; `cost` is the priced part (null when no row of it is priced), `unpriced` its rows without a price. */
+export type UsageModel = { model: string; tokens: number; requests: number; cost: number | null; unpriced: number }
+export type UsageView = {
+  /** ok: read and valid; missing: no file; bad: too large, a link, unreadable or off-contract. */
+  status: 'ok' | 'missing' | 'bad'
+  generatedAt: number | null
+  accounts: UsageAccount[]
+  /** The UTC day the models are for (summary days are UTC). */
+  day: string
+  models: UsageModel[]
+}
+const ALIAS_RE = /^[a-z0-9-]{1,24}$/
+const MODEL_RE = /^[A-Za-z0-9._-]{1,64}$/
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/
+const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
+const DAY_KEYS = ['day', 'source', 'account', 'model', 'speed', 'input', 'output', 'cache_write_5m', 'cache_write_1h', 'cache_read', 'requests', 'cost_usd']
+
+function usageWindow(v: unknown): UsageWindow | null | undefined {
+  if (v === null) return null
+  if (!isObj(v) || typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || !Number.isInteger(v.resets_at)) return undefined
+  return { pct: v.pct, resetsAtMs: (v.resets_at as number) * 1000 }
+}
+
+/** Parse the summary text; `text === null` means no file. Any row off the contract makes the whole summary `bad`: nothing half-read is drawn. */
+export function parseUsage(text: string | null, now: number): UsageView {
+  const day = new Date(now).toISOString().slice(0, 10)
+  const empty: UsageView = { status: 'missing', generatedAt: null, accounts: [], day, models: [] }
+  if (text === null) return empty
+  const bad: UsageView = { ...empty, status: 'bad' }
+  if (text.length > USAGE_MAX_BYTES) return bad
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return bad
+  }
+  if (!isObj(raw) || raw.schema !== USAGE_SCHEMA || !isUint(raw.generated_at_ms) || !Array.isArray(raw.accounts) || !Array.isArray(raw.days)) return bad
+  const accounts: UsageAccount[] = []
+  for (const a of raw.accounts) {
+    if (!isObj(a) || typeof a.alias !== 'string' || !ALIAS_RE.test(a.alias) || !isUint(a.written_at_ms)) return bad
+    const fiveHour = usageWindow(a.five_hour)
+    const sevenDay = usageWindow(a.seven_day)
+    if (fiveHour === undefined || sevenDay === undefined) return bad
+    accounts.push({ alias: a.alias, writtenAt: a.written_at_ms, fiveHour, sevenDay })
+  }
+  const byModel = new Map<string, UsageModel>()
+  for (const d of raw.days) {
+    if (!isObj(d) || !DAY_KEYS.every(k => k in d)) return bad
+    if (typeof d.day !== 'string' || !DAY_RE.test(d.day) || typeof d.model !== 'string' || !MODEL_RE.test(d.model)) return bad
+    const counts = [d.input, d.output, d.cache_write_5m, d.cache_write_1h, d.cache_read, d.requests]
+    if (!counts.every(isUint)) return bad
+    const cost = d.cost_usd
+    if (!(cost === null || (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0))) return bad
+    if (d.day !== day) continue
+    const m = byModel.get(d.model) ?? { model: d.model, tokens: 0, requests: 0, cost: null, unpriced: 0 }
+    m.tokens += (counts as number[]).slice(0, 5).reduce((s, n) => s + n, 0)
+    m.requests += d.requests as number
+    if (cost === null) m.unpriced += 1
+    else m.cost = (m.cost ?? 0) + cost
+    byModel.set(d.model, m)
+  }
+  // the costliest first; unpriced models after the priced ones, by tokens
+  const models = [...byModel.values()].sort((a, b) => (b.cost ?? -1) - (a.cost ?? -1) || b.tokens - a.tokens)
+  return { status: 'ok', generatedAt: raw.generated_at_ms, accounts, day, models }
+}
+
+/** 1234 → 1234, 12_345 → 12.3K, 1_234_567 → 1.2M */
+export function compactCount(n: number): string {
+  if (n < 10_000) return String(n)
+  if (n < 1_000_000) return (n / 1e3).toFixed(1) + 'K'
+  return (n / 1e6).toFixed(1) + 'M'
+}
+
+/** A countdown to `atMs`: `2h10m`, `45m`, `3d4h`; `—` once past. */
+export function countdown(atMs: number, now: number): string {
+  const m = Math.floor((atMs - now) / 60_000)
+  if (m < 0) return GLYPH.empty
+  if (m < 60) return `${m}m`
+  if (m < 24 * 60) return `${Math.floor(m / 60)}h${m % 60}m`
+  return `${Math.floor(m / 1440)}d${Math.floor((m % 1440) / 60)}h`
+}

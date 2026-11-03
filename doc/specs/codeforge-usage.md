@@ -15,6 +15,7 @@
 | 收集 | `codeforge usage`、`usage collect`、SessionEnd hook | `<data_dir>/usage/usage.db` |
 | 摘要 | 每次收集之後 | `<live_base>/codeforge/usage/summary.json` |
 | 推送 | `codeforge usage push` | `fleet upload`，印出 blob sha |
+| 面板分頁 | forge-stats pane 的「用量」分頁（`/forge-stats usage` 直接開到這頁） | 只讀 `summary.json`：帳號 5h／7d 與倒數、今天（UTC）各 model 的 token 與 API 等值；摘要超過 1 小時就提示執行 `codeforge usage`，不自己呼叫 codeforge |
 
 `<data_dir>` = `CODEFORGE_DATA_DIR`，預設 `~/.local/share/codeforge`；`<live_base>` 見
 `src/live.rs`。G36 只寫自己的 `usage/` 目錄：檔案 0600、目錄 0700，發現較寬的權限就收緊並在
@@ -72,7 +73,11 @@ codeforge usage --days 3 --by project
 codeforge usage --json
 codeforge usage collect --quiet     # hook 用
 codeforge usage push                # 印出 blob sha
+/forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```
+
+用量分頁讀檔有上限：必須是一般檔案、不是 symlink、不超過 256 KiB（`USAGE_MAX_BYTES`），內容不符
+`codeforge.usage-summary/1` 契約（別名、model id、數字）就整份不顯示，只說讀不懂。
 
 `codeforge install --hooks` 把 `usage collect --quiet` 接在 SessionEnd 的 `ship --no-hook` 之後；
 第一次收集若超過 hook 時限，已完成的檔案已各自 commit，下次 session 接著做。

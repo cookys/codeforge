@@ -227,5 +227,6 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 - 其他帳號的資訊可能把「→ codeforge adopt」提示擠掉（Minor a0aa9d06）。
 - 16 檔上限套在過濾之前；0.795 顯示成 80% 但顏色門檻用原值；`render_full` 沒有測試骨架。
 - glyph ▲●⊘ 屬 East Asian Ambiguous 寬度（G33 Suggestion），`parseFleet` 的 `error: ''` 被當成沒有錯誤（G33 Suggestion）。
-**Trigger**: 下次動 statusline 用量列或 forge-stats 摘要列。
+- forge-stats 寵物分頁在窄 pane（約 37 欄、sprite 並排）時，「屬性」那列每個 Text 各自被截成 `…AT……`：`petLines` 依 `cols - sprite.width - 2` 排版，五項屬性放不下時應改折行或少放幾項（G36 第 4 階段截圖 cfcc6f80 看到，既有問題，非 G36 引入）。
+**Trigger**: 下次動 statusline 用量列或 forge-stats 摘要列／寵物分頁。
 **Not done**: 只記錄；G36 第 1 階段與 G33 皆已合併。

@@ -25,7 +25,14 @@ import {
   MINI_MIN_ROWS,
   parseFleet,
   summaryParts,
+  USAGE_MAX_BYTES,
+  USAGE_STALE_MS,
+  compactCount,
+  countdown,
+  parseUsage,
+  usageSummaryPath,
 } from './model'
+import type { UsageView } from './model'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -113,7 +120,7 @@ async function stepSprite($: EngineInterface) {
   if (sprite === null) return
   spriteFrame = (spriteFrame + 1) % sprite.frames.length
   const { cells } = halfBlockCells(sprite, spriteFrame)
-  if (cells !== lastCells) {
+  if (paneTab === 'pet' && cells !== lastCells) {
     lastCells = cells
     // literal routing at the call site (pixel-pet plan §2.5); must match PANE and SPRITE_KEY
     await $.ui.blit({ requestId: 'forge-stats', key: 'pet-sprite', cells })
@@ -226,6 +233,75 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
   return out
 }
 
+// ---- the 用量 / usage tab (PM G36 phase 4): accounts, then today's models, read from codeforge's summary.json ----
+type PaneTab = 'pet' | 'usage'
+let paneTab: PaneTab = 'pet'
+
+// Bounded: a regular file that is not a link and at most USAGE_MAX_BYTES, checked before the read and again on the text. Never spawns codeforge.
+async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
+  const bases = liveBase !== null ? [liveBase] : await liveBases($)
+  for (const b of bases) {
+    const path = usageSummaryPath(b)
+    const st = await $.fs.stat(path).catch(() => undefined)
+    if (st === undefined) continue
+    if (st.isLink || st.kind !== 'file' || st.size > USAGE_MAX_BYTES) return parseUsage('', now) // present but not readable as the contract says: bad
+    try {
+      const text = await $.fs.read(path)
+      return parseUsage(typeof text === 'string' ? text : '', now)
+    } catch {
+      return parseUsage('', now)
+    }
+  }
+  return parseUsage(null, now)
+}
+
+const money = (c: number) => '$' + c.toFixed(2)
+
+function usageLines(view: UsageView, cols: number, tr: T, now: number): Line[] {
+  if (view.status !== 'ok') return [[seg('  ' + (view.status === 'bad' ? tr('usageBad') : tr('usageMissing')), 'dim')]]
+  const out: Line[] = []
+  const age = view.generatedAt === null ? 0 : now - view.generatedAt
+  if (age > USAGE_STALE_MS) out.push([seg('  ' + tr('usageAge', { n: Math.floor(age / 60_000) }) + ' · ' + tr('usageRefresh'), 'dim')])
+  out.push([seg(tr('usageAccounts'), 'dim')])
+  if (view.accounts.length === 0) out.push([seg('  ' + tr('usageNoAccounts'), 'dim')])
+  for (const a of view.accounts) {
+    const win = (label: string, w: UsageView['accounts'][number]['fiveHour']): Seg[] =>
+      w === null ? [seg(`  ${label} `, 'dim'), seg(GLYPH.empty, 'dim')] : [seg(`  ${label} `, 'dim'), seg(`${Math.floor(w.pct * 100)}%`), seg(' ' + countdown(w.resetsAtMs, now), 'dim')]
+    out.push([seg('  ' + padRight(a.alias, KEY_W)), ...win('5h', a.fiveHour), ...win('7d', a.sevenDay)])
+  }
+  out.push([seg(tr('usageToday', { day: view.day }), 'dim')])
+  if (view.models.length === 0) out.push([seg('  ' + tr('usageNone'), 'dim')])
+  // model | tokens | requests | cost; the name takes what the numbers leave. Narrow (< 50) drops the requests column so a model id stays readable.
+  const withReq = cols >= 50
+  const nameW = Math.max(8, cols - 2 - 8 - (withReq ? 7 : 0) - 10)
+  let total = 0
+  let priced = false
+  let unpriced = 0
+  for (const m of view.models) {
+    const name = displayWidth(m.model) > nameW ? [...m.model].slice(0, nameW - 1).join('') + '…' : m.model
+    const cost = m.cost === null ? GLYPH.empty : (m.unpriced > 0 ? '≥' : '') + money(m.cost)
+    const req = withReq ? [seg(padLeft(`${m.requests}${tr('usageReq')}`, 7), 'dim')] : []
+    out.push([seg('  ' + padRight(name, nameW)), seg(padLeft(compactCount(m.tokens), 8)), ...req, seg(padLeft(cost, 10))])
+    if (m.cost !== null) {
+      total += m.cost
+      priced = true
+    }
+    unpriced += m.unpriced
+  }
+  if (view.models.length > 0) {
+    const sum = priced ? (unpriced > 0 ? '≥' : '') + money(total) : GLYPH.empty
+    const head = '  ' + tr('usageTotal', { cost: sum })
+    const note = unpriced > 0 ? tr('usageUnpriced', { n: unpriced }) : null
+    // the unpriced note on the same line when it fits, else on its own: neither is ever cut
+    if (note !== null && displayWidth(head + ' · ' + note) <= cols) out.push([seg(head, 'dim'), seg(' · ' + note, 'dim')])
+    else {
+      out.push([seg(head, 'dim')])
+      if (note !== null) out.push([seg('  ' + note, 'dim')])
+    }
+  }
+  return out
+}
+
 // band columns: at most 12 rows each, beside the 12-row Ferris
 
 function bandPetLines(view: PetView, width: number, tr: T, short = false): Line[] {
@@ -311,6 +387,12 @@ export const register: Register = on => {
       await writeHeartbeat($)
       return { text: t()('layoutSet', { layout: arg }) }
     }
+    // `/forge-stats usage` / `/forge-stats pet` open the pane on that tab (a path that needs no pointer)
+    if (verb === 'usage' || verb === 'pet') {
+      paneTab = verb
+      if (verb === 'pet') lastCells = null
+      void $.ui.invalidate('ui.render')
+    }
     await $.ui.open({ id: PANE, title: t()('title') })
     void refreshPet($)
     return { text: t()('opened') }
@@ -336,8 +418,16 @@ export const register: Register = on => {
     const side = sprite !== null && cols >= sprite.width + 2 + 28
     const petPart = sprite === null ? petLines(p, cols, tr, Date.now()) : petLines(p, side ? cols - sprite.width - 2 : cols, tr, Date.now(), false)
 
-    const lines: Line[] = [rule(tr('pet'), cols)]
-    if (sprite === null) lines.push(...petPart)
+    const now = Date.now()
+    const usage = paneTab === 'usage' ? await readUsage($, now) : null
+    const lines: Line[] = []
+    if (usage !== null) {
+      const age = usage.generatedAt === null ? null : Math.floor((now - usage.generatedAt) / 60_000)
+      lines.push(rule(tr('usage'), cols, age === null ? undefined : tr('usageAge', { n: age })), ...usageLines(usage, cols, tr, now))
+    } else {
+      lines.push(rule(tr('pet'), cols))
+      if (sprite === null) lines.push(...petPart)
+    }
 
     const draw = (s: Seg, i: number) => {
       const k = "s" + i
@@ -362,8 +452,31 @@ export const register: Register = on => {
         {l.map(draw)}
       </Box>
     )
+    // the tab strip: Buttons where the surface has them (a press switches the tab), plain Text otherwise; the active tab bold, the other dim
+    const Button = 'Button' in els ? els.Button : undefined
+    const tabs: [PaneTab, string][] = [['pet', tr('tabPet')], ['usage', tr('tabUsage')]]
+    const select = (id: PaneTab) => {
+      if (paneTab === id) return
+      paneTab = id
+      if (id === 'pet') lastCells = null
+      void $.ui.invalidate('ui.render')
+    }
+    const strip = (
+      <Box key="tabs" flexDirection="row" gap={2}>
+        {tabs.map(([id, label]) => {
+          const text = id === paneTab ? <Text bold>{label}</Text> : <Text dimColor>{label}</Text>
+          return Button !== undefined ? (
+            <Button key={'tab-' + id} onPress={() => select(id)}>
+              {text}
+            </Button>
+          ) : (
+            <Box key={'tab-' + id}>{text}</Box>
+          )
+        })}
+      </Box>
+    )
     let petBlock = null
-    if (sprite !== null && Raster !== undefined) {
+    if (usage === null && sprite !== null && Raster !== undefined) {
       const frame = halfBlockCells(sprite, spriteFrame)
       lastCells = frame.cells
       const art = <Raster key={SPRITE_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
@@ -383,6 +496,7 @@ export const register: Register = on => {
 
     return (
       <Box flexDirection="column">
+        {strip}
         {lines.map((l, i) => row(l, 'l' + i))}
         {petBlock}
       </Box>
