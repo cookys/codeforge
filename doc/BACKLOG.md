@@ -216,3 +216,16 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Proposed**: skip `.claude/worktrees`，或更一般地跳過含 `.git` 檔案（worktree 標記）的子目錄；加 tempdir 測試。
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
 **Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
+
+## B39 — G36 第 1 階段 review 的後續（statusline 配額列）
+
+**Area**: `src/usage/quota.rs`、`src/cli/statusline.rs`（`others_segment`、`own_bars_yellow`、`render_full`）
+**Premise**: G36 第 1 階段四席審查（g2 SHIP-AS-IS，f6baef59）留下的小項：
+- `wider_than_0600` 用 `mode & 0o077`：0700 的快照不會被改回 0600（只多 owner execute，不外洩，審查方駁回為 Major），但字面上和計畫書「0600」不一致，可改成 `(mode & !0o600) != 0`。
+- 非 unix 平台沒有 O_NOFOLLOW，`read_bounded` 不擋 symlink；可補 `symlink_metadata` 的 pre-check。
+- `own_bars_yellow` 看資料不看畫面：ctx 或倒數因寬度被截掉時仍算一個黃，其他帳號可能少拿到黃色。
+- 其他帳號的資訊可能把「→ codeforge adopt」提示擠掉（Minor a0aa9d06）。
+- 16 檔上限套在過濾之前；0.795 顯示成 80% 但顏色門檻用原值；`render_full` 沒有測試骨架。
+- glyph ▲●⊘ 屬 East Asian Ambiguous 寬度（G33 Suggestion），`parseFleet` 的 `error: ''` 被當成沒有錯誤（G33 Suggestion）。
+**Trigger**: 下次動 statusline 用量列或 forge-stats 摘要列。
+**Not done**: 只記錄；G36 第 1 階段與 G33 皆已合併。
