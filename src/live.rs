@@ -517,7 +517,7 @@ mod tests {
         )
         .unwrap();
         let mirror = fs::read_to_string(format!(
-            "{root}/.claude/skills/forge-stats/tests/session-id-vectors.ts"
+            "{root}/plugins/forge-stats/tests/session-id-vectors.ts"
         ))
         .unwrap();
         let start = mirror.find(" = [").expect("mirror has `= [`") + 3;

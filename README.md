@@ -196,6 +196,7 @@ codeforge install --project-hooks --force --yes
 `codeforge hook <name> [args…]` runs a hook script embedded in the binary (copied to a private per-version cache under the codeforge data dir, honouring `CODEFORGE_DATA_DIR`) with `node`, passing stdin and the script's exit code through. Its own failures exit 1, never 2 (Claude Code treats 2 as blocking). The scripts update with the binary, so `self-update` needs no reinstall.
 - `codeforge memory context --hook` (SessionStart) — injects a lean ranked L1 index as additionalContext (local recall; no-op when the project has no active L1)
 - `codeforge dream --quiet` → `codeforge ship --no-hook` (SessionEnd) — the memory pipeline: distill L0 → L1 in every project, then ship to Mnemos if opted in (clean no-op otherwise). See [`doc/concepts.md`](doc/concepts.md).
+- `codeforge usage collect --quiet` (SessionEnd, after ship) — incremental usage collect: numbers only from the session transcripts, then `summary.json`. See [Usage](#usage).
 
 Across SessionStart / SessionEnd / PreCompact (3 hook types). On a local (non-shared) settings.json, `--hooks`/`--all` also set the top-level `cleanupPeriodDays = 3650` (unless you already set a non-null value) so Claude Code doesn't reclaim session transcripts before dream/ship distil them; on a shared one only `--cleanup-period-days <DAYS>` writes it.
 
@@ -370,18 +371,29 @@ With no such heartbeat the output is unchanged. Set
 `statusLine.refreshInterval` (e.g. 2) so the strip follows within seconds; without it Claude Code runs the statusline only
 on UI events.
 
-The repo ships one reader: **forge-stats**, a Claude Code mod in `.claude/skills/forge-stats/`. Claude
-Code loads a project's `.claude/skills/<name>` mod on its own, so any `claude` started in this repo shows
-the pet — Ferris as an animated half-block pixel sprite in the terminal — with the memory and brain lights. Model
+The repo ships one reader: **forge-stats**, a Claude Code plugin in `plugins/forge-stats/`, listed by the repo's own
+marketplace (`.claude-plugin/marketplace.json`). Install it once and every session shows it, in any project:
+
+```bash
+claude plugin marketplace add /path/to/codeforge   # this clone
+claude plugin install forge-stats@codeforge
+# undo: claude plugin uninstall forge-stats@codeforge
+```
+
+It draws the pet — Ferris as an animated half-block pixel sprite in the terminal — with the memory and brain lights. Model
 speed (tok/s) is not forge-stats': autopilot's live mod measures and draws it. It has two layouts, kept across sessions: `/forge-stats layout band` (the default) draws a band
 right above the prompt and `/forge-stats layout pane` opens a side pane instead (`/forge-stats` alone opens the
 pane in either layout). The band shows as many columns as the width allows, in this order: Ferris, pet (level, XP,
 stats), memory and brain — 2 columns from 56 cells, 3 from 86 (Ferris alone below 56; under 26 cells the band is a
 one-line summary). Its size follows the rows it is given: 12 or more draw the full band, 6 to 11 the 16×6 mini Ferris,
-2 to 5 (or under 26 columns) a one-line summary (`Ferris Lv.1`), and one row draws nothing: that row is the tab label of
-autopilot's tab bar, autopilot's own. Only one plugin draws the band slot: one that sits above
+1 to 5 (or under 26 columns) a one-line summary. With autopilot's live mod in the session the summary leads with the fleet:
+`fleet ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.1` (needs you, failed, stalled, running, waiting, read from autopilot's
+`autopilot.fleet` state; without autopilot, the pet alone). autopilot keeps the band's first row for its tab bar and
+hands the second row to forge-stats while no tab is open; the heartbeat's `summary_row: true` says this forge-stats
+draws it. With 7 or more rows (mini) or 13 or more (full) the fleet line sits above the columns. When nothing fits, the
+row is passed on, never left blank. Layout rules: [`doc/specs/tui-guideline.md`](doc/specs/tui-guideline.md). Only one plugin draws the band slot: one that sits above
 forge-stats and draws its own band without passing the slot on hides it. The heartbeat does not see that, so the statusline
-still compacts in band layout; autopilot's tab bar passes the slot on, so it is not affected. Test it with `claude plugin test .claude/skills/forge-stats`.
+still compacts in band layout; autopilot's tab bar passes the slot on, so it is not affected. Test it with `claude plugin test plugins/forge-stats`.
 
 A write failure never changes statusline rendering or exit code — it's logged to stderr once per
 process and otherwise swallowed.
@@ -390,6 +402,34 @@ process and otherwise swallowed.
 statusLine install, i.e. without `--hooks`/`--project-hooks`, or with `--all`) idempotently adds a
 `subagentStatusLine` entry to `settings.json` pointing at `<binary> subagent-statusline`. Default
 `install`/`install --all` behaviour is unchanged — this is opt-in only.
+
+## Usage
+
+`codeforge usage` answers "how much did I use, on which account, how close to the limit" on this machine
+(spec: [`doc/specs/codeforge-usage.md`](doc/specs/codeforge-usage.md)):
+
+```bash
+codeforge usage                         # collect, then the last 7 days by model
+codeforge usage --days 3 --by project   # --by model | project | account; --json
+codeforge usage push                    # validate summary.json and `fleet upload` it; prints the blob sha
+```
+
+- The statusline usage row shows this session's 5h / 7d / ctx bars, then every other account seen in the
+  last 6 h as `alias NN% countdown`. Each statusline run writes its account's quota snapshot; the alias is
+  `AUTOPILOT_ACCOUNT` when set (autopilot's account-pinned dispatch), else a hash of the config dir.
+- Collection needs no hook: the statusline starts a background `codeforge usage collect --quiet` at most
+  every 15 minutes (`CODEFORGE_USAGE_AUTOCOLLECT=0` turns that off); the SessionEnd hook, when installed,
+  also runs it.
+- The collector reads only the numeric usage fields of `~/.claude/projects/**` (and `CLAUDE_CONFIG_DIR`) and
+  Codex `~/.codex/sessions/**` transcripts, incrementally, into `<data_dir>/usage/usage.db` (0600). No
+  prompt, path or email is stored; a project is its directory's last name.
+- Cost is an **API-equivalent estimate** at list price (prices as of 2026-10-06); subscription plans are not
+  billed this way, and models without a price row (all Codex models) show `—`.
+- `summary.json` (per-day × model totals and per-account quota, no projects or paths) is the only thing
+  `usage push` sends.
+- In Claude Code, the forge-stats pane has a **用量 / Usage** tab (`/forge-stats usage` opens it): accounts with
+  their 5h / 7d windows, today's (UTC) models with tokens and the API-equivalent cost, and the summary's age —
+  past an hour it says to run `codeforge usage`. It only reads `summary.json`; it never runs codeforge.
 
 ## Data & Privacy
 

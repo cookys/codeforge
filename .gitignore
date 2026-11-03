@@ -1,5 +1,6 @@
 # Build artifacts
 /target
+/dist
 **/*.rs.bk
 *.pdb
 
@@ -41,3 +42,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# engine-laid mod types (Claude Code writes these on load)
+plugins/*/.claude-plugin/types/

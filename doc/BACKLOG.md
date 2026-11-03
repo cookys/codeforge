@@ -216,3 +216,36 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Proposed**: skip `.claude/worktrees`，或更一般地跳過含 `.git` 檔案（worktree 標記）的子目錄；加 tempdir 測試。
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
 **Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
+
+## B41 — G36 第 2–5 階段 review 列為後續的項目
+
+**Area**: `src/usage/collect.rs`、`src/usage/store.rs` 測試
+**Premise**: autopilot 四席審查第 2 輪（範圍 `d754c4c..22e90c4`）判為後續、不擋合併的項目：659de784、383eb39a（Codex 基準被修剪後從頭重讀的邊界情況）、6635affb（bucket 溢位的檔案每次 collect 都會重試、每次都被略過）、247999e5（store 測試用到 unix-only API 的部分要加 `#[cfg(unix)]`）、38b0450a（`MAX_LINE`／`MAX_COUNT` 等上限的調整）。
+第 3 輪（SHIP-AS-IS，範圍 `22e90c4..979a0d2`）的 Suggestion：
+- a364a204：`the_open_connection_keeps_its_shm_lock` 的第二輪多半仍走新建路徑（最後一條連線關閉時 SQLite 會 checkpoint 並刪掉 -wal/-shm）；要測到「重開既有 sidecar」，drop 前另開一條連線留住它，或設 PERSIST_WAL。
+- 47336cc9：預檢到 SQLite 開 -wal/-shm 之間有 TOCTOU 窗口（`SQLITE_OPEN_NOFOLLOW` 只保護主 db）。利用它需要同 uid 且能寫 0700 目錄的程序，不是新的權限邊界，列為已知殘餘風險。
+- 8f1b90b2：本機配額快照的 `resets_at`／`written_at_ms` 超出範圍時，整份 summary 驗證失敗（`usage collect` 每次都報錯），而不是只略過那個帳號；可在 build 時略過該帳號列。
+- `codeforge usage` 表格用 `format!("{:<10}")` 補空白，算的是字元數不是顯示寬度：中文表頭（日期、輸入、輸出…）讓欄位對不齊（2026-11-03 首次實機安裝時看到）。改用顯示寬度補齊（`unicode-width` 或與 forge-stats 相同的寬度表）。
+**Trigger**: 下次動 `codeforge usage` 的收集器，或在非 unix 平台建置測試；8f1b90b2 在第一次看到 `usage collect` 因配額快照驗證失敗時。
+**Not done**: 只記錄；詳情見 autopilot lane/g36rest 第 2、3 輪的 finding。
+
+## B40 — 一次無法重現的 cargo test 失敗（疑似 flaky）
+
+**Area**: 測試套件（名稱未知）
+**Premise**: 2026-11-03 commit 1fdd922 前跑全套，986 條中 1 條失敗；當時輸出只過濾留下 `test result` 摘要行，沒有保存完整 log，失敗的測試名稱無法回收（session 紀錄也查不到）。之後連跑 18 次全綠。嫌疑：`live::tests::missing_findmnt_falls_back_to_proc_mounts`（同日稍早也單獨失敗過一次、未重現），以及會改行程層級環境變數的測試（cargo test 平行執行時互相競爭）。PM 判定：在證明不是之前，當作 flaky 追蹤。
+**Trigger**: `target/flaky-tests.log` 出現 FLAKY 紀錄（`scripts/test-flake-guard.sh` 寫入，`check-all.sh` 的 test 步驟會經過它），或任何一次失敗後重跑通過。
+**Not done**: 已加 flake guard（失敗重跑一次、紀錄保留、不隱藏）；根因待第一筆紀錄出現後再查。
+
+## B39 — G36 第 1 階段 review 的後續（statusline 配額列）
+
+**Area**: `src/usage/quota.rs`、`src/cli/statusline.rs`（`others_segment`、`own_bars_yellow`、`render_full`）
+**Premise**: G36 第 1 階段四席審查（g2 SHIP-AS-IS，f6baef59）留下的小項：
+- `wider_than_0600` 用 `mode & 0o077`：0700 的快照不會被改回 0600（只多 owner execute，不外洩，審查方駁回為 Major），但字面上和計畫書「0600」不一致，可改成 `(mode & !0o600) != 0`。
+- 非 unix 平台沒有 O_NOFOLLOW，`read_bounded` 不擋 symlink；可補 `symlink_metadata` 的 pre-check。
+- `own_bars_yellow` 看資料不看畫面：ctx 或倒數因寬度被截掉時仍算一個黃，其他帳號可能少拿到黃色。
+- 其他帳號的資訊可能把「→ codeforge adopt」提示擠掉（Minor a0aa9d06）。
+- 16 檔上限套在過濾之前；0.795 顯示成 80% 但顏色門檻用原值；`render_full` 沒有測試骨架。
+- glyph ▲●⊘ 屬 East Asian Ambiguous 寬度（G33 Suggestion），`parseFleet` 的 `error: ''` 被當成沒有錯誤（G33 Suggestion）。
+- forge-stats 寵物分頁在窄 pane（約 37 欄、sprite 並排）時，「屬性」那列每個 Text 各自被截成 `…AT……`：`petLines` 依 `cols - sprite.width - 2` 排版，五項屬性放不下時應改折行或少放幾項（G36 第 4 階段截圖 cfcc6f80 看到，既有問題，非 G36 引入）。
+**Trigger**: 下次動 statusline 用量列或 forge-stats 摘要列／寵物分頁。
+**Not done**: 只記錄；G36 第 1 階段與 G33 皆已合併。

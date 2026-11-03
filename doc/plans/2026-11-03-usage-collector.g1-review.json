@@ -1,0 +1,733 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "g36-usage-collector",
+  "logical_plan_id": "codeforge:g36-usage-collector",
+  "session_id": "g36-pr2-e6514bd9",
+  "session_key": "656c1d596dca8d17159ff44682c4adb151d48726bf0c2709064cd3b74ccd62b9",
+  "generation": 1,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": false,
+  "policy_reason": "depth_0_adjudication_required",
+  "rubric_sha256": "fdab2bd45c64c4b96d779797bfdab308fe87a5381e9ea08aa6f8be5ea6776270",
+  "manifest_sha256": "f29ee7bcda4ca28dcc6cd03bcfae98fb86a1fdc18c0aa7fffc7294fa65cfb31d",
+  "plan_sha256": "1540e0d23989dcf9d9e61b721300cca13ead0a386350f1444c4083e53fa1a37e",
+  "growth_ratio": {
+    "numerator": 1,
+    "denominator": 1
+  },
+  "growth_warning": false,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6.1-sol",
+          "operation": "plan-review",
+          "request_digest": "ea6f88c99272c69b98a3bfdfd3c6cf4b3ed68560412d67ac4c399776e962c0ee"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "8921e9cac59b85be55ed6365535141784a3277abe467e056d49821080d335b02",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-codex-EgK5Fr/stdout",
+          "digest": "8921e9cac59b85be55ed6365535141784a3277abe467e056d49821080d335b02"
+        },
+        "receipt_digest": "b5a289f79908ee1cad50f55525fdb5caa24b484fd43969cffd41ee3e0022ca86"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "fable",
+      "target_id": "fable",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "claude-native",
+          "model": "claude-fable-5-1",
+          "operation": "plan-review",
+          "request_digest": "46917cb5626a46bbd1f1a02d755752d5714aa1f8e96150d2aed68f5cf8237a40"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "95b32d83d06562d644e44adeb784b6ec9869e5ddc60d549e8d2aa51a2e30ab52",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "/tmp/dispatch-author-log-eYmPwg",
+          "digest": "95b32d83d06562d644e44adeb784b6ec9869e5ddc60d549e8d2aa51a2e30ab52"
+        },
+        "receipt_digest": "dd440d7f7c38fee730e1e2c8d4d0469a1986d3b9ba4e9eb44ce8c1af9f441c7b"
+      },
+      "transport_status": "success",
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "family": "openai",
+      "verdict": "CONDITIONAL"
+    },
+    {
+      "seat_id": "fable",
+      "target_id": "fable",
+      "family": "anthropic",
+      "verdict": "CONDITIONAL"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R3",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Collector file-state storage",
+      "claim": "Persisting canonical source paths contradicts the prohibition on paths in written files.",
+      "evidence": "Section 4 specifies per-file state containing the canonical path alongside inode, size and offset. The project-basename exception does not permit storing full transcript paths.",
+      "evidence_reference": "Plan §4, per-file state and project dimension; frozen rubric R3",
+      "repair": "Specify an opaque source identifier derived from the canonical path, persist only that identifier, and retain paths only in memory. Test that a distinctive source path is absent from persisted state.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "c81050d79aec887c68531f97374c4e70c8619937b105d4e85e4ac2b4b054690e"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Transcript field inventory and privacy tests",
+      "claim": "The field inventory and proposed negative control do not establish that transcript text is excluded.",
+      "evidence": "Section 4 derives a project basename from cwd, although cwd is absent from the listed fields read. The proposed assertion that no stored string exceeds a model ID's length would accept short leaked prompts and reject legitimate longer identifiers; it does not demonstrate that a deliberately introduced text leak is detected.",
+      "evidence_reference": "Plan §4, source table and project dimension; Tests paragraph",
+      "repair": "List cwd as a transiently inspected field and define its basename-only persistence rule. Seed distinctive short and long markers in forbidden transcript fields, assert their absence from every persistence surface, and demonstrate that deliberately persisting a marker makes the test fail.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "7202cb7bcc6d9c423d898ae111489a92ffb2b2d5a5d03322f896bdd48d04192f"
+    },
+    {
+      "rubric_id": "R2",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Collector source discovery and opening",
+      "claim": "The listed globs do not enforce the required containment against symlinks.",
+      "evidence": "Section 4 specifies globs and canonicalized paths but supplies no rule rejecting symlinked files or intermediate directories that resolve outside the transcript trees. The explicit no-symlink rule in §3 covers quota snapshots only.",
+      "evidence_reference": "Plan §3, bounded snapshot reads; §4, source globs and canonical paths",
+      "repair": "Define containment checks for every source open, including intermediate directory symlinks, and test matching transcript filenames and directory links pointing outside the permitted trees. Reject escaped targets before opening them.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "a8e444ca8fa79ded302716a11d75c9923bd2cefacf5751caca8cf86a7f7b5afc"
+    },
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Summary schema and push validation",
+      "claim": "The summary contract does not enumerate the exact nested keys needed for an enforceable payload allow-list.",
+      "evidence": "Section 6 names generated_at_ms, host, accounts and days, but describes days as token totals plus estimated cost without listing its record keys. It also does not state whether unknown-key rejection applies recursively inside account and day records.",
+      "evidence_reference": "Plan §6, summary.json and usage push bullets; Tests paragraph",
+      "repair": "Enumerate the schema discriminator and every nested record key, define recursive unknown-key rejection, and test forbidden keys inside both accounts and days. Upload the exact validated summary bytes.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "716493dff43ffb64d3d0d6eb097a9622d9492ca6b4299352f790fb807110fec9"
+    },
+    {
+      "rubric_id": "R5",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Existing usage directories, snapshots and SQLite sidecars",
+      "claim": "Handling existing wider permissions is specified only for usage.db.",
+      "evidence": "Section 4 explicitly tightens a wider database, while the plan gives no corresponding policy for existing -wal/-shm files, quota snapshots, summary.json or directories. A fresh quota snapshot can also be retained by the throttle without replacement.",
+      "evidence_reference": "Plan success criterion 5; §2, snapshot throttle; §4, database modes; Tests paragraph",
+      "repair": "Define repair or refusal for every existing artifact before use, including throttled snapshots and SQLite sidecars. Test deliberately widened files and directories as well as creation-time permissions.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "699fec7e105f11e7e739883a02f24d134820845387c26971baebb24e11c9e73a"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Incremental collector offsets",
+      "claim": "The plan leaves partial final lines and atomic checkpointing undefined.",
+      "evidence": "Section 4 stores an offset but does not say whether it advances past an incomplete JSON line. The tests list incremental offsets and truncation without an append-after-partial-line case. Advancing to EOF can permanently skip the completed record on the next collect.",
+      "evidence_reference": "Plan §4, per-file state; Tests paragraph",
+      "repair": "Commit offsets only through successfully consumed complete records, retain or reread incomplete tails, and commit token updates with their cursor in one transaction. Test a record split across collections and interruption before checkpoint commit.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "066f5e7ea552700a15c4f8bfb7584ad1b282eb8d16bdb42685b9390cc467071d"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Replay, rotation and deduplication",
+      "claim": "Resetting offsets does not define how previously counted usage avoids being counted again.",
+      "evidence": "Section 4 rereads from zero after truncation or inode change and prunes Claude request IDs after 40 days. Replaying older Claude records can therefore bypass deduplication. For Codex, the plan does not define whether the stored cumulative baseline survives replacement or how copied history and cumulative resets are reconciled.",
+      "evidence_reference": "Plan §4, dedup table and truncation/inode reset rule",
+      "repair": "Specify replay identity and retention together with the aggregation horizon. Define Codex baseline handling for truncation, replacement and cumulative decreases, and test copied history, old Claude replay and repeated collections against invariant totals.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "66270fbfd0483c123db3b2766b7786cf09cec7c6d834eb3789aed13599472cbf"
+    },
+    {
+      "rubric_id": "R7",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Phase 1 statusline live-base resolution",
+      "claim": "The planned live-base usage needs an explicit subprocess-free statusline resolution path.",
+      "evidence": "Quota files are placed beneath live_base. The supplied resolver invokes findmnt through Command::new and caches only for the process lifetime. Section 2 states that each statusline invocation is a one-shot process, so that cache does not prevent a subprocess on subsequent invocations.",
+      "evidence_reference": "Plan §2; supplied src/live.rs: resolve_live_base, is_ram_backed and probe_fstype_findmnt",
+      "repair": "Specify a subprocess-free resolver for the statusline and bound any mount-data reads it requires. Verify both render paths with a subprocess trap and confirm that resolver and snapshot failures preserve output and exit status.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "96a20efc39f000861bf1b51ce667ce7887417cf5d4944c74f5aea54971438c13"
+    },
+    {
+      "rubric_id": "R8",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Usage buckets and fast-mode cost calculation",
+      "claim": "The proposed aggregate buckets cannot apply fast-mode multipliers correctly to mixed usage.",
+      "evidence": "Section 4 aggregates token counts by day, source, account, model and project, retaining only requests and fast_requests to distinguish speed. Section 5 applies a 2× fast multiplier. Request counts cannot recover which input, output and cache tokens belonged to fast requests when request sizes differ.",
+      "evidence_reference": "Plan §4, bucket definition; §5, fast-mode multiplier",
+      "repair": "Retain separate token totals by speed mode or compute costs per response before aggregation using the dated price table. Test a bucket containing normal and fast requests with unequal token and cache counts.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "e11b68d65bf808f6cbd0424274d7b89509e84bb8b0d1059bcd6538fc7e9d578e"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "Plan section 4 (Collector) per-file state table in usage.db",
+      "claim": "The collector persists the canonical path of every transcript file in usage.db, and a Claude transcript path embeds the full cwd (the projects/<slug> folder name is the slugified absolute working directory), so a full path, not a basename, lands in the store. This contradicts success criterion 4 and R1 (cwd beyond a basename must not be persisted).",
+      "evidence": "Section 4 says 'Per file state: canonical path, inode, size, offset (+ last codex total)'. The Claude glob is '<config>/projects/*/*.jsonl'; the '*' project component is the encoded absolute cwd (e.g. -home-user-src-repo). The same section promises 'stored locally as the repo basename only'. The proposed negative control ('no string longer than a model id') would in fact fail on these path rows, which shows the schema and the test were not reconciled.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 4, table row 'Per file state'; Success criteria item 4",
+      "repair": "Key the per-file state on sha256(canonical path) plus inode and store no path string at all (the collector re-derives paths from the globs on each run and looks up the hash). If a path is needed for diagnostics, store only the file name (session uuid.jsonl) and the project basename. Add this row to the 'no text stored' test: after collect, grep the db, -wal and summary.json bytes for the fixture's absolute cwd and assert absence.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "89d5d9cf76c581500dd865f6a5ed908866d3b7590dd99977731bb3621fe8bf1f"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Plan section 4 'Read' column and Tests paragraph (no text stored)",
+      "claim": "The field list is not exact: cwd (or the project folder slug) is read to derive the basename but is absent from the 'Read' column, and the negative control 'assert the db holds no string longer than a model id' neither proves text absence nor survives real data (repo basenames and model ids like claude-fable-5-1 have no length ordering).",
+      "evidence": "Section 4 'Read' column lists requestId, timestamp, message.model and message.usage.* only, while the Project dimension paragraph says 'cwd last component'. The Tests paragraph defines the negative control as a string-length assertion.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 4 table and 'Project dimension' paragraph; 'Tests (each with a negative control)' paragraph",
+      "repair": "Add cwd (basename only, derived in memory) to the Read column and state that the slug is never used. Replace the length assertion with a sentinel test: a fixture transcript whose prompt, response text, tool_input, tool_result and cwd each contain a distinct sentinel; after collect, read the raw bytes of usage.db, usage.db-wal, every quota snapshot and summary.json and assert no sentinel appears; positive control asserts each sentinel is present in the fixture.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "12ca42a8ad8c729467979bac518a2fe26cd41f5c38514fabac43382de183334f"
+    },
+    {
+      "rubric_id": "R2",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "Plan section 4 (Collector) read scope for Claude and Codex globs",
+      "claim": "The collector defines no symlink rule, so a symlinked directory under projects/ or sessions/, or a symlinked *.jsonl, would be followed out of the tree and could open a credentials or settings file. Only the statusline snapshot read (section 3) says 'regular files only (no symlinks)'.",
+      "evidence": "Section 4 lists the globs and config-dir list but contains no mention of symlinks, lstat, O_NOFOLLOW or a canonical-prefix check; section 3 has such a rule for quota snapshots only. The Codex glob is recursive ('sessions/**'), which widens the exposure.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 4 table and 'Config dirs' paragraph; contrast section 3 'regular files only (no symlinks)'",
+      "repair": "Add to section 4: every matched path is checked with symlink_metadata and skipped if it is a symlink; every directory component below projects/ and sessions/ is walked with read_dir and symlinked directories are not descended; files are opened with O_NOFOLLOW; the canonicalized file path must start with the canonicalized config dir. Add tests: a symlinked *.jsonl pointing outside the tree is not opened (fixture outside the tree with a sentinel, counts unchanged, sentinel absent), and a symlinked project directory is not descended.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "a53b60480f793dc1ffddd895aed22baac602ebfcf26c0045138e2e8287db42e9"
+    },
+    {
+      "rubric_id": "R4",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Plan section 6 summary.json schema and push allow-list",
+      "claim": "Only the top-level keys of summary.json are listed; the keys inside each accounts entry and each days entry are described in prose, so the push allow-list cannot be 'exact' and a nested leak (for example a project key inside a days row) would pass a top-level check.",
+      "evidence": "Section 6 lists generated_at_ms, host, accounts, days and describes days as 'last 7 x source x account x model token totals + estimated cost' without naming the row keys. The push check is described as 'an allow-list of keys (the schema above)'.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 6, bullets 'summary.json' and 'codeforge usage push'",
+      "repair": "Enumerate the full nested schema (schema, generated_at_ms, host, accounts[]: alias, written_at_ms, five_hour{pct,resets_at}, seven_day{pct,resets_at}; days[]: day, source, account, model, input, output, cache_write_5m, cache_write_1h, cache_read, requests, fast_requests, cost_usd) and state that the push guard walks every object recursively against a per-level allow-list. Extend the push test to a payload with an unknown key nested inside a days row.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "a6d25b07aff83ab44d6e2674cd5b7c288237c53b3f17f64417ff06b1419be55f"
+    },
+    {
+      "rubric_id": "R5",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Plan section 4 usage.db creation and sections 2 and 6 snapshot/summary writers",
+      "claim": "The 'umask 077 around the open' mechanism needs a libc call the crate currently avoids and is process-global, while a simpler creation-time guarantee exists: pre-create the db with OpenOptions mode 0600 so SQLite's unix VFS inherits that mode for -wal and -shm; the quota and summary writers can reuse the existing 0600/0700 atomic writer rather than re-implementing it.",
+      "evidence": "src/live.rs declares getuid inline to avoid the libc crate and already provides write_live_json (tempfile_in + set_mode_0600 before persist, create_dir_all_0700 for ancestors) with stat-based tests. The plan names neither the umask implementation nor the reuse.",
+      "evidence_reference": "src/live.rs fn write_live_json, fn create_dir_all_0700, fn set_mode_0600, test write_live_json_creates_ancestors_0700; doc/plans/2026-11-03-usage-collector.md section 4 'umask 077 around the open'",
+      "repair": "State in section 4 that the db file is created with OpenOptions mode 0o600 before Connection::open (SQLite copies the db mode to -wal/-shm), with the post-open stat verification kept. State in sections 2 and 6 that snapshots and summary.json go through write_live_json. No other change.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "2961704115cd4603d3f973fec186b72acbd9b0c63814e888bff76b738a2a35cb"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Plan section 4 incremental offsets",
+      "claim": "Partial last lines are not addressed: the plan stores an offset but does not say the offset advances only past newline-terminated lines, so a line still being written would be parsed as bad JSON and skipped, then the offset would move past it and the usage would be lost. The test list has no partial-line case.",
+      "evidence": "Section 4 says 'Per file state: canonical path, inode, size, offset' and 'size < offset or inode changed -> reread from 0' with no rule for an unterminated tail; the Tests paragraph lists 'incremental offset, truncation -> reread' but no partial line.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 4 'Per file state' paragraph; 'Tests' paragraph collector items",
+      "repair": "Add: the stored offset is the byte after the last newline read; an unterminated tail is left unread. Add a test that writes a fixture in two appends splitting one line, collects after each append, and asserts the line is counted exactly once.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "aebcffebdefd04f8df74f94a78295782af882c36a093262d3265174b30177ec5"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Plan section 4 requestId table pruning and reread-from-0",
+      "claim": "Rereading a file from 0 (inode change, truncation) relies on the requestId table to avoid double counting, but that table is pruned past 40 days, so an old file reread from 0 re-adds counts whose ids were pruned. The same-inode truncate-and-regrow case (size >= offset) is also undetected.",
+      "evidence": "Section 4: 'table pruned past 40 days' and 'size < offset or inode changed -> reread from 0'. Buckets are additive per (day, source, account, model, project) with no per-file contribution record.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 4 table 'Dedup' column and 'Per file state' paragraph",
+      "repair": "On reread from 0, skip lines whose timestamp is older than the prune horizon (they were counted and their ids pruned). Optionally store a hash of the first line per file to detect same-inode rewrites. Add a test: a file with lines older than the horizon is reread from 0 and the buckets do not grow.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "c3e2dd334378fee1dad6c2534b0f87f0cb8ecafe67f9c6fb524415291e3fa340"
+    },
+    {
+      "rubric_id": "R7",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "Plan sections 2 and 3 statusline hot path, quota snapshot location under <live_base>",
+      "claim": "Placing the quota snapshots under <live_base> ties the statusline to resolve_live_base, whose first probe spawns findmnt. Unless the statusline already resolves the live base on every run today, the usage row adds a subprocess to the hot path, which R7 forbids. The plan does not state which.",
+      "evidence": "src/live.rs resolve_live_base_uncached calls is_ram_backed for each candidate, which calls probe_fstype_findmnt using std::process::Command::new with findmnt before falling back to /proc/mounts; the OnceLock cache is per process and the statusline is 'a one-shot process' (plan section 2), so the probe runs on each render.",
+      "evidence_reference": "src/live.rs fn probe_fstype_findmnt, fn is_ram_backed, fn resolve_live_base_uncached; doc/plans/2026-11-03-usage-collector.md section 2 'tmp file + rename' paragraph and section 3 'Snapshot read is bounded'",
+      "repair": "Either cite the existing statusline call site that already resolves the live base per run (then no new subprocess, and say so), or change section 2 to resolve the quota dir without a subprocess: use the /proc/mounts probe first in the statusline path, or trust AUTOPILOT_LIVE_DIR when autopilot passes it, or place the quota dir under a fixed path. Add a test that renders the row with PATH empty and asserts no process spawn and unchanged output.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "48f18c676c03581be70c2ff85e0914307b6d2d4c2892ae91d945c396ba2cb225"
+    },
+    {
+      "rubric_id": "R7",
+      "class": "future",
+      "severity": "non-blocking",
+      "affected_surface": "Plan section 3 bounded snapshot read and colour rules",
+      "claim": "Which 16 files are read when the quota dir holds more is unspecified, so the displayed set is nondeterministic; and the colour and width rules cannot be checked against doc/specs/tui-guideline.md here because that spec is not in the supplied source context.",
+      "evidence": "Section 3 says 'at most 16 files' without an ordering rule; the rubric references doc/specs/tui-guideline.md, which is absent from the source context.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 3 'Snapshot read is bounded'; FROZEN_RUBRIC R7",
+      "repair": "State the selection order (sort entries by file name, take the first 16, then sort by written_at_ms for display). No current change for the guideline match; verify at phase 1 review with the spec open.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "3ccdb12c7212a465dbdaed895a863bc64ef3ab31ecc52915003685bb62d14176"
+    },
+    {
+      "rubric_id": "R8",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "Plan section 5 price table and multipliers",
+      "claim": "The composition of multipliers is not stated (fast mode 2x applied to cache-write and cache-read rates as well as input/output), the fast-mode negative control (speed=fast on a model without a fast tier applies no multiplier) is missing, and the price source is a prose reference rather than a path or URL.",
+      "evidence": "Section 5: 'Cache write 1.25x (5 m) / 2x (1 h) input; cache read 0.1x input except ...; Fast mode (Opus 5.5 / 5 / 4.8): 2x' with no formula; source given as 'Anthropic pricing via the claude-api reference'; Tests list 'price (known, unknown -> null, fast, cache)' without the non-eligible case.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 5; 'Tests' paragraph price item",
+      "repair": "Write the formula once: cost = fast_mult x (input x p_in + output x p_out + cw5m x 1.25 p_in + cw1h x 2 p_in + cr x p_cr), fast_mult = 2 only for the listed models else 1. Add the non-eligible fast test. Record the source as a file path or URL next to PRICES_AS_OF.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "d7c0a13c43755db1ba600f2a560625f5446d71928cca9ec3b5cf656f0fed30d7"
+    },
+    {
+      "rubric_id": "R9",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "Plan sections 6 and 7, phase 4 forge-stats tab dependency on summary.json",
+      "claim": "Section 6 has only 'codeforge usage push' writing summary.json, while the phase 4 tab reads summary.json and never spawns codeforge; on this host collect is on demand and push is optional, so the tab would be empty or stale unless every 'codeforge usage' run also writes the summary, and the tab has no staleness display.",
+      "evidence": "Section 6: 'codeforge usage push: collect, write summary, fleet upload'; the plain 'codeforge usage' bullet says 'collect, then a table'. Section 7: 'reads summary.json ... Never spawns codeforge'. Non-goals: 'Running collect automatically on this host'.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 6 bullets, section 7, Non-goals item 3",
+      "repair": "State that every 'codeforge usage' invocation (and --json) rewrites summary.json after collect, and that the tab shows the age derived from generated_at_ms with a stale marker past 6 h, consistent with section 2 staleness. Keep push as the only uploader.",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "fable",
+          "runner": "claude-native",
+          "model": "claude-fable-5-1"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "31f983febb57bd16a4a94e6a7f74950b12183a601f6505aa514506a1cd5f282e"
+    }
+  ],
+  "backlog_candidates": [
+    {
+      "fingerprint": "c81050d79aec887c68531f97374c4e70c8619937b105d4e85e4ac2b4b054690e",
+      "rubric_id": "R3",
+      "affected_surface": "Collector file-state storage",
+      "claim": "Persisting canonical source paths contradicts the prohibition on paths in written files.",
+      "evidence_reference": "Plan §4, per-file state and project dimension; frozen rubric R3",
+      "disposition": null
+    },
+    {
+      "fingerprint": "7202cb7bcc6d9c423d898ae111489a92ffb2b2d5a5d03322f896bdd48d04192f",
+      "rubric_id": "R1",
+      "affected_surface": "Transcript field inventory and privacy tests",
+      "claim": "The field inventory and proposed negative control do not establish that transcript text is excluded.",
+      "evidence_reference": "Plan §4, source table and project dimension; Tests paragraph",
+      "disposition": null
+    },
+    {
+      "fingerprint": "a8e444ca8fa79ded302716a11d75c9923bd2cefacf5751caca8cf86a7f7b5afc",
+      "rubric_id": "R2",
+      "affected_surface": "Collector source discovery and opening",
+      "claim": "The listed globs do not enforce the required containment against symlinks.",
+      "evidence_reference": "Plan §3, bounded snapshot reads; §4, source globs and canonical paths",
+      "disposition": null
+    },
+    {
+      "fingerprint": "716493dff43ffb64d3d0d6eb097a9622d9492ca6b4299352f790fb807110fec9",
+      "rubric_id": "R4",
+      "affected_surface": "Summary schema and push validation",
+      "claim": "The summary contract does not enumerate the exact nested keys needed for an enforceable payload allow-list.",
+      "evidence_reference": "Plan §6, summary.json and usage push bullets; Tests paragraph",
+      "disposition": null
+    },
+    {
+      "fingerprint": "699fec7e105f11e7e739883a02f24d134820845387c26971baebb24e11c9e73a",
+      "rubric_id": "R5",
+      "affected_surface": "Existing usage directories, snapshots and SQLite sidecars",
+      "claim": "Handling existing wider permissions is specified only for usage.db.",
+      "evidence_reference": "Plan success criterion 5; §2, snapshot throttle; §4, database modes; Tests paragraph",
+      "disposition": null
+    },
+    {
+      "fingerprint": "066f5e7ea552700a15c4f8bfb7584ad1b282eb8d16bdb42685b9390cc467071d",
+      "rubric_id": "R6",
+      "affected_surface": "Incremental collector offsets",
+      "claim": "The plan leaves partial final lines and atomic checkpointing undefined.",
+      "evidence_reference": "Plan §4, per-file state; Tests paragraph",
+      "disposition": null
+    },
+    {
+      "fingerprint": "66270fbfd0483c123db3b2766b7786cf09cec7c6d834eb3789aed13599472cbf",
+      "rubric_id": "R6",
+      "affected_surface": "Replay, rotation and deduplication",
+      "claim": "Resetting offsets does not define how previously counted usage avoids being counted again.",
+      "evidence_reference": "Plan §4, dedup table and truncation/inode reset rule",
+      "disposition": null
+    },
+    {
+      "fingerprint": "96a20efc39f000861bf1b51ce667ce7887417cf5d4944c74f5aea54971438c13",
+      "rubric_id": "R7",
+      "affected_surface": "Phase 1 statusline live-base resolution",
+      "claim": "The planned live-base usage needs an explicit subprocess-free statusline resolution path.",
+      "evidence_reference": "Plan §2; supplied src/live.rs: resolve_live_base, is_ram_backed and probe_fstype_findmnt",
+      "disposition": null
+    },
+    {
+      "fingerprint": "e11b68d65bf808f6cbd0424274d7b89509e84bb8b0d1059bcd6538fc7e9d578e",
+      "rubric_id": "R8",
+      "affected_surface": "Usage buckets and fast-mode cost calculation",
+      "claim": "The proposed aggregate buckets cannot apply fast-mode multipliers correctly to mixed usage.",
+      "evidence_reference": "Plan §4, bucket definition; §5, fast-mode multiplier",
+      "disposition": null
+    },
+    {
+      "fingerprint": "12ca42a8ad8c729467979bac518a2fe26cd41f5c38514fabac43382de183334f",
+      "rubric_id": "R1",
+      "affected_surface": "Plan section 4 'Read' column and Tests paragraph (no text stored)",
+      "claim": "The field list is not exact: cwd (or the project folder slug) is read to derive the basename but is absent from the 'Read' column, and the negative control 'assert the db holds no string longer than a model id' neither proves text absence nor survives real data (repo basenames and model ids like claude-fable-5-1 have no length ordering).",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 4 table and 'Project dimension' paragraph; 'Tests (each with a negative control)' paragraph",
+      "disposition": null
+    },
+    {
+      "fingerprint": "a6d25b07aff83ab44d6e2674cd5b7c288237c53b3f17f64417ff06b1419be55f",
+      "rubric_id": "R4",
+      "affected_surface": "Plan section 6 summary.json schema and push allow-list",
+      "claim": "Only the top-level keys of summary.json are listed; the keys inside each accounts entry and each days entry are described in prose, so the push allow-list cannot be 'exact' and a nested leak (for example a project key inside a days row) would pass a top-level check.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 6, bullets 'summary.json' and 'codeforge usage push'",
+      "disposition": null
+    },
+    {
+      "fingerprint": "2961704115cd4603d3f973fec186b72acbd9b0c63814e888bff76b738a2a35cb",
+      "rubric_id": "R5",
+      "affected_surface": "Plan section 4 usage.db creation and sections 2 and 6 snapshot/summary writers",
+      "claim": "The 'umask 077 around the open' mechanism needs a libc call the crate currently avoids and is process-global, while a simpler creation-time guarantee exists: pre-create the db with OpenOptions mode 0600 so SQLite's unix VFS inherits that mode for -wal and -shm; the quota and summary writers can reuse the existing 0600/0700 atomic writer rather than re-implementing it.",
+      "evidence_reference": "src/live.rs fn write_live_json, fn create_dir_all_0700, fn set_mode_0600, test write_live_json_creates_ancestors_0700; doc/plans/2026-11-03-usage-collector.md section 4 'umask 077 around the open'",
+      "disposition": null
+    },
+    {
+      "fingerprint": "aebcffebdefd04f8df74f94a78295782af882c36a093262d3265174b30177ec5",
+      "rubric_id": "R6",
+      "affected_surface": "Plan section 4 incremental offsets",
+      "claim": "Partial last lines are not addressed: the plan stores an offset but does not say the offset advances only past newline-terminated lines, so a line still being written would be parsed as bad JSON and skipped, then the offset would move past it and the usage would be lost. The test list has no partial-line case.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 4 'Per file state' paragraph; 'Tests' paragraph collector items",
+      "disposition": null
+    },
+    {
+      "fingerprint": "c3e2dd334378fee1dad6c2534b0f87f0cb8ecafe67f9c6fb524415291e3fa340",
+      "rubric_id": "R6",
+      "affected_surface": "Plan section 4 requestId table pruning and reread-from-0",
+      "claim": "Rereading a file from 0 (inode change, truncation) relies on the requestId table to avoid double counting, but that table is pruned past 40 days, so an old file reread from 0 re-adds counts whose ids were pruned. The same-inode truncate-and-regrow case (size >= offset) is also undetected.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 4 table 'Dedup' column and 'Per file state' paragraph",
+      "disposition": null
+    },
+    {
+      "fingerprint": "3ccdb12c7212a465dbdaed895a863bc64ef3ab31ecc52915003685bb62d14176",
+      "rubric_id": "R7",
+      "affected_surface": "Plan section 3 bounded snapshot read and colour rules",
+      "claim": "Which 16 files are read when the quota dir holds more is unspecified, so the displayed set is nondeterministic; and the colour and width rules cannot be checked against doc/specs/tui-guideline.md here because that spec is not in the supplied source context.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 3 'Snapshot read is bounded'; FROZEN_RUBRIC R7",
+      "disposition": null
+    },
+    {
+      "fingerprint": "d7c0a13c43755db1ba600f2a560625f5446d71928cca9ec3b5cf656f0fed30d7",
+      "rubric_id": "R8",
+      "affected_surface": "Plan section 5 price table and multipliers",
+      "claim": "The composition of multipliers is not stated (fast mode 2x applied to cache-write and cache-read rates as well as input/output), the fast-mode negative control (speed=fast on a model without a fast tier applies no multiplier) is missing, and the price source is a prose reference rather than a path or URL.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 5; 'Tests' paragraph price item",
+      "disposition": null
+    },
+    {
+      "fingerprint": "31f983febb57bd16a4a94e6a7f74950b12183a601f6505aa514506a1cd5f282e",
+      "rubric_id": "R9",
+      "affected_surface": "Plan sections 6 and 7, phase 4 forge-stats tab dependency on summary.json",
+      "claim": "Section 6 has only 'codeforge usage push' writing summary.json, while the phase 4 tab reads summary.json and never spawns codeforge; on this host collect is on demand and push is optional, so the tab would be empty or stale unless every 'codeforge usage' run also writes the summary, and the tab has no staleness display.",
+      "evidence_reference": "doc/plans/2026-11-03-usage-collector.md section 6 bullets, section 7, Non-goals item 3",
+      "disposition": null
+    }
+  ],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": 2,
+  "reviewed_at": "2026-11-03T02:48:01.613Z"
+}

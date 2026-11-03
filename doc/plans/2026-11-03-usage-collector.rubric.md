@@ -1,0 +1,13 @@
+# Rubric — G36 usage collector v1 plan
+
+> Source plan: doc/plans/2026-11-03-usage-collector.md (codeforge, PM G36)
+
+R1: Privacy — persisted data: no transcript text field (prompt, response, tool input/output, file content, cwd beyond a basename used only locally) is persisted in usage.db, quota snapshots or summary.json; the plan names exactly which fields are read and how the "no text stored" property is tested with a negative control.
+R2: Privacy — read scope: the collector opens only the listed globs (Claude projects/*/*.jsonl and projects/*/*/subagents/*.jsonl under each config dir; Codex sessions/**/rollout-*.jsonl), never a credentials/token/settings file, follows no symlink out of those trees, and the config-dir list is bounded and defined.
+R3: Privacy — identifiers: the account alias is validated (`AUTOPILOT_ACCOUNT` `[a-z0-9-]{1,24}`, else a config-dir hash) and an invalid value can never be written; the host field is a hash, never the hostname; no email, account uuid, OAuth token or path appears in any written file.
+R4: Privacy — push payload: summary.json's exact keys are listed, contain no project/path/prompt/email, and push refuses any payload outside the allow-list; what leaves the machine is exactly that file.
+R5: File modes: usage.db and its -wal/-shm, quota snapshots and summary.json are 0600 and created directories 0700, set at creation (no window with wider bits), with a test by stat; existing wider modes are handled.
+R6: Correctness of accounting: Claude dedup by requestId is right for the transcript shape (several lines per response), subagent transcripts are counted once, Codex cumulative totals are diffed per file without double counting, incremental offsets handle truncation/rotation/inode change, and partial last lines are not lost or double counted.
+R7: Quota display: staleness rules (expired window, old snapshot) are defined and tested; the statusline hot path adds no subprocess, bounded file reads only (count, size, regular file), throttled writes, and a failure never changes rendering or exit code; both render paths are covered; width degradation and colour rules match doc/specs/tui-guideline.md.
+R8: Cost estimate: prices are data with a dated source, unknown models are null never 0, cache-write/read and fast-mode multipliers are right, the subscription caveat is shown, and the Haiku tier approximation is stated.
+R9: Scope and sequencing: phases are independently reviewable, phase 1 does not depend on open points of 2–5, the install-chain change is code-only on this host (no hooks installed here), the forge-stats tab fits the G33 layout, and the v1 attribution limit is stated with its G37 dependency.

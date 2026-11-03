@@ -1,0 +1,72 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "codeforge:g36-usage-collector",
+ "generation": 2,
+ "findings": [
+  {
+   "fingerprint": "965bcf2f62886955baea756d96731a7071b103de3db5258db709558ae2f13135",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded Phase 2 Requests: per request id per-counter max with the stored max kept (idempotent for repeated lines, split responses and rereads); spike on 12 503 real requests found identical usage on every line; fixtures listed."
+  },
+  {
+   "fingerprint": "10b22070a7d44af042bbe9051913e5eecbcc9dfcbb226dad00613aff6350bd7d",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded Phase 2 store: dir 0700, db create-or-tighten 0600, existing -wal/-shm tightened, only then open; test from a 0644 db with a stale 0644 -wal."
+  },
+  {
+   "fingerprint": "911b114277fbee7c76a16789fe329981012952c19bb2f742f06f72193560352c",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded Phase 3: value constraints for every string (alias grammar, host, model regex with unknown fallback at collect time, day, enums, numbers); push refuses otherwise; tests put a path and an email into model and alias."
+  },
+  {
+   "fingerprint": "af319ab4c4f5c5f3a00f81bdf2e18a9d726f8d0b5a6e5f180db92784ed4800d9",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded Phase 2 Account of a root: collect never reads AUTOPILOT_ACCOUNT; snapshots carry root = sha8(canonical config dir); a root maps to the newest matching snapshot alias else acct-sha8, stored in the db."
+  },
+  {
+   "fingerprint": "614eca82a8307b3670649d2dfee93d20078b327763772fd5b670b397095576f1",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded Phase 1: exact snapshot keys and the only statusline input read (rate_limits.*); privacy test on snapshot bytes with markers in session_id, transcript_path, cwd, workspace."
+  },
+  {
+   "fingerprint": "8a3ab233ae016e755f554c499104f0c7de6823a3813a66f5eb29f5b3df6b907f",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 965bcf2f, plus: lines without requestId skipped; missing cache_creation breakdown falls back to cache_creation_input_tokens as 5-minute writes."
+  },
+  {
+   "fingerprint": "d2192a77f29227b066b9968f1bf97adcdff47022856b84ac5ef4e8edc29c6254",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded Phase 2 Incremental: head = sha256 of the first min(4096, committed offset) bytes with that length, compared over the same length only."
+  },
+  {
+   "fingerprint": "6307b95b6c43ab988790a666fd6180aecd1708546edf3db6aeb263255c6f50c3",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 10b22070."
+  },
+  {
+   "fingerprint": "b22a51c81ea21f18ffb2d25811427eec72b2a72470ec8c9bfb90bdf50efe074f",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 911b1142, plus upload with a fixed --name so no local path is sent, tested with a fake fleet recording argv and bytes; summary.json location stated."
+  },
+  {
+   "fingerprint": "0f09b1aa45aaf9257a7debac92e9399a2e166ba60e4435de23cef9abe4c16f2d",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded Phase 1 read rule: file stem must equal the body alias and match the grammar (implemented in phase 2 with a negative test)."
+  },
+  {
+   "fingerprint": "a479186772cdde2e531a219592a14fa43eb773c1f684d26c71281d8f28cc7e79",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded Phase 3: per-model rate rows written out (no rule-plus-exception path), tests pin the read exceptions; totals sum priced rows with an explicit partial marker, null when none priced."
+  },
+  {
+   "fingerprint": "bdcf0214d55c62264a1de6c39f0f46c852559404bd7bf4c931526e5fd0780efe",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded Phase 1 row rule: whole entry, or alias NN% without countdown, or omitted, never cut mid-token; most constrained kept first; red never demoted. Matches the implementation reviewed SHIP-AS-IS (f6baef59)."
+  },
+  {
+   "fingerprint": "cc6ffa0a0e4dc75a262af24a267eaff64a68321698a14e13ed0c6351ad2c9ecc",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded criterion 5: G36-owned dirs only, <data_dir>/usage/ via CODEFORGE_DATA_DIR (as src/db) for usage.db and <live_base>/codeforge/usage/ for quota and summary.json; ~/.codeforge is not touched."
+  }
+ ]
+}
