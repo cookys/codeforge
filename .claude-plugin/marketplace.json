@@ -1,0 +1,13 @@
+{
+  "name": "codeforge",
+  "owner": {
+    "name": "cookys"
+  },
+  "plugins": [
+    {
+      "name": "forge-stats",
+      "source": "./plugins/forge-stats",
+      "description": "The codeforge pet (pixel Ferris) with the memory and brain lights and the fleet summary, as a band above the prompt or a side pane"
+    }
+  ]
+}
