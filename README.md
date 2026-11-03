@@ -34,7 +34,7 @@ curl -sSL https://raw.githubusercontent.com/cookys/codeforge/main/install.sh | s
 Downloads the prebuilt binary for Linux (x86_64 or aarch64) and
 installs to `~/.cargo/bin` or `~/.local/bin`. Releases ship Linux binaries only (since v0.0.9); on
 macOS or anything else, build from source: `cargo install --git https://github.com/cookys/codeforge --locked`
-(install.sh and `codeforge self-update` print the same instruction there). Respects
+(install.sh prints that instruction there; `codeforge self-update` prints it with `--force`, which replaces an existing install). Respects
 `CODEFORGE_VERSION`, `CODEFORGE_INSTALL_DIR`, `CODEFORGE_FORCE` env vars.
 
 **Option 2 — `cargo binstall` (Rust users, no compile)**
@@ -42,6 +42,9 @@ macOS or anything else, build from source: `cargo install --git https://github.c
 ```bash
 cargo binstall codeforge
 ```
+
+Prebuilt for Linux x86_64/aarch64; on other platforms binstall finds no asset and falls back to building
+from source.
 
 **Option 3 — `cargo install` (developers / from source)**
 
