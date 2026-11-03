@@ -50,7 +50,7 @@ redistribution-safe）。**加任何 dep 後，push 前先本機 `cargo deny che
 真正會卡的是**單一非標準 license**（webpki-roots=CDLA、ring 的自訂 license 等）。
 注意：self_update 0.44 的 reqwest backend 要 reqwest 0.13（≠ 專案的 0.12）會拉第二份，
 故維持 ureq backend。
-**Related**: CI gate 清單見 `.github/workflows/ci.yml`（fmt/clippy/test/deny/doc-drift/cjk-safe）—— deny 是唯一沒進本機 quality gate 的。
+**Related**: hosted CI 已在 G38（2026-11-03）退役；`scripts/check-all.sh` 是 merge gate，含 `cargo deny check licenses`。
 
 ## `install --all` 在 statusLine 衝突時會整個 bail（hooks 沒裝）
 
@@ -150,6 +150,9 @@ git -c user.name=cookys -c user.email=cookys@stranity.com commit -m "..."
 **Related**: `codeforge git repo 需要獨立 git config` 條目歷史紀錄；MEMORY.md HARD RULE「NEVER update the git config」
 
 ## `git tag v*.*.*` 會觸發 release.yml 發布 pipeline（不可逆對外動作）
+
+> **已過時（G38，2026-11-03）**：`.github/workflows` 已刪除，推 tag 不再觸發任何 pipeline。release 改由
+> `scripts/release-local.sh` 建 draft、操作者手動發布。以下保留作為歷史紀錄。
 
 **Date**: 2026-06-22 | **Context**: doc-drift audit 抓到 version-sync drift（Cargo.toml 0.0.5 但無對應 git tag / CHANGELOG section），一度想打 `v0.0.5` tag「對齊」
 **Problem**: `.github/workflows/release.yml` 觸發是 `on: push: tags: 'v*.*.*'` —— 推一個 `vX.Y.Z` tag 會**啟動全平台 build + 發 GitHub release**（對外、不可逆）。為了清 doc-audit 的「無 tag」findings 而打 tag，會誤觸發真正的 release。

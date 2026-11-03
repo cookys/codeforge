@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Local quality gate — the replacement for GitHub CI (which burns Actions quota).
+# The merge gate. There is no hosted CI (PM G38 retired .github/workflows after v0.0.9).
 #
 # Runs, in order: pinned fmt check → clippy -D warnings → cargo test (through the flake guard:
 # a failed test is rerun once; one that then passes is recorded in target/flaky-tests.log and
 # named on stderr, never hidden) → cjk-safe → doc-drift → cargo deny (licenses) → shellcheck
 # install.sh → release smoke (the x86_64-unknown-linux-gnu tarball built with the MSRV toolchain
-# through scripts/package.sh, unpacked and run). Together: every job of .github/workflows/ci.yml
-# and release-smoke.yml.
+# through scripts/package.sh, unpacked and run) — every job the retired ci.yml and
+# release-smoke.yml ran.
 # On Windows (Git Bash) it then repeats clippy + test on Linux through WSL, so the Unix code
 # paths are still exercised. macOS cannot be covered locally.
 #

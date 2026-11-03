@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pinned, reproducible `cargo fmt` for CodeForge — the SINGLE SOURCE OF TRUTH
-# for how this repo is formatted. Every actor (your machines, CI's fmt job, and
+# for how this repo is formatted. Every actor (your machines, check-all's fmt step, and
 # AI agents in any session) MUST format through this script so output is
 # byte-identical everywhere. Do NOT run a bare `cargo fmt` — a rolling `stable`
 # rustfmt re-wraps long lines between toolchain versions (RFC 2437 explicitly
@@ -18,7 +18,7 @@
 #
 # Usage:
 #   ./scripts/fmt.sh            # format the whole workspace in place
-#   ./scripts/fmt.sh --check    # verify formatting (CI gate; exit 1 on drift)
+#   ./scripts/fmt.sh --check    # verify formatting (merge gate via check-all; exit 1 on drift)
 #
 # Bump policy: change PIN deliberately in a dedicated commit that also re-runs
 # `./scripts/fmt.sh` repo-wide (intentional upgrades, never silent rolling).
