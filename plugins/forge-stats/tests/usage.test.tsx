@@ -58,6 +58,12 @@ test('parseUsage takes today, sums per model, priced first, and refuses each con
     { ...summary(), days: [row({ source: 'gemini' })] },
     { ...summary(), days: [row({ speed: 'turbo' })] },
     { ...summary(), days: [row({ account: '/home/me' })] },
+    // numbers past the contract's bound (G36 r2 a46d57ea): an integer to JS, not to the writer
+    { ...summary(), days: [row({ input: 1e100 })] },
+    { ...summary(), days: [row({ requests: 2 ** 53 })] },
+    { ...summary(), generated_at_ms: 1e100 },
+    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 1e100 }, seven_day: null }] },
+    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: -1 }, seven_day: null }] },
   ]
   for (const b of breaks) expect(parseUsage(JSON.stringify(b), NOW).status).toBe('bad')
   expect(parseUsage('{', NOW).status).toBe('bad')
