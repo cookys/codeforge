@@ -2374,6 +2374,8 @@ mod tests {
 
     #[test]
     fn others_segment_one_yellow_per_row_red_at_95() {
+        // other tests set NO_COLOR under ENV_LOCK; colour assertions must not race them
+        let _g = ENV_LOCK.lock().unwrap();
         if !color_enabled() {
             return; // NO_COLOR set for this test run: nothing coloured to check
         }
@@ -2452,6 +2454,8 @@ mod tests {
 
     #[test]
     fn one_yellow_per_row_counts_this_sessions_own_bars() {
+        // other tests set NO_COLOR under ENV_LOCK; colour assertions must not race them
+        let _g = ENV_LOCK.lock().unwrap();
         if !color_enabled() {
             return;
         }

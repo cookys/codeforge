@@ -137,14 +137,28 @@ fn read_bounded(path: &Path) -> Option<Snapshot> {
     Snapshot::from_json(&serde_json::from_slice(&buf).ok()?)
 }
 
-/// Write `snap` unless the file on disk already holds the same percentages and
-/// was written less than WRITE_EVERY_MS ago. Returns whether it wrote.
+/// True when the file exists with any group/other permission bit set.
+#[cfg(unix)]
+fn wider_than_0600(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.permissions().mode() & 0o077 != 0)
+}
+
+#[cfg(not(unix))]
+fn wider_than_0600(_path: &Path) -> bool {
+    false
+}
+
+/// Write `snap` unless the file on disk already holds the same percentages, was
+/// written less than WRITE_EVERY_MS ago and is not wider than 0600 (a wider one is
+/// rewritten at once: the shared writer creates it 0600). Returns whether it wrote.
 pub fn write_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<bool> {
     if !valid_alias(&snap.alias) {
         return Ok(false);
     }
     let file = format!("{}.json", snap.alias);
-    if let Some(old) = read_bounded(&dir.join(&file)) {
+    let path = dir.join(&file);
+    if let Some(old) = read_bounded(&path).filter(|_| !wider_than_0600(&path)) {
         let age = snap.written_at_ms - old.written_at_ms;
         if old.five_hour == snap.five_hour
             && old.seven_day == snap.seven_day
@@ -287,6 +301,18 @@ mod tests {
             ..changed
         };
         assert!(write_snapshot(&dir, &aged).unwrap());
+        // a snapshot found wider than 0600 is rewritten at once, back to 0600
+        std::fs::set_permissions(
+            dir.join("acct-a.json"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        let soon = Snapshot {
+            written_at_ms: NOW_MS + 42_000,
+            ..aged.clone()
+        };
+        assert!(write_snapshot(&dir, &soon).unwrap());
+        assert_eq!(mode(&dir.join("acct-a.json")), 0o600);
         // an invalid alias is never written
         let bad = snap("Me@x", NOW_MS, Some((0.1, NOW_S + 60)), None);
         assert!(!write_snapshot(&dir, &bad).unwrap());
