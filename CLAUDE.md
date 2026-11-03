@@ -167,6 +167,7 @@ src/
 | `doc/specs/codeforge-ship.md` | Mnemos source role — L2 ledger producer + cite client (stub; Sprint 1 expand) |
 | `doc/specs/codeforge-mnemos-runtime.md` | **運維現況**（非設計）— 腦↔codeforge 目前怎麼跑：拓樸、WRITE/READ live vs 未接、hook chain、自檢指令、fleet 隧道。免每次翻 hook+code |
 | `doc/specs/codeforge-agent-coupling.md` | **ADR** — codeforge↔coding-agent 耦合接縫（4 surface：transcript→signal / hook wiring / session 事件 / statusline）。決策 *A-with-seam*：先綁 CC、命名守住接縫、不過早抽象，留多-agent（B）路 |
+| `doc/specs/codeforge-usage.md` | **用量（G36）** — 每帳號配額快照 + statusline 用量列、轉錄檔收集器（只存數字）、成本估算、`summary.json` 契約與 `usage push` |
 | `doc/specs/codeforge-mod-ui.md` | **開發依據** — Claude Code mod UI 能力與限制（已覆核，CC 2.1.314）、owner 終端實測（mod `Image` 在 Windows 終端不可用 → 像素走 Raster 半格）、codeforge↔mod 分工（`pet.json` 契約） |
 | `.claude/rpg-engine-spec.md` | Phase 1 architectural decisions (daemon model, write ownership) |
 | `.claude/i18n-spec.md` | i18n two-layer design (compile-time UI + runtime content) |

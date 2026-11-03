@@ -196,6 +196,7 @@ codeforge install --project-hooks --force --yes
 `codeforge hook <name> [args…]` runs a hook script embedded in the binary (copied to a private per-version cache under the codeforge data dir, honouring `CODEFORGE_DATA_DIR`) with `node`, passing stdin and the script's exit code through. Its own failures exit 1, never 2 (Claude Code treats 2 as blocking). The scripts update with the binary, so `self-update` needs no reinstall.
 - `codeforge memory context --hook` (SessionStart) — injects a lean ranked L1 index as additionalContext (local recall; no-op when the project has no active L1)
 - `codeforge dream --quiet` → `codeforge ship --no-hook` (SessionEnd) — the memory pipeline: distill L0 → L1 in every project, then ship to Mnemos if opted in (clean no-op otherwise). See [`doc/concepts.md`](doc/concepts.md).
+- `codeforge usage collect --quiet` (SessionEnd, after ship) — incremental usage collect: numbers only from the session transcripts, then `summary.json`. See [Usage](#usage).
 
 Across SessionStart / SessionEnd / PreCompact (3 hook types). On a local (non-shared) settings.json, `--hooks`/`--all` also set the top-level `cleanupPeriodDays = 3650` (unless you already set a non-null value) so Claude Code doesn't reclaim session transcripts before dream/ship distil them; on a shared one only `--cleanup-period-days <DAYS>` writes it.
 
@@ -401,6 +402,28 @@ process and otherwise swallowed.
 statusLine install, i.e. without `--hooks`/`--project-hooks`, or with `--all`) idempotently adds a
 `subagentStatusLine` entry to `settings.json` pointing at `<binary> subagent-statusline`. Default
 `install`/`install --all` behaviour is unchanged — this is opt-in only.
+
+## Usage
+
+`codeforge usage` answers "how much did I use, on which account, how close to the limit" on this machine
+(spec: [`doc/specs/codeforge-usage.md`](doc/specs/codeforge-usage.md)):
+
+```bash
+codeforge usage                         # collect, then the last 7 days by model
+codeforge usage --days 3 --by project   # --by model | project | account; --json
+codeforge usage push                    # validate summary.json and `fleet upload` it; prints the blob sha
+```
+
+- The statusline usage row shows this session's 5h / 7d / ctx bars, then every other account seen in the
+  last 6 h as `alias NN% countdown`. Each statusline run writes its account's quota snapshot; the alias is
+  `AUTOPILOT_ACCOUNT` when set (autopilot's account-pinned dispatch), else a hash of the config dir.
+- The collector reads only the numeric usage fields of `~/.claude/projects/**` (and `CLAUDE_CONFIG_DIR`) and
+  Codex `~/.codex/sessions/**` transcripts, incrementally, into `<data_dir>/usage/usage.db` (0600). No
+  prompt, path or email is stored; a project is its directory's last name.
+- Cost is an **API-equivalent estimate** at list price (prices as of 2026-10-06); subscription plans are not
+  billed this way, and models without a price row (all Codex models) show `—`.
+- `summary.json` (per-day × model totals and per-account quota, no projects or paths) is the only thing
+  `usage push` sends.
 
 ## Data & Privacy
 
