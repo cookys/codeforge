@@ -34,6 +34,9 @@ pub struct Window {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
     pub alias: String,
+    /// sha8 of the canonical config dir this account's sessions run in (`None` from a
+    /// pre-phase-2 writer). Lets the collector map a transcript root to an alias.
+    pub root: Option<String>,
     pub written_at_ms: i64,
     pub five_hour: Option<Window>,
     pub seven_day: Option<Window>,
@@ -45,6 +48,13 @@ pub fn quota_dir(live_base: &Path) -> PathBuf {
         .join(crate::pet::view::DIR)
         .join("usage")
         .join("quota")
+}
+
+/// Eight lowercase hex digits.
+pub fn is_hash8(s: &str) -> bool {
+    s.len() == 8
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 fn window_json(w: &Option<Window>) -> Value {
@@ -65,6 +75,7 @@ impl Snapshot {
         json!({
             "schema": SCHEMA,
             "alias": self.alias,
+            "root": self.root,
             "written_at_ms": self.written_at_ms,
             "five_hour": window_json(&self.five_hour),
             "seven_day": window_json(&self.seven_day),
@@ -80,8 +91,14 @@ impl Snapshot {
         if !valid_alias(alias) {
             return None;
         }
+        let root = match &v["root"] {
+            Value::Null => None,
+            Value::String(r) if is_hash8(r) => Some(r.clone()),
+            _ => return None,
+        };
         Some(Snapshot {
             alias: alias.to_string(),
+            root,
             written_at_ms: v["written_at_ms"].as_i64()?,
             five_hour: window_from(&v["five_hour"]),
             seven_day: window_from(&v["seven_day"]),
@@ -107,7 +124,7 @@ impl Snapshot {
 /// blocking on a FIFO: the checks then run on the opened handle, so a path swapped
 /// between a check and the open cannot redirect or stall the read.
 #[cfg(unix)]
-fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
+pub(crate) fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()
         .read(true)
@@ -116,7 +133,7 @@ fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
 }
 
 #[cfg(not(unix))]
-fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
+pub(crate) fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::File::open(path)
 }
 
@@ -175,25 +192,9 @@ pub fn write_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<bool> {
 /// written within MAX_AGE_MS, with a running window; most constrained first.
 /// Reads at most MAX_FILES `*.json` entries (by name order); bad ones are skipped.
 pub fn read_others(dir: &Path, own_alias: &str, now_ms: i64) -> Vec<Snapshot> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut names: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| {
-            p.extension().is_some_and(|x| x == "json")
-                && !p
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.starts_with('.'))
-        })
-        .collect();
-    names.sort();
     let now_s = now_ms.div_euclid(1000);
-    let mut out: Vec<Snapshot> = names
-        .iter()
-        .take(MAX_FILES)
-        .filter_map(|p| read_bounded(p))
+    let mut out: Vec<Snapshot> = read_all(dir)
+        .into_iter()
         .filter(|s| s.alias != own_alias)
         .filter(|s| {
             now_ms
@@ -208,6 +209,35 @@ pub fn read_others(dir: &Path, own_alias: &str, now_ms: i64) -> Vec<Snapshot> {
         pb.total_cmp(&pa).then_with(|| a.alias.cmp(&b.alias))
     });
     out
+}
+
+/// Every valid snapshot in `dir`, any age: name-sorted, the first MAX_FILES `*.json`, read
+/// bounded; a file whose stem is not the alias in its body is skipped (a stray or
+/// hand-edited file cannot inject another identifier).
+pub fn read_all(dir: &Path) -> Vec<Snapshot> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.extension().is_some_and(|x| x == "json")
+                && !p
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with('.'))
+        })
+        .collect();
+    names.sort();
+    names
+        .iter()
+        .take(MAX_FILES)
+        .filter_map(|p| {
+            let s = read_bounded(p)?;
+            let stem = p.file_stem().and_then(|n| n.to_str())?;
+            (stem == s.alias).then_some(s)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -226,10 +256,34 @@ mod tests {
         let w = |x: Option<(f64, i64)>| x.map(|(pct, resets_at)| Window { pct, resets_at });
         Snapshot {
             alias: alias.into(),
+            root: None,
             written_at_ms: at_ms,
             five_hour: w(five),
             seven_day: w(seven),
         }
+    }
+
+    #[test]
+    fn a_file_named_otherwise_than_its_alias_is_skipped_and_root_round_trips() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("q");
+        let mut s = snap("acct-b", NOW_MS, Some((0.4, NOW_S + 60)), None);
+        s.root = Some("1a2b3c4d".into());
+        crate::live::write_live_json(&dir, "acct-b.json", &s.to_json()).unwrap();
+        // a stray file named after an email-shaped string, carrying a valid body
+        crate::live::write_live_json(
+            &dir,
+            "me@example.com.json",
+            &snap("acct-c", NOW_MS, Some((0.4, NOW_S + 60)), None).to_json(),
+        )
+        .unwrap();
+        let all = read_all(&dir);
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].root.as_deref(), Some("1a2b3c4d"));
+        // a malformed root refuses the snapshot
+        let mut v = s.to_json();
+        v["root"] = json!("/home/x/.claude");
+        assert_eq!(Snapshot::from_json(&v), None);
     }
 
     #[test]
