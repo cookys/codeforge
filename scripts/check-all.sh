@@ -78,8 +78,10 @@ MSRV=$(grep -m1 '^rust-version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 if [ "$IS_WINDOWS" = 0 ]; then
   step "release smoke (x86_64-unknown-linux-gnu, toolchain $MSRV)"
   SMOKE_OUT=$(mktemp -d)
+  trap 'rm -rf "$SMOKE_OUT"' EXIT
   ./scripts/package.sh x86_64-unknown-linux-gnu --toolchain "$MSRV" --out "$SMOKE_OUT" >/dev/null
   rm -rf "$SMOKE_OUT"
+  trap - EXIT
 fi
 
 if [ "$IS_WINDOWS" = 1 ] && [ "$WITH_WSL" = 1 ]; then

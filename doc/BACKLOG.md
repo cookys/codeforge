@@ -217,6 +217,23 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
 **Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
 
+## B42 — G38 本機 release 流程 review 列為後續的項目
+
+**Area**: `install.sh`、`scripts/package.sh`、`scripts/release-local.sh`
+**Premise**: autopilot 四席審查 G38 第 1 輪（範圍 `70f541d..213a746`，full_range_sha256 fc0b0322）判為可延後的項目：
+- 3bd8512b／d04d809f：`CODEFORGE_DOWNLOAD_BASE` 不是預設值時，install.sh 往 stderr 印一行提示，讓使用者看得出下載來源被換掉。
+- d5e5ae1f：aarch64 的 binary 用主機的 `strip` 處理不了（印「strip skipped」）。release profile 已設 `strip = "symbols"`，影響應該很小；要補就在 cross 映像內 strip，或改用 `aarch64-linux-gnu-strip`。
+- b83770c7：package.sh 的 smoke 只在 target 等於主機時才跑，等於預設只驗 x86_64；aarch64 要實跑需要 qemu-user 或 aarch64 主機。
+第 2 輪（範圍 `213a746..d13e477`，full_range_sha256 668b2d70）可延後的：
+- 766757d0：check-all.sh 的 EXIT trap 改成共用一個 cleanup 函式（目前 smoke 段自己設、自己清）。
+- 63489a31：`--out` 有 RELEASE.txt 時整個目錄會被換掉，裡面不相關的檔案也一起刪；改成只換掉 release 檔名。
+第 3 輪（SHIP-AS-IS，範圍 `d13e477..1c09125`，full_range_sha256 34888da4）的 Suggestion，都是 fail-closed 的操作摩擦：
+- e604b875／8feb02e9：`origin_repo` 只認 `git@github.com:`、`https://github.com/`、`ssh://git@github.com/`；帶 port、帶 `user@`、主機名大小寫不同、GitHub Enterprise 主機都會被拒絕。
+- 07c2e1c1：`GH_REPO` 與 origin 的比對區分大小寫，GitHub 的 owner／repo 名稱本身不區分。
+- fcc923d1／0bfbf871：第二次 tag 檢查到 `gh release create` 之間仍有幾秒窗口；產出只是 draft，由操作者手動 publish，視為可接受。
+**Trigger**: 下次改 install.sh 或 release 流程，或 fleet 有了 aarch64 主機／qemu 時。
+**Not done**: 只記錄。
+
 ## B41 — G36 第 2–5 階段 review 列為後續的項目
 
 **Area**: `src/usage/collect.rs`、`src/usage/store.rs` 測試
