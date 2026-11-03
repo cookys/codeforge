@@ -64,11 +64,11 @@ These patterns are intentional, not bugs:
 **Always format through the pinned wrapper, never a bare `cargo fmt`:**
 ```bash
 ./scripts/fmt.sh           # format in place
-./scripts/fmt.sh --check   # verify (CI gate; exit 1 on drift)
+./scripts/fmt.sh --check   # verify (merge gate via check-all; exit 1 on drift)
 ```
 `scripts/fmt.sh` is the single source of the rustfmt toolchain version (`PIN`
 inside it) and self-installs that toolchain, so every actor — your machines,
-CI's `fmt` job, and AI agents in any session — produces byte-identical output.
+check-all's fmt step, and AI agents in any session — produces byte-identical output.
 
 Why this exists: rustfmt only guarantees stable output *within* one toolchain
 version (RFC 2437); a rolling `stable` re-wraps long lines between versions,
@@ -77,7 +77,7 @@ rustfmt your default toolchain happens to be → re-introduces that drift. The
 wrapper pins ONLY formatting via a `+toolchain` override (build/test/clippy stay
 on rolling stable; MSRV stays in Cargo.toml — no `rust-toolchain.toml`). Bump
 `PIN` deliberately in a dedicated commit that re-runs `./scripts/fmt.sh`
-repo-wide. CI's `fmt` job runs `./scripts/fmt.sh --check` as the non-bypassable
+repo-wide. `scripts/check-all.sh` (the merge gate) runs `./scripts/fmt.sh --check` as the
 backstop.
 
 ## Doc-Code Drift — two layers
@@ -86,8 +86,8 @@ backstop.
 ```bash
 python3 scripts/check-doc-drift.py    # links · fences · version-sync · cli-surface · roadmap-consistency
 ```
-Zero-variance checks that always catch their class. Exit 0 = green. Runs in CI
-(`.github/workflows/ci.yml` → `doc-drift` job) on every push/PR to main, and
+Zero-variance checks that always catch their class. Exit 0 = green. Runs in
+`scripts/check-all.sh` (the merge gate; hosted CI was retired in G38), and
 should be run before any doc-touching merge. **This is the reliable stopping
 condition** — a green run means those classes are genuinely clean (unlike the
 LLM sweep, whose "clean" is just an unproven sample).

@@ -25,7 +25,7 @@ LLM API calls / SQLite schema / game state model / IPC protocol / Phase 2 daemon
 cargo build --release
 cargo install --path .    # install to ~/.cargo/bin/codeforge
 ./scripts/fmt.sh          # format (pinned rustfmt — never bare `cargo fmt`)
-./scripts/fmt.sh --check  # verify formatting (CI gate)
+./scripts/fmt.sh --check  # verify formatting (merge gate, via check-all)
 ```
 
 ## Auto Push
@@ -136,7 +136,7 @@ Docs drift from code over time. Two complementary layers:
 ```bash
 python3 scripts/check-doc-drift.py    # links · fences · version-sync · cli-surface · roadmap-consistency
 ```
-Zero-variance — always catches its classes. Runs in CI (`doc-drift` job) + before
+Zero-variance — always catches its classes. Runs in `scripts/check-all.sh` (the merge gate) + before
 doc-touching merges. **Green = those classes genuinely clean.** This is what makes
 "are the docs in sync?" answerable reliably (a single LLM sweep cannot — see below).
 

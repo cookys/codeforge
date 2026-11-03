@@ -12,9 +12,9 @@ file`. Cargo.lock v4 was introduced in Cargo 1.78.
 **Solution**: Don't use `rust-toolchain.toml` for MSRV declaration;
 it forces every contributor + CI to download that exact version.
 Declare MSRV via `rust-version = "1.88"` in `[package]` of Cargo.toml
-— this is the standard MSRV mechanism. CI matrix uses
-`dtolnay/rust-toolchain@1.88` for release builds; `ci.yml` keeps
-`@stable` for regular checks.
+— this is the standard MSRV mechanism. Release builds use the MSRV toolchain
+(`scripts/release-local.sh` → `cross +1.88`); `scripts/check-all.sh` runs clippy/test on
+rolling stable plus an MSRV release smoke. (Hosted CI was retired in G38.)
 
 ## CJK 字串截斷必須用 .chars().take(N)
 

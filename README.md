@@ -450,7 +450,9 @@ CodeForge is an independent open-source project and is not affiliated with or en
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Project conventions documented in [CLAUDE.md](CLAUDE.md). Bug reports and feature ideas welcome via GitHub Issues.
+See [CONTRIBUTING.md](CONTRIBUTING.md). There is no hosted CI: `./scripts/check-all.sh` is the merge gate
+(fmt, clippy, tests, cjk-safe, doc-drift, cargo deny, shellcheck, MSRV release smoke), and releases are
+built locally by `./scripts/release-local.sh`. Project conventions documented in [CLAUDE.md](CLAUDE.md). Bug reports and feature ideas welcome via GitHub Issues.
 
 ## License
 
