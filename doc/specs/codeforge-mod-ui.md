@@ -65,7 +65,8 @@ Extended_Pictographic（emoji 類）字元就算通過驗證也不要用。
 
 ## 5. 視覺規範
 
-沿用 autopilot live pane 設計規範（`~/projects/autopilot/docs/plans/2026-10-13-live-pane-design-system.md`）：
+以 [`tui-guideline.md`](tui-guideline.md) 為準（所有終端介面共用：空間合約、符號與顏色表、截斷、截圖規則）。
+autopilot live pane 設計規範（`~/projects/autopilot/docs/plans/2026-10-13-live-pane-design-system.md`）是 live mod 的實作細節，跟 tui-guideline 衝突時以 tui-guideline 為準：
 語意色盤（一色一義）、粗體白名單、只用驗證過的單格字元、版面格線 0/2/4/12。
 **例外**：寵物像素畫與地圖是**內容**不是狀態，Raster 可用自帶 RGB；框線、按鈕、警示等 UI 框架色仍走語意色盤。
 
