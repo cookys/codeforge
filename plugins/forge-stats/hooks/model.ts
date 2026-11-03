@@ -331,19 +331,26 @@ export function parseFleet(value: unknown): FleetSummary | null {
 
 // One part of the summary line: a glyph in its state colour, a number or word in the default colour, a dim separator. Colours are theme keys (guideline §3.3-4).
 export type SummaryPart = { text: string; color?: 'warning' | 'error' | 'suggestion' | 'inactive' | 'success'; dim?: boolean }
-// the state glyphs of the shared table (guideline §3.1), most severe first: ▲ need_you, ✗ failed, ⊘ stalled, ● running, ⧗ waiting
+// the state glyphs of the shared table (guideline §3.1), most severe first: ▲ need_you, ✗ failed, ⊘ stalled, ● running, ⋯ waiting
 const COUNTS: readonly { key: keyof FleetCounts; glyph: string; color: SummaryPart['color'] }[] = [
   { key: 'needYou', glyph: '▲', color: 'warning' },
   { key: 'failed', glyph: '✗', color: 'error' },
   { key: 'stuck', glyph: '⊘', color: 'error' },
   { key: 'running', glyph: '●', color: 'suggestion' },
-  { key: 'waiting', glyph: '⧗', color: 'inactive' },
+  { key: 'waiting', glyph: '⋯', color: 'inactive' },
 ]
+/** Spacing rule (guideline §3.5): a chip is glyph, ONE half-width space, count (`⊘ 12`); chips are CHIP_GAP apart; the word and the first chip are one space apart. */
+export const CHIP_GAP = '  '
+export const CHIP_SPACE = ' '
+/** One chip as parts: the glyph in its state colour (colour on the glyph only), the space, the count. */
+export function chipParts(glyph: string, color: SummaryPart['color'], value: string): SummaryPart[] {
+  return [{ text: glyph, color }, { text: CHIP_SPACE }, { text: value }]
+}
 const partsWidth = (parts: readonly SummaryPart[]) => parts.reduce((n, p) => n + displayWidth(p.text), 0)
 
 // The line, widest form first, the first that fits `cols` wins (guideline §2.2):
-//   艦隊 ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.3
-// dropping from the end: the pet, then ⧗, ●, ⊘, ✗ (each only while a more severe count stays), then the word, leaving the most severe non-zero count alone.
+//   艦隊 ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11 · Ferris Lv.3   (chip = glyph + one space + count; two spaces between chips; one space after the word)
+// dropping from the end: the pet, then ⋯, ●, ⊘, ✗ (each only while a more severe count stays), then the word, leaving the most severe non-zero count alone.
 // No count: 「艦隊 ✓」 only after a fetch that succeeded, 「艦隊 ?」 when the last fetch failed or none succeeded yet. No summary (`fleet` null): the pet alone.
 // null when nothing fits or there is nothing to draw: the caller passes the row on (`next(e)`), never draws a blank row.
 export function summaryParts(fleet: FleetSummary | null, petTag: string | null, cols: number, word: string): SummaryPart[] | null {
@@ -354,17 +361,18 @@ export function summaryParts(fleet: FleetSummary | null, petTag: string | null, 
     if (pet.length > 0) forms.push(pet)
   } else {
     const label: SummaryPart = { text: word, dim: true }
-    const counts = COUNTS.filter(c => fleet.totals[c.key] > 0).map(c => [{ text: ' ' }, { text: c.glyph, color: c.color }, { text: String(fleet.totals[c.key]) }] as SummaryPart[])
+    const counts = COUNTS.filter(c => fleet.totals[c.key] > 0).map(c => chipParts(c.glyph, c.color, String(fleet.totals[c.key])))
     if (counts.length === 0) {
       const mark: SummaryPart = fleet.error === null && fleet.fetchedMs !== null ? { text: '✓', color: 'success' } : { text: '?', color: 'inactive' }
-      const line = [label, { text: ' ' }, mark]
+      const line = [label, { text: CHIP_SPACE }, mark]
       if (pet.length > 0) forms.push([...line, sep, ...pet])
       forms.push(line)
     } else {
-      const withWord = (n: number) => [label, ...counts.slice(0, n).flat()]
+      const chips = (n: number) => counts.slice(0, n).flatMap((c, i) => (i === 0 ? c : [{ text: CHIP_GAP }, ...c]))
+      const withWord = (n: number) => [label, { text: CHIP_SPACE }, ...chips(n)]
       if (pet.length > 0) forms.push([...withWord(counts.length), sep, ...pet])
       for (let n = counts.length; n >= 1; n--) forms.push(withWord(n))
-      forms.push(counts[0].slice(1)) // the most severe count alone, no word
+      forms.push(counts[0]) // the most severe count alone, no word
     }
   }
   for (const f of forms) if (partsWidth(f) <= cols) return f

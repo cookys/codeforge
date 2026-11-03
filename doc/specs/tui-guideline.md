@@ -100,14 +100,16 @@ autopilot band 第 1 列的格式（live `model.ts` `layoutBand`）：判定（�
 forge-stats 拿到 1–5 列時畫一行摘要（有 autopilot 時就是分頁列下面的第 2 列，§1.1 規則 3）。從左到右的格式固定，依 §2.1 的優先序排：
 
 ```
-艦隊 ▲1 ✗1 ⊘2 ●4 ⧗11 · Ferris Lv.3
+艦隊 ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11 · Ferris Lv.3
 ```
 
-- `▲` 要人處理（`blocked_human`）、`✗` 失敗、`⊘` 疑似卡住、`●` 執行中、`⧗` 等待中，都取自 `autopilot.fleet` atom（G33；`▲` 和 `✗` 的計數由 G33a 加進 atom）。數字為 0 的那一類不畫。
+間距照 §3.5：每個計數是一個晶片（符號、半形空格、數字），晶片之間空兩格。
+
+- `▲` 要人處理（`blocked_human`）、`✗` 失敗、`⊘` 疑似卡住、`●` 執行中、`⋯` 等待中，都取自 `autopilot.fleet` atom（G33；`▲` 和 `✗` 的計數由 G33a 加進 atom）。數字為 0 的那一類不畫。
 - 「艦隊 ✓」只在五類都是 0，**而且**最後一次抓取成功、沒有 `error` 時才寫。抓取失敗時寫「艦隊 ?」。拿不到 atom（沒有 autopilot）時，整段艦隊不畫。
 - 待決卡數和 `⚑` 殘留屬於 autopilot 的分頁列，一行摘要不重複顯示。
-- 寬度不夠時，從尾端拿掉：寵物 → `⧗` → `●` → `⊘` → `✗` → 「艦隊」兩字 → `▲`。
-- **最窄形式**：最嚴重的那一個非零計數單獨一個（例如 `▲1`、`✗1`、`⊘2`）。這樣也放不下、只剩「艦隊」兩字，或沒有任何可畫的東西（沒有 atom，也沒有寵物）時，把這一列交回：原樣回傳 `next(e)`。不畫空白列。
+- 寬度不夠時，從尾端拿掉：寵物 → `⋯` → `●` → `⊘` → `✗` → 「艦隊」兩字 → `▲`。
+- **最窄形式**：最嚴重的那一個非零計數單獨一個（例如 `▲ 1`、`✗ 1`、`⊘ 2`）。這樣也放不下、只剩「艦隊」兩字，或沒有任何可畫的東西（沒有 atom，也沒有寵物）時，把這一列交回：原樣回傳 `next(e)`。不畫空白列。
 
 ## 3. 狀態符號與顏色：共用一張表
 
@@ -122,7 +124,7 @@ forge-stats 拿到 1–5 列時畫一行摘要（有 autopilot 時就是分頁�
 | stalled | ⊘ | `~` | error | 疑似卡住 | stalled | 安靜太久，可能卡住 |
 | findings | △ | `!` | 預設文字色 | 待修 | to fix | 審查有發現，作者在修 |
 | running | ● | `*` | suggestion | 執行中 | running | 正在進行 |
-| waiting | ⧗ | `w` | inactive | 等待中 | waiting | 已接手，在等某件事（背景工作、相依項目、空出的名額） |
+| waiting | ⋯ | `w` | inactive | 等待中 | waiting | 已接手，在等某件事（背景工作、相依項目、空出的名額） |
 | done | ✓ | `v` | success | 完成 | done | 已完成 |
 | pending | ○ | `o` | inactive | 未開始 | not started | 還沒開始 |
 | stopped | ◌ | `-` | inactive | 已停 | stopped | 沒做完就停了 |
@@ -142,7 +144,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 ### 3.3 規則
 
 1. **一個符號只有一個意思**：狀態、結構、圖表三組不能共用符號（I20；捲軸是登記過的例外）。圖例分頁的名稱 `?` 跟「未知」同一個字，是第二個登記的例外：分頁名是位置，不是狀態，旁邊永遠有其他分頁名。新畫面不能另外發明符號；需要新意思時，先改這張表。
-2. **符號一定只佔 1 格**。驗證狀態（live `GLYPHS.verified`）：2026-10-13 在 owner 的 ssh + tmux 驗過的有 `⊘ △ ○ ◌ ∅ ◦ › ━ ◐ ◍`；待 owner 驗證（`pending-owner`）的有 `↓ ★ ⧗`，以及 `↑`（新增，尚未登記）。其他符號是 live 改版前就在用、沒有個別紀錄的舊符號，比照 `pending-owner`，下次 owner 跑 glyph-check 時一起驗。新符號加進 `NEW_GLYPHS` 時要附 `verified`，填 `YYYY-MM-DD <終端>`，或在 owner 驗證前填 `pending-owner`。驗證方式：owner 在真實終端（ssh + tmux）跑 `node mods/live/glyph-check.js`。East Asian Ambiguous 的符號在 CJK 終端可能變成 2 格，一律要驗。
+2. **符號一定只佔 1 格**。驗證狀態（live `GLYPHS.verified`）：2026-10-13 在 owner 的 ssh + tmux 驗過的有 `⊘ △ ○ ◌ ∅ ◦ › ━ ◐ ◍`；待 owner 驗證（`pending-owner`）的有 `↓ ★ ⋯`，以及 `↑`（新增，尚未登記）。`⋯`（U+22EF，East Asian Width N）在 2026-11-04 取代原本的等待符號 `⧗`：owner 的終端字型把 `⧗` 畫得像 `✗`，等待會被看成失敗（PM 裁定；`◷` 已是「時間」、`◔` 太像 `◷`、`◌○◦` 已有其他意思）。其他符號是 live 改版前就在用、沒有個別紀錄的舊符號，比照 `pending-owner`，下次 owner 跑 glyph-check 時一起驗。新符號加進 `NEW_GLYPHS` 時要附 `verified`，填 `YYYY-MM-DD <終端>`，或在 owner 驗證前填 `pending-owner`。驗證方式：owner 在真實終端（ssh + tmux）跑 `node mods/live/glyph-check.js`。East Asian Ambiguous 的符號在 CJK 終端可能變成 2 格，一律要驗。
 3. **禁用 emoji**：`\p{Extended_Pictographic}`、U+FE0F、U+20E3 都不能出現（`EMOJI_BANNED`）。唯一例外是 `detail` 列。
 4. **顏色只能用主題鍵**：`warning`、`error`、`success`、`suggestion`、`inactive`、`subtle`、`claude`、`merged`，全部透過 `PALETTE` 角色取用。不用原始 RGB，不用背景色，不用 inverse。例外是寵物像素圖和地圖：它們是內容不是狀態（Raster 半格，xterm-256 色，見 `codeforge-mod-ui.md` §5）。
 5. **黃色每一列最多一個**：只用在要人處理的那件事。band 有兩列時，autopilot 那列和 forge-stats 那列各自最多一個。粗體只用白名單（`BOLD_USES`）。
@@ -155,6 +157,33 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 | statusline 大腦燈號 | `● ◐ ○ ◌`，原始 RGB（`statusline.rs` brain lights，`BRAIN_GREEN` 等） | `◐` 是「你在這裡」，`○` 是「未開始」，`◌` 是「已停」 | 同上：只畫字樣（正常、降級、離線、未檢查），顏色依 §5 的 ANSI 對照 |
 | statusline 量表 | `▮▯`（`statusline.rs` 用量列） | 共用表的量表是 `▰▱` | 改成 `▰▱` |
 | statusline 上游 | `⇡⇣`（`statusline.rs` `git_ahead_behind`） | 共用表的落後是 `↓` | 改成 `↑N ↓N`；`↑` 先登記進 live `GLYPHS.structure`（`ahead`），並列入 glyph-check |
+
+### 3.5 間距（晶片與分隔）
+
+一列裡的元件只有四種接法，每種固定寫法，不臨時拼空格：
+
+| 接法 | 寫法 | 例子 |
+|---|---|---|
+| 晶片內：狀態符號接數字或字 | 半形空格 1 格 | `⊘ 12`、`✓ 完成`、`↺ R3` |
+| 晶片之間 | 半形空格 2 格 | `⊘ 12  ● 4` |
+| 次要資訊（meta、寵物） | `' · '`（暗色） | `… · Ferris Lv.3` |
+| band 的組與組之間 | `' │ '` | `↺ R3 │ $329` |
+
+規則：
+
+1. **符號不黏字**：狀態符號（§3.1）和結構符號（§3.2）後面一律先空 1 格，再接數字或字。例外只有三種：貨幣 `$329`（單位，不是狀態）、固定寬度的 `ⓘ`（§3.2），以及空間本身就是語意的圖表符號（量表 `▰▱`、走勢 `▁…█`）。
+2. **寫法只有一處**：每個 mod 用一個 helper 組晶片（forge-stats `chipParts` + `CHIP_GAP`；live 的對應 helper 見下方遷移表），分隔字串用常數，不在呼叫處寫 `' '` 字面值。
+3. **用測試守住**：每個 mod 都要有一個不變式測試，掃過所有寬度下的輸出，斷言狀態符號後面不直接接非空白字元，也不出現連續 3 格空白。新畫面加進來時，要把它的輸出接進這個測試。
+4. **寬度照算**：晶片多出來的空格算進寬度，縮窄時照 §2.1 的優先序整個晶片拿掉，不拆開符號和數字。
+
+現況偏差（2026-11-03 盤點，live 這邊由 autopilot 遷移，不在 codeforge 改）：
+
+| 位置 | 現況 | 遷移方向 |
+|---|---|---|
+| live band 派工計數（`model.ts` `slotDispatch`） | `●3 ⊘1` | `● 3  ⊘ 1` |
+| live `stateBadge`（`ui.ts`） | `⊘2` | 改走晶片 helper（`countChip` 已是 `✓ 32`） |
+| live 待決、殘留（`slotDecisions`、`slotHygiene`） | `◆7`、`?2`、`⚑3`、`dev↓3` | 晶片寫法 |
+| live QC 標記（`slotReview`） | `QC▲` | `QC ▲` |
 
 ## 4. 正體中文文案
 
@@ -249,6 +278,7 @@ tmux kill-session -t cap
 | 說明文字折行、資料端上限加 `…` | — | 待補 |
 | render 時不跑子行程 | live `process` allowlist（lint） | 已有（live）；statusline 待補 |
 | 跨畫面共用一張符號表 | — | 待補：forge-stats／statusline 遷移後，加一條比對 live `GLYPHS` 的測試 |
+| 符號不黏字、晶片間距（§3.5） | forge-stats `band.test.tsx` 不變式測試（每個寬度掃過一行摘要） | forge-stats 已有；live 待補（隨 §3.5 遷移表一起做） |
 
 ## 12. 後續工作（本文要求、但現況還沒做的）
 
