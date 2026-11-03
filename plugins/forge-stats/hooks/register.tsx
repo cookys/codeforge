@@ -21,6 +21,10 @@ import {
   sessionViewPath,
   rgbHex,
   staleMinutes,
+  BAND_MIN_ROWS,
+  MINI_MIN_ROWS,
+  parseFleet,
+  summaryParts,
 } from './model'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
@@ -33,6 +37,17 @@ const pet = atom(
   { shape: 'pet-3' },
 )
 const session = atom({ plugin: 'forge-stats', key: 'session' } as const, null as SessionView | null, { shape: 'session-1' })
+
+// autopilot's fleet summary (its live mod writes `autopilot.fleet`; PM G33a). Read only, never written; no autopilot or another shape is no summary. Not declared as a
+// plugin dependency: forge-stats stands alone (B31), and a missing plugin must not keep it from loading.
+async function readFleet($: EngineInterface) {
+  try {
+    const got = await ($.state.get as (ref: { plugin: string; key: string }) => Promise<{ value: unknown }>)({ plugin: 'autopilot', key: 'fleet' })
+    return parseFleet(got.value)
+  } catch (_e) {
+    return null
+  }
+}
 
 // Module variables: recomputed on every session.start (a reload runs it again).
 let locale: Locale = 'en'
@@ -390,16 +405,30 @@ export const register: Register = on => {
     if (tier === 'full' && (full === null || Raster === undefined)) tier = 'summary'
     if (tier === 'mini' && (mini === null || Raster === undefined)) tier = 'summary'
     const sprite = tier === 'full' ? full : tier === 'mini' ? mini : null
+    const tr = t()
+    const fleet = await readFleet($)
+    // the one-line summary (TUI guideline §2.2): fleet counts, then the pet; the widest form that fits, never wider than the row (bodyColumns may run ~2 wider)
+    const summaryRow = (k: string, withPet: boolean) => {
+      const petTag = withPet && p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
+      const parts = summaryParts(fleet, petTag, Math.max(0, props.bodyColumns - 2), tr('fleet'))
+      if (parts === null) return null
+      return (
+        <Box key={k} flexDirection="row">
+          {parts.map((s, i) => (
+            <Text key={'f' + i} {...(s.color ? { color: s.color } : {})} {...(s.dim ? { dimColor: true } : {})}>
+              {s.text}
+            </Text>
+          ))}
+        </Box>
+      )
+    }
     if (sprite === null || Raster === undefined) {
       bandId = null
       bandSprite = null
-      // one row is the tab label, autopilot's own since the speed moved there (B32): pass it on
-      const petTag = p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
-      if (tier === 'label' || petTag === null) return next(e)
-      // the summary has the row to itself and is cut at its end
-      return <Text wrap="truncate-end">{petTag}</Text>
+      // 1–5 rows (or no sprite): one summary row. With autopilot this is the row it hands down under its tab row (summary_row in the heartbeat); with nothing to
+      // draw the row is passed on, never left blank.
+      return summaryRow('summary', true) ?? next(e)
     }
-    const tr = t()
     const lights = await read($, session)
     const layoutCols = bandLayout(props.bodyColumns, sprite.width)
     const frame = halfBlockCells(sprite, spriteFrame % sprite.frames.length)
@@ -426,7 +455,9 @@ export const register: Register = on => {
       </Box>
     )
 
-    return (
+    // the fleet outranks the pet (guideline §2.1): a summary row on top when there is a summary and a row to spare above the tier's minimum (mini >= 7, full >= 13)
+    const top = fleet !== null && props.maxRows > (tier === 'mini' ? MINI_MIN_ROWS : BAND_MIN_ROWS) ? summaryRow('fleet', false) : null
+    const columns = (
       <Box flexDirection="row" gap={BAND_GAP}>
         {layoutCols.map(c => {
           switch (c.id) {
@@ -438,6 +469,12 @@ export const register: Register = on => {
               return column(bandMemoryLines(lights, tr), c.width, 'memory')
           }
         })}
+      </Box>
+    )
+    return top === null ? columns : (
+      <Box flexDirection="column">
+        {top}
+        {columns}
       </Box>
     )
   })

@@ -286,7 +286,7 @@ Do NOT import CodePower's codebase into CodeForge tests or vice versa. CodeForge
 
 ### Hook Path Note
 
-The **forge-stats pane mod** lives in `.claude/skills/forge-stats/` (Claude Code auto-loads a project skills-folder mod, hot-reloaded when interactive, so it is codeforge-clone-only too); it reads `pet.json` and never spawns codeforge. Test: `claude plugin test .claude/skills/forge-stats`. Spec: `doc/specs/codeforge-mod-ui.md`.
+The **forge-stats mod** lives in `plugins/forge-stats/` and is a global plugin, installed from the repo's directory marketplace (`.claude-plugin/marketplace.json`; `claude plugin marketplace add <codeforge>` + `claude plugin install forge-stats@codeforge`), so every project's session loads it (PM G33). It reads `pet.json` and autopilot's `autopilot.fleet` state and never spawns codeforge. Test: `claude plugin test plugins/forge-stats`. Specs: `doc/specs/codeforge-mod-ui.md`, `doc/specs/tui-guideline.md`.
 
 Project `.claude/settings.json` carries **codeforge-clone-only DEV** hooks only: `check-improvements.js` (SessionStart), `check-dev-flow.js` (PreToolUse). The script paths use `${CLAUDE_PROJECT_DIR}/.claude/scripts/...` (Claude Code env var, expanded at hook spawn) — no per-clone hand-editing needed.
 

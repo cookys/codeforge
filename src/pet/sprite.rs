@@ -288,10 +288,7 @@ mod tests {
     /// import neither JSON nor files outside the mod); keep them equal to what codeforge writes.
     #[test]
     fn forge_stats_sprite_fixtures_match() {
-        let dir = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/.claude/skills/forge-stats/tests"
-        );
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/plugins/forge-stats/tests");
         let read = |name: &str| -> Value {
             let text = std::fs::read_to_string(format!("{dir}/{name}")).unwrap();
             let start = text.find(" = {").expect("fixture has `= {`") + 3;

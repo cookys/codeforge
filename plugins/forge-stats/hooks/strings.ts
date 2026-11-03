@@ -6,6 +6,7 @@ export type Locale = 'en' | 'zh-TW'
 const EN = {
   title: 'Forge stats',
   pet: 'Pet',
+  fleet: 'fleet',
   name: 'name',
   village: 'village',
   xp: 'XP',
@@ -35,6 +36,7 @@ export type StringId = keyof typeof EN
 const ZH_TW: Record<StringId, string> = {
   title: 'Forge stats',
   pet: '寵物',
+  fleet: '艦隊',
   name: '名字',
   village: '村落',
   xp: 'XP',
