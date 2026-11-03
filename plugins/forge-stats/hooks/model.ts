@@ -339,7 +339,7 @@ const COUNTS: readonly { key: keyof FleetCounts; glyph: string; color: SummaryPa
   { key: 'running', glyph: '●', color: 'suggestion' },
   { key: 'waiting', glyph: '⧗', color: 'inactive' },
 ]
-/** Spacing rule (guideline §2.2): a chip is glyph, ONE half-width space, count (`⊘ 12`); chips are CHIP_GAP apart; the word and the first chip are one space apart. */
+/** Spacing rule (guideline §3.5): a chip is glyph, ONE half-width space, count (`⊘ 12`); chips are CHIP_GAP apart; the word and the first chip are one space apart. */
 export const CHIP_GAP = '  '
 export const CHIP_SPACE = ' '
 /** One chip as parts: the glyph in its state colour (colour on the glyph only), the space, the count. */
