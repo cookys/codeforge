@@ -56,13 +56,23 @@ if [ "$use_cross" = 1 ]; then
     export CROSS_CONTAINER_ENGINE=podman
   fi
 fi
-# No machine path in the binary: panic locations of this crate and its dependencies are
-# rewritten to fixed prefixes, so two checkouts at different paths build the same bytes.
+# No machine path in the binary: panic locations of this crate, its dependencies and the
+# standard library are rewritten to fixed prefixes, so two checkouts at different paths build
+# the same bytes. std: with the rust-src component installed, rustc writes the toolchain's
+# local source path instead of its canonical /rustc/<commit-hash>; map it back to that, on the
+# host sysroot and on the one cross mounts in its container (/rust/toolchains/<name>).
 cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-case "$root$cargo_home" in *[[:space:]]*)
-  echo "package: the checkout or cargo home path has whitespace; RUSTFLAGS cannot carry it" >&2; exit 2 ;;
+rustc_cmd=(rustc)
+[ -n "$tc" ] && rustc_cmd=(rustc "+$tc")
+sysroot="$("${rustc_cmd[@]}" --print sysroot)"
+rustc_hash="$("${rustc_cmd[@]}" -vV | sed -n 's/^commit-hash: //p')"
+case "$root$cargo_home$sysroot" in *[[:space:]]*)
+  echo "package: the checkout, cargo home or sysroot path has whitespace; RUSTFLAGS cannot carry it" >&2; exit 2 ;;
 esac
-export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$root=/codeforge --remap-path-prefix=$cargo_home=/cargo"
+remap="--remap-path-prefix=$root=/codeforge --remap-path-prefix=$cargo_home=/cargo"
+remap="$remap --remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/$rustc_hash"
+remap="$remap --remap-path-prefix=/rust/toolchains/$(basename "$sysroot")/lib/rustlib/src/rust=/rustc/$rustc_hash"
+export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }$remap"
 epoch="$(release_epoch)"
 export SOURCE_DATE_EPOCH="$epoch"
 build_cmd=("$tool")
@@ -91,7 +101,7 @@ cp README.md LICENSE "$stage/$name/"
 strip "$stage/$name/codeforge" 2>/dev/null || echo "package: strip skipped for $target" >&2
 pack_tarball "$stage" "$name" "$out/$name.tar.gz" "$epoch"
 python3 -I scripts/check-archive-hermetic.py "$out/$name.tar.gz" --epoch "$epoch" \
-  --forbid "$root" --forbid "$HOME" --forbid "$cargo_home"
+  --forbid "$root" --forbid "$HOME" --forbid "$cargo_home" --forbid "$sysroot" --forbid "/rust/toolchains/"
 (cd "$out" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
 
 # smoke: the packed binary runs and reports the version, when this host can run it
