@@ -33,6 +33,9 @@ import {
   usageSummaryPath,
 } from './model'
 import type { UsageView } from './model'
+import { NO_QUOTA, parseQuotaNs, pickProviders, pickViews, quotaBand, quotaBandForms, quotaEntries, quotaLiveCandidates, quotaLiveDir, quotaPaneLines, QUOTA_NS_MAX_BYTES } from './quota-view'
+import type { DirEntry, QuotaState } from './quota-view'
+import { parseQuotaView } from './quota'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -255,17 +258,123 @@ async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
   return parseUsage(null, now)
 }
 
+// ---- the quota mirror (G40): autopilot's `<live_dir>/quota/<provider>/<alias>.json` views, read here, never written, never in a render ----
+let quotaState: QuotaState = NO_QUOTA
+// the last time anything was drawn (band or pane): the timer reads only while someone is looking (guideline §8-2)
+let drawnAt = 0
+let uidCache: number | null | undefined
+const QUOTA_VIEW_CAP = 256
+const QUOTA_WATCH_MS = 60_000
+
+async function quotaUid($: EngineInterface): Promise<number | null> {
+  if (uidCache !== undefined) return uidCache
+  try {
+    const r = await $.process.run(['id', '-u'])
+    const n = Number(r.stdout.trim())
+    uidCache = r.exitCode === 0 && Number.isInteger(n) && n >= 0 ? n : null
+  } catch {
+    uidCache = null
+  }
+  return uidCache
+}
+
+const dirEntries = async ($: EngineInterface, path: string): Promise<DirEntry[] | null> => {
+  try {
+    return (await $.fs.list(path)) as DirEntry[]
+  } catch {
+    return null
+  }
+}
+
+/** Where the mirror root is (contract §21.3), with the candidates that exist found by `$.fs.stat`. */
+async function quotaRoot($: EngineInterface): Promise<string | null> {
+  const env = {
+    AUTOPILOT_LIVE_DIR: (await $.env.get('AUTOPILOT_LIVE_DIR').catch(() => undefined)) || undefined,
+    XDG_RUNTIME_DIR: (await $.env.get('XDG_RUNTIME_DIR').catch(() => undefined)) || undefined,
+    HOME: (await $.env.get('HOME').catch(() => undefined)) || undefined,
+  }
+  const uid = env.AUTOPILOT_LIVE_DIR ? null : await quotaUid($)
+  const there = new Set<string>()
+  for (const c of quotaLiveCandidates(env, uid)) {
+    const st = await $.fs.stat(c.dir).catch(() => undefined)
+    if (st !== undefined && st.kind === 'dir' && !st.isLink) there.add(c.dir)
+  }
+  return quotaLiveDir(env, uid, d => there.has(d))
+}
+
+// Bounded: at most 64 provider dirs and 256 views, a view a regular file that is not a link and at most the contract's view cap (checked on the listing and again on the text).
+async function refreshQuota($: EngineInterface, force = false) {
+  try {
+    if (!force && Date.now() - drawnAt > QUOTA_WATCH_MS) return
+    const root = await quotaRoot($)
+    const dir = root === null ? undefined : await $.fs.stat(root + '/quota').catch(() => undefined)
+    if (root === null || dir === undefined || dir.kind !== 'dir' || dir.isLink) {
+      quotaState = NO_QUOTA
+      return
+    }
+    const top = (await dirEntries($, root + '/quota')) ?? []
+    let ns: string | null = null
+    const nsEntry = top.find(e => e.name === 'namespace.json')
+    if (nsEntry !== undefined && nsEntry.kind === 'file' && !nsEntry.isLink && nsEntry.size <= QUOTA_NS_MAX_BYTES) {
+      const text = await $.fs.read(root + '/quota/namespace.json').catch(() => null)
+      ns = parseQuotaNs(typeof text === 'string' ? text : null)
+    }
+    const { names, skipped: skippedDirs } = pickProviders(top)
+    const raw: QuotaState['raw'] = []
+    let bad = 0
+    let skipped = skippedDirs
+    let reads = 0
+    for (const provider of names) {
+      const listed = await dirEntries($, `${root}/quota/${provider}`)
+      if (listed === null) continue
+      const picked = pickViews(provider, listed)
+      bad += picked.bad
+      for (const v of picked.views) {
+        if (reads >= QUOTA_VIEW_CAP) {
+          skipped++
+          continue
+        }
+        reads++
+        let text: string | null = null
+        try {
+          const t = await $.fs.read(`${root}/quota/${provider}/${v.name}`)
+          text = typeof t === 'string' ? t : null
+        } catch {
+          text = null
+        }
+        const parsed = text === null ? null : parseQuotaView(text, provider, v.alias)
+        if (parsed === null || parsed.status === 'bad') {
+          bad++
+          continue
+        }
+        bad += parsed.rejected
+        raw.push({ provider, alias: v.alias, view: parsed })
+      }
+    }
+    quotaState = { present: true, ns, raw, bad, skipped }
+  } catch {
+    // a read that fails keeps what was last read
+  }
+}
+
 const money = (c: number) => '$' + c.toFixed(2)
 const lineWidth = (l: Line) => l.reduce((n, x) => n + displayWidth(x.text), 0)
 
-function usageLines(view: UsageView, cols: number, tr: T, now: number): Line[] {
-  if (view.status !== 'ok') return [[seg('  ' + (view.status === 'bad' ? tr('usageBad') : tr('usageMissing')), 'dim')]]
+// `quota` is the mirror when its directory exists (design §7 rule 7): then its blocks replace the G36 accounts rows and the models section stays. Without it, today's pane exactly.
+function usageLines(view: UsageView, cols: number, tr: T, now: number, quota: { state: QuotaState; nowMs: number } | null = null): Line[] {
+  const useQuota = quota !== null && quota.state.present
+  const missing = (): Line => [seg('  ' + (view.status === 'bad' ? tr('usageBad') : tr('usageMissing')), 'dim')]
+  if (view.status !== 'ok' && !useQuota) return [missing()]
   const out: Line[] = []
+  if (useQuota) {
+    out.push([seg(tr('usageAccounts'), 'dim')], ...quotaPaneLines(quota.state, quotaEntries(quota.state, Math.floor(quota.nowMs / 1000)), cols, quota.nowMs, tr))
+    if (view.status !== 'ok') return [...out, missing()]
+  }
   const age = view.generatedAt === null ? 0 : now - view.generatedAt
   if (age > USAGE_STALE_MS) out.push([seg('  ' + tr('usageAge', { n: Math.floor(age / 60_000) }) + ' · ' + tr('usageRefresh'), 'dim')])
-  out.push([seg(tr('usageAccounts'), 'dim')])
-  if (view.accounts.length === 0) out.push([seg('  ' + tr('usageNoAccounts'), 'dim')])
-  for (const a of view.accounts) {
+  if (!useQuota) out.push([seg(tr('usageAccounts'), 'dim')])
+  if (!useQuota && view.accounts.length === 0) out.push([seg('  ' + tr('usageNoAccounts'), 'dim')])
+  for (const a of useQuota ? [] : view.accounts) {
     const win = (label: string, w: UsageView['accounts'][number]['fiveHour'], withReset: boolean): Seg[] =>
       w === null
         ? [seg(`  ${label} `, 'dim'), seg(GLYPH.empty, 'dim')]
@@ -375,11 +484,14 @@ export const register: Register = on => {
     // the band layout draws above the prompt instead of opening the pane (plan KR5)
     if (layout === 'pane') void $.ui.open({ id: PANE, title: t()('title') })
     await refreshPet($)
+    await refreshQuota($, true)
     // first heartbeat before any timer (plan §2.5), then every 2 s
     await writeHeartbeat($)
     // statusline rewrites the snapshot every render; a slow poll keeps the pane current
     // between turns (a reload cancels the timer).
     $.clock.every(15_000, () => void refreshPet($))
+    // the quota mirror: every 15 s, and only while the band or pane was drawn in the last minute (never read in a render)
+    $.clock.every(15_000, () => void refreshQuota($))
     // idle animation: 2 fps, interval written as a literal (pixel-pet plan §2.5)
     $.clock.every(500, () => void stepSprite($))
     $.clock.every(2000, () => void writeHeartbeat($))
@@ -402,6 +514,7 @@ export const register: Register = on => {
     if (verb === 'usage' || verb === 'pet') {
       paneTab = verb
       if (verb === 'pet') lastCells = null
+      if (verb === 'usage') await refreshQuota($, true)
       void $.ui.invalidate('ui.render')
     }
     await $.ui.open({ id: PANE, title: t()('title') })
@@ -430,11 +543,13 @@ export const register: Register = on => {
     const petPart = sprite === null ? petLines(p, cols, tr, Date.now()) : petLines(p, side ? cols - sprite.width - 2 : cols, tr, Date.now(), false)
 
     const now = Date.now()
+    const clockMs = Date.now()
+    drawnAt = clockMs
     const usage = paneTab === 'usage' ? await readUsage($, now) : null
     const lines: Line[] = []
     if (usage !== null) {
       const age = usage.generatedAt === null ? null : Math.floor((now - usage.generatedAt) / 60_000)
-      lines.push(rule(tr('usage'), cols, age === null ? undefined : tr('usageAge', { n: age })), ...usageLines(usage, cols, tr, now))
+      lines.push(rule(tr('usage'), cols, age === null ? undefined : tr('usageAge', { n: age })), ...usageLines(usage, cols, tr, now, { state: quotaState, nowMs: clockMs }))
     } else {
       lines.push(rule(tr('pet'), cols))
       if (sprite === null) lines.push(...petPart)
@@ -470,6 +585,7 @@ export const register: Register = on => {
       if (paneTab === id) return
       paneTab = id
       if (id === 'pet') lastCells = null
+      if (id === 'usage') void refreshQuota($, true)
       void $.ui.invalidate('ui.render')
     }
     const strip = (
@@ -532,10 +648,14 @@ export const register: Register = on => {
     const sprite = tier === 'full' ? full : tier === 'mini' ? mini : null
     const tr = t()
     const fleet = await readFleet($)
+    const clockMs = Date.now()
+    drawnAt = clockMs
+    // the quota chips (G40 §6.1): only once the mirror directory exists (design §7 rule 7), none when it holds nothing to draw
+    const quotaForms = quotaState.present ? quotaBandForms(quotaBand(quotaEntries(quotaState, Math.floor(clockMs / 1000)), clockMs, tr)) : null
     // the one-line summary (TUI guideline §2.2): fleet counts, then the pet; the widest form that fits, never wider than the row (bodyColumns may run ~2 wider)
     const summaryRow = (k: string, withPet: boolean) => {
       const petTag = withPet && p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
-      const parts = summaryParts(fleet, petTag, Math.max(0, props.bodyColumns - 2), tr('fleet'))
+      const parts = summaryParts(fleet, petTag, Math.max(0, props.bodyColumns - 2), tr('fleet'), quotaForms)
       if (parts === null) return null
       return (
         <Box key={k} flexDirection="row">
@@ -581,7 +701,7 @@ export const register: Register = on => {
     )
 
     // the fleet outranks the pet (guideline §2.1): a summary row on top when there is a summary and a row to spare above the tier's minimum (mini >= 7, full >= 13)
-    const top = fleet !== null && props.maxRows > (tier === 'mini' ? MINI_MIN_ROWS : BAND_MIN_ROWS) ? summaryRow('fleet', false) : null
+    const top = (fleet !== null || (quotaForms !== null && quotaForms.length > 0)) && props.maxRows > (tier === 'mini' ? MINI_MIN_ROWS : BAND_MIN_ROWS) ? summaryRow('fleet', false) : null
     const columns = (
       <Box flexDirection="row" gap={BAND_GAP}>
         {layoutCols.map(c => {
