@@ -21,7 +21,9 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # User-facing doc corpus (where command/concept claims must live).
-DOC_CORPUS = ["README.md", "doc/concepts.md", "doc/getting-started.md", "CLAUDE.md"]
+# CLAUDE.md is split into root + subdirectory files (entry-doc split, 2026-11-04); all count.
+DOC_CORPUS = ["README.md", "doc/concepts.md", "doc/getting-started.md", "CLAUDE.md",
+              "src/CLAUDE.md", "src/cli/CLAUDE.md", "src/mnemos/CLAUDE.md", "doc/CLAUDE.md"]
 
 
 def _read(rel):
@@ -142,7 +144,7 @@ def check_cli_surface():
             [f"subcommand `{s}` not mentioned in any of {DOC_CORPUS}" for s in missing])
 
 
-# ── C5: README and CLAUDE phase-roadmap tables must not contradict ────────────
+# ── C5: README and doc/CLAUDE.md phase-roadmap tables must not contradict ─────
 def _roadmap_status(text):
     """phase-id → normalized status from a markdown roadmap table."""
     status = {}
@@ -165,11 +167,15 @@ def _roadmap_status(text):
 
 def check_roadmap_consistency():
     rm = _roadmap_status(_read("README.md"))
-    cm = _roadmap_status(_read("CLAUDE.md"))
+    cm = _roadmap_status(_read("doc/CLAUDE.md"))
     bad = []
+    if not cm or not set(rm) & set(cm):
+        # an empty intersection would pass vacuously (e.g. the table moved again)
+        return ("roadmap-consistency", False,
+                ["no phase rows shared by README.md and doc/CLAUDE.md — table moved or renamed?"])
     for pid in sorted(set(rm) & set(cm)):
         if rm[pid] != cm[pid]:
-            bad.append(f"phase {pid}: README={rm[pid]} vs CLAUDE.md={cm[pid]}")
+            bad.append(f"phase {pid}: README={rm[pid]} vs doc/CLAUDE.md={cm[pid]}")
     return ("roadmap-consistency", not bad, bad)
 
 

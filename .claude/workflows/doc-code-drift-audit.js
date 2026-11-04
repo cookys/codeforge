@@ -51,21 +51,21 @@ const DOMAINS = [
   {
     key: 'memory-pipeline',
     prompt: `Audit CodeForge docs for doc-vs-code DRIFT in the MEMORY PIPELINE domain. Repo root: ${REPO}.
-DOCS: doc/concepts.md (§1-4), doc/specs/codeforge-ship.md, doc/specs/codeforge-memory-contract.md, dream/ship sections of README.md + CLAUDE.md.
+DOCS: doc/concepts.md (§1-4), doc/specs/codeforge-ship.md, doc/specs/codeforge-memory-contract.md, dream/ship sections of README.md + src/cli/CLAUDE.md (dream) + src/mnemos/CLAUDE.md (ship).
 CODE: src/dream/ (compile.rs, runner.rs, absorb.rs, ingest_digests.rs), src/cli/ship.rs, src/cli/mnemos_cli.rs, src/mnemos/*, src/llm.rs, src/db/mod.rs.
 Verify EVERY factual claim (LLM fallback chain, endpoints/URLs, opted_in gate, retry schedule, ship-failed/ship-rejected/ship-state, no-ship opt-out, cite method/confidence, L0/L1/L2 paths, origin filtering, --quiet, SessionEnd hook chain, what ship actually reads). Report WRONG (contradicts code) / STALE (was true, now outdated) / MISSING (code has important behavior docs omit). Every finding needs source file:line in evidence. Be skeptical. Empty findings array if all accurate.`,
   },
   {
     key: 'pet-daemon-combat',
     prompt: `Audit CodeForge docs for doc-vs-code DRIFT in the PET / DAEMON / COMBAT domain. Repo root: ${REPO}.
-DOCS: doc/concepts.md (§5-6), doc/specs/codeforge-mud-engine.md, pet/daemon sections of README.md + CLAUDE.md.
+DOCS: doc/concepts.md (§5-6), doc/specs/codeforge-mud-engine.md, pet/daemon sections of README.md + src/CLAUDE.md.
 CODE: src/pet/* , src/power/, src/daemon/* , src/clan/.
 Verify EVERY claim (PetState fields, XP values per event, leveling math, 4 stats meanings, village count+names, daemon-write vs CLI-overlay ownership, badges status, clan skeleton wired-or-not, MOB scan rate, elite thresholds, ability effects, combat formula). Report WRONG/STALE/MISSING with file:line. Be skeptical. Empty array if accurate.`,
   },
   {
     key: 'install-hooks-statusline',
     prompt: `Audit CodeForge docs for doc-vs-code DRIFT in the INSTALL / HOOKS / STATUSLINE domain. Repo root: ${REPO}.
-DOCS: README.md hook-setup section, doc/specs/codeforge-install-subcommand.md, doc/getting-started.md, CLAUDE.md Hook Path Note + Statusline sections, .env.example.
+DOCS: README.md hook-setup section, doc/specs/codeforge-install-subcommand.md, doc/getting-started.md, src/cli/CLAUDE.md Hook Path Note + Statusline sections, root CLAUDE.md forge-stats mod section, .env.example.
 CODE: src/cli/install.rs, src/cli/statusline.rs, .claude/scripts/*.js, src/cli/init.rs, env var handling (CODEFORGE_DIR/DATA_DIR/LOCALE in src/main.rs).
 Verify (Layer-1 clone-only vs Layer-2 global hooks, what each install flag writes, hook chain order + hook-type count, what session-digest.js writes and WHERE, statusline line count + invocation, env var defaults, uninstall surface). Report WRONG/STALE/MISSING with file:line. Be skeptical. Empty array if accurate.`,
   },
@@ -78,7 +78,7 @@ Report: documented commands/flags that DON'T exist (WRONG), renamed/changed (STA
   {
     key: 'phase-status',
     prompt: `Audit CodeForge docs for doc-vs-code DRIFT in the PHASE/ROADMAP STATUS domain. Repo root: ${REPO}.
-DOCS: README.md Phase Roadmap, CLAUDE.md Phase Roadmap + Mnemos Integration Roadmap, doc/concepts.md §6.
+DOCS: README.md Phase Roadmap, doc/CLAUDE.md Phase Roadmap + Mnemos Integration Roadmap, doc/concepts.md §6.
 VERIFY against doc/projects/INDEX.md (archived = shipped), doc/projects/_archive/ listing, and spot-check code modules exist for each "shipped" phase / are absent for each "planned". Report WRONG (claimed shipped but not in code) / STALE (claimed planned but actually shipped) / MISSING with dir/file evidence. Empty array if accurate.`,
   },
   {
