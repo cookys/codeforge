@@ -678,3 +678,72 @@ fn no_chips_for_an_empty_mirror() {
     let b = quota_band(&[], N, &tr());
     assert!(b.chips.is_empty() && band_forms(&b).is_empty());
 }
+
+/// review g1 5f5a8af7: below AGE_MIN_COLS the compact one-line form never shows the age, even where it would fit.
+#[test]
+fn compact_form_below_60_never_shows_the_age() {
+    let t = tempfile::tempdir().unwrap();
+    put_view(
+        t.path(),
+        "codex",
+        "main",
+        rec(
+            "codex",
+            "main",
+            "L3",
+            json!({"windows": [win("weekly", json!(0.17), N - 7800, json!({"resets_at": N + 3 * DAY}))]}),
+        ),
+    );
+    for cols in [59, 55, 50] {
+        let s = text_at(t.path(), cols);
+        let l = s.lines().find(|l| l.contains("codex:main")).unwrap();
+        assert!(!l.contains("前"), "age at {cols}: {l}");
+    }
+}
+
+/// review g1 6d419bf9: no rendered line is ever wider than the terminal, at any width down to 1, including
+/// the title, the empty-mirror message, the footers and an alias longer than the terminal.
+#[test]
+fn no_line_is_wider_than_the_terminal_at_any_width() {
+    let multi = tempfile::tempdir().unwrap();
+    multi_state(multi.path());
+    // a 24-character provider and alias: `provider:alias` is 49 columns
+    let long = "a23456789012345678901234";
+    put_view(
+        multi.path(),
+        long,
+        long,
+        rec(
+            long,
+            long,
+            "L3",
+            json!({"windows": [win("rolling_5h", json!(0.5), N - 60, json!({"resets_at": N + 3600}))]}),
+        ),
+    );
+    let empty = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(empty.path().join("quota")).unwrap();
+    for dir in [multi.path(), empty.path()] {
+        for cols in 1..=100 {
+            for l in text_at(dir, cols).lines() {
+                let w = unicode_width::UnicodeWidthStr::width(l);
+                assert!(w <= cols, "{w} > {cols}: {l:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn clip_cuts_whole_characters_and_marks_the_cut() {
+    use crate::usage::quota_view::{clip, plain, Part, Style};
+    let l = vec![Part {
+        text: "配額檢視 abc".into(),
+        style: Style::Plain,
+    }];
+    assert_eq!(plain(&clip(&l, 100)), "配額檢視 abc");
+    // 5 columns: 4 for content (two CJK characters), 1 for the ellipsis
+    assert_eq!(plain(&clip(&l, 5)), "配額…");
+    // an odd budget never splits a wide character
+    assert_eq!(plain(&clip(&l, 4)), "配…");
+    assert_eq!(plain(&clip(&l, 1)), "…");
+    assert!(clip(&l, 0).is_empty());
+}

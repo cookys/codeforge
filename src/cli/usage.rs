@@ -182,13 +182,14 @@ pub fn run(action: Action) -> Result<()> {
 }
 
 /// Terminal width for `usage accounts`: the terminal, else `COLUMNS`, else 100; never wider than 100 (design 6.2).
+/// No lower clamp beyond 1: every line is clipped to this width, so a narrow terminal never wraps.
 fn accounts_width() -> usize {
     let w = crossterm::terminal::size()
         .ok()
         .map(|(c, _)| c as usize)
         .or_else(|| std::env::var("COLUMNS").ok().and_then(|v| v.parse().ok()))
         .unwrap_or(100);
-    w.clamp(20, 100)
+    w.clamp(1, 100)
 }
 
 fn accounts(json: bool) -> Result<()> {
