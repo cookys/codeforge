@@ -262,3 +262,28 @@ minimax:main  L3 · 過期
 6. **（顯示端自定）** `rpm`／`tpm` 只在 pane、不在 band；契約 §20.8 Q13 本來就在問其他 lane 顯不顯示。
 7. **（協調：fleet）** 同一個 `(provider, alias)` 從多台 host 觀察時，mirror 路徑是一個 key 一個檔；多 host 資料如何呈現（多筆、合併或 `host_role` 清單）要由 hub 的衝突規則（契約 §5.4）決定，顯示端才知道何時算「來自多於一台 host」（PM 裁定 6 的觸發條件）。
 8. **（待 matrix）** glm 的 kind 對照、kimi 的 reset、qoder-cli-cn／agy／grok 的 L0 何時能升等：升等時 band／pane 不需要改程式，但範例畫面與 §2.2 表需要跟著更新。
+
+## 10. 契約對齊（v4，2026-11-04；autopilot develop 1f221ae63）
+
+autopilot 的 G40R2 已收斂，PM 指定以 `project/plans/2026-11-03-g40-agent-lane-quota.md` 在 1f221ae63 的版本為準（§5 記錄形狀、§22 mirror view）。下列各項**取代**上文對應段落；上文保留作為決策紀錄。§9 待解 1–5、7 由此結案。
+
+| # | 上文說法 | 契約現況（§） | 顯示端做法 |
+|---|---|---|---|
+| 1 | mirror 檔是一筆 `fleet.quota/1` 記錄（§7） | 檔案是 `fleet.quota-view/1`：`{schema, namespace, hub_offset, rows[]}`，每列 `{writer_courier, host_role, observed_at_hub, skewed, record}`（§22.2）；另有 `quota/namespace.json` | 解析 view，逐列驗 `record`；namespace 守門：view 與 `namespace.json` 的 namespace 都非 null 且相等才用 peer 列，否則只留本機列 |
+| 2 | 「不做 per-window 合併，mirror 已合併」（§7 規則 6） | 「Readers merge all rows per window with 5.2」（§22.2） | 照 §5.2 實作合併：只比年齡（本機列 `now - t`，peer 列 `(now + hub_offset) - t`，`t = observed_at_hub - (B - x)`）；> 6 h、超前 > 300 s、`resets_at <= now + hub_offset` 丟棄；每個 kind 取年齡最小的量測 window，平手本機勝、兩 peer 平手取 `utilization` 大者；`estimated` 另算，只能拉高；refusal 取年齡最小的未過期者 |
+| 3 | `observed_at` 是毫秒（§2.1） | 全部 epoch **秒**；`*_ms` 欄位、> 1e11 的值都無效（§6） | 一律秒；倒數 helper 用毫秒時乘 1000 |
+| 4 | 429 是 `source:"429"`、`utilization` 1.0 的合成 window；L1 = 只有這種 window | 429 是記錄層的 `refusal: {observed_at, retry_at, reason}`，絕不是 window；L1 = `windows: []` + `refusal`（§20.4、§21.8） | `429 冷卻` 從 `refusal` 畫；冷卻到 `retry_at`，沒有時 `observed_at + 30 分`（G37 的冷卻終點顯示端拿不到）；過期 = 冷卻結束或 `observed_at + 6 h` 取早者；只有過期能清除，較低的 window 不能。window `source` 是 `429`／`none`／`statusline` 的記錄整筆丟棄 |
+| 5 | token 失效無法表達（§5 缺口、§9-1） | `token_state`（`ok`／`invalid`／`unknown`，缺省 = `unknown`）＋`token_state_at`（§21.1） | `invalid` 畫 `▲ provider:alias token 已失效`，排第一、黃色、不畫量表與百分比；不被 6 h 年齡規則淘汰，只有狀態改變才清除 |
+| 6 | codex 只有餘額時欄位不足（§9-2） | `credits` window 可帶 `remaining`、`utilization: null`（§21.2） | 規則照 §3 不變：只寫「剩 N unit」；`remaining == 0` 是唯一的「空」訊號；不參與最緊 window 挑選 |
+| 7 | `<live_dir>` 解析未定（§9-3） | `<live_dir>` = autopilot 解析器，其他 repo 的讀取端「must reproduce it exactly」（§21.3，對照向量 N37） | forge-stats 另寫 quota 專用解析器，照 §21.3 順序；mod 若無法判斷 `/tmp` 是否在 RAM，一律不採 `/tmp` 候選（契約：只在 `/tmp` 找到的不算 mirror），並在回報中註明 |
+| 8 | 30／7 天先用常數（§9-4） | 契約常數 `{token_warn_days: {notice: 30, urgent: 7}, observation_max_age_hours: 6}`，提議檔 `scripts/lib/quota-contract.json`，「the display never hard-codes them」；該檔屬 autopilot P3，**尚未存在** | 常數集中在 `QUOTA_CONTRACT` 區塊（含 `MAX_AGE_S` 21600、`FUTURE_SKEW_S` 300）；檔案出現後補同步測試（BACKLOG） |
+| 9 | 欄位名漂移（§9-5） | 單一拼法；`pct`／`resetsAt`／`five_hour`／`seven_day`／`*_ms` 一律拒收（§21.5、N38） | 拒收整筆，不改名 |
+| 10 | 多 host 的觸發條件未定（§9-7、PM 裁定 6） | 每個 key 一個 view，`rows[]` 依 `writer_courier` 分列（§22.2） | 「來自多於一台 host」= 通過 namespace 守門與年齡過濾後，仍有 ≥ 2 個不同 `writer_courier`；pane 標題列列出這些列的 `host_role`（取記錄內的值，不取列上的副本） |
+| 11 | `utilization` ∈ `[0, 1.5]` | 存下的值 ≤ 1，> 1 的記錄「rejected by every reader」；`clamped: true` 可選（§6） | 範圍改 `[0, 1]` |
+| 12 | 單檔 ≤ 4 KiB | 契約沒給讀取端上限；一個 view 可有多列 | 單檔 ≤ 32 KiB，最多 64 個 provider 目錄、256 個 view |
+| 13 | L0 = `windows: []` | 從未觀察的別名是 placeholder：`visibility L0`、`windows []`、記錄層 `source: "registry"`，不受 6 h 規則淘汰（§21.6） | 分兩種：placeholder 畫「從未觀察」；有過觀察但 window 全被丟掉的畫「過期或已重置，等新觀察」 |
+| 14 | 等級取記錄的 `visibility` | `visibility` 是每列各自的；合併後的等級契約沒定義 | 顯示端從合併結果推：還有 window 且都有 `resets_at` → L3；有 `resets_at: null` → L2；沒有 window 但有未過期 refusal → L1；其餘 L0 |
+
+不變的部分：30 分鐘年齡顯示門檻、緊 ≥ 0.90 只用字樣、`估`、過渡規則（mirror 出現前維持 G36 快照晶片）、沒有走勢圖（契約 §21.7 也禁止從 mirror 讀數自行生成歷史）、`rpm`／`tpm` 只在 pane。
+
+**本輪範圍**：forge-stats（band 晶片與 用量 分頁），用測試資料開發；真實 mirror 樣本與 Claude 的 `starts_window` 等操作員帳號卡 d-2a19fdb5。Rust 端（statusline、`codeforge usage accounts`）下一輪，共用同一個 `QUOTA_CONTRACT`。
