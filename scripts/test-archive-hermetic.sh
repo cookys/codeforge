@@ -5,7 +5,8 @@
 #          stage path, with other file mtimes and modes, gives byte-identical output;
 #   red:   a plain `tar czf` archive (wall-clock mtimes, real owner, gzip timestamp), a gzip header
 #          timestamp, entries out of byte order, a pax extended header, stored owner names, a
-#          gzip comment field, a second gzip member, and a file holding a forbidden path each FAIL.
+#          gzip comment field, a second gzip member, a GNU header atime, bytes past the archive end,
+#          and a file holding a forbidden path each FAIL.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck source-path=SCRIPTDIR/..
@@ -80,6 +81,24 @@ half=$(( $(stat -c %s "$w/clean.tar") / 2 ))
 { head -c "$half" "$w/clean.tar" | gzip -n; tail -c +"$((half + 1))" "$w/clean.tar" | gzip -n; } >"$w/multi.tar.gz"
 if check "$w/multi.tar.gz" --epoch "$epoch"; then nope "two gzip members passed"; else ok "multi-member gzip rejected"; fi
 if ! grep -q "more than one member" "$w/err" || grep -q Traceback "$w/err"; then nope "multi: wrong reason: $(cat "$w/err")"; fi
+
+# what TarInfo does not expose: a GNU header atime, and bytes after the archive's end marker
+python3 -I - "$w/clean.tar" "$w/atime.tar" <<'EOF'
+import sys
+b = bytearray(open(sys.argv[1], "rb").read())
+b[345:357] = b"14540000000\x00"                      # GNU atime field of the first header
+b[148:156] = b"        "
+b[148:156] = b"%06o\x00 " % sum(b[0:512])            # re-seal the header checksum
+open(sys.argv[2], "wb").write(bytes(b))
+EOF
+gzip -n <"$w/atime.tar" >"$w/atime.tar.gz"
+if check "$w/atime.tar.gz" --epoch "$epoch"; then nope "GNU atime passed"; else ok "GNU header atime rejected"; fi
+grep -q "GNU header stores atime" "$w/err" || nope "atime: wrong reason: $(cat "$w/err")"
+{ cat "$w/clean.tar"; printf 'built in %s\n' "$w"; } | gzip -n >"$w/trailer.tar.gz"
+if check "$w/trailer.tar.gz" --epoch "$epoch" --forbid "$w"; then nope "trailing path passed"; else ok "bytes past the archive end rejected"; fi
+if ! grep -q "after the last entry" "$w/err" || ! grep -q "tar stream contains" "$w/err"; then
+  nope "trailer: wrong reason: $(cat "$w/err")"
+fi
 
 printf 'panicked at %s/src/main.rs\n' "$w" >"$w/a/$name/codeforge"
 pack_tarball "$w/a" "$name" "$w/leak.tar.gz" "$epoch"
