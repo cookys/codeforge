@@ -36,6 +36,8 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             &crate::usage::alias::path_hash8(&config_dir),
             now_ms,
         );
+        // G40: once `<live_dir>/quota/` exists the mirror is the only source on this row (design 7 rule 7).
+        data.mirror = crate::usage::quota_mirror_read::load_for_statusline(now_ms / 1000);
         // G36: a background `usage collect` at most every 15 min (no SessionEnd hook needed).
         // Never from a test build: current_exe() would be the test harness.
         #[cfg(not(test))]
@@ -289,6 +291,8 @@ struct StatusInput {
     seven_day_resets_at: Option<i64>,
     /// G36: the other accounts' fresh quota snapshots, most constrained first.
     others: Vec<crate::usage::quota::Snapshot>,
+    /// G40: the quota mirror's merged entries; `None` while `<live_dir>/quota/` does not exist (then `others` is drawn, as before).
+    mirror: Option<Vec<crate::usage::quota_mirror_read::QEntry>>,
 }
 
 // ─── G36 per-account quota (doc/plans/2026-11-03-usage-collector.md §2–3) ─────
@@ -319,6 +323,45 @@ fn record_quota(
         let _ = write_snapshot(dir, &snap);
     }
     read_others(dir, alias, now_ms)
+}
+
+/// The quota part of the usage row: the mirror's chips when the mirror exists (G40), else the G36
+/// snapshot chips exactly as before. The statusline never draws both.
+fn quota_segment(data: &StatusInput, now_s: i64, avail: usize, yellow_taken: bool) -> String {
+    match &data.mirror {
+        None => others_segment(&data.others, now_s, avail, yellow_taken),
+        Some(entries) => mirror_segment(entries, now_s, avail),
+    }
+}
+
+/// G40 chips: ` · ` then the widest form of the quota group that fits `avail` (design 6.1 drop order);
+/// nothing when no form fits or there is nothing to draw (never an empty ` · `).
+fn mirror_segment(
+    entries: &[crate::usage::quota_mirror_read::QEntry],
+    now_s: i64,
+    avail: usize,
+) -> String {
+    use crate::usage::quota_view as qv;
+    let tr = qv::Tr::current();
+    let band = qv::quota_band(entries, now_s, &tr);
+    let sep_w = 3;
+    for form in qv::band_forms(&band) {
+        if sep_w + qv::width(&form) > avail {
+            continue;
+        }
+        let mut out = tc(" · ", DELIM);
+        for part in &form {
+            out.push_str(&match part.style {
+                qv::Style::Warn => tc(&part.text, BAR_MID),
+                qv::Style::Idle => tc(&part.text, REMAIN),
+                qv::Style::Dim => tc(&part.text, DELIM),
+                qv::Style::Bold => tc_bold(&part.text, BAR_LBL),
+                qv::Style::Plain => tc(&part.text, BAR_LBL),
+            });
+        }
+        return out;
+    }
+    String::new()
 }
 
 /// The other accounts on the usage row: ` · alias NN% countdown` per account, most
@@ -431,6 +474,7 @@ fn read_status_input() -> (StatusInput, serde_json::Value) {
                 seven_day_pct,
                 seven_day_resets_at,
                 others: Vec::new(),
+                mirror: None,
             };
             return (input, v);
         }
@@ -1046,7 +1090,7 @@ fn render_strip<W: Write>(
         let now_s = chrono::Utc::now().timestamp();
         format!(
             "{usage_left}{}",
-            others_segment(&data.others, now_s, room, own_bars_yellow(data))
+            quota_segment(data, now_s, room, own_bars_yellow(data))
         )
     };
     let usage_left_vis = ansi_vis(&usage_left);
@@ -1265,12 +1309,7 @@ fn render_full<W: Write>(
         let mut content = parts.join("  ");
         let room = panel_w.saturating_sub(vis("│ ") + ansi_vis(&content) + vis("│") + 1);
         let now_s = chrono::Utc::now().timestamp();
-        content.push_str(&others_segment(
-            &data.others,
-            now_s,
-            room,
-            own_bars_yellow(data),
-        ));
+        content.push_str(&quota_segment(data, now_s, room, own_bars_yellow(data)));
         box_mid(&content, "│ ", "│")
     };
 
@@ -2386,6 +2425,84 @@ mod tests {
         );
         // no room at all
         assert_eq!(others_segment(&others, Q_NOW, 12, false), "");
+    }
+
+    fn mirror_entries(now: i64) -> Vec<crate::usage::quota_mirror_read::QEntry> {
+        let t = tempfile::tempdir().unwrap();
+        let d = t.path().join("quota/claude");
+        std::fs::create_dir_all(&d).unwrap();
+        let rec = serde_json::json!({"schema": "fleet.quota/1", "provider": "claude", "alias": "work",
+            "visibility": "L3", "host_role": "agent", "refusal": null, "token_state": "unknown",
+            "token_state_at": null, "token_issued_at": null, "token_expires_at": null,
+            "windows": [{"kind": "rolling_5h", "utilization": 0.62, "used": null, "limit": null, "unit": null,
+                "resets_at": now + 7500, "source": "passive", "observed_at": now - 60}]});
+        let row = serde_json::json!({"writer_courier": "local", "host_role": "agent",
+            "observed_at_hub": null, "skewed": false, "record": rec});
+        let view = serde_json::json!({"schema": "fleet.quota-view/1", "namespace": null,
+            "hub_offset": 0, "rows": [row]});
+        std::fs::write(d.join("work.json"), view.to_string()).unwrap();
+        crate::usage::quota_mirror_read::load_from(t.path(), now).expect("quota dir exists")
+    }
+
+    /// G40 transition (design 7 rule 7): with no mirror the quota segment IS the G36 segment, byte for byte.
+    #[test]
+    fn quota_segment_without_mirror_is_byte_identical_to_the_g36_segment() {
+        let others = vec![
+            quota_snap("acct-b", 0.81, Q_NOW + 3 * 86400 + 7200),
+            quota_snap("acct-c", 0.12, Q_NOW + 4 * 3600),
+        ];
+        let data = StatusInput {
+            others: others.clone(),
+            mirror: None,
+            ..Default::default()
+        };
+        for avail in [0usize, 12, 14, 31, 40, 80, 200] {
+            for yellow in [false, true] {
+                assert_eq!(
+                    quota_segment(&data, Q_NOW, avail, yellow),
+                    others_segment(&others, Q_NOW, avail, yellow),
+                    "avail {avail}"
+                );
+            }
+        }
+        // and nothing under a missing quota dir ever turns into `Some`
+        let t = tempfile::tempdir().unwrap();
+        assert!(crate::usage::quota_mirror_read::load_from(t.path(), Q_NOW).is_none());
+    }
+
+    #[test]
+    fn quota_segment_with_mirror_draws_mirror_chips_instead_of_snapshots() {
+        let data = StatusInput {
+            others: vec![quota_snap("acct-b", 0.81, Q_NOW + 7200)],
+            mirror: Some(mirror_entries(Q_NOW)),
+            ..Default::default()
+        };
+        let seg = strip_ansi(&quota_segment(&data, Q_NOW, 200, false));
+        assert!(seg.starts_with(" · "), "{seg:?}");
+        assert!(
+            seg.contains("claude:work") && seg.contains("62%") && seg.contains("◷ 2h5m"),
+            "{seg:?}"
+        );
+        assert!(!seg.contains("acct-b"), "{seg:?}");
+        // fits its room at every width, never panics, never a bare separator
+        for avail in 0..120 {
+            let s = strip_ansi(&quota_segment(&data, Q_NOW, avail, false));
+            assert!(s.is_empty() || vis(&s) <= avail, "avail {avail}: {s:?}");
+            assert_ne!(s.trim(), "·", "avail {avail}");
+        }
+        // narrowest form: alias and value only
+        let tight = strip_ansi(&quota_segment(&data, Q_NOW, 3 + vis("work 62%"), false));
+        assert_eq!(tight, " · work 62%");
+    }
+
+    #[test]
+    fn quota_segment_with_an_empty_mirror_draws_nothing() {
+        let data = StatusInput {
+            others: vec![quota_snap("acct-b", 0.81, Q_NOW + 7200)],
+            mirror: Some(vec![]),
+            ..Default::default()
+        };
+        assert_eq!(quota_segment(&data, Q_NOW, 200, false), "");
     }
 
     #[test]
