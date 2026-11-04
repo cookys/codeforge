@@ -6,9 +6,6 @@
 //! (record, view, refusal, token state); display rules: `doc/plans/2026-11-03-g40-usage-accounts.md` 10.
 //! Distinct from `usage::quota` (the G36 `codeforge.quota/1` snapshot). Timestamps are epoch SECONDS.
 
-// not wired to a caller yet (model layer only); drop this when the statusline consumes it.
-#![allow(dead_code)]
-
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -56,6 +53,7 @@ const DRIFT: [&str; 7] = [
 ];
 
 /// The contract as data, compared against the pane's copy.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn contract() -> Value {
     json!({
         "schema": SCHEMA,

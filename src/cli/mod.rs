@@ -320,6 +320,12 @@ pub enum UsageAction {
     },
     /// 收集、寫 summary.json，驗證後以 `fleet upload` 上傳，印出 blob sha
     Push,
+    /// 配額檢視：讀 autopilot 的配額 mirror 並畫出每個帳號（只讀，不探測、不連網）
+    Accounts {
+        /// 輸出解讀後的清單（JSON）
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -512,6 +518,7 @@ pub fn run(cli: Cli) -> Result<()> {
         } => usage::run(match action {
             Some(UsageAction::Collect { quiet }) => usage::Action::Collect { quiet },
             Some(UsageAction::Push) => usage::Action::Push,
+            Some(UsageAction::Accounts { json }) => usage::Action::Accounts { json },
             None => usage::Action::Show { days, by, json },
         }),
         Commands::MnemosCli { action } => mnemos_cli::run(

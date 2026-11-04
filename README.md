@@ -413,11 +413,14 @@ statusLine install, i.e. without `--hooks`/`--project-hooks`, or with `--all`) i
 codeforge usage                         # collect, then the last 7 days by model
 codeforge usage --days 3 --by project   # --by model | project | account; --json
 codeforge usage push                    # validate summary.json and `fleet upload` it; prints the blob sha
+codeforge usage accounts                # per-account quota from autopilot's mirror (read-only; --json)
 ```
 
 - The statusline usage row shows this session's 5h / 7d / ctx bars, then every other account seen in the
   last 6 h as `alias NN% countdown`. Each statusline run writes its account's quota snapshot; the alias is
   `AUTOPILOT_ACCOUNT` when set (autopilot's account-pinned dispatch), else a hash of the config dir.
+- `codeforge usage accounts`, the statusline and forge-stats read autopilot's per-account quota mirror
+  (`<live_dir>/quota/`) when it exists; until then they show exactly what they show today.
 - Collection needs no hook: the statusline starts a background `codeforge usage collect --quiet` at most
   every 15 minutes (`CODEFORGE_USAGE_AUTOCOLLECT=0` turns that off); the SessionEnd hook, when installed,
   also runs it.

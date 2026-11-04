@@ -79,6 +79,23 @@ model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註
 `days` 是最近 7 天，專案已加總掉。`usage push` 讀回、驗證、把驗過的 bytes 以固定檔名
 `usage-summary.json` 交給 `fleet upload`，不送本機路徑。
 
+## 配額檢視（G40）
+
+`codeforge usage accounts` 與 forge-stats（用量分頁、band 晶片）、statusline 都讀 autopilot 的配額
+**mirror**：`<live_dir>/quota/<provider>/<alias>.json`，schema `fleet.quota-view/1`，每台寫入者一列，
+讀取端依 autopilot G40 契約 §5.2 按年齡合併。codeforge 只讀、絕不寫這個目錄，不連 hub。設計與每種
+狀態的畫法：[`doc/plans/2026-11-03-g40-usage-accounts.md`](../plans/2026-11-03-g40-usage-accounts.md)（§10 為準）。
+
+- 解析與合併：`src/usage/quota_mirror.rs`（Rust）與 `plugins/forge-stats/hooks/quota.ts`（TS）同一套
+  規則；常數在 `QUOTA_CONTRACT`（`contract:begin quota`），cargo test 讀出 TS 區塊比對。
+- `<live_dir>`：`$AUTOPILOT_LIVE_DIR` → `$XDG_RUNTIME_DIR/autopilot` → `/run/user/<uid>/autopilot`
+  （僅在 xdg 未設且目錄存在）→ `/dev/shm/autopilot-<uid>` → `~/.autopilot`；不採 `/tmp` 候選。
+- 讀檔：Rust 以 `O_NOFOLLOW` 開檔、對已開的檔 fstat 確認是一般檔與大小（≤ 32 KiB）；forge-stats 的
+  `$.fs` 沒有 no-follow，改為讀後再驗大小與 stat。最多 64 個 provider 目錄、256 個 view，其餘只計數。
+- 過渡：`<live_dir>/quota/` 不存在時，statusline 與 forge-stats 的輸出和 G36 完全相同（測試逐位元組比對）；
+  存在後改畫 mirror 的晶片，G36 快照晶片不再出現。
+- `--json` 輸出解讀後的清單（已套用丟棄規則），schema `codeforge.usage-accounts/1`。
+
 ## 指令
 
 ```bash
@@ -87,6 +104,7 @@ codeforge usage --days 3 --by project
 codeforge usage --json
 codeforge usage collect --quiet     # hook 用
 codeforge usage push                # 印出 blob sha
+codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
 /forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```
 
