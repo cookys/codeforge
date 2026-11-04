@@ -29,12 +29,22 @@ mkdir -p "$(dirname "$b")"
 git worktree add -q --detach "$a" "$head"
 git worktree add -q --detach "$b" "$head"
 
-# Each build runs package.sh inside its own checkout with CARGO_TARGET_DIR unset, so each gets a
-# fresh target dir under its own path (nothing cached is shared between the two builds).
+# fresh <checkout> <out> [package.sh options]: package.sh inside that checkout with an explicit,
+# empty target dir of its own (overrides any cargo config build.target-dir; package.sh --cross
+# uses <checkout>/target/cross) and compiler-cache wrappers switched off (RUSTC_WRAPPER /
+# RUSTC_WORKSPACE_WRAPPER set empty overrides config and env, e.g. sccache), so nothing compiled
+# is shared between the two builds.
+fresh() {
+  local dir="$1" out="$2"
+  shift 2
+  (cd "$dir" && CARGO_TARGET_DIR="$dir/target-repro" RUSTC_WRAPPER='' RUSTC_WORKSPACE_WRAPPER='' \
+    CARGO_BUILD_RUSTC_WRAPPER='' CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER='' \
+    ./scripts/package.sh "$target" --out "$out" "$@" | tail -1)
+}
 echo "repro-check: $target at $(git rev-parse --short HEAD), build 1 of 2 ($a)" >&2
-arch_a="$(cd "$a" && env -u CARGO_TARGET_DIR ./scripts/package.sh "$target" --out "$base/out-a" "$@" | tail -1)"
+arch_a="$(fresh "$a" "$base/out-a" "$@")"
 echo "repro-check: build 2 of 2 ($b)" >&2
-arch_b="$(cd "$b" && env -u CARGO_TARGET_DIR ./scripts/package.sh "$target" --out "$base/out-b" "$@" | tail -1)"
+arch_b="$(fresh "$b" "$base/out-b" "$@")"
 arch_a="$base/out-a/$(basename "$arch_a")"
 arch_b="$base/out-b/$(basename "$arch_b")"
 
