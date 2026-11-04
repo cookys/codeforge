@@ -384,3 +384,19 @@ test('a bad view wrapper is bad: not JSON, wrong schema, extra key, rows not an 
   expect(ok(view([], { namespace: null })).namespace).toBe(null)
   expect(ok(view([], { hub_offset: -600 })).hubOffset).toBe(-600)
 })
+
+test('B45 shape c (token state only, never any window) says it never had a window; a record whose windows all aged out had one', () => {
+  const shapeC = rec({ visibility: 'L0', token_state: 'ok', token_state_at: N - 100 }, 'claude', 'tok')
+  const c = merged([row(shapeC)])
+  expect(c.windows).toEqual([])
+  expect(c.placeholder).toBe(false)
+  expect(c.hadObservation).toBe(true)
+  expect(c.hadWindow).toBe(false)
+  const aged = rec({ windows: [win('rolling_5h', 0.4, N - 25200, { resets_at: N + 3000 })] }, 'minimax', 'main')
+  const a = merged([row(aged)])
+  expect(a.windows).toEqual([])
+  expect(a.hadWindow).toBe(true)
+  expect(merged([row(D1())]).hadWindow).toBe(true)
+  // a placeholder never had a window either
+  expect(merged([row(rec({ visibility: 'L0', source: 'registry' }, 'agy', 'main'))]).hadWindow).toBe(false)
+})

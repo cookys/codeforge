@@ -747,3 +747,59 @@ fn clip_cuts_whole_characters_and_marks_the_cut() {
     assert_eq!(plain(&clip(&l, 1)), "…");
     assert!(clip(&l, 0).is_empty());
 }
+
+// ---- B45: shape c (token state only) is "no usage data", not "expired or reset" ----
+
+#[test]
+fn shape_c_record_says_no_usage_data_while_an_aged_out_record_keeps_dropped() {
+    let t = tempfile::tempdir().unwrap();
+    put_view(
+        t.path(),
+        "tok",
+        "only",
+        rec(
+            "tok",
+            "only",
+            "L0",
+            json!({"token_state": "ok", "token_state_at": N - 100}),
+        ),
+    );
+    put_view(
+        t.path(),
+        "aged",
+        "out",
+        rec(
+            "aged",
+            "out",
+            "L3",
+            json!({"windows": [win("rolling_5h", json!(0.4), N - 25200, json!({"resets_at": N + 3000}))]}),
+        ),
+    );
+    let (st, e) = state_of(t.path());
+    let s = accounts_text(&st, &e, 100, N, &tr(), false);
+    let line_after = |k: &str| {
+        let mut it = s.lines().skip_while(|l| !l.starts_with(k));
+        it.next();
+        it.next().unwrap().to_string()
+    };
+    assert_eq!(line_after("tok:only"), "  沒有用量資料");
+    assert_eq!(line_after("aged:out"), "  過期或已重置，等新觀察");
+    let en = accounts_text(&st, &e, 100, N, &Tr("en".to_string()), false);
+    assert!(en.contains("no usage data"), "{en}");
+    // compact line and the band both stay on the short neutral word
+    let narrow = accounts_text(&st, &e, 40, N, &tr(), false);
+    assert!(narrow
+        .lines()
+        .any(|l| l.starts_with("tok:only") && l.contains("無資料")));
+    assert_eq!(quota_band(&e, N, &tr()).no_data, 2);
+    let v = accounts_json(&st, &e, N, &tr());
+    let list = v["entries"].as_array().unwrap();
+    let state_of_provider = |p: &str| {
+        list.iter().find(|x| x["provider"] == p).unwrap()["state"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    assert_eq!(state_of_provider("tok"), "no_usage");
+    assert_eq!(state_of_provider("aged"), "dropped");
+}
