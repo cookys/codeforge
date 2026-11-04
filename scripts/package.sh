@@ -16,7 +16,7 @@
 # when <target> runs on this host, the packed binary is extracted and must print "codeforge <v>".
 # Reproducible (B43): the binary is built with --remap-path-prefix for the checkout and cargo home,
 # the archive is packed by scripts/lib/pack-tarball.sh with every mtime = SOURCE_DATE_EPOCH
-# (default: HEAD's commit time), and scripts/check-archive-hermetic.sh refuses an archive that
+# (default: HEAD's commit time), and scripts/check-archive-hermetic.py refuses an archive that
 # still carries a timestamp, an owner, or the checkout/home path. Same commit, same bytes.
 # Prints the archive path on the last line.
 set -euo pipefail
@@ -90,7 +90,7 @@ chmod +x "$stage/$name/codeforge"
 cp README.md LICENSE "$stage/$name/"
 strip "$stage/$name/codeforge" 2>/dev/null || echo "package: strip skipped for $target" >&2
 pack_tarball "$stage" "$name" "$out/$name.tar.gz" "$epoch"
-./scripts/check-archive-hermetic.sh "$out/$name.tar.gz" --epoch "$epoch" \
+python3 -I scripts/check-archive-hermetic.py "$out/$name.tar.gz" --epoch "$epoch" \
   --forbid "$root" --forbid "$HOME" --forbid "$cargo_home"
 (cd "$out" && sha256sum "$name.tar.gz" >"$name.tar.gz.sha256")
 
