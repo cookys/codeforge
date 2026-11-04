@@ -9,6 +9,7 @@ pub enum Action {
     Show { days: u32, by: String, json: bool },
     Collect { quiet: bool },
     Push,
+    Accounts { json: bool },
 }
 
 fn now_ms() -> i64 {
@@ -96,6 +97,7 @@ pub fn run(action: Action) -> Result<()> {
             collect_and_summarize(quiet, !quiet)?;
             Ok(())
         }
+        Action::Accounts { json } => accounts(json),
         Action::Push => {
             let (_conn, path) = collected(true)?;
             let dir = path.parent().map(PathBuf::from).unwrap_or_default();
@@ -177,4 +179,39 @@ pub fn run(action: Action) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// Terminal width for `usage accounts`: the terminal, else `COLUMNS`, else 100; never wider than 100 (design 6.2).
+fn accounts_width() -> usize {
+    let w = crossterm::terminal::size()
+        .ok()
+        .map(|(c, _)| c as usize)
+        .or_else(|| std::env::var("COLUMNS").ok().and_then(|v| v.parse().ok()))
+        .unwrap_or(100);
+    w.clamp(20, 100)
+}
+
+fn accounts(json: bool) -> Result<()> {
+    use crate::usage::quota_mirror_read as rd;
+    use crate::usage::quota_view as qv;
+    let st = rd::resolve_live_dir()
+        .map(|d| rd::read_mirror(&d))
+        .unwrap_or_default();
+    let now_s = chrono::Utc::now().timestamp();
+    let entries = rd::quota_entries(&st, now_s);
+    let tr = qv::Tr::current();
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&qv::accounts_json(&st, &entries, now_s, &tr))?
+        );
+        return Ok(());
+    }
+    use std::io::IsTerminal;
+    let color = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
+    print!(
+        "{}",
+        qv::accounts_text(&st, &entries, accounts_width(), now_s, &tr, color)
+    );
+    Ok(())
 }
