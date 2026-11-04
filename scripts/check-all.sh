@@ -73,6 +73,9 @@ cargo deny check licenses
 step "shellcheck install.sh"
 shellcheck install.sh
 
+step "release archive hermetic (B43)"
+./scripts/test-archive-hermetic.sh
+
 # The MSRV, from Cargo.toml's rust-version: the release build must compile with it.
 MSRV=$(grep -m1 '^rust-version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
 if [ "$IS_WINDOWS" = 0 ]; then

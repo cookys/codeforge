@@ -225,15 +225,6 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 下次在 codeforge 跑 hetero 程式碼審查時，看關閉紀錄是否仍缺；若仍缺，轉給 autopilot。
 **Not done**: 只記錄。
 
-## B43 — release tarball 可重現（同一 commit 產出同一 sha）
-
-**Area**: `scripts/package.sh`
-**Effort**: S
-**Premise**: 同一份程式碼兩次 `release-local.sh` 建出的 tarball sha256 不同（例：0.0.9 aarch64 4b5ab357… 與 3a3c6f26…），因為 tar 帶入 staging 檔案的 mtime、owner/uid 和讀目錄的順序，gzip header 也帶時間戳。PM（2026-11-03，G38 驗收）要求同一 commit 產出同一 sha，讓任何人都能在本機重建並比對已發布的 release。
-做法：`SOURCE_DATE_EPOCH` 取自 `git log -1 --format=%ct`；`tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --owner=0 --group=0 --numeric-owner --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime`；`gzip -n`（`tar … | gzip -n`）。binary 本身是否逐 byte 相同要另外確認（`--remap-path-prefix`、cross 映像版本固定），驗收條件是同一 commit 連跑兩次 `release-local.sh` 得到相同的 `.sha256`。
-**Trigger**: 下一次 release 之前。
-**Not done**: 只記錄。
-
 ## B42 — G38 本機 release 流程 review 列為後續的項目
 
 **Area**: `install.sh`、`scripts/package.sh`、`scripts/release-local.sh`
