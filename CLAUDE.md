@@ -85,10 +85,12 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 - **CJK**: cut user-generated strings with `.chars().take(N).collect::<String>()`, never `&s[..N]` (`scripts/check-cjk-safe.sh` enforces).
 - **Statusline is global**: `codeforge statusline` runs in every Claude Code session of every project; a change hits every session header.
 - **SessionEnd chain is global**: `codeforge dream --quiet` → `codeforge ship --no-hook` runs in every project; `--quiet` is mandatory (no stdout in a hook), and `ship --no-hook` never fails SessionEnd (single attempt, Mnemos opt-in gated — no POST and no `ship-failed/` write when not opted in).
-- **ship is production critical path**: schema/API changes get core-pipeline rigor; the Mnemos contract's single source of truth is `cookys/mnemos:docs/specs/10-source-contract.md`, never duplicated here.
+- **ship is production critical path**: schema/API changes get core-pipeline rigor; the Mnemos contract's single source of truth is `cookys/mnemos:docs/specs/10-source-contract.md`, never duplicated here. Keep the retry policy and `~/.codeforge/ship-failed/` persistence + next-ship replay (a dropped payload leaves Mnemos incomplete).
 - **Daemon owns `pet_snapshot`**: the CLI never writes it (it appends `xp_events` + `event_inbox` only).
-- **Hook placement**: product-wide hooks live only in the global install (`codeforge install --hooks`/`--all`); never move dream/ship into `--project-hooks` (dual-fire in the clone). Project `.claude/settings.json` holds the clone-only dev hooks. The SessionStart recall injector stays in global settings.json, not a plugin `hooks.json` (additionalContext unreliable, CC #16538).
+- **Hook placement**: product-wide hooks live only in the global install (`codeforge install --hooks`/`--all`); never move dream/ship into `--project-hooks` (dual-fire in the clone). Project `.claude/settings.json` holds the clone-only dev hooks. The SessionStart recall injector stays in global settings.json, not a plugin `hooks.json` (additionalContext unreliable, CC #16538). Re-install must stay idempotent: `patch_hooks` sweeps every codeforge-owned group (and legacy pre-marker commands) across all hook types before re-adding. `cleanupPeriodDays` goes into a shared settings.json (symlink or git-tracked) only with `--cleanup-period-days`.
 - **Keep projects independent**: never import CodePower code into CodeForge tests or vice versa; they meet at runtime (hooks + CLI) only.
+- **Memory stays per project**: dream/learn write the CWD project's `.codeforge/`; one shared store only when `CODEFORGE_DIR` selects it.
+- **LLM key is optional**: dream/ship use the chain `claude -p` → `ANTHROPIC_API_KEY` (Haiku) → rule-based; never make a key required.
 
 ## Conventions
 

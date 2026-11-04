@@ -14,7 +14,7 @@ CodeForge and CodePower are used together. Understanding the relationship preven
 
 ### Dream (session-end, all projects)
 
-`codeforge dream --quiet` runs at session end in **every** project, via the **global** SessionEnd hook (`~/.claude/settings.json`, installed by `codeforge install --hooks`/`--all`). The hook runs with CWD = the project root, so dream distills that project's own `.codeforge` (per-cwd memory). This means memory and pet XP update from activity in CodePower, or any other project — not just the CodeForge codebase. `--quiet` is mandatory for hook use (suppresses all stdout). `codeforge ship --no-hook` chains right after dream in the same SessionEnd group (see Ship above); ship self-gates on Mnemos opt-in, so a codeforge-only user with no Mnemos still distills via dream while ship is a clean no-op.
+`codeforge dream --quiet` runs at session end in **every** project, via the **global** SessionEnd hook (`~/.claude/settings.json`, installed by `codeforge install --hooks`/`--all`). The hook runs with CWD = the project root, so dream distills that project's own `.codeforge` (per-cwd memory). This means memory and pet XP update from activity in CodePower, or any other project — not just the CodeForge codebase. `--quiet` is mandatory for hook use (suppresses all stdout). `codeforge ship --no-hook` chains right after dream in the same SessionEnd group (see Ship in [`src/mnemos/CLAUDE.md`](../mnemos/CLAUDE.md)); ship self-gates on Mnemos opt-in, so a codeforge-only user with no Mnemos still distills via dream while ship is a clean no-op.
 
 ### Recall (session-start) — READ side, symmetric to the WRITE side
 
