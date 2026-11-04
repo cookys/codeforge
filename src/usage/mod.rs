@@ -8,5 +8,6 @@ pub mod autocollect;
 pub mod collect;
 pub mod price;
 pub mod quota;
+pub mod quota_mirror;
 pub mod store;
 pub mod summary;
