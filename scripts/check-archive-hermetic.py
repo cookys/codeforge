@@ -80,7 +80,7 @@ def tar_problems(data, epoch, forbid):
         bad.append("entries are not in byte order (directory-listing order leaked; use tar --sort=name)")
     if not names:
         bad.append("archive has no entries")
-    bad += raw_tar_problems(data, members, forbid)
+    bad += raw_tar_problems(data, epoch, forbid)
     return bad
 
 
@@ -94,7 +94,7 @@ def _octal(field):
     return int(v, 8) if v else 0
 
 
-def raw_tar_problems(data, members, forbid):
+def raw_tar_problems(data, epoch, forbid):
     """What TarInfo does not expose. Walks every physical 512-byte header (GNU long-name/link
     and pax extension headers included) by its declared payload size: a GNU header's
     atime/ctime must be zero, only zero bytes may follow the end of the archive, and a
@@ -117,6 +117,17 @@ def raw_tar_problems(data, members, forbid):
         name = hdr[0:100].split(b"\x00", 1)[0].decode("utf-8", "replace")
         if hdr[156:157] == b"S":
             bad.append("%s: GNU sparse entry (not produced by pack_tarball)" % name)
+        # Fields TarInfo drops for extension headers (GNU K/L carry their own mtime/owner):
+        # every physical header must have uid/gid 0, no owner names, and mtime = epoch
+        # (GNU tar writes 0 in its long-name/link headers, which leaks nothing).
+        kind = hdr[156:157]
+        mtime = _octal(hdr[136:148])
+        if mtime != epoch and not (kind in (b"K", b"L") and mtime == 0):
+            bad.append("%s (header at byte %d, type %r): mtime %d, want %d" % (name, off, kind, mtime, epoch))
+        if _octal(hdr[108:116]) or _octal(hdr[116:124]):
+            bad.append("%s (header at byte %d, type %r): uid/gid not 0" % (name, off, kind))
+        if hdr[265:297].strip(b"\x00") or hdr[297:329].strip(b"\x00"):
+            bad.append("%s (header at byte %d, type %r): stores owner names" % (name, off, kind))
         if hdr[257:265] == GNU_MAGIC:
             for field, at in (("atime", 345), ("ctime", 357)):
                 if hdr[at:at + 12].strip(b"\x00 0"):

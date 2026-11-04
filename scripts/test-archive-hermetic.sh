@@ -5,7 +5,8 @@
 #          stage path, with other file mtimes and modes, gives byte-identical output;
 #   red:   a plain `tar czf` archive (wall-clock mtimes, real owner, gzip timestamp), a gzip header
 #          timestamp, entries out of byte order, a pax extended header, stored owner names, a
-#          gzip comment field, a second gzip member, a GNU header atime (also in a second extension header), bytes past the archive end,
+#          gzip comment field, a second gzip member, a GNU header atime, mtime or owner
+#          name (also in a second extension header), bytes past the archive end,
 #          and a file holding a forbidden path each FAIL.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -106,7 +107,7 @@ mkdir -p "$w/ln/$name"
 ln -s "$long-target" "$w/ln/$name/$long"
 tar --format=gnu --sort=name --mtime="@$epoch" --owner=0 --group=0 --numeric-owner \
     -cf "$w/ln.tar" -C "$w/ln" "$name"
-python3 -I - "$w/ln.tar" "$w/ln-atime.tar" <<'EOF'
+python3 -I - "$w/ln.tar" "$w" <<'EOF'
 import sys
 b = bytearray(open(sys.argv[1], "rb").read())
 heads, off = [], 0
@@ -118,16 +119,24 @@ while off + 512 <= len(b) and any(b[off:off + 512]):
 kinds = [bytes(b[h + 156:h + 157]) for h in heads]
 i = next(n for n in range(1, len(kinds)) if kinds[n - 1] in (b"K", b"L") and kinds[n] in (b"K", b"L"))
 h = heads[i]                                          # the second of two extension headers
-b[h + 345:h + 357] = b"14540000000\x00"
-b[h + 148:h + 156] = b"        "
-b[h + 148:h + 156] = b"%06o\x00 " % sum(b[h:h + 512])
-open(sys.argv[2], "wb").write(bytes(b))
+for out, at, val in (("ln-atime", 345, b"14540000000\x00"),   # GNU atime
+                     ("ln-mtime", 136, b"14540000001\x00"),   # mtime: a build moment, not 0
+                     ("ln-uname", 265, b"leakuser\x00")):      # owner name
+    c = bytearray(b)
+    c[h + at:h + at + len(val)] = val
+    c[h + 148:h + 156] = b"        "
+    c[h + 148:h + 156] = b"%06o\x00 " % sum(c[h:h + 512])
+    open("%s/%s.tar" % (sys.argv[2], out), "wb").write(bytes(c))
 EOF
 gzip -n <"$w/ln.tar" >"$w/ln.tar.gz"
-gzip -n <"$w/ln-atime.tar" >"$w/ln-atime.tar.gz"
+for v in atime mtime uname; do gzip -n <"$w/ln-$v.tar" >"$w/ln-$v.tar.gz"; done
 if check "$w/ln.tar.gz" --epoch "$epoch"; then ok "long-name + long-link entry is hermetic"; else nope "long-name entry rejected: $(cat "$w/err")"; fi
 if check "$w/ln-atime.tar.gz" --epoch "$epoch"; then nope "atime in the second extension header passed"; else ok "atime in the second extension header rejected"; fi
 grep -q "GNU header stores atime" "$w/err" || nope "ext atime: wrong reason: $(cat "$w/err")"
+if check "$w/ln-mtime.tar.gz" --epoch "$epoch"; then nope "mtime in an extension header passed"; else ok "mtime in an extension header rejected"; fi
+grep -q "type b'[KL]'): mtime" "$w/err" || nope "ext mtime: wrong reason: $(cat "$w/err")"
+if check "$w/ln-uname.tar.gz" --epoch "$epoch"; then nope "owner name in an extension header passed"; else ok "owner name in an extension header rejected"; fi
+grep -q "type b'[KL]'): stores owner names" "$w/err" || nope "ext uname: wrong reason: $(cat "$w/err")"
 
 printf 'panicked at %s/src/main.rs\n' "$w" >"$w/a/$name/codeforge"
 pack_tarball "$w/a" "$name" "$w/leak.tar.gz" "$epoch"
