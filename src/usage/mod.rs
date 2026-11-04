@@ -8,5 +8,11 @@ pub mod autocollect;
 pub mod collect;
 pub mod price;
 pub mod quota;
+pub mod quota_mirror;
+pub mod quota_mirror_read;
+pub mod quota_view;
 pub mod store;
 pub mod summary;
+
+#[cfg(test)]
+mod quota_view_tests;
