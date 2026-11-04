@@ -6,7 +6,7 @@
 
 > ### ⚠️ Phase 編號對齊 (audit 2026-06-18)
 >
-> 本 spec §5「優先序」內文用的 Phase 2/3/4 是**寫作當時的相對編號**，與 canonical roadmap 不一致。以 **CLAUDE.md / README / `doc/concepts.md` 為準**：整個 Nation P2P 系統都是 **Phase 5**——
+> 本 spec §5「優先序」內文用的 Phase 2/3/4 是**寫作當時的相對編號**，與 canonical roadmap 不一致。以 **`doc/CLAUDE.md`（Phase Roadmap）/ README / `doc/concepts.md` 為準**：整個 Nation P2P 系統都是 **Phase 5**——
 > - 5a：Nation Plugin + credential verify (ed25519)〔= 本 spec 的 player keypair / nations.toml / Registry〕
 > - 5b：Organizer 跨 Nation events〔= breeding / reputation ranking / cross-Nation〕
 > - 5c：Nation Statusline Theme
