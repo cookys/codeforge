@@ -56,7 +56,7 @@ export function quotaLiveDir(env: QuotaEnv, uid: number | null, exists: (dir: st
 
 /** One `$.fs.list` row, as the engine gives it. */
 export type DirEntry = { name: string; kind: 'file' | 'dir' | 'other'; size: number; isLink: boolean }
-export type ViewFile = { provider: string; alias: string; name: string }
+export type ViewFile = { provider: string; alias: string; name: string; size: number }
 const PROVIDER_RE = new RegExp(Q.provider)
 const ALIAS_RE = new RegExp(Q.alias)
 
@@ -70,20 +70,20 @@ export function pickProviders(entries: readonly DirEntry[]): { names: string[]; 
 }
 
 /**
- * The view files of one provider directory. Silently skipped: anything not `<alias>.json` (lock files, temp files, `namespace.json`, dot files).
+ * The view files of one provider directory. Silently skipped: anything not `<alias>.json` (lock files, temp files, dot files). `namespace.json` is metadata only at `quota/namespace.json`; inside a provider directory it is the alias `namespace`.
  * Counted as unreadable: a `<alias>.json` that is a link, not a regular file, over the view cap, or an alias off the pattern.
  */
 export function pickViews(provider: string, entries: readonly DirEntry[]): { views: ViewFile[]; bad: number } {
   const views: ViewFile[] = []
   let bad = 0
   for (const e of [...entries].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-    if (!e.name.endsWith('.json') || e.name.startsWith('.') || e.name === 'namespace.json') continue
+    if (!e.name.endsWith('.json') || e.name.startsWith('.')) continue
     const alias = e.name.slice(0, -'.json'.length)
     if (!ALIAS_RE.test(alias) || e.isLink || e.kind !== 'file' || e.size > Q.view_max_bytes) {
       bad++
       continue
     }
-    views.push({ provider, alias, name: e.name })
+    views.push({ provider, alias, name: e.name, size: e.size })
   }
   return { views, bad }
 }
@@ -213,7 +213,7 @@ function winLine(w: MergedWindow, nowMs: number, tr: T, f: WinForm): QLine {
     const left = w.kind === 'credits' ? leftOf(w) : null
     if (left !== null) out.push(seg('  ' + tr('quotaLeft', { n: fmtNum(left), unit: w.unit ?? '' })))
   }
-  if (w.resetsAt !== null) out.push(seg('  ◷ ' + countdown(w.resetsAt * 1000, nowMs) + (f.fullReset ? ' ' + tr('quotaReset') : ''), 'dim'))
+  if (w.resetsAtLocal !== null) out.push(seg('  ◷ ' + countdown(w.resetsAtLocal * 1000, nowMs) + (f.fullReset ? ' ' + tr('quotaReset') : ''), 'dim'))
   else if (w.utilization !== null && isGauge(w)) out.push(seg('  ' + tr('quotaResetUnknown'), 'dim'))
   if (f.age && w.ageS > AGE_SHOW_S) out.push(seg(' · ' + ageText(w.ageS, nowMs, tr), 'dim'))
   return out
@@ -257,7 +257,7 @@ function compactLine(f: Fact, nowMs: number, cols: number, tr: T): QLine {
     if (w.utilization === null) return [seg(' ' + labelOf(w, tr) + ' ' + tr('quotaLeft', { n: fmtNum(w.remaining ?? 0), unit: w.unit ?? '' }))]
     return [
       seg(' ' + labelOf(w, tr) + ' ' + pctText(w, tr) + (winTight(w) ? ' ' + tr('quotaTight') : '')),
-      ...(cd && w.resetsAt !== null ? [seg(' ◷ ' + countdown(w.resetsAt * 1000, nowMs), 'dim')] : []),
+      ...(cd && w.resetsAtLocal !== null ? [seg(' ◷ ' + countdown(w.resetsAtLocal * 1000, nowMs), 'dim')] : []),
       ...(age && w.ageS > AGE_SHOW_S ? [seg(' · ' + ageText(w.ageS, nowMs, tr), 'dim')] : []),
     ]
   }
@@ -347,13 +347,19 @@ export function quotaBand(entries: readonly QEntry[], nowMs: number, tr: T): QBa
     }
     const w = tightest(m)
     if (w === null || w.utilization === null) continue // remaining-only credits, rpm/tpm: pane only
+    // credits (design §4): what is left when the amounts are known, else what is used; other kinds show the percentage
+    const left = w.kind === 'credits' ? leftOf(w) : null
+    const value =
+      w.kind !== 'credits' ? pctText(w, tr)
+      : left !== null ? (w.estimated ? tr('quotaEst') + ' ' : '') + tr('quotaLeftBand', { n: fmtNum(left) })
+      : tr('quotaUsedPct', { p: pctText(w, tr) })
     ranked.push({
       rank: f.tight ? 1 : 3, util: w.utilization,
       chip: {
         token: false, key: f.e.key, alias: f.e.alias,
-        head: `${labelOf(w, tr)} ${pctText(w, tr)}${f.tight ? ' ' + tr('quotaTight') : ''}`,
-        short: pctText(w, tr), inactive: false,
-        reset: w.resetsAt === null ? null : countdown(w.resetsAt * 1000, nowMs),
+        head: `${labelOf(w, tr)} ${value}${f.tight ? ' ' + tr('quotaTight') : ''}`,
+        short: value, inactive: false,
+        reset: w.resetsAtLocal === null ? null : countdown(w.resetsAtLocal * 1000, nowMs),
         age: w.ageS > AGE_SHOW_S ? ageText(w.ageS, nowMs, tr) : null,
       },
     })
@@ -375,22 +381,28 @@ const noDataParts = (b: QBand): SummaryPart[] => [{ text: b.noDataWord, color: '
 const textOf = (parts: readonly SummaryPart[]) => parts.map(p => p.text).join('')
 
 /**
- * The quota group, widest form first (§6.1 drop order): everything; no `無資料 N`; no ages; no countdowns; whole chips from the tail until one is left;
+ * The quota group, widest form first (§6.1 drop order): everything; no `無資料 N`; no ages; no countdowns; no `provider:` prefixes (where the alias is unique); whole chips from the tail until one is left;
  * that one as `alias 62%`. (The pet is the caller's: it goes before all of these.) The chips are CHIP_GAP apart; nothing is cut inside a chip.
  */
 export function quotaBandForms(b: QBand): SummaryPart[][] {
   const forms: SummaryPart[][] = []
-  const group = (chips: QBandChip[], f: ChipForm, withNoData: boolean): SummaryPart[] => {
-    const parts: SummaryPart[][] = chips.map(c => chipPartsOf(c, c.key, f, false))
+  const all = b.chips
+  // a provider prefix may go only when no other chip of the whole band shares the alias (§6.1); a collision keeps `provider:`
+  const keysOf = new Map<string, Set<string>>()
+  for (const c of all) keysOf.set(c.alias, (keysOf.get(c.alias) ?? new Set<string>()).add(c.key))
+  const labelOf2 = (c: QBandChip, bare: boolean) => (bare && (keysOf.get(c.alias)?.size ?? 0) === 1 ? c.alias : c.key)
+  const group = (chips: QBandChip[], f: ChipForm, withNoData: boolean, bare = false): SummaryPart[] => {
+    const parts: SummaryPart[][] = chips.map(c => chipPartsOf(c, labelOf2(c, bare), f, false))
     if (withNoData && b.noData > 0) parts.push(noDataParts(b))
     return parts.flatMap((p, i) => (i === 0 ? p : [{ text: CHIP_GAP }, ...p]))
   }
-  const all = b.chips
   forms.push(group(all, { age: true, countdown: true }, true))
   forms.push(group(all, { age: true, countdown: true }, false))
   forms.push(group(all, { age: false, countdown: true }, false))
   forms.push(group(all, { age: false, countdown: false }, false))
-  for (let n = all.length - 1; n >= 1; n--) forms.push(group(all.slice(0, n), { age: false, countdown: false }, false))
+  // then the prefixes, before any whole chip goes; the chips that follow keep them off
+  forms.push(group(all, { age: false, countdown: false }, false, true))
+  for (let n = all.length - 1; n >= 1; n--) forms.push(group(all.slice(0, n), { age: false, countdown: false }, false, true))
   const first = all[0]
   if (first !== undefined) {
     // the alias always stays; the provider prefix goes only when no other chip shares the alias

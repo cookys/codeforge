@@ -35,7 +35,7 @@ import {
 import type { UsageView } from './model'
 import { NO_QUOTA, parseQuotaNs, pickProviders, pickViews, quotaBand, quotaBandForms, quotaEntries, quotaLiveCandidates, quotaLiveDir, quotaPaneLines, QUOTA_NS_MAX_BYTES } from './quota-view'
 import type { DirEntry, QuotaState } from './quota-view'
-import { parseQuotaView } from './quota'
+import { byteLength, parseQuotaView, QUOTA_CONTRACT } from './quota'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -302,6 +302,29 @@ async function quotaRoot($: EngineInterface): Promise<string | null> {
   return quotaLiveDir(env, uid, d => there.has(d))
 }
 
+/**
+ * Read one mirror file the safest way the mod API allows. `$.fs.read` has no no-follow flag and no size bound (see `FsReadCall`), so a fully race-free
+ * open is impossible. What is done instead: the text is rejected when its UTF-8 length is over `cap` (before anything parses it), and the path is
+ * `$.fs.stat`ed again after the read and must still be a regular file, not a link, of the size the listing reported.
+ * RESIDUAL RACE: a swap to a link (or a growth) between the stat and the read, undone again before the second stat, is not seen, and a very large file is
+ * still read whole before the cap rejects it. Accepted: there is no O_NOFOLLOW in the mod API, and the mirror directory is 0700 (same user only).
+ * Returns null when the file is unreadable or rejected; `rejected` is true for a reject (counted as unreadable), false for a plain read failure.
+ */
+async function readChecked($: EngineInterface, path: string, listedSize: number, cap: number): Promise<{ text: string | null; rejected: boolean }> {
+  let text: string
+  try {
+    const t = await $.fs.read(path)
+    if (typeof t !== 'string') return { text: null, rejected: false }
+    text = t
+  } catch {
+    return { text: null, rejected: false }
+  }
+  if (byteLength(text) > cap) return { text: null, rejected: true }
+  const st = await $.fs.stat(path).catch(() => undefined)
+  if (st === undefined || st.kind !== 'file' || st.isLink || st.size !== listedSize) return { text: null, rejected: true }
+  return { text, rejected: false }
+}
+
 // Bounded: at most 64 provider dirs and 256 views, a view a regular file that is not a link and at most the contract's view cap (checked on the listing and again on the text).
 async function refreshQuota($: EngineInterface, force = false) {
   try {
@@ -314,17 +337,25 @@ async function refreshQuota($: EngineInterface, force = false) {
     }
     const top = (await dirEntries($, root + '/quota')) ?? []
     let ns: string | null = null
+    let bad = 0
     const nsEntry = top.find(e => e.name === 'namespace.json')
     if (nsEntry !== undefined && nsEntry.kind === 'file' && !nsEntry.isLink && nsEntry.size <= QUOTA_NS_MAX_BYTES) {
-      const text = await $.fs.read(root + '/quota/namespace.json').catch(() => null)
-      ns = parseQuotaNs(typeof text === 'string' ? text : null)
+      const r = await readChecked($, root + '/quota/namespace.json', nsEntry.size, QUOTA_NS_MAX_BYTES)
+      if (r.rejected) bad++
+      ns = parseQuotaNs(r.text)
     }
     const { names, skipped: skippedDirs } = pickProviders(top)
     const raw: QuotaState['raw'] = []
-    let bad = 0
     let skipped = skippedDirs
     let reads = 0
     for (const provider of names) {
+      // the listing said a directory; it is looked at again right before it is listed (a swap to a link is a reject)
+      const pst = await $.fs.stat(`${root}/quota/${provider}`).catch(() => undefined)
+      if (pst === undefined) continue
+      if (pst.kind !== 'dir' || pst.isLink) {
+        bad++
+        continue
+      }
       const listed = await dirEntries($, `${root}/quota/${provider}`)
       if (listed === null) continue
       const picked = pickViews(provider, listed)
@@ -335,13 +366,8 @@ async function refreshQuota($: EngineInterface, force = false) {
           continue
         }
         reads++
-        let text: string | null = null
-        try {
-          const t = await $.fs.read(`${root}/quota/${provider}/${v.name}`)
-          text = typeof t === 'string' ? t : null
-        } catch {
-          text = null
-        }
+        const got = await readChecked($, `${root}/quota/${provider}/${v.name}`, v.size, QUOTA_CONTRACT.view_max_bytes)
+        const text = got.text
         const parsed = text === null ? null : parseQuotaView(text, provider, v.alias)
         if (parsed === null || parsed.status === 'bad') {
           bad++

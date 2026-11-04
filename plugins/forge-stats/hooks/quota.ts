@@ -144,6 +144,8 @@ function parseRecord(v: unknown, provider: string, alias: string): QRecord | nul
   if (v.source !== undefined && v.source !== 'registry') return null
   const visibility = v.visibility as QLevel
   if (refusal && visibility === 'L0') return null
+  // §20.4: L0 shows nothing, L1 only a refusal; a record carrying windows at either level is malformed
+  if (windows.length > 0 && (visibility === 'L0' || visibility === 'L1')) return null
   let placeholder = false
   if (windows.length === 0) {
     // §21.6: empty windows are valid only as (a) placeholder, (b) refusal-only, (c) credential-state-only
@@ -172,7 +174,7 @@ function parseRow(v: unknown, provider: string, alias: string): QRow | null {
   return { writerCourier: v.writer_courier, hostRole: record.hostRole, observedAtHub: oah, skewed: v.skewed, record }
 }
 
-const byteLength = (s: string) => (typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(s).length : s.length)
+export const byteLength = (s: string) => (typeof TextEncoder !== 'undefined' ? new TextEncoder().encode(s).length : s.length)
 
 /** Parse one mirror view file (`<live_dir>/quota/<provider>/<alias>.json`). A bad wrapper is `bad`; a bad row is dropped and counted. */
 export function parseQuotaView(text: string, provider: string, alias: string): QuotaParse {
@@ -206,7 +208,8 @@ export type MergedWindow = {
   unit: QUnit | null
   used: number | null
   limit: number | null
-  resetsAt: number | null
+  /** The reset time on the LOCAL clock (record `resets_at` minus `hubOffset`): what a countdown against the local clock needs. */
+  resetsAtLocal: number | null
   observedAt: number
   ageS: number
   writerCourier: string
@@ -314,7 +317,7 @@ export function mergeQuota(view: QuotaView, nsFileNamespace: string | null, nowS
     if (!pick) continue
     const w = pick.w
     out.push({
-      kind, utilization: w.utilization, remaining: w.remaining, unit: w.unit, used: w.used, limit: w.limit, resetsAt: w.resetsAt,
+      kind, utilization: w.utilization, remaining: w.remaining, unit: w.unit, used: w.used, limit: w.limit, resetsAtLocal: w.resetsAt === null ? null : w.resetsAt - view.hubOffset,
       observedAt: w.observedAt, ageS: pick.age, writerCourier: pick.row.writerCourier, hostRole: pick.row.record.hostRole, source: w.source, estimated: isEst,
     })
   }
@@ -327,7 +330,7 @@ export function mergeQuota(view: QuotaView, nsFileNamespace: string | null, nowS
   }
   if (best) tokenState = best.state
 
-  const level: QLevel = out.length > 0 ? (out.every(w => w.resetsAt !== null) ? 'L3' : 'L2') : refusal ? 'L1' : 'L0'
+  const level: QLevel = out.length > 0 ? (out.every(w => w.resetsAtLocal !== null) ? 'L3' : 'L2') : refusal ? 'L1' : 'L0'
   const hosts = [...liveRows.values()]
   return {
     windows: out, refusal, tokenState, tokenExpiresAt: expiry ? expiry.at : null, placeholder: placeholder && !hadObservation,
