@@ -126,7 +126,7 @@ export function quotaEntries(state: QuotaState, nowS: number): QEntry[] {
 // facts about one alias
 
 type Token = { text: string; flag: boolean; invalid: boolean }
-type Kind = 'live' | 'refusal' | 'never' | 'dropped' | 'tokenonly'
+type Kind = 'live' | 'refusal' | 'never' | 'nousage' | 'dropped' | 'tokenonly'
 export type Fact = { e: QEntry; kind: Kind; tok: Token | null; main: MergedWindow | null; tight: boolean; group: number }
 
 function tokenOf(m: MergedQuota, nowS: number, tr: T): Token | null {
@@ -148,12 +148,13 @@ export function factsOf(entries: readonly QEntry[], nowS: number, tr: T): Fact[]
     else if (m.windows.length > 0) kind = 'live'
     else if (m.refusal) kind = 'refusal'
     else if (m.placeholder) kind = 'never'
+    else if (!m.hadWindow) kind = 'nousage'
     else kind = 'dropped'
     const tw = kind === 'live' ? tightest(m) : null
     const main = tw ?? (kind === 'live' ? (m.windows.find(w => w.kind !== 'rpm' && w.kind !== 'tpm') ?? m.windows[0] ?? null) : null)
     const tight = tw !== null && tw.utilization !== null && isTight(tw.utilization)
     // §6.2 block order: ▲, tight, 429, the rest; L0 and dropped last
-    const group = tok?.flag ? 0 : tight ? 1 : m.refusal ? 2 : kind === 'never' || kind === 'dropped' ? 4 : 3
+    const group = tok?.flag ? 0 : tight ? 1 : m.refusal ? 2 : kind === 'never' || kind === 'nousage' || kind === 'dropped' ? 4 : 3
     return { e, kind, tok, main, tight, group }
   })
   return facts.sort((a, b) => a.group - b.group || (a.e.key < b.e.key ? -1 : a.e.key > b.e.key ? 1 : 0))
@@ -252,7 +253,7 @@ function compactLine(f: Fact, nowMs: number, cols: number, tr: T): QLine {
   const state = (cd: boolean, age: boolean): QLine => {
     const w = f.main
     if (m.refusal) return [seg(' '), seg(tr('quotaCooldown'), 'idle'), ...(cd ? [seg(' ◷ ' + countdown(m.refusal.endS * 1000, nowMs), 'dim')] : [])]
-    if (f.kind === 'never' || f.kind === 'dropped') return [seg(' '), seg(tr('quotaNoData'), 'idle')]
+    if (f.kind === 'never' || f.kind === 'nousage' || f.kind === 'dropped') return [seg(' '), seg(tr('quotaNoData'), 'idle')]
     if (f.kind === 'tokenonly' || w === null) return []
     if (w.utilization === null) return [seg(' ' + labelOf(w, tr) + ' ' + tr('quotaLeft', { n: fmtNum(w.remaining ?? 0), unit: w.unit ?? '' }))]
     return [
@@ -284,6 +285,7 @@ export function quotaPaneLines(state: QuotaState, entries: readonly QEntry[], co
       if (i > 0) out.push([seg(' ')])
       out.push(headerLines(f, cols, tr))
       if (f.kind === 'never') out.push([seg('  ' + tr('quotaNever'), 'idle')])
+      else if (f.kind === 'nousage') out.push([seg('  ' + tr('quotaNoUsage'), 'idle')])
       else if (f.kind === 'dropped') out.push([seg('  ' + tr('quotaDropped'), 'idle')])
       else if (f.kind !== 'tokenonly') {
         if (m.refusal) out.push(refusalLine(m, nowMs, tr, true))
@@ -341,7 +343,7 @@ export function quotaBand(entries: readonly QEntry[], nowMs: number, tr: T): QBa
       })
       continue
     }
-    if (f.kind === 'never' || f.kind === 'dropped') {
+    if (f.kind === 'never' || f.kind === 'nousage' || f.kind === 'dropped') {
       noData++
       continue
     }
