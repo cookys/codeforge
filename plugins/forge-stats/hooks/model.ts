@@ -353,10 +353,13 @@ const partsWidth = (parts: readonly SummaryPart[]) => parts.reduce((n, p) => n +
 // dropping from the end: the pet, then ⋯, ●, ⊘, ✗ (each only while a more severe count stays), then the word, leaving the most severe non-zero count alone.
 // No count: 「艦隊 ✓」 only after a fetch that succeeded, 「艦隊 ?」 when the last fetch failed or none succeeded yet. No summary (`fleet` null): the pet alone.
 // null when nothing fits or there is nothing to draw: the caller passes the row on (`next(e)`), never draws a blank row.
-export function summaryParts(fleet: FleetSummary | null, petTag: string | null, cols: number, word: string): SummaryPart[] | null {
+export function summaryParts(fleet: FleetSummary | null, petTag: string | null, cols: number, word: string, quota: SummaryPart[][] | null = null): SummaryPart[] | null {
   const sep: SummaryPart = { text: ' · ', dim: true }
   const pet: SummaryPart[] = petTag === null ? [] : [{ text: petTag }]
   const forms: SummaryPart[][] = []
+  // the quota group (G40 §6.1) sits after the fleet part and before the pet; `quota` is its forms, widest first. The pet goes before any of them narrows
+  // (only the widest is tried with it); once the group is gone the fleet forms below take over, then the pet alone.
+  let fleetFull: SummaryPart[] = []
   if (fleet === null) {
     if (pet.length > 0) forms.push(pet)
   } else {
@@ -365,15 +368,26 @@ export function summaryParts(fleet: FleetSummary | null, petTag: string | null, 
     if (counts.length === 0) {
       const mark: SummaryPart = fleet.error === null && fleet.fetchedMs !== null ? { text: '✓', color: 'success' } : { text: '?', color: 'inactive' }
       const line = [label, { text: CHIP_SPACE }, mark]
+      fleetFull = line
       if (pet.length > 0) forms.push([...line, sep, ...pet])
       forms.push(line)
     } else {
       const chips = (n: number) => counts.slice(0, n).flatMap((c, i) => (i === 0 ? c : [{ text: CHIP_GAP }, ...c]))
       const withWord = (n: number) => [label, { text: CHIP_SPACE }, ...chips(n)]
+      fleetFull = withWord(counts.length)
       if (pet.length > 0) forms.push([...withWord(counts.length), sep, ...pet])
       for (let n = counts.length; n >= 1; n--) forms.push(withWord(n))
       forms.push(counts[0]) // the most severe count alone, no word
     }
+  }
+  if (quota !== null && quota.length > 0) {
+    const lead = fleetFull.length > 0 ? [...fleetFull, sep] : []
+    const withQuota: SummaryPart[][] = []
+    quota.forEach((g, i) => {
+      if (i === 0 && pet.length > 0) withQuota.push([...lead, ...g, sep, ...pet])
+      withQuota.push([...lead, ...g])
+    })
+    forms.unshift(...withQuota)
   }
   for (const f of forms) if (partsWidth(f) <= cols) return f
   return null

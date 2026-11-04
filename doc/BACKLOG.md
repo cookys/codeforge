@@ -217,6 +217,20 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
 **Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
 
+## B45 — G40 配額顯示（forge-stats）的後續
+
+**Area**: `plugins/forge-stats/hooks/{quota,quota-view,register}.ts(x)`；Rust 端尚未做
+**Effort**: M
+**Premise**: G40 第一輪只做 forge-stats（band 晶片＋用量分頁），用測試資料開發（develop，2026-11-04）。留下：
+- Rust 端：statusline 與 `codeforge usage accounts`（設計稿 §6.2），共用 `QUOTA_CONTRACT`，並補 TS↔Rust 契約同步測試。
+- `scripts/lib/quota-contract.json`（autopilot P3）出現後，`QUOTA_CONTRACT` 的 30／7 天、6 h、300 s 改成跟它同步測試（契約 §21.4、N35）。
+- 契約 N37 的 `<live_dir>` 對照向量目前只有名稱沒有值；有具體值後移植成測試。mod 無法判斷 `/tmp` 是否在 RAM、目錄擁有者與權限，現在一律不採 `/tmp`、以「存在」代替 autopilot 的檢查。
+- 只有 token 狀態、沒有任何 window 的記錄（契約 §21.6 shape c，`token_state: ok`）目前畫成「過期或已重置，等新觀察」，應改成中性的「沒有用量資料」；需要 `mergeQuota` 區分「從沒有 window」與「window 全被丟掉」。
+- `$.fs.read` 沒有 no-follow、限大小選項：讀後重驗大小與 stat，殘餘競態已註明；API 有了再改。
+- 真實 mirror 樣本與 Claude 的 `starts_window` 等操作員帳號卡 d-2a19fdb5；拿到後用真資料跑一次畫面。
+**Trigger**: 下次動 statusline 用量列或 `codeforge usage`；或 autopilot 宣布 P3／N37 落地；或拿到真實 mirror 樣本。
+**Not done**: 只記錄。
+
 ## B44 — hetero review 修完的發現在 finalize 仍算「未關閉」
 
 **Area**: autopilot `scripts/hetero-review-loop.js`（finalize 的 `open_findings_count`）
