@@ -5,7 +5,7 @@
 use super::quota_mirror::{is_tight, tightest, token_warn, MergedQuota, MergedWindow};
 use super::quota_mirror_read::{QEntry, QuotaState};
 use serde_json::{json, Value};
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 const DAY_S: i64 = 86400;
 /// Show a window's age only past this (PM ruling 3).
@@ -71,6 +71,38 @@ pub fn width(l: &[Part]) -> usize {
 pub fn plain(l: &[Part]) -> String {
     l.iter().map(|s| s.text.as_str()).collect()
 }
+/// Cut a line to `cols` display columns (Unicode width, whole characters only, never a byte slice), ending
+/// with `…` when anything was cut. Every rendered line goes through this last, so no form, footer or
+/// message can be wider than the terminal.
+pub fn clip(l: &[Part], cols: usize) -> Line {
+    if width(l) <= cols {
+        return l.to_vec();
+    }
+    if cols == 0 {
+        return vec![];
+    }
+    let room = cols - 1; // keep one column for the ellipsis
+    let mut out: Line = Vec::new();
+    let mut used = 0usize;
+    'parts: for s in l {
+        let mut text = String::new();
+        for c in s.text.chars() {
+            let w = UnicodeWidthChar::width(c).unwrap_or(0);
+            if used + w > room {
+                if !text.is_empty() {
+                    out.push(p(text, s.style));
+                }
+                break 'parts;
+            }
+            used += w;
+            text.push(c);
+        }
+        out.push(p(text, s.style));
+    }
+    out.push(p("…", Style::Dim));
+    out
+}
+
 fn fit(forms: Vec<Line>, cols: usize) -> Line {
     let pick = forms.iter().position(|f| width(f) <= cols);
     let mut forms = forms;
@@ -505,9 +537,11 @@ fn compact_line(f: &Fact, now_s: f64, cols: usize, tr: &Tr) -> Line {
         }
         l
     };
+    // the age never comes back in the compact forms: they are used only below AGE_MIN_COLS (design §6.2)
+    let age = cols >= AGE_MIN_COLS;
     fit(
         vec![
-            build(true, true, true),
+            build(true, age, true),
             build(true, false, true),
             build(false, false, true),
             build(false, false, false),
@@ -905,8 +939,8 @@ pub fn accounts_text(
     lines.push(vec![p("─".repeat(cols), Style::Dim)]);
     lines.extend(pane_lines(state, entries, cols, now_s, tr));
     let mut out = String::new();
-    for l in &lines {
-        for s in l {
+    for l in lines.iter().map(|l| clip(l, cols)) {
+        for s in &l {
             out.push_str(&paint(s, color));
         }
         out.push('\n');
