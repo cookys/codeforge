@@ -217,6 +217,14 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
 **Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
 
+## B44 — hetero review 修完的發現在 finalize 仍算「未關閉」
+
+**Area**: autopilot `scripts/hetero-review-loop.js`（finalize 的 `open_findings_count`）
+**Effort**: XS
+**Premise**: 入口文件拆分（develop f05f0d8，2026-11-04）的 codex 審查：g1 的 6 項全部確認並修好，g2 沒有新發現、判定 SHIP-AS-IS，`check-phase-review-receipt.js` 也回 0。但 g1、g2 的 finalize 都還寫著 `open_findings_count: 6`，`chain.json` 的 `closed_findings` 是空的：審查席位沒有輸出關閉紀錄，finalize 就不會把已修好的項目移出。不擋合併（PM 判定），只是數字會誤導看的人。
+**Trigger**: 下次在 codeforge 跑 hetero 程式碼審查時，看關閉紀錄是否仍缺；若仍缺，轉給 autopilot。
+**Not done**: 只記錄。
+
 ## B43 — release tarball 可重現（同一 commit 產出同一 sha）
 
 **Area**: `scripts/package.sh`
