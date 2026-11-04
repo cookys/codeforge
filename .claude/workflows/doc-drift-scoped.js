@@ -52,7 +52,7 @@ phase('Scope+Find')
 const scan = await agent(
   `Scoped doc-vs-code drift check. Repo root = cwd.
 STEP 1 — find what code changed: run \`git diff --name-only ${base}...HEAD\` (and also \`git diff --name-only ${base}\` to include uncommitted work). Collect the changed files under src/. Map them to logical modules (e.g. src/cli/ship.rs → "ship", src/daemon/* → "daemon/combat", src/pet/* → "pet").
-STEP 2 — for EACH changed module, find the docs that describe it. Search README.md, CLAUDE.md, doc/concepts.md, doc/getting-started.md, doc/specs/*.md, .env.example, CHANGELOG.md for any factual claim about that module's behavior, flags, defaults, or status.
+STEP 2 — for EACH changed module, find the docs that describe it. Search README.md, CLAUDE.md (root + src/CLAUDE.md, src/cli/CLAUDE.md, src/mnemos/CLAUDE.md, doc/CLAUDE.md), doc/concepts.md, doc/getting-started.md, doc/specs/*.md, .env.example, CHANGELOG.md for any factual claim about that module's behavior, flags, defaults, or status.
 STEP 3 — verify each such claim against the ACTUAL changed code. Report drift: WRONG (contradicts code), STALE (was true, now outdated by this change), MISSING (this change added/removed behavior the docs should mention but don't — e.g. a new flag, new command, changed default, new CHANGELOG-worthy feature).
 Only audit docs whose claims relate to the changed modules — do NOT do a full-repo sweep. Every finding needs a source file:line in evidence. Be skeptical. If no doc drift from these changes, return an empty findings array (still fill changed_modules).`,
   { label: 'scope+find', phase: 'Scope+Find', schema: FINDINGS_SCHEMA }
