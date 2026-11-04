@@ -87,24 +87,45 @@ def tar_problems(data, epoch, forbid):
 GNU_MAGIC = b"ustar  \x00"  # GNU/oldgnu header magic (offset 257); its atime/ctime fields follow
 
 
+def _octal(field):
+    if field[:1] and field[0] & 0x80:  # GNU base-256
+        return int.from_bytes(field[1:], "big")
+    v = field.split(b"\x00", 1)[0].strip()
+    return int(v, 8) if v else 0
+
+
 def raw_tar_problems(data, members, forbid):
-    """What TarInfo does not expose: GNU header atime/ctime, bytes after the end of the archive,
-    and a forbidden string anywhere in the decompressed stream (headers, padding, trailer)."""
+    """What TarInfo does not expose. Walks every physical 512-byte header (GNU long-name/link
+    and pax extension headers included) by its declared payload size: a GNU header's
+    atime/ctime must be zero, only zero bytes may follow the end of the archive, and a
+    forbidden string may appear nowhere in the decompressed stream."""
     bad = []
-    for m in members:
-        # the entry's own header sits right before its data; a GNU long-name header at m.offset
-        for off in sorted({m.offset, m.offset_data - 512}):
-            hdr = data[off:off + 512]
-            if len(hdr) == 512 and hdr[257:265] == GNU_MAGIC:
-                for field, at in (("atime", 345), ("ctime", 357)):
-                    if hdr[at:at + 12].strip(b"\x00 0"):
-                        bad.append("%s: GNU header stores %s %r" % (m.name, field, hdr[at:at + 12]))
-    if members:
-        last = members[-1]
-        end = last.offset_data + ((last.size + 511) // 512) * 512 if last.isfile() else last.offset_data
-        if data[end:].strip(b"\x00"):
-            bad.append("%d non-zero bytes after the last entry (data hidden past the archive end)"
-                       % len(data[end:].strip(b"\x00")))
+    off = 0
+    while off + 512 <= len(data):
+        hdr = data[off:off + 512]
+        if not hdr.strip(b"\x00"):
+            break  # end-of-archive marker
+        try:
+            stored = _octal(hdr[148:156])
+            size = _octal(hdr[124:136])
+        except ValueError:
+            bad.append("unparseable tar header at byte %d" % off)
+            return bad
+        if stored != sum(hdr[:148]) + 8 * 32 + sum(hdr[156:]):
+            bad.append("bad tar header checksum at byte %d" % off)
+            return bad
+        name = hdr[0:100].split(b"\x00", 1)[0].decode("utf-8", "replace")
+        if hdr[156:157] == b"S":
+            bad.append("%s: GNU sparse entry (not produced by pack_tarball)" % name)
+        if hdr[257:265] == GNU_MAGIC:
+            for field, at in (("atime", 345), ("ctime", 357)):
+                if hdr[at:at + 12].strip(b"\x00 0"):
+                    bad.append("%s (header at byte %d): GNU header stores %s %r" % (name, off, field, hdr[at:at + 12]))
+        payload = size if hdr[156:157] not in (b"1", b"2", b"3", b"4", b"5", b"6") else 0
+        off += 512 + ((payload + 511) // 512) * 512
+    rest = data[off:].strip(b"\x00")
+    if rest:
+        bad.append("%d non-zero bytes after the end of the archive (data hidden past the end)" % len(rest))
     for s in forbid:
         if s.encode() in data:
             bad.append("the tar stream contains the build-machine string '%s'" % s)

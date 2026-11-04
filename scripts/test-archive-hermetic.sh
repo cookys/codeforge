@@ -5,7 +5,7 @@
 #          stage path, with other file mtimes and modes, gives byte-identical output;
 #   red:   a plain `tar czf` archive (wall-clock mtimes, real owner, gzip timestamp), a gzip header
 #          timestamp, entries out of byte order, a pax extended header, stored owner names, a
-#          gzip comment field, a second gzip member, a GNU header atime, bytes past the archive end,
+#          gzip comment field, a second gzip member, a GNU header atime (also in a second extension header), bytes past the archive end,
 #          and a file holding a forbidden path each FAIL.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -96,9 +96,38 @@ if check "$w/atime.tar.gz" --epoch "$epoch"; then nope "GNU atime passed"; else 
 grep -q "GNU header stores atime" "$w/err" || nope "atime: wrong reason: $(cat "$w/err")"
 { cat "$w/clean.tar"; printf 'built in %s\n' "$w"; } | gzip -n >"$w/trailer.tar.gz"
 if check "$w/trailer.tar.gz" --epoch "$epoch" --forbid "$w"; then nope "trailing path passed"; else ok "bytes past the archive end rejected"; fi
-if ! grep -q "after the last entry" "$w/err" || ! grep -q "tar stream contains" "$w/err"; then
+if ! grep -q "after the end of the archive" "$w/err" || ! grep -q "tar stream contains" "$w/err"; then
   nope "trailer: wrong reason: $(cat "$w/err")"
 fi
+
+# an entry with both a GNU long-link and a long-name header: a timestamp in the SECOND header
+long="$(printf 'x%.0s' $(seq 1 120))"
+mkdir -p "$w/ln/$name"
+ln -s "$long-target" "$w/ln/$name/$long"
+tar --format=gnu --sort=name --mtime="@$epoch" --owner=0 --group=0 --numeric-owner \
+    -cf "$w/ln.tar" -C "$w/ln" "$name"
+python3 -I - "$w/ln.tar" "$w/ln-atime.tar" <<'EOF'
+import sys
+b = bytearray(open(sys.argv[1], "rb").read())
+heads, off = [], 0
+while off + 512 <= len(b) and any(b[off:off + 512]):
+    heads.append(off)
+    size = int(bytes(b[off + 124:off + 136]).split(b"\x00")[0].strip() or b"0", 8)
+    kind = bytes(b[off + 156:off + 157])
+    off += 512 + (0 if kind in (b"1", b"2") else (size + 511) // 512 * 512)
+kinds = [bytes(b[h + 156:h + 157]) for h in heads]
+i = next(n for n in range(1, len(kinds)) if kinds[n - 1] in (b"K", b"L") and kinds[n] in (b"K", b"L"))
+h = heads[i]                                          # the second of two extension headers
+b[h + 345:h + 357] = b"14540000000\x00"
+b[h + 148:h + 156] = b"        "
+b[h + 148:h + 156] = b"%06o\x00 " % sum(b[h:h + 512])
+open(sys.argv[2], "wb").write(bytes(b))
+EOF
+gzip -n <"$w/ln.tar" >"$w/ln.tar.gz"
+gzip -n <"$w/ln-atime.tar" >"$w/ln-atime.tar.gz"
+if check "$w/ln.tar.gz" --epoch "$epoch"; then ok "long-name + long-link entry is hermetic"; else nope "long-name entry rejected: $(cat "$w/err")"; fi
+if check "$w/ln-atime.tar.gz" --epoch "$epoch"; then nope "atime in the second extension header passed"; else ok "atime in the second extension header rejected"; fi
+grep -q "GNU header stores atime" "$w/err" || nope "ext atime: wrong reason: $(cat "$w/err")"
 
 printf 'panicked at %s/src/main.rs\n' "$w" >"$w/a/$name/codeforge"
 pack_tarball "$w/a" "$name" "$w/leak.tar.gz" "$epoch"
