@@ -7,11 +7,12 @@ Reads the raw bytes, not `tar -tv` output (which hides pax headers and owner nam
 these is a reason to exit 1:
   gzip  more than one member; any optional header field (FTEXT/FHCRC/FEXTRA/FNAME/FCOMMENT);
         a nonzero MTIME (use `gzip -n`, one stream);
-  tar   a pax global or per-entry extended header (atime/ctime/...); an entry whose mtime is
-        not <epoch>, whose uid/gid is not 0, or which stores an owner/group name; entries not
-        in byte order (the build machine's directory-listing order leaked);
+  tar   a pax global or per-entry extended header (atime/ctime/...); a GNU header atime/ctime;
+        an entry whose mtime is not <epoch>, whose uid/gid is not 0, or which stores an
+        owner/group name; entries not in byte order (directory-listing order leaked); non-zero
+        bytes after the last entry;
   data  a --forbid string (checkout path, $HOME, cargo home) in any entry name, link target or
-        file content, the binary included.
+        file content (the binary included), or anywhere else in the decompressed stream.
 Exit 0 = hermetic, 2 = usage error.
 """
 import argparse
@@ -79,6 +80,34 @@ def tar_problems(data, epoch, forbid):
         bad.append("entries are not in byte order (directory-listing order leaked; use tar --sort=name)")
     if not names:
         bad.append("archive has no entries")
+    bad += raw_tar_problems(data, members, forbid)
+    return bad
+
+
+GNU_MAGIC = b"ustar  \x00"  # GNU/oldgnu header magic (offset 257); its atime/ctime fields follow
+
+
+def raw_tar_problems(data, members, forbid):
+    """What TarInfo does not expose: GNU header atime/ctime, bytes after the end of the archive,
+    and a forbidden string anywhere in the decompressed stream (headers, padding, trailer)."""
+    bad = []
+    for m in members:
+        # the entry's own header sits right before its data; a GNU long-name header at m.offset
+        for off in sorted({m.offset, m.offset_data - 512}):
+            hdr = data[off:off + 512]
+            if len(hdr) == 512 and hdr[257:265] == GNU_MAGIC:
+                for field, at in (("atime", 345), ("ctime", 357)):
+                    if hdr[at:at + 12].strip(b"\x00 0"):
+                        bad.append("%s: GNU header stores %s %r" % (m.name, field, hdr[at:at + 12]))
+    if members:
+        last = members[-1]
+        end = last.offset_data + ((last.size + 511) // 512) * 512 if last.isfile() else last.offset_data
+        if data[end:].strip(b"\x00"):
+            bad.append("%d non-zero bytes after the last entry (data hidden past the archive end)"
+                       % len(data[end:].strip(b"\x00")))
+    for s in forbid:
+        if s.encode() in data:
+            bad.append("the tar stream contains the build-machine string '%s'" % s)
     return bad
 
 
