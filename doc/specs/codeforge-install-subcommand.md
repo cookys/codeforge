@@ -50,7 +50,7 @@ a few ways — see ⚠️ below. Audited: 2026-06-18.
 >   warning in the success output.
 > - **Global `--hooks` writes more than emit-session + session-digest** — it
 >   also adds the SessionStart recall injector and the SessionEnd dream→ship
->   memory pipeline (see §CLAUDE.md "Hook Path Note").
+>   memory pipeline (see `src/cli/CLAUDE.md` "Hook Path Note").
 > - **Idempotency sweep also recognises pre-marker legacy commands** (inline
 >   `codeforge dream`, node hook-script commands on the codeforge scripts
 >   path) as codeforge-owned, so it sweeps un-markered installs instead of
