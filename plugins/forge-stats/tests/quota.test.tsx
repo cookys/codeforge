@@ -57,7 +57,7 @@ test('D2 codex credits remaining-only: text only, L2, never the tightest window'
   const credits = win('credits', null, 1793699000, { remaining: 12.5, unit: 'credits', resets_at: null, source: 'endpoint' })
   const m = merged([row(rec({ visibility: 'L2', windows: [credits] }, 'codex', 'main'))])
   expect(m.windows).toHaveLength(1)
-  expect(m.windows[0]).toMatchObject({ kind: 'credits', utilization: null, remaining: 12.5, unit: 'credits', resetsAt: null, ageS: 1000 })
+  expect(m.windows[0]).toMatchObject({ kind: 'credits', utilization: null, remaining: 12.5, unit: 'credits', resetsAtLocal: null, ageS: 1000 })
   expect(m.level).toBe('L2')
   expect(tightest(m)).toBe(null)
   // with a weekly beside it the weekly is the tightest
@@ -287,6 +287,14 @@ test('tightest takes the largest utilization over 5h/weekly/daily/monthly/credit
   expect(tightest(merged([]))).toBe(null)
 })
 
+// ---- the reset time is judged on the hub clock but counted down on the local one ----
+test('a merged window carries resets_at on the LOCAL clock (resets_at minus hub_offset)', () => {
+  const at = (off: number, resets: number) => merged([row(rec({ windows: [win('rolling_5h', 0.5, N - 60, { resets_at: resets })] }))], { hub_offset: off }).windows[0]?.resetsAtLocal
+  expect(at(600, N + 660)).toBe(N + 60)
+  expect(at(-600, N + 60)).toBe(N + 660)
+  expect(at(0, N + 60)).toBe(N + 60)
+})
+
 // ---- rejects ----
 const goodWin = () => win('rolling_5h', 0.5, N - 60)
 const withRec = (patch: O, base = rec({ windows: [goodWin()] })) => row({ ...base, ...patch })
@@ -321,6 +329,8 @@ const REJECTS: [string, O][] = [
   ['a record carrying namespace', withRec({ namespace: 'cookys' })],
   ['a record carrying sent_at', withRec({ sent_at: N })],
   ['a bad visibility', withRec({ visibility: 'L9' })],
+  ['windows with visibility L0 (§20.4: nothing visible)', withRec({ visibility: 'L0' })],
+  ['windows with visibility L1 (§20.4: only a refusal visible)', withRec({ visibility: 'L1' })],
   ['a bad schema', withRec({ schema: 'fleet.quota/2' })],
   ['a bad refusal reason', withRec({ visibility: 'L1', windows: [], refusal: { observed_at: N, retry_at: null, reason: 'busy' } })],
   ['a refusal with an extra key', withRec({ visibility: 'L1', windows: [], refusal: { observed_at: N, retry_at: null, reason: 'quota', kind: 'weekly' } })],

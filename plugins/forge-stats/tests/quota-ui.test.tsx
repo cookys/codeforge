@@ -123,7 +123,8 @@ test('pickViews skips lock and non-json files silently and counts links, non-reg
     ent('work.json'), ent('home.json'), ent('namespace.json'), ent('work.json.lock'), ent('.tmp.json'), ent('notes.txt'),
     ent('linked.json', { isLink: true, kind: 'other' }), ent('dir.json', { kind: 'dir' }), ent('big.json', { size: 32769 }), ent('Bad_Alias.json'), ent('edge.json', { size: 32768 }),
   ])
-  expect(got.views.map(v => v.alias)).toEqual(['edge', 'home', 'work'])
+  // `namespace.json` inside a provider directory is the alias `namespace` (only `quota/namespace.json` is metadata)
+  expect(got.views.map(v => v.alias)).toEqual(['edge', 'home', 'namespace', 'work'])
   expect(got.bad).toBe(4)
   const many: DirEntry[] = Array.from({ length: 70 }, (_, i) => ent('p' + String(i).padStart(2, '0'), { kind: 'dir', size: 0 }))
   const picked = pickProviders([...many, ent('namespace.json'), ent('Bad', { kind: 'dir' }), ent('lnk', { kind: 'other', isLink: true })])
@@ -240,20 +241,23 @@ test('band group: order ▲, tight, 429, the rest by utilization, then 無資料
   const forms = bandText(stateOf(ALL))
   expect(forms[0]).toBe(
     '▲ claude:gone token 已過期  ▲ claude:home token 到期 6 天  ▲ claude:old token 已失效  claude:home 週 91% 緊 ◷ 1d2h  kimi:main 429 冷卻 ◷ 1h19m  ' +
-      'claude:work 5h 62% ◷ 2h5m  claude:multi 5h 50% ◷ 2h5m  glm:main 日 估 41%  qoder:main 額度 38%  claude:gone 5h 20% ◷ 2h5m  codex:main 週 17% ◷ 3d0h · 2h10m 前  無資料 2',
+      'claude:work 5h 62% ◷ 2h5m  claude:multi 5h 50% ◷ 2h5m  glm:main 日 估 41%  qoder:main 額度 剩 3,100  claude:gone 5h 20% ◷ 2h5m  codex:main 週 17% ◷ 3d0h · 2h10m 前  無資料 2',
   )
   // 1: no 無資料   2: no ages   3: no countdowns   then whole chips from the tail   last: the alias alone
   expect(forms[1]).toBe(forms[0]!.replace('  無資料 2', ''))
   expect(forms[2]).toBe(forms[1]!.replace(' · 2h10m 前', ''))
   expect(forms[3]).not.toContain('◷')
   expect(forms[3]).toContain('claude:home 週 91% 緊  kimi:main 429 冷卻  claude:work 5h 62%')
-  expect(forms[4]).toBe(forms[3]!.replace('  codex:main 週 17%', ''))
-  expect(forms[forms.length - 2]).toBe('▲ claude:gone token 已過期')
+  // 4: the prefixes go where the alias is unique (`main` is kimi's, glm's, qoder's and codex's: those keep theirs); only then whole chips
+  expect(forms[4]).toBe(forms[3]!.replaceAll('claude:', ''))
+  expect(forms[4]).toContain('▲ gone token 已過期')
+  expect(forms[4]).toContain('kimi:main 429 冷卻')
+  expect(forms[5]).toBe(forms[4]!.replace('  codex:main 週 17%', ''))
   // the ▲ chips go last; the one left is the most severe, and the alias stays (`gone` is also a chip of another provider? no: one key, so the prefix goes)
   expect(forms[forms.length - 1]).toBe('▲ gone token 已過期')
   // no ▲: the tightest chip alone, then `alias 91%`
   const calm = bandText(stateOf(['claude:work', 'glm:main']))
-  expect(calm[calm.length - 2]).toBe('claude:work 5h 62%')
+  expect(calm[calm.length - 2]).toBe('work 5h 62%')
   expect(calm[calm.length - 1]).toBe('work 62%')
   // a shared alias keeps its prefix: `main` is kimi's and glm's
   const same = bandText(stateOf(['claude:work', 'glm:main', 'kimi:main']))
@@ -323,6 +327,60 @@ test('the quota group sits after the fleet part and before the pet; the pet goes
   expect(summaryParts(FLEET as never, 'Ferris Lv.3', 200, '艦隊', [])?.map(p => p.text).join('')).toBe('艦隊 ▲ 1  ● 4 · Ferris Lv.3')
 })
 
+// ---- the reset time counts down on the local clock ----
+function offsetState(off: number, resets: number): QuotaState {
+  const r = [{ ...(row0(N, [win0(N, 'rolling_5h', 0.5, N - 60, { resets_at: resets })]) as O) }]
+  const v = parseQuotaView(JSON.stringify({ schema: 'fleet.quota-view/1', namespace: 'cookys', hub_offset: off, rows: r }), 'codex', 'main')
+  if (v.status !== 'ok') throw new Error('bad fixture')
+  return { present: true, ns: 'cookys', raw: [{ provider: 'codex', alias: 'main', view: v }], bad: 0, skipped: 0 }
+}
+test('a hub clock ahead or behind shifts the reset countdown to the local clock, in the pane and in the band', () => {
+  const ahead = offsetState(600, N + 660)
+  expect(paneText(ahead, 100).find(l => l.includes('5h'))).toContain('◷ 1m 後重置')
+  expect(bandText(ahead)[0]).toBe('codex:main 5h 50% ◷ 1m')
+  const behind = offsetState(-600, N + 60)
+  expect(paneText(behind, 100).find(l => l.includes('5h'))).toContain('◷ 11m 後重置')
+  expect(bandText(behind)[0]).toBe('codex:main 5h 50% ◷ 11m')
+  expect(paneText(behind, 50)[0]).toContain('◷ 11m')
+})
+
+// ---- credits on the band (design §4) ----
+test('band credits: amounts show what is left, a bare utilization shows what is used, remaining-only stays on the pane', () => {
+  const only = (windows: O[]) => {
+    const v = parseQuotaView(view([row0(N, windows)]), 'codex', 'main')
+    if (v.status !== 'ok') throw new Error('bad fixture')
+    return { present: true, ns: 'cookys', raw: [{ provider: 'codex', alias: 'main', view: v }], bad: 0, skipped: 0 } as QuotaState
+  }
+  const amounts = win0(N, 'credits', 0.38, N - 120, { used: 1900, limit: 5000, unit: 'credits', resets_at: null })
+  expect(bandText(only([amounts]))[0]).toBe('codex:main 額度 剩 3,100')
+  expect(bandText(only([{ ...amounts, remaining: 3100 }]))[0]).toBe('codex:main 額度 剩 3,100')
+  expect(bandText(only([win0(N, 'credits', 0.38, N - 120, { resets_at: null })]))[0]).toBe('codex:main 額度 已用 38%')
+  expect(bandText(only([win0(N, 'credits', null, N - 120, { remaining: 12.5, unit: 'credits', resets_at: null })]))).toEqual([])
+  expect(bandText(only([amounts]), en)[0]).toBe('codex:main credit 3,100 left')
+  expect(bandText(only([win0(N, 'credits', 0.38, N - 120, { resets_at: null })]), en)[0]).toBe('codex:main credit 38% used')
+})
+
+// ---- narrow band: prefixes go before chips (§6.1) ----
+test('band: provider prefixes drop before any chip does, but only where the alias is unique; a collision keeps its prefix', () => {
+  const uniq = bandText(stateOf(['claude:work', 'claude:home', 'kimi:main']))
+  const BARE = '▲ home token 到期 6 天  home 週 91% 緊  main 429 冷卻  work 5h 62%'
+  const bareAt = uniq.indexOf(BARE)
+  expect(bareAt > 0).toBe(true)
+  // no chip is dropped before the bare form
+  expect(uniq.slice(0, bareAt).every(t => t.includes('work') && t.includes('main') && t.includes('home'))).toBe(true)
+  const forms = quotaBandForms(quotaBand(quotaEntries(stateOf(['claude:work', 'claude:home', 'kimi:main']), N), NOW_MS, zh))
+  const cols = displayWidth(uniq[bareAt] as string)
+  const at = (c: number) => summaryParts(null, null, c, 'fleet', forms)?.map(p => p.text).join('')
+  expect(at(cols)).toBe(BARE)
+  const prev = displayWidth(uniq[bareAt - 1] as string)
+  expect(prev > cols).toBe(true)
+  // the collision: `main` is kimi's and glm's, so both keep `provider:`; `work` is unique and goes bare
+  const clash = bandText(stateOf(['claude:work', 'glm:main', 'kimi:main']))
+  const bareClash = clash.find(t => t.startsWith('kimi:main 429 冷卻  work 5h 62%') && !t.includes('claude:'))
+  expect(bareClash).toBe('kimi:main 429 冷卻  work 5h 62%  glm:main 日 估 41%')
+})
+
+
 // ---- the reader and the two surfaces, against a fake mirror ----
 const LIVE = '/run/user/1000/autopilot'
 const SESSION_NOW = Math.floor(Date.now() / 1000)
@@ -337,7 +395,7 @@ const USAGE = JSON.stringify({
   days: [{ day: new Date().toISOString().slice(0, 10), source: 'claude', account: 'acct-a', model: 'claude-opus-5-5', speed: 'standard', input: 100, output: 50, cache_write_5m: 0, cache_write_1h: 0, cache_read: 850, requests: 3, cost_usd: 1.5 }],
 })
 
-type Fake = { files: Record<string, string>; over: Record<string, Partial<DirEntry>>; reads: string[]; lists: string[] }
+type Fake = { files: Record<string, string>; over: Record<string, Partial<DirEntry>>; reads: string[]; lists: string[]; onRead?: (path: string) => void; onList?: (path: string) => void; afterList?: (path: string) => void }
 // a virtual file system: `files` by absolute path; a directory exists when a file lies under it or `dirs` names it
 function mirror(on: Parameters<TestBody>[1], files: Record<string, string>, dirs: string[] = [], zhLocale = true): Fake {
   const f: Fake = { files: { [LIVE + '/codeforge/pet.json']: JSON.stringify(PETSNAP), [LIVE + '/codeforge/usage/summary.json']: USAGE, ...files }, over: {}, reads: [], lists: [] }
@@ -364,16 +422,18 @@ function mirror(on: Parameters<TestBody>[1], files: Record<string, string>, dirs
     if (!isDir(dir)) throw new Error('ENOENT ' + dir)
     const names = new Set<string>()
     for (const k of Object.keys(f.files)) if (k.startsWith(dir + '/')) names.add(k.slice(dir.length + 1).split('/')[0] as string)
-    return {
-      value: [...names].map(name => {
-        const p = dir + '/' + name
-        const file = p in f.files
-        return { name, kind: file ? 'file' : 'dir', size: file ? (f.files[p] as string).length : 0, mtimeMs: 0, isLink: false, ...f.over[p] }
-      }),
-    }
+    f.onList?.(dir)
+    const value = [...names].map(name => {
+      const p = dir + '/' + name
+      const file = p in f.files
+      return { name, kind: file ? 'file' : 'dir', size: file ? (f.files[p] as string).length : 0, mtimeMs: 0, isLink: false, ...f.over[p] }
+    })
+    f.afterList?.(dir)
+    return { value }
   })
   on('fs.read', (_, e) => {
     f.reads.push(e.path)
+    f.onRead?.(e.path)
     if (e.path === '/home/t/.autopilot/live-pointer.json') return { value: JSON.stringify({ live_base: LIVE }) }
     if (e.path in f.files) return { value: f.files[e.path] }
     throw new Error('ENOENT ' + e.path)
@@ -534,4 +594,71 @@ test('the timer re-reads the mirror every 15 s while the band is drawn, and a vi
   const again = await $.ui.mount(band(200))
   expect(await flat(again)).toContain('kimi:main 429 冷卻')
   await again.unmount()
+})
+
+// ---- a hostile or changing mirror (reader safety) ----
+test('namespace.json inside a provider directory is the alias `namespace`', async ($, on) => {
+  const fx = mkFX(SESSION_NOW)
+  const rec = JSON.parse(JSON.stringify(fx['claude:work'])) as O[]
+  ;((rec[0] as O).record as O).alias = 'namespace'
+  mirror(on, { ...viewFiles(['claude:home']), [`${LIVE}/quota/claude/namespace.json`]: view(rec), ...NS })
+  const ui = await openUsage($)
+  const text = await flat(ui)
+  expect(text).toContain('claude:namespace')
+  expect(text).toContain('claude:home')
+  expect(text).not.toContain('筆無法讀取')
+  await ui.unmount()
+})
+
+test('the reader rejects a view that grew past the cap, or changed size, or turned into a link between the listing and the read, and counts it', async ($, on) => {
+  const named = (alias: string) => {
+    const r = JSON.parse(JSON.stringify(mkFX(SESSION_NOW)['claude:home'])) as O[]
+    ;((r[0] as O).record as O).alias = alias
+    return view(r)
+  }
+  const f = mirror(on, { ...viewFiles(['claude:work']), ...Object.fromEntries(['grow', 'swap', 'pad'].map(n => [`${LIVE}/quota/claude/${n}.json`, named(n)])), ...NS })
+  // each refresh lists clean files, then each is changed as it is read
+  const pristine = { ...f.files }
+  f.onList = d => {
+    if (d !== LIVE + '/quota/claude') return
+    for (const n of ['grow', 'swap', 'pad']) {
+      const p = `${LIVE}/quota/claude/${n}.json`
+      f.files[p] = pristine[p] as string
+      delete f.over[p]
+    }
+  }
+  f.onRead = p => {
+    if (p.endsWith('/claude/grow.json')) f.files[p] = ' '.repeat(40000) + (f.files[p] as string)
+    if (p.endsWith('/claude/swap.json')) f.over[p] = { isLink: true, kind: 'other' }
+    if (p.endsWith('/claude/pad.json')) f.files[p] = (f.files[p] as string) + ' '
+  }
+  const ui = await openUsage($)
+  const text = await flat(ui)
+  expect(text).toContain('claude:work')
+  expect(text).not.toContain('claude:grow')
+  expect(text).not.toContain('claude:swap')
+  expect(text).not.toContain('claude:pad')
+  expect(text).toContain('3 筆無法讀取')
+  await ui.unmount()
+})
+
+test('the reader rejects a namespace file that changed after the listing, and a provider directory that turned into a link', async ($, on) => {
+  const f = mirror(on, { ...viewFiles(['claude:work', 'kimi:main']), ...NS })
+  f.onRead = p => {
+    if (p === LIVE + '/quota/namespace.json') f.files[p] = (f.files[p] as string) + ' '
+  }
+  // each refresh: the directory is clean when listed, then swapped for a link before it is entered
+  f.onList = d => {
+    if (d === LIVE + '/quota') delete f.over[LIVE + '/quota/kimi']
+  }
+  f.afterList = d => {
+    if (d === LIVE + '/quota') f.over[LIVE + '/quota/kimi'] = { isLink: true, kind: 'other' }
+  }
+  const ui = await openUsage($)
+  const text = await flat(ui)
+  // the namespace is not trusted, the swapped provider is not listed
+  expect(text).toContain('2 筆無法讀取')
+  expect(text).toContain('claude:work')
+  expect(text).not.toContain('kimi:main')
+  await ui.unmount()
 })
