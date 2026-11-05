@@ -225,6 +225,8 @@ export type MergedQuota = {
   tokenExpiresAt: number | null
   placeholder: boolean
   hadObservation: boolean
+  /** True when any usable row's record carried a window, even if the merge then dropped them all; false for placeholder, refusal-only and token-state-only (§21.6 shape c). */
+  hadWindow: boolean
   level: QLevel
   hosts: string[]
   multiHost: boolean
@@ -251,6 +253,7 @@ export function mergeQuota(view: QuotaView, nsFileNamespace: string | null, nowS
   let refusal: { endS: number; reason: QReason; ageS: number } | null = null
   let hadObservation = false
   let placeholder = false
+  let hadWindow = false
   const liveRows = new Map<string, string>()
   const stateCands: { state: QTokenState; age: number }[] = []
   let expiry: { age: number; at: number } | null = null
@@ -262,6 +265,7 @@ export function mergeQuota(view: QuotaView, nsFileNamespace: string | null, nowS
     const stamps = [...rec.windows.map(w => w.observedAt)]
     if (rec.refusal) stamps.push(rec.refusal.observedAt)
     if (rec.tokenStateAt !== null) stamps.push(rec.tokenStateAt)
+    if (rec.windows.length > 0) hadWindow = true
     if (stamps.length > 0) hadObservation = true
     else if (rec.placeholder) placeholder = true
     const basis = stamps.length ? Math.max(...stamps) : 0
@@ -334,7 +338,7 @@ export function mergeQuota(view: QuotaView, nsFileNamespace: string | null, nowS
   const hosts = [...liveRows.values()]
   return {
     windows: out, refusal, tokenState, tokenExpiresAt: expiry ? expiry.at : null, placeholder: placeholder && !hadObservation,
-    hadObservation, level, hosts, multiHost: liveRows.size >= 2,
+    hadObservation, hadWindow, level, hosts, multiHost: liveRows.size >= 2,
   }
 }
 

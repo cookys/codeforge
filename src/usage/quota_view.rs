@@ -214,6 +214,7 @@ pub enum Kind {
     Live,
     Refusal,
     Never,
+    NoUsage,
     Dropped,
     TokenOnly,
 }
@@ -223,6 +224,7 @@ impl Kind {
             Kind::Live => "live",
             Kind::Refusal => "refusal",
             Kind::Never => "never",
+            Kind::NoUsage => "no_usage",
             Kind::Dropped => "dropped",
             Kind::TokenOnly => "token_only",
         }
@@ -282,6 +284,8 @@ pub fn facts_of<'a>(entries: &'a [QEntry], now_s: i64, tr: &Tr) -> Vec<Fact<'a>>
                 Kind::Refusal
             } else if m.placeholder {
                 Kind::Never
+            } else if !m.had_window {
+                Kind::NoUsage
             } else {
                 Kind::Dropped
             };
@@ -308,7 +312,7 @@ pub fn facts_of<'a>(entries: &'a [QEntry], now_s: i64, tr: &Tr) -> Vec<Fact<'a>>
                 1
             } else if m.refusal.is_some() {
                 2
-            } else if matches!(kind, Kind::Never | Kind::Dropped) {
+            } else if matches!(kind, Kind::Never | Kind::NoUsage | Kind::Dropped) {
                 4
             } else {
                 3
@@ -492,7 +496,7 @@ fn compact_line(f: &Fact, now_s: f64, cols: usize, tr: &Tr) -> Line {
             }
             return v;
         }
-        if matches!(f.kind, Kind::Never | Kind::Dropped) {
+        if matches!(f.kind, Kind::Never | Kind::NoUsage | Kind::Dropped) {
             return vec![pl(" "), p(tr.q("no_data"), Style::Idle)];
         }
         let Some(w) = f.main else { return vec![] };
@@ -578,6 +582,7 @@ pub fn pane_lines(
             out.push(header_line(f, cols, tr));
             match f.kind {
                 Kind::Never => out.push(vec![p(format!("  {}", tr.q("never")), Style::Idle)]),
+                Kind::NoUsage => out.push(vec![p(format!("  {}", tr.q("no_usage")), Style::Idle)]),
                 Kind::Dropped => out.push(vec![p(format!("  {}", tr.q("dropped")), Style::Idle)]),
                 Kind::TokenOnly => {}
                 _ => {
@@ -724,7 +729,7 @@ pub fn quota_band(entries: &[QEntry], now_s: i64, tr: &Tr) -> Band {
             ));
             continue;
         }
-        if matches!(f.kind, Kind::Never | Kind::Dropped) {
+        if matches!(f.kind, Kind::Never | Kind::NoUsage | Kind::Dropped) {
             no_data += 1;
             continue;
         }

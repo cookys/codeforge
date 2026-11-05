@@ -224,7 +224,6 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Premise**: G40 顯示端已完成 forge-stats（band 晶片＋用量分頁）與 Rust 端（statusline、`codeforge usage accounts`，TS↔Rust `QUOTA_CONTRACT` 同步測試），都用測試資料開發（develop，2026-11-04）。留下：
 - `scripts/lib/quota-contract.json`（autopilot P3）出現後，`QUOTA_CONTRACT` 的 30／7 天、6 h、300 s 改成跟它同步測試（契約 §21.4、N35）。
 - 契約 N37 的 `<live_dir>` 對照向量目前只有名稱沒有值；有具體值後移植成測試。mod 無法判斷 `/tmp` 是否在 RAM、目錄擁有者與權限，現在一律不採 `/tmp`、以「存在」代替 autopilot 的檢查。
-- 只有 token 狀態、沒有任何 window 的記錄（契約 §21.6 shape c，`token_state: ok`）目前畫成「過期或已重置，等新觀察」，應改成中性的「沒有用量資料」；需要 `mergeQuota` 區分「從沒有 window」與「window 全被丟掉」。
 - forge-stats 的 `$.fs.read` 沒有 no-follow、限大小選項：讀後重驗大小與 stat，殘餘競態已註明；API 有了再改（Rust 端已用 `openat` 相對目錄描述元開檔，沒有這個問題）。
 - 真實 mirror 樣本與 Claude 的 `starts_window` 等操作員帳號卡 d-2a19fdb5；拿到後用真資料跑一次畫面。
 **Trigger**: autopilot 宣布 P3／N37 落地或 plan amendment 回覆；或拿到真實 mirror 樣本；或下次動配額顯示。
@@ -267,12 +266,13 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 下次動 `codeforge usage` 的收集器，或在非 unix 平台建置測試；8f1b90b2 在第一次看到 `usage collect` 因配額快照驗證失敗時。
 **Not done**: 只記錄；詳情見 autopilot lane/g36rest 第 2、3 輪的 finding。
 
-## B40 — 一次無法重現的 cargo test 失敗（疑似 flaky）
+## B46 — 其他會改行程環境變數的測試（B40 的同類）
 
-**Area**: 測試套件（名稱未知）
-**Premise**: 2026-11-03 commit 1fdd922 前跑全套，986 條中 1 條失敗；當時輸出只過濾留下 `test result` 摘要行，沒有保存完整 log，失敗的測試名稱無法回收（session 紀錄也查不到）。之後連跑 18 次全綠。嫌疑：`live::tests::missing_findmnt_falls_back_to_proc_mounts`（同日稍早也單獨失敗過一次、未重現），以及會改行程層級環境變數的測試（cargo test 平行執行時互相競爭）。PM 判定：在證明不是之前，當作 flaky 追蹤。
-**Trigger**: `target/flaky-tests.log` 出現 FLAKY 紀錄（`scripts/test-flake-guard.sh` 寫入，`check-all.sh` 的 test 步驟會經過它），或任何一次失敗後重跑通過。
-**Not done**: 已加 flake guard（失敗重跑一次、紀錄保留、不隱藏）；根因待第一筆紀錄出現後再查。
+**Area**: `src/cli/statusline.rs`（NO_COLOR）、`src/cli/subagent_statusline.rs`（AUTOPILOT_LIVE_DIR）、`src/llm.rs`（CODEFORGE_AGY_MODEL、CODEFORGE_LLM_MAX_LOAD_PER_CORE）、`src/mnemos/health.rs`（XDG_RUNTIME_DIR）、`src/commentary/budget.rs`
+**Effort**: S
+**Premise**: B40 的根因是 `src/live.rs` 測試把整個行程的 PATH 換掉，平行跑的測試用名字 spawn 指令就 ENOENT；已改成把環境當參數傳入（fix/b40，紅 46/60 → 綠 0/60）。上列測試仍用 `set_var`／`remove_var`，各自只有模組內的鎖，跟其他讀同一變數的測試仍可能互撞。
+**Trigger**: `target/flaky-tests.log` 再出現 FLAKY 紀錄且測試名落在上列模組，或下次動這些測試。
+**Not done**: 只記錄。
 
 ## B39 — G36 第 1 階段 review 的後續（statusline 配額列）
 

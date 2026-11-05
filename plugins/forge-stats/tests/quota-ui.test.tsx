@@ -662,3 +662,24 @@ test('the reader rejects a namespace file that changed after the listing, and a 
   expect(text).not.toContain('kimi:main')
   await ui.unmount()
 })
+
+// ---- B45: shape c (token state only) is "no usage data", not "expired or reset" ----
+const b45Rec = (alias: string, o: O): O => ({
+  schema: 'fleet.quota/1', provider: 'b45', alias, visibility: 'L0', windows: [], refusal: null, token_state: 'unknown', token_state_at: null,
+  host_role: 'agent', token_issued_at: null, token_expires_at: null, ...o,
+})
+const b45Row = (record: O): O => ({ writer_courier: 'local', host_role: 'agent', observed_at_hub: null, skewed: false, record })
+const B45_FX: Record<string, O[]> = {
+  'b45:only': [b45Row(b45Rec('only', { token_state: 'ok', token_state_at: N - 100 }))],
+  'b45:out': [b45Row(b45Rec('out', { visibility: 'L3', windows: [win0(N, 'rolling_5h', 0.4, N - 25200, { resets_at: N + 3000 })] }))],
+}
+test('B45 pane and band: a shape-c record shows the neutral no-usage wording, an aged-out record keeps quotaDropped', () => {
+  const st = stateOf(['b45:only', 'b45:out'], {}, B45_FX)
+  const lines = paneText(st, 100)
+  expect(block(lines, 'b45:only')).toEqual(['b45:only  L0', '  沒有用量資料'])
+  expect(block(lines, 'b45:out')).toEqual(['b45:out  L0', '  過期或已重置，等新觀察'])
+  expect(paneText(st, 100, en).join('\n')).toContain('no usage data')
+  // compact lines stay the short word for both; the band counts both as 無資料
+  expect(paneText(st, 40).some(l => l.startsWith('b45:only') && l.includes('無資料'))).toBe(true)
+  expect(bandText(st)).toEqual(['無資料 2'])
+})

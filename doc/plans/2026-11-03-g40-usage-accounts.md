@@ -281,7 +281,7 @@ autopilot 的 G40R2 已收斂，PM 指定以 `project/plans/2026-11-03-g40-agent
 | 10 | 多 host 的觸發條件未定（§9-7、PM 裁定 6） | 每個 key 一個 view，`rows[]` 依 `writer_courier` 分列（§22.2） | 「來自多於一台 host」= 通過 namespace 守門與年齡過濾後，仍有 ≥ 2 個不同 `writer_courier`；pane 標題列列出這些列的 `host_role`（取記錄內的值，不取列上的副本） |
 | 11 | `utilization` ∈ `[0, 1.5]` | 存下的值 ≤ 1，> 1 的記錄「rejected by every reader」；`clamped: true` 可選（§6） | 範圍改 `[0, 1]` |
 | 12 | 單檔 ≤ 4 KiB | 契約沒給讀取端上限；一個 view 可有多列 | 單檔 ≤ 32 KiB，最多 64 個 provider 目錄、256 個 view |
-| 13 | L0 = `windows: []` | 從未觀察的別名是 placeholder：`visibility L0`、`windows []`、記錄層 `source: "registry"`，不受 6 h 規則淘汰（§21.6） | 分兩種：placeholder 畫「從未觀察」；有過觀察但 window 全被丟掉的畫「過期或已重置，等新觀察」 |
+| 13 | L0 = `windows: []` | 從未觀察的別名是 placeholder：`visibility L0`、`windows []`、記錄層 `source: "registry"`，不受 6 h 規則淘汰（§21.6） | 分兩種：placeholder 畫「從未觀察」；有過 window 但全被丟掉的畫「過期或已重置，等新觀察」；只有 token 狀態、從沒有過 window 的（§21.6 shape c）畫中性的「沒有用量資料」（合併結果的 `hadWindow`／`had_window` 區分；band 兩者都併入 `無資料 N`）（B45） |
 | 14 | 等級取記錄的 `visibility` | `visibility` 是每列各自的；合併後的等級契約沒定義 | 顯示端從合併結果推：還有 window 且都有 `resets_at` → L3；有 `resets_at: null` → L2；沒有 window 但有未過期 refusal → L1；其餘 L0 |
 
 不變的部分：30 分鐘年齡顯示門檻、緊 ≥ 0.90 只用字樣、`估`、過渡規則（mirror 出現前維持 G36 快照晶片）、沒有走勢圖（契約 §21.7 也禁止從 mirror 讀數自行生成歷史）、`rpm`／`tpm` 只在 pane。
