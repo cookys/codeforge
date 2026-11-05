@@ -240,7 +240,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 1. **寬度 ≤100 欄，附保留顏色的 HTML 預覽**：operator 的檢視器不能左右捲。
 2. **兩種 session 都要拍**：一般 repo（例如 pm）和 autopilot repo，因為 band 的疊放不同。需要時深色、淺色各拍一張（§5）。
 3. **截圖裡不能有個人資料**：拍之前確認畫面上沒有 email、帳號、權杖。用量分頁的帳號列不要拍。
-4. **臨時 session 不能搶 fleet 席位，也不能被誤認**：空的 MCP 設定擋不住登記。claude-lane 會從 claude 行程內部登記（2026-11-05 實測：沒有 mcp-shim 子行程，仍以 `claude-lane` 登記），席位名稱是「cwd 的 basename--claude」，撞名時加 -N。所以臨時 session 只開在 codeforge 目錄或 scratch 目錄，不要開在別的 lane 的 repo（在 pm 目錄開會叫 `pm--claude-N`，容易被誤認成 PM 的席位）；加上 `FLEET_SEAT=cap-<名稱>` 改名（尚未實測）。目前沒有能關閉登記的開關（已請 fleet lane 登 backlog）。拍完確認 `fleet peers` 裡那個成員已經 offline。要讓用量分頁讀假資料，`AUTOPILOT_LIVE_DIR` 指向的目錄要同時放 `codeforge/pet.json`（mod 在哪個目錄找到 pet.json，就從那裡讀用量）。不要開在還沒信任的目錄：信任提示一按下去，就會寫進使用者設定。
+4. **臨時 session 不能搶 fleet 席位，也不能被誤認**：空的 MCP 設定擋不住登記。claude-lane 會從 claude 行程內部登記（2026-11-05 實測：沒有 mcp-shim 子行程，仍以 `claude-lane` 登記），席位名稱是「cwd 的 basename--claude」，撞名時加 -N。所以臨時 session 只開在 codeforge 目錄或 scratch 目錄，不要開在別的 lane 的 repo（在 pm 目錄開會叫 `pm--claude-N`，容易被誤認成 PM 的席位）；`FLEET_SEAT` 對 claude-lane 無效（它只看 session 的 kind 和 entrypoint，2026-11-05 實測仍登記成 `codeforge--claude-2`）。目前沒有能關閉登記的開關（hangar backlog 576d0e9，F4 之後做 `FLEET_REGISTER=0`）。拍完確認 `fleet peers` 裡那個成員已經 offline。要讓用量分頁讀假資料，`AUTOPILOT_LIVE_DIR` 指向的目錄要同時放 `codeforge/pet.json`（mod 在哪個目錄找到 pet.json，就從那裡讀用量）。不要開在還沒信任的目錄：信任提示一按下去，就會寫進使用者設定。
 
 步驟（在要拍的 repo 目錄執行）：
 
