@@ -240,7 +240,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 1. **寬度 ≤100 欄，附保留顏色的 HTML 預覽**：operator 的檢視器不能左右捲。
 2. **兩種 session 都要拍**：一般 repo（例如 pm）和 autopilot repo，因為 band 的疊放不同。需要時深色、淺色各拍一張（§5）。
 3. **截圖裡不能有個人資料**：拍之前確認畫面上沒有 email、帳號、權杖。用量分頁的帳號列不要拍。
-4. **臨時 session 不能搶 fleet 席位**：啟動時用空的 MCP 設定，fleet MCP 就不會連上。拍完確認 `fleet peers` 沒有多出成員。
+4. **臨時 session 不能搶 fleet 席位，也不能被誤認**：空的 MCP 設定擋不住登記。claude-lane 會從 claude 行程內部登記（2026-11-05 實測：沒有 mcp-shim 子行程，仍以 `claude-lane` 登記），席位名稱是「cwd 的 basename--claude」，撞名時加 -N。所以臨時 session 只開在 codeforge 目錄或 scratch 目錄，不要開在別的 lane 的 repo（在 pm 目錄開會叫 `pm--claude-N`，容易被誤認成 PM 的席位）；`FLEET_SEAT` 對 claude-lane 無效（它只看 session 的 kind 和 entrypoint，2026-11-05 實測仍登記成 `codeforge--claude-2`）。目前沒有能關閉登記的開關（hangar backlog 576d0e9，F4 之後做 `FLEET_REGISTER=0`）。拍完確認 `fleet peers` 裡那個成員已經 offline。要讓用量分頁讀假資料，`AUTOPILOT_LIVE_DIR` 指向的目錄要同時放 `codeforge/pet.json`（mod 在哪個目錄找到 pet.json，就從那裡讀用量）。不要開在還沒信任的目錄：信任提示一按下去，就會寫進使用者設定。
 
 步驟（在要拍的 repo 目錄執行）：
 
@@ -256,7 +256,7 @@ fleet upload cap.txt  --name <名稱>.txt  --mime text/plain --summary "<說明>
 tmux kill-session -t cap
 ```
 
-回報裡附兩個 blob sha。`--plugin-dir` 指向開發中的 worktree 時，引擎會在該目錄產生 `tsconfig.json`，拍完要刪掉。兩個 plugin 都在開發中時（例如 G33 同時改 live mod 和 forge-stats），各給一個 `--plugin-dir`：autopilot 是 worktree 根目錄，forge-stats 是它自己的 plugin 根目錄（G33 前是 `<codeforge>/.claude/skills/forge-stats`，G33 搬移後以新位置為準）。拍之前用 `/plugin` 確認載入的是開發中的版本。
+回報裡附兩個 blob sha。`--plugin-dir` 指向開發中的 worktree 時，引擎會在該目錄產生 `tsconfig.json`；拍完用 `git status` 看，只有未追蹤（`??`）的才刪。forge-stats 的 `tsconfig.json` 有進 git，不要刪。兩個 plugin 都在開發中時（例如 G33 同時改 live mod 和 forge-stats），各給一個 `--plugin-dir`：autopilot 是 worktree 根目錄，forge-stats 是它自己的 plugin 根目錄（G33 前是 `<codeforge>/.claude/skills/forge-stats`，G33 搬移後以新位置為準）。拍之前用 `/plugin` 確認載入的是開發中的版本。
 
 淺色截圖：先在臨時 session 裡用 `/theme` 把 Claude Code 主題切成淺色，再拍，HTML 加 `--light`（`scripts/ansi2html.py` 的選項，只改 HTML 底色）。主題是使用者層級的設定，拍完一定要用 `/theme` 切回原本的主題。只把深色截圖套上淺色 HTML 底色，證明不了主題鍵在淺色主題下讀得出來。
 
@@ -304,3 +304,24 @@ tmux kill-session -t cap
 | 舊符號和 `↑` 登記進 live `NEW_GLYPHS`／glyph-check，owner 驗證 | §3.3 | live＋owner | `verified` 欄位齊全 |
 | `codeforge-mod-ui.md` §5 改成指向本文 | 前言 | 本單（G34） | 已改 |
 
+
+## 13. 聊天室式 pane：操作區在底、內容往上長
+
+操作員回饋，PO 採用（2026-11-05）：操作區固定在底部，資訊從操作區往上長，視線和手都不用跟著移動。live mod、roundtable、forge-stats 三邊的 pane 都照這一節做，autopilot 的文件連結到這裡，不另寫一份。
+
+**適用範圍**：會變長的 pane。forge-stats：pane 的寵物、用量分頁。autopilot：`mods/live` 的待決卡片和 job 頁、`mods/roundtable`。`mods/viewer`（檔案和 diff 檢視器）只把底部的按鍵提示固定住，內容仍然從頂端往下讀。AbovePrompt band 本來就貼在輸入框上面，高度固定，不在此列。
+
+1. **操作區固定在底部**：選項列、按鈕、輸入列、按鍵提示放在 pane 最底部的幾行，不隨內容捲動，位置不變。
+2. **底部錨點**：最新的一項貼在操作區正上方，舊的往上推。dock 的 pane 高度是 `bodyRows`，內容不滿一頁時，空白留在上方。inline 的外框會貼合 tree 的高度，所以不留空白，直接從操作區往上長，最高長到 `bodyRows`。
+3. **只捲內容區**：內容超出時可以往上捲看舊的，操作區不動。捲動狀態（例如「↑ 還有 12 行」）顯示在內容區的第一行，不放在操作區。引擎的 body 捲動會捲整棵 tree，所以 mod 要自己切內容區的視窗。做法：hook `ui.scroll`，回傳自己的 offset。內容區高度 = `bodyRows` − 操作區行數 − 捲動提示那一行（有顯示時才扣）。操作區一定要放得下：扣掉操作區後不到 2 行，就不畫捲動提示；一行都不剩，內容區就是 0 行。
+4. **追加型內容不搶焦點**：使用者已經往上捲時，新內容進來不跳回底部，改在操作區上方一行顯示「有新訊息 ↓」，按 End 或按那一行回到底部。使用者本來就在底部時，自動跟著最新的。**快照型內容**（整份重新讀取，例如 forge-stats 的用量和寵物分頁）沒有「新訊息」：重新整理後停在原本那一行，原本在底部的留在底部。
+5. **resize**：先算操作區的高度，內容區在剩下的高度內重新排版，維持底部錨點。原本在底部的仍在底部，原本往上捲的停在同一則。
+6. **操作區高度**：同一個畫面裡固定。捲動內容、內容追加、快照重新整理，都不會改變操作區的高度。只有換卡、換分頁這種使用者自己切換情境的時候才可以變，一變就重新排版，維持底部錨點。forge-stats 的操作區是分頁列加按鍵提示，固定兩行。
+7. **按鍵**（兩邊一致）：↑↓ 一行；PgUp／PgDn 一頁；Home 跳到最舊；End 回到最新。這些鍵只送到握有鍵盤的 pane，滾輪不需要焦點。所以人開窗的路徑（斜線命令）要帶 `$.ui.open({ focus: true })`，並且在第一個 `await` 之前呼叫：`focus` 是請求，只在輸入框是空的時候批准；人正握著 band 或 pane 的元素時會被拒絕，所以從 band 按鈕開窗拿不到鍵盤。session 開始時自動開的窗不帶 `focus`，不搶輸入框。
+
+**測試**（每個 mod 都要有）：
+- 不滿一頁時，dock 的空白在上方，inline 沒有空白。
+- 超出時，捲動前後操作區（forge-stats 的分頁列）所在的螢幕列號不變。這一條是 PM 指定的。
+- End 回到最新，Home 到最舊。
+- resize 後，原本在底部的仍在底部。
+- 快照型重新整理後停在原本那一行。追加型在往上捲時出現「有新訊息 ↓」，在底部時跟著最新。
