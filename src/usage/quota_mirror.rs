@@ -493,6 +493,9 @@ pub struct MergedQuota {
     pub token_expires_at: Option<i64>,
     pub placeholder: bool,
     pub had_observation: bool,
+    /// True when any usable row's record carried a window, even if the merge then dropped them all
+    /// (false for placeholder, refusal-only and token-state-only, 21.6 shape c).
+    pub had_window: bool,
     pub level: &'static str,
     pub hosts: Vec<String>,
     pub multi_host: bool,
@@ -538,6 +541,7 @@ pub fn merge_quota(view: &QuotaView, ns: Option<&str>, now_s: i64) -> MergedQuot
     let mut refusal: Option<MergedRefusal> = None;
     let mut had_observation = false;
     let mut placeholder = false;
+    let mut had_window = false;
     let mut live_rows: Vec<(String, String)> = Vec::new();
     let mut mark_live = |w: &str, role: &str| match live_rows.iter_mut().find(|(k, _)| k == w) {
         Some(e) => e.1 = role.to_string(),
@@ -556,6 +560,9 @@ pub fn merge_quota(view: &QuotaView, ns: Option<&str>, now_s: i64) -> MergedQuot
         }
         if let Some(t) = rec.token_state_at {
             stamps.push(t);
+        }
+        if !rec.windows.is_empty() {
+            had_window = true;
         }
         if !stamps.is_empty() {
             had_observation = true;
@@ -694,6 +701,7 @@ pub fn merge_quota(view: &QuotaView, ns: Option<&str>, now_s: i64) -> MergedQuot
         token_expires_at: expiry.map(|e| e.1),
         placeholder: placeholder && !had_observation,
         had_observation,
+        had_window,
         level,
         multi_host: live_rows.len() >= 2,
         hosts: live_rows.into_iter().map(|e| e.1).collect(),

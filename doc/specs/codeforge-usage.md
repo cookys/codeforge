@@ -94,6 +94,7 @@ model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註
   `$.fs` 沒有 no-follow，改為讀後再驗大小與 stat。最多 64 個 provider 目錄、256 個 view，其餘只計數。
 - 過渡：`<live_dir>/quota/` 不存在時，statusline 與 forge-stats 的輸出和 G36 完全相同（測試逐位元組比對）；
   存在後改畫 mirror 的晶片，G36 快照晶片不再出現。
+- 只有 token 狀態、從沒有過 window 的記錄（契約 §21.6 shape c）畫「沒有用量資料」，不是「過期或已重置，等新觀察」（後者只給有過 window 但全被丟掉的）；`--json` 的 `state` 為 `no_usage`。
 - `--json` 輸出解讀後的清單（已套用丟棄規則），schema `codeforge.usage-accounts/1`。
 
 ## 指令

@@ -44,19 +44,49 @@ static RESOLVED: OnceLock<(PathBuf, LiveBaseSource)> = OnceLock::new();
 /// Resolve the live-context base directory per the fixed candidate order.
 /// Idempotent per process (cached in a `OnceLock`).
 pub fn resolve_live_base() -> (PathBuf, LiveBaseSource) {
-    RESOLVED.get_or_init(resolve_live_base_uncached).clone()
+    RESOLVED
+        .get_or_init(|| resolve_live_base_with(&LiveEnv::from_process_env()))
+        .clone()
 }
 
-fn resolve_live_base_uncached() -> (PathBuf, LiveBaseSource) {
+/// Env-derived inputs and the `findmnt` program of the base resolution.
+/// Parameters, not reads inside the resolver: env-var test seams race under
+/// cargo test (`set_var` is process-global, and a replaced `PATH` breaks
+/// every concurrently spawned command).
+struct LiveEnv {
+    /// `AUTOPILOT_LIVE_DIR`
+    override_dir: Option<String>,
+    /// `XDG_RUNTIME_DIR`
+    xdg_runtime_dir: Option<String>,
+    /// `CODEFORGE_PROC_MOUNTS` (None = the real `/proc/mounts`)
+    proc_mounts: Option<PathBuf>,
+    /// The program run as `findmnt` (production: the bare name, PATH-searched).
+    findmnt: PathBuf,
+}
+
+impl LiveEnv {
+    fn from_process_env() -> Self {
+        LiveEnv {
+            override_dir: std::env::var("AUTOPILOT_LIVE_DIR").ok(),
+            xdg_runtime_dir: std::env::var("XDG_RUNTIME_DIR").ok(),
+            proc_mounts: std::env::var("CODEFORGE_PROC_MOUNTS")
+                .ok()
+                .map(PathBuf::from),
+            findmnt: PathBuf::from("findmnt"),
+        }
+    }
+}
+
+fn resolve_live_base_with(env: &LiveEnv) -> (PathBuf, LiveBaseSource) {
     let uid = current_uid();
 
     let mut candidates: Vec<(PathBuf, LiveBaseSource)> = Vec::new();
-    if let Ok(over) = std::env::var("AUTOPILOT_LIVE_DIR") {
+    if let Some(over) = &env.override_dir {
         if !over.is_empty() {
             candidates.push((PathBuf::from(over), LiveBaseSource::Override));
         }
     }
-    if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
+    if let Some(xdg) = &env.xdg_runtime_dir {
         if !xdg.is_empty() {
             candidates.push((
                 PathBuf::from(xdg).join("autopilot"),
@@ -74,7 +104,7 @@ fn resolve_live_base_uncached() -> (PathBuf, LiveBaseSource) {
     ));
 
     for (dir, source) in candidates {
-        if is_ram_backed(&dir) {
+        if is_ram_backed(&dir, env) {
             return (dir, source);
         }
     }
@@ -115,15 +145,15 @@ fn current_uid() -> u32 {
 
 /// True if `dir` (or its nearest existing ancestor, if `dir` doesn't exist
 /// yet) sits on a `tmpfs`/`ramfs` mount.
-fn is_ram_backed(dir: &Path) -> bool {
+fn is_ram_backed(dir: &Path, env: &LiveEnv) -> bool {
     // Windows has no tmpfs/ramfs (and no findmnt or /proc/mounts): never RAM-backed.
     if cfg!(windows) {
         return false;
     }
     let probe_path = nearest_existing_ancestor(dir);
-    match probe_fstype_findmnt(&probe_path) {
+    match probe_fstype_findmnt(&env.findmnt, &probe_path) {
         Some(fstype) => is_ram_fstype(&fstype),
-        None => match probe_fstype_proc_mounts(&probe_path) {
+        None => match probe_fstype_proc_mounts(env.proc_mounts.as_deref(), &probe_path) {
             Some(fstype) => is_ram_fstype(&fstype),
             None => false,
         },
@@ -153,8 +183,8 @@ fn nearest_existing_ancestor(dir: &Path) -> PathBuf {
 /// Shell out to `findmnt -T <dir> -o FSTYPE -n`. Returns `None` if the
 /// binary is absent or the invocation fails (caller falls back to
 /// `/proc/mounts`).
-fn probe_fstype_findmnt(dir: &Path) -> Option<String> {
-    let output = std::process::Command::new("findmnt")
+fn probe_fstype_findmnt(program: &Path, dir: &Path) -> Option<String> {
+    let output = std::process::Command::new(program)
         .arg("-T")
         .arg(dir)
         .arg("-o")
@@ -175,11 +205,9 @@ fn probe_fstype_findmnt(dir: &Path) -> Option<String> {
 
 /// Fallback fstype probe: longest-prefix match over `/proc/mounts` (or the
 /// path in `CODEFORGE_PROC_MOUNTS`, for tests).
-fn probe_fstype_proc_mounts(dir: &Path) -> Option<String> {
-    let mounts_path = std::env::var("CODEFORGE_PROC_MOUNTS")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/proc/mounts"));
-    let content = fs::read_to_string(&mounts_path).ok()?;
+fn probe_fstype_proc_mounts(mounts_override: Option<&Path>, dir: &Path) -> Option<String> {
+    let mounts_path = mounts_override.unwrap_or_else(|| Path::new("/proc/mounts"));
+    let content = fs::read_to_string(mounts_path).ok()?;
 
     let target = dir.to_string_lossy();
     let mut best: Option<(usize, String)> = None;
@@ -289,8 +317,8 @@ mod tests {
     #[cfg(unix)]
     use std::sync::Mutex;
 
-    // Serializes tests that mutate process-global env vars — `cargo test`
-    // runs tests in threads within one process, and env vars are global.
+    // Serializes the tests that touch the process-global `WARNED` flag.
+    // They pass env values as `LiveEnv` parameters and never mutate env vars.
     #[cfg(unix)]
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -307,19 +335,6 @@ mod tests {
         dir
     }
 
-    /// Replaces PATH entirely with `dir` for the duration of `f` — a real
-    /// system `findmnt` anywhere else on PATH would otherwise answer ahead
-    /// of (or instead of) the fixture we're trying to simulate, since
-    /// `Command::new("findmnt")` does a normal PATH search.
-    #[cfg(unix)]
-    fn with_only_path<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
-        let orig = std::env::var("PATH").unwrap_or_default();
-        std::env::set_var("PATH", dir);
-        let result = f();
-        std::env::set_var("PATH", orig);
-        result
-    }
-
     /// (a) fake findmnt returning tmpfs for the XDG candidate ⇒ chosen.
     #[cfg(unix)]
     #[test]
@@ -328,15 +343,17 @@ mod tests {
         let bin_dir = fake_findmnt_dir("#!/bin/sh\necho tmpfs\n");
         let xdg_dir = tempfile::tempdir().unwrap();
 
-        std::env::remove_var("AUTOPILOT_LIVE_DIR");
-        std::env::set_var("XDG_RUNTIME_DIR", xdg_dir.path());
+        let env = LiveEnv {
+            override_dir: None,
+            xdg_runtime_dir: Some(xdg_dir.path().to_string_lossy().into_owned()),
+            proc_mounts: None,
+            findmnt: bin_dir.path().join("findmnt"),
+        };
 
-        let (base, source) = with_only_path(bin_dir.path(), resolve_live_base_uncached_for_test);
+        let (base, source) = resolve_live_base_with(&env);
 
         assert_eq!(source, LiveBaseSource::XdgRuntime);
         assert_eq!(base, xdg_dir.path().join("autopilot"));
-
-        std::env::remove_var("XDG_RUNTIME_DIR");
     }
 
     /// (b) fake findmnt returning ext4 for every candidate ⇒ base is
@@ -348,18 +365,20 @@ mod tests {
         let bin_dir = fake_findmnt_dir("#!/bin/sh\necho ext4\n");
         let xdg_dir = tempfile::tempdir().unwrap();
 
-        std::env::remove_var("AUTOPILOT_LIVE_DIR");
-        std::env::set_var("XDG_RUNTIME_DIR", xdg_dir.path());
+        let env = LiveEnv {
+            override_dir: None,
+            xdg_runtime_dir: Some(xdg_dir.path().to_string_lossy().into_owned()),
+            proc_mounts: None,
+            findmnt: bin_dir.path().join("findmnt"),
+        };
         WARNED.store(false, Ordering::SeqCst);
 
-        let (base, source) = with_only_path(bin_dir.path(), resolve_live_base_uncached_for_test);
+        let (base, source) = resolve_live_base_with(&env);
 
         assert_eq!(source, LiveBaseSource::Fallback);
         assert_eq!(base, dirs::home_dir().unwrap().join(".autopilot"));
         // Warned exactly once for this resolution.
         assert!(WARNED.load(Ordering::SeqCst));
-
-        std::env::remove_var("XDG_RUNTIME_DIR");
     }
 
     /// (c) findmnt absent + CODEFORGE_PROC_MOUNTS fixture ⇒ /proc/mounts
@@ -383,18 +402,18 @@ mod tests {
         )
         .unwrap();
 
-        std::env::remove_var("AUTOPILOT_LIVE_DIR");
-        std::env::set_var("XDG_RUNTIME_DIR", xdg_dir.path());
-        std::env::set_var("CODEFORGE_PROC_MOUNTS", mounts.path());
+        let env = LiveEnv {
+            override_dir: None,
+            xdg_runtime_dir: Some(xdg_dir.path().to_string_lossy().into_owned()),
+            proc_mounts: Some(mounts.path().to_path_buf()),
+            // An absolute path that does not exist: findmnt is missing.
+            findmnt: empty_bin_dir.path().join("findmnt"),
+        };
 
-        let (base, source) =
-            with_only_path(empty_bin_dir.path(), resolve_live_base_uncached_for_test);
+        let (base, source) = resolve_live_base_with(&env);
 
         assert_eq!(source, LiveBaseSource::XdgRuntime);
         assert_eq!(base, xdg_path);
-
-        std::env::remove_var("XDG_RUNTIME_DIR");
-        std::env::remove_var("CODEFORGE_PROC_MOUNTS");
     }
 
     /// (d) ext4 override + tmpfs XDG ⇒ XDG chosen (override rejected, not
@@ -421,19 +440,17 @@ mod tests {
         .unwrap();
 
         let empty_bin_dir = tempfile::tempdir().unwrap();
-        std::env::set_var("AUTOPILOT_LIVE_DIR", override_dir.path());
-        std::env::set_var("XDG_RUNTIME_DIR", xdg_dir.path());
-        std::env::set_var("CODEFORGE_PROC_MOUNTS", mounts.path());
+        let env = LiveEnv {
+            override_dir: Some(override_dir.path().to_string_lossy().into_owned()),
+            xdg_runtime_dir: Some(xdg_dir.path().to_string_lossy().into_owned()),
+            proc_mounts: Some(mounts.path().to_path_buf()),
+            findmnt: empty_bin_dir.path().join("findmnt"),
+        };
 
-        let (base, source) =
-            with_only_path(empty_bin_dir.path(), resolve_live_base_uncached_for_test);
+        let (base, source) = resolve_live_base_with(&env);
 
         assert_eq!(source, LiveBaseSource::XdgRuntime);
         assert_eq!(base, xdg_path);
-
-        std::env::remove_var("AUTOPILOT_LIVE_DIR");
-        std::env::remove_var("XDG_RUNTIME_DIR");
-        std::env::remove_var("CODEFORGE_PROC_MOUNTS");
     }
 
     /// (g) newly created ancestors are 0700 too, not just the leaf — the
@@ -536,14 +553,5 @@ mod tests {
         let long_input: String = "a".repeat(70);
         let expected: String = "a".repeat(64);
         assert_eq!(sanitize_session_id(&long_input), expected);
-    }
-
-    // Test-only re-export so tests can call the uncached resolver directly
-    // (the real `resolve_live_base()` caches in a `OnceLock` for the life
-    // of the process, which would make every test after the first see a
-    // stale answer).
-    #[cfg(unix)]
-    fn resolve_live_base_uncached_for_test() -> (PathBuf, LiveBaseSource) {
-        resolve_live_base_uncached()
     }
 }
