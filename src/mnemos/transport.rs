@@ -117,10 +117,75 @@ pub async fn post_attempt<T: Serialize>(
     }
 }
 
+/// `X-Mnemos-Client: codeforge` on every request to Mnemos, so Mnemos can count queries per
+/// client (operator d-93ea0a99). Header names are lowercase on the wire.
+const CLIENT_HEADER: &str = "x-mnemos-client";
+const CLIENT_NAME: &str = "codeforge";
+
+/// The default headers of every client that talks to Mnemos.
+pub fn mnemos_headers() -> reqwest::header::HeaderMap {
+    let mut h = reqwest::header::HeaderMap::new();
+    h.insert(
+        reqwest::header::HeaderName::from_static(CLIENT_HEADER),
+        reqwest::header::HeaderValue::from_static(CLIENT_NAME),
+    );
+    h
+}
+
+/// Test server: accepts one HTTP request on a loopback port, answers 200
+/// `{"status":"ok"}`, and hands back the raw request head.
+#[cfg(test)]
+pub(crate) fn one_shot_server() -> (String, std::thread::JoinHandle<String>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/v1/test", listener.local_addr().unwrap());
+    // A client that never connects (a failure, or an env proxy routing the request elsewhere)
+    // must fail the test, not hang it: accept is polled against a deadline.
+    listener.set_nonblocking(true).unwrap();
+    let handle = std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut s = loop {
+            match listener.accept() {
+                Ok((s, _)) => break s,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "no request reached the test server within 10 s"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("accept: {e}"),
+            }
+        };
+        s.set_nonblocking(false).unwrap();
+        s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut head = Vec::new();
+        let mut chunk = [0u8; 1024];
+        while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+            let n = s.read(&mut chunk).unwrap();
+            if n == 0 {
+                break;
+            }
+            head.extend_from_slice(&chunk[..n]);
+        }
+        let body = br#"{"status":"ok"}"#;
+        write!(
+            s,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .unwrap();
+        s.write_all(body).unwrap();
+        String::from_utf8_lossy(&head).to_ascii_lowercase()
+    });
+    (url, handle)
+}
+
 /// Build a reqwest client with a sane timeout for ship/cite calls.
 pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
+        .default_headers(mnemos_headers())
         .build()
         .unwrap_or_default()
 }
@@ -152,6 +217,19 @@ mod tests {
     fn classify_5xx_retryable() {
         assert!(matches!(classify(500, None), AttemptOutcome::Retryable(_)));
         assert!(matches!(classify(503, None), AttemptOutcome::Retryable(_)));
+    }
+
+    /// The header reaches the wire: a real loopback server reads the request head.
+    #[tokio::test]
+    async fn post_attempt_sends_the_mnemos_client_header() {
+        let (url, server) = one_shot_server();
+        let out = post_attempt(&http_client(), &url, None, &serde_json::json!({"k": 1})).await;
+        let head = server.join().unwrap();
+        assert!(
+            head.contains("\r\nx-mnemos-client: codeforge\r\n"),
+            "request head: {head}"
+        );
+        assert_eq!(out, AttemptOutcome::Success);
     }
 
     #[tokio::test(start_paused = true)]
