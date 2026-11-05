@@ -139,8 +139,25 @@ pub(crate) fn one_shot_server() -> (String, std::thread::JoinHandle<String>) {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/v1/test", listener.local_addr().unwrap());
+    // A client that never connects (a failure, or an env proxy routing the request elsewhere)
+    // must fail the test, not hang it: accept is polled against a deadline.
+    listener.set_nonblocking(true).unwrap();
     let handle = std::thread::spawn(move || {
-        let (mut s, _) = listener.accept().unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let mut s = loop {
+            match listener.accept() {
+                Ok((s, _)) => break s,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "no request reached the test server within 10 s"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => panic!("accept: {e}"),
+            }
+        };
+        s.set_nonblocking(false).unwrap();
         s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         let mut head = Vec::new();
         let mut chunk = [0u8; 1024];
