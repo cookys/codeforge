@@ -372,6 +372,7 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 
 - 預設 local-first，bind `127.0.0.1`，對齊 Mnemos `:8845`（spec 10 §3.2 / CLAUDE.md §3.2）。
 - `MNEMOS_TOKEN` 若有 → `Authorization: Bearer <token>`（Sprint 1 localhost 多半不需要，保留鉤子）。
+- 每個送往 Mnemos 的請求（ship、cite、context、health probe）都帶 `X-Mnemos-Client: codeforge`，讓 Mnemos 依 client 統計查詢次數（operator d-93ea0a99）；來源 `src/mnemos/transport.rs` 的 `mnemos_headers()`。
 
 ---
 
