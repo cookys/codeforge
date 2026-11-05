@@ -116,6 +116,11 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   原本的速度 34 與最近請求 ≥46 兩欄連同 `turn.step` 量測整包移給 autopilot 的 live mod（B32，owner 卡 d-7b0f7a4a；量法見
   autopilot BL-0359，正確口徑出自 codeforge `405b214` 的 `stepRate`）。沒有 autopilot 時 forge-stats 也不顯示速度。
   `doc/plans/2026-10-31-forge-columns.md` §2.5 的速度與最近請求兩欄已失效。
+- **prompt 提示行的尾巴（PromptHint tail，2026-11-05，PM 採用 slot 調查的建議）**：forge-stats 只設 `PromptHint` 的
+  `tail`，不改寫 `hint`（改寫會蓋掉引擎的提示與 pills）。內容是這個 session 的燈號：「記憶 N 條 · 大腦 已連線」，記憶在前；
+  hidden 的燈不寫，兩個都 hidden 就不加 tail。引擎把 tail 灰色接在提示行尾，行尾放不下時切掉並補「…」，剩不到 4 欄就整段
+  不畫（實測 120 欄完整、62–64 欄被切、60 欄消失）。prompt 周圍的位置由上往下：band（AbovePrompt）→ 輸入行 →
+  `$.ui.status`（引擎加「⚠ plugin:」前綴，只放真的警告）→ statusline → 提示行（含 tail）→ SessionMode 標籤。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、縮圖；tok/s 歸 autopilot）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 
