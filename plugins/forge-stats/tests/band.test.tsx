@@ -494,3 +494,14 @@ test('hidden lights are left out of the tail; with both hidden the hint passes u
   await ui.unmount()
   expect(seen.at(-1)).toEqual({ hint: '? for shortcuts', tail: undefined })
 })
+
+test('a tail a plugin above already set stays, forge-stats\' lights follow it', async ($, on) => {
+  world(on)
+  const seen: { hint?: string; tail?: string }[] = []
+  hintBeneath(on, seen)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...HINT, props: { ...HINT.props, tail: 'other plugin' } })
+  await ui.unmount()
+  expect(seen.at(-1)).toEqual({ hint: '? for shortcuts', tail: 'other plugin · memory 12 entries · brain connected' })
+})
