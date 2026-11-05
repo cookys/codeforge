@@ -256,7 +256,7 @@ fleet upload cap.txt  --name <名稱>.txt  --mime text/plain --summary "<說明>
 tmux kill-session -t cap
 ```
 
-回報裡附兩個 blob sha。`--plugin-dir` 指向開發中的 worktree 時，引擎會在該目錄產生 `tsconfig.json`，拍完要刪掉。兩個 plugin 都在開發中時（例如 G33 同時改 live mod 和 forge-stats），各給一個 `--plugin-dir`：autopilot 是 worktree 根目錄，forge-stats 是它自己的 plugin 根目錄（G33 前是 `<codeforge>/.claude/skills/forge-stats`，G33 搬移後以新位置為準）。拍之前用 `/plugin` 確認載入的是開發中的版本。
+回報裡附兩個 blob sha。`--plugin-dir` 指向開發中的 worktree 時，引擎會在該目錄產生 `tsconfig.json`；拍完用 `git status` 看，只有未追蹤（`??`）的才刪。forge-stats 的 `tsconfig.json` 有進 git，不要刪。兩個 plugin 都在開發中時（例如 G33 同時改 live mod 和 forge-stats），各給一個 `--plugin-dir`：autopilot 是 worktree 根目錄，forge-stats 是它自己的 plugin 根目錄（G33 前是 `<codeforge>/.claude/skills/forge-stats`，G33 搬移後以新位置為準）。拍之前用 `/plugin` 確認載入的是開發中的版本。
 
 淺色截圖：先在臨時 session 裡用 `/theme` 把 Claude Code 主題切成淺色，再拍，HTML 加 `--light`（`scripts/ansi2html.py` 的選項，只改 HTML 底色）。主題是使用者層級的設定，拍完一定要用 `/theme` 切回原本的主題。只把深色截圖套上淺色 HTML 底色，證明不了主題鍵在淺色主題下讀得出來。
 
@@ -317,7 +317,7 @@ tmux kill-session -t cap
 4. **追加型內容不搶焦點**：使用者已經往上捲時，新內容進來不跳回底部，改在操作區上方一行顯示「有新訊息 ↓」，按 End 或按那一行回到底部。使用者本來就在底部時，自動跟著最新的。**快照型內容**（整份重新讀取，例如 forge-stats 的用量和寵物分頁）沒有「新訊息」：重新整理後停在原本那一行，原本在底部的留在底部。
 5. **resize**：先算操作區的高度，內容區在剩下的高度內重新排版，維持底部錨點。原本在底部的仍在底部，原本往上捲的停在同一則。
 6. **操作區高度**：同一個畫面裡固定。捲動內容、內容追加、快照重新整理，都不會改變操作區的高度。只有換卡、換分頁這種使用者自己切換情境的時候才可以變，一變就重新排版，維持底部錨點。forge-stats 的操作區是分頁列加按鍵提示，固定兩行。
-7. **按鍵**（兩邊一致）：↑↓ 一行；PgUp／PgDn 一頁；Home 跳到最舊；End 回到最新。
+7. **按鍵**（兩邊一致）：↑↓ 一行；PgUp／PgDn 一頁；Home 跳到最舊；End 回到最新。這些鍵只送到握有鍵盤的 pane，滾輪不需要焦點。所以人開窗的路徑（斜線命令）要帶 `$.ui.open({ focus: true })`，並且在第一個 `await` 之前呼叫：`focus` 是請求，只在輸入框是空的時候批准；人正握著 band 或 pane 的元素時會被拒絕，所以從 band 按鈕開窗拿不到鍵盤。session 開始時自動開的窗不帶 `focus`，不搶輸入框。
 
 **測試**（每個 mod 都要有）：
 - 不滿一頁時，dock 的空白在上方，inline 沒有空白。
