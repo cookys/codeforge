@@ -38,6 +38,7 @@ import type { DirEntry, QuotaState } from './quota-view'
 import { byteLength, parseQuotaView, QUOTA_CONTRACT } from './quota'
 import { CONTROL_ROWS, clipCells, newPaneScroll, scrolled, windowOf } from './pane-view'
 import type { PaneScroll } from './pane-view'
+import { PANEL_REFRESH_MS, panelState, panelTiers } from './panel'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -73,6 +74,8 @@ let layout: Layout = 'band'
 let sid = ''
 // The live base codeforge wrote pet.json into: heartbeats go there, so the statusline finds them.
 let liveBase: string | null = null
+// the pet view refreshPet last read (the panel writer runs outside a render, where the atom is not read)
+let petNow: PetView = { status: 'missing', readAt: 0, writtenAt: null, path: null, pet: null, village: null }
 // The band instance the AbovePrompt hook last drew (its `e.requestId`); null when it passed.
 let bandId: string | null = null
 let bandLastCells: string | null = null
@@ -172,6 +175,7 @@ async function refreshPet($: EngineInterface) {
     }
   }
   const next = parseSnapshot(text, path, Date.now())
+  petNow = next
   await update($, pet, () => next)
   liveBase = liveBaseOf(text === null ? null : path) ?? bases[0] ?? null
   if (liveBase === null || sid === '') return
@@ -333,7 +337,7 @@ async function readChecked($: EngineInterface, path: string, listedSize: number,
 // Bounded: at most 64 provider dirs and 256 views, a view a regular file that is not a link and at most the contract's view cap (checked on the listing and again on the text).
 async function refreshQuota($: EngineInterface, force = false) {
   try {
-    if (!force && Date.now() - drawnAt > QUOTA_WATCH_MS) return
+    if (!force && Date.now() - Math.max(drawnAt, await panelOpenAt($)) > QUOTA_WATCH_MS) return
     const root = await quotaRoot($)
     const dir = root === null ? undefined : await $.fs.stat(root + '/quota').catch(() => undefined)
     if (root === null || dir === undefined || dir.kind !== 'dir' || dir.isLink) {
@@ -386,6 +390,36 @@ async function refreshQuota($: EngineInterface, force = false) {
   } catch {
     // a read that fails keeps what was last read
   }
+}
+
+// When autopilot's integrated panel was last open (its `autopilot.panel_open_at_ms`, design v2 6(f)); 0 without autopilot or before it writes one. Read like the fleet summary.
+async function panelOpenAt($: EngineInterface): Promise<number> {
+  try {
+    const got = await ($.state.get as (ref: { plugin: string; key: string }) => Promise<{ value: unknown }>)({ plugin: 'autopilot', key: 'panel_open_at_ms' })
+    return typeof got.value === 'number' && Number.isFinite(got.value) ? got.value : 0
+  } catch (_e) {
+    return 0
+  }
+}
+
+// The integrated panel's 用量 / 寵物 content (codeforge.panel/1): the pane's own lines per tier width. Written when it changes and at least every PANEL_REFRESH_MS; a write
+// redraws every site that read it while drawing. Never from a render (the host refuses it there).
+let panelLast = ''
+let panelAt = 0
+async function writePanel($: EngineInterface) {
+  const now = Date.now()
+  const tr = t()
+  const usage = await readUsage($, now)
+  const quota = quotaState.present ? { state: quotaState, nowMs: now } : null
+  const body = {
+    usage: panelTiers(cols => usageLines(usage, cols, tr, now, quota)),
+    pet: { title: tr('tabPet'), sprite: petNow.village?.sprite ?? null, tiers: panelTiers(cols => petLines(petNow, cols, tr, now, false)) },
+  }
+  const text = JSON.stringify(body)
+  if (text === panelLast && now - panelAt < PANEL_REFRESH_MS) return
+  await $.state.set({ plugin: 'forge-stats', key: 'panel' }, panelState(now, body.usage, body.pet))
+  panelLast = text
+  panelAt = now
 }
 
 const money = (c: number) => '$' + c.toFixed(2)
@@ -526,6 +560,9 @@ export const register: Register = on => {
     // idle animation: 2 fps, interval written as a literal (pixel-pet plan §2.5)
     $.clock.every(500, () => void stepSprite($))
     $.clock.every(2000, () => void writeHeartbeat($))
+    // the integrated panel's content: first now, then every 15 s (written only when it changed, or every 30 s)
+    await writePanel($)
+    $.clock.every(15_000, () => void writePanel($))
     return next(e)
   })
 
