@@ -1,5 +1,11 @@
 # CLAUDE.md — CodeForge
 
+## Goal
+- End goal: operator 的 CLI dashboard：Claude Code 的 statusline 和 mod，不用切視窗就看得到用量、配額、fleet、記憶狀態。長期願景用 repo 原話：「把 MUD 搬上來。先打鐵，再上場。」
+- Current milestone: G40 配額顯示：用真的本機鏡像資料顯示正確。這項卡在新帳號註冊 d-2a19fdb5。
+- Not goals now: MUD 後段、自己產生配額資料、hosted CI。
+- Source: operator 已確認。；操作員 d-fb9989dc 定案（2026-11-05）
+
 Claude Code 工作指南。
 
 ## Project Overview
