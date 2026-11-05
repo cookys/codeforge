@@ -770,6 +770,26 @@ test('the quota mirror keeps refreshing while autopilot\'s panel is open, with f
   expect(f.lists.filter(d => d === LIVE + '/quota').length).toBeGreaterThan(before)
 })
 
+const AUTOPILOT_FUTURE_STAMP = {
+  name: 'autopilot',
+  register: ((on: any) => {
+    on('session.start', async ($: any, e: any, next: any) => {
+      await $.state.set({ plugin: 'autopilot', key: 'panel_open_at_ms' }, Number.MAX_SAFE_INTEGER)
+      return next(e)
+    })
+  }) as never,
+}
+
+test('a panel_open_at_ms from the future counts as no panel: the undrawn 15 s tick reads no quota mirror', { plugins: [AUTOPILOT_FUTURE_STAMP] }, async ($, on) => {
+  const f = mirror(on, { ...viewFiles(['claude:work']), ...NS })
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const before = f.lists.filter(d => d === LIVE + '/quota').length
+  await clock.advance(15_000)
+  expect(f.lists.filter(d => d === LIVE + '/quota').length).toBe(before)
+})
+
 test('without autopilot\'s panel and nothing drawn, the 15 s tick reads no quota mirror', async ($, on) => {
   const f = mirror(on, { ...viewFiles(['claude:work']), ...NS })
   const clock = mock.clock(on, { now: 1_000_000 })
