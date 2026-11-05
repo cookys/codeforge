@@ -15,22 +15,26 @@ export type PaneWindow = {
   top: number
   // blank rows above the content (dock, short content only)
   pad: number
-  // the "n more" row shows (the content overflows)
+  // the content overflows (the mod windows it and the tree carries the spare row)
   overflow: boolean
+  // the "n more" row shows: it overflows and the room holds the row and at least one content row
+  indicator: boolean
   above: number
   below: number
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
-const roomOf = (bodyRows: number) => Math.max(1, bodyRows - CONTROL_ROWS)
+const roomOf = (bodyRows: number) => Math.max(0, bodyRows - CONTROL_ROWS)
 
 export function windowOf(total: number, bodyRows: number, dock: boolean, st: PaneScroll): PaneWindow {
   const room = roomOf(bodyRows)
-  if (total <= room) return { area: total, top: 0, pad: dock ? room - total : 0, overflow: false, above: 0, below: 0 }
-  const area = Math.max(1, room - 1)
+  if (total <= room) return { area: total, top: 0, pad: dock ? room - total : 0, overflow: false, indicator: false, above: 0, below: 0 }
+  // the operation area always fits: below two rows of room the indicator goes, below one the content too
+  const indicator = room >= 2
+  const area = indicator ? room - 1 : room
   const maxTop = total - area
   const top = st.bottom ? maxTop : clamp(st.top, 0, maxTop)
-  return { area, top, pad: 0, overflow: true, above: top, below: maxTop - top }
+  return { area, top, pad: 0, overflow: true, indicator, above: top, below: maxTop - top }
 }
 
 // What one `ui.scroll` of the person does. `by` is the engine's: an arrow a row, a page key `bodyRows`, Home / End `contentRows` (signed), the wheel a few rows.

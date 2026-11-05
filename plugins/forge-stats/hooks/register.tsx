@@ -534,9 +534,10 @@ export const register: Register = on => {
     if (verb === 'layout') {
       if (arg !== 'band' && arg !== 'pane') return { text: t()('layoutUsage', { layout }) }
       layout = arg
+      // the open asks for the keys before any wait (§13 rule 7)
+      if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title'), focus: true })
       await $.store.set('layout', arg)
       bandLastCells = null
-      if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title'), focus: true })
       $.ui.invalidate('ui.render')
       await writeHeartbeat($)
       return { text: t()('layoutSet', { layout: arg }) }
@@ -683,7 +684,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         {Array.from({ length: win.pad }, (_, i) => <Text key={'pad' + i}> </Text>)}
-        {win.overflow ? <Text key="more" dimColor wrap="truncate">{clipCells(more, cols)}</Text> : null}
+        {win.indicator ? <Text key="more" dimColor wrap="truncate">{clipCells(more, cols)}</Text> : null}
         {shown.map((l, i) => row(l, 'l' + (win.top + i)))}
         {petBlock}
         {strip}
