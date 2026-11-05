@@ -270,7 +270,7 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 
 **Area**: `plugins/forge-stats/.claude-plugin/plugin.json`、`plugins/forge-stats/README.md`
 **Effort**: XS
-**Premise**: 2026-11-05 在 aimax395 升 0.0.9 時 `claude plugin validate plugins/forge-stats` 通過，但有 3 個提醒：plugin.json 沒有 `author`；沒有 icon（ICON_MISSING，要 512–2048 px 的方形 PNG）；README 有個連結 `http://127.0.0.1:8845/v1/ingest/ledger` 被當成 documentationUrl，因為不是 https:// 被丟掉（LISTING_URL_SCHEME）。都不影響載入，`claude plugin test` 146/146。PM 說不擋任何事。
+**Premise**: 2026-11-05 升 0.0.9 時 `claude plugin validate plugins/forge-stats` 通過，但有 3 個提醒：plugin.json 沒有 `author`；沒有 icon（ICON_MISSING，要 512–2048 px 的方形 PNG）；README 有個連結 `http://127.0.0.1:8845/v1/ingest/ledger` 被當成 documentationUrl，因為不是 https:// 被丟掉（LISTING_URL_SCHEME）。都不影響載入，`claude plugin test` 146/146。PM 說不擋任何事。
 **Trigger**: 下次動 forge-stats 的 manifest 或 README，或要把 mod 上架到 plugin 目錄。
 **Not done**: 只記錄。
 
