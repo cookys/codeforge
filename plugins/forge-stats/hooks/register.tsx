@@ -580,10 +580,15 @@ export const register: Register = on => {
     // the Raster is atomic (rule row + sprite block): when it does not fit the content area the text-only pet lines are drawn instead of a sliced Raster
     const spriteFrame0 = sprite === null ? null : halfBlockCells(sprite, spriteFrame)
     const blockRows = spriteFrame0 === null ? 0 : side ? Math.max(spriteFrame0.rows, petPart.length) : spriteFrame0.rows + 1 + petPart.length
+    // not whole with the rule row: drop the rule (the tab strip names the tab) and keep the Raster; still not: the stats alone, no art
+    let withRule = true
     if (sprite !== null && 1 + blockRows > room) {
-      sprite = null
-      petPart = petLines(p, cols, tr, Date.now())
-    }
+      withRule = false
+      if (blockRows > room) {
+        sprite = null
+        petPart = petLines(p, cols, tr, Date.now(), false)
+      }
+    } else if (sprite === null && paneTab === 'pet' && 1 + petPart.length > room) withRule = false
 
     const now = Date.now()
     const clockMs = Date.now()
@@ -594,7 +599,7 @@ export const register: Register = on => {
       const age = usage.generatedAt === null ? null : Math.floor((now - usage.generatedAt) / 60_000)
       lines.push(rule(tr('usage'), cols, age === null ? undefined : tr('usageAge', { n: age })), ...usageLines(usage, cols, tr, now, { state: quotaState, nowMs: clockMs }))
     } else {
-      lines.push(rule(tr('pet'), cols))
+      if (withRule) lines.push(rule(tr('pet'), cols))
       if (sprite === null) lines.push(...petPart)
     }
 

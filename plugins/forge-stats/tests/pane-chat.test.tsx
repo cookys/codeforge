@@ -206,3 +206,27 @@ test('pane-view arithmetic: window, clamps and the cell clip', () => {
   expect(scrolled(st, 5, { by: -1, bodyRows: 12, contentRows: 5 })).toBe(st)
   expect(clipCells('你好嗎', 5)).toBe('你好')
 })
+
+test('the sprite that does not fit with its rule row drops the rule and keeps the Raster; if it still does not fit, the stats alone without art', async ($, on) => {
+  world(on, { pet: { ...PET_SNAP, pet: { ...PET_SNAP.pet, strategy: null } } })
+  await start($)
+  const tall = await $.ui.mount(target(60))
+  const rows = Number((await tall.find({ type: 'Raster' }))?.props?.rows)
+  await tall.unmount()
+  // the control rows + the sprite block exactly (11 for a 9-row sprite): no room left for the rule row
+  const fit = await $.ui.mount(target(rows + 2))
+  const t = await fit.drawn()
+  expect(Number((await fit.find({ type: 'Raster' }))?.props?.rows)).toBe(rows)
+  expect(rowsOf(t).some(r => /▾ Pet/.test(r))).toBe(false)
+  expect(kids(t).length).toBeLessThanOrEqual(rows + 2)
+  expect(rowsOf(t).some(r => /^(↑ \d+ more|↓ \d+)/.test(r))).toBe(false)
+  await fit.unmount()
+  // bodyRows 6: not even the block fits: stats only, no Raster, no ASCII art, no overflow row
+  const small = await $.ui.mount(target(6))
+  const s = await small.drawn()
+  expect(await small.find({ type: 'Raster' })).toBe(undefined)
+  expect(await small.find({ type: 'Text', text: /_~\^~\^~_/ })).toBe(undefined)
+  expect(rowsOf(s).some(r => /^(↑ \d+ more|↓ \d+)/.test(r))).toBe(false)
+  expect(kids(s).length).toBeLessThanOrEqual(6)
+  expect((await small.find({ type: 'Text', text: /^Ferris$/ })) !== undefined).toBe(true)
+})
