@@ -41,6 +41,10 @@ const world = (on: Parameters<TestBody>[1], w: { usage?: unknown; pet?: unknown;
     return { value: { isPlaced: true } }
   })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('store.set', (_, e) => {
+    w.log?.push('store set ' + e.key)
+    return { value: undefined }
+  })
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/t' : undefined }))
   on('fs.stat', (_, e) => {
     if (e.path.endsWith('/.autopilot/quota')) w.log?.push('stat quota')
@@ -202,7 +206,15 @@ test('pane-view arithmetic: window, clamps and the cell clip', () => {
   const st = newPaneScroll()
   expect(windowOf(3, 12, true, st)).toMatchObject({ area: 3, pad: 7, overflow: false })
   expect(windowOf(3, 12, false, st)).toMatchObject({ pad: 0 })
-  expect(windowOf(30, 12, true, st)).toMatchObject({ area: 9, top: 21, above: 21, below: 0, overflow: true })
+  expect(windowOf(30, 12, true, st)).toMatchObject({ area: 9, top: 21, above: 21, below: 0, overflow: true, indicator: true })
+  // a room of one row: no indicator, the one row is content; no room: no content; the controls always fit
+  for (const bodyRows of [1, 2, 3, 4, 5]) {
+    const w = windowOf(2 + bodyRows, bodyRows, true, st)
+    expect(w.overflow).toBe(true)
+    expect((w.indicator ? 1 : 0) + w.area + 2).toBe(Math.max(2, bodyRows))
+  }
+  expect(windowOf(2, 3, true, st)).toMatchObject({ area: 1, top: 1, overflow: true, indicator: false })
+  expect(windowOf(2, 2, true, st)).toMatchObject({ area: 0, overflow: true, indicator: false })
   expect(scrolled(st, 30, { by: -1, bodyRows: 12, contentRows: 13 })).toEqual({ bottom: false, top: 20 })
   expect(scrolled(st, 30, { by: -12, bodyRows: 12, contentRows: 13 })).toEqual({ bottom: false, top: 12 })
   expect(scrolled(st, 30, { by: -13, bodyRows: 12, contentRows: 13 })).toEqual({ bottom: false, top: 0 })
@@ -254,5 +266,28 @@ test('/forge-stats opens the pane asking for the keyboard, before it reads anyth
   expect(log.includes('stat quota')).toBe(true)
   const ui = await $.ui.mount(target(12))
   expect((await ui.find({ type: 'Text', text: /acct-a/ })) !== undefined).toBe(true)
+  await ui.unmount()
+})
+
+test('a pane of three rows keeps the tab strip and the key hint in view: one content row, no indicator', async ($, on) => {
+  world(on, { usage: summary(6) })
+  await start($)
+  await $.command.run({ command: 'forge-stats', args: 'usage', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } } as never)
+  const ui = await $.ui.mount(target(3))
+  const t = await ui.drawn()
+  expect(tabsAt(t)).toBe(1)
+  expect(rowsOf(t)[2]).toMatch(/PgUp\/PgDn/)
+  expect(rowsOf(t).some(r => /^(↑ \d+ more|↓ \d+)/.test(r))).toBe(false)
+  await ui.unmount()
+})
+
+test('/forge-stats layout pane opens the pane asking for the keyboard before it stores the layout', async ($, on) => {
+  const log: string[] = []
+  world(on, { log })
+  await start($)
+  log.length = 0
+  await $.command.run({ command: 'forge-stats', args: 'layout pane', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } } as never)
+  expect(log.slice(0, 2)).toEqual(['open focus=true', 'store set layout'])
+  const ui = await $.ui.mount(target(12))
   await ui.unmount()
 })
