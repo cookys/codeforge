@@ -392,11 +392,12 @@ async function refreshQuota($: EngineInterface, force = false) {
   }
 }
 
-// When autopilot's integrated panel was last open (its `autopilot.panel_open_at_ms`, design v2 6(f)); 0 without autopilot or before it writes one. Read like the fleet summary.
+// When autopilot's integrated panel was last open (its `autopilot.panel_open_at_ms`, design v2 6(f)); 0 without autopilot, before it writes one, or for a value from the
+// future (another plugin's data: a skewed or garbage stamp must not keep the mirror scanning). Read like the fleet summary.
 async function panelOpenAt($: EngineInterface): Promise<number> {
   try {
     const got = await ($.state.get as (ref: { plugin: string; key: string }) => Promise<{ value: unknown }>)({ plugin: 'autopilot', key: 'panel_open_at_ms' })
-    return typeof got.value === 'number' && Number.isFinite(got.value) ? got.value : 0
+    return typeof got.value === 'number' && Number.isFinite(got.value) && got.value <= Date.now() ? got.value : 0
   } catch (_e) {
     return 0
   }
