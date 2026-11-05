@@ -721,7 +721,10 @@ export const register: Register = on => {
   // the prompt hint line keeps the engine's text and pills; forge-stats only adds its tail (a rewritten `hint` would replace them)
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const tail = promptTail(await read($, session), t())
-    return tail === undefined ? next(e) : next({ ...e, props: { ...e.props, tail } })
+    if (tail === undefined) return next(e)
+    // a tail a plugin above already set stays first; forge-stats' follows it
+    const before = e.props.tail
+    return next({ ...e, props: { ...e.props, tail: before === undefined || before === '' ? tail : before + ' · ' + tail } })
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
