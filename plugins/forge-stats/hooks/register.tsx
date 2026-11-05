@@ -36,6 +36,8 @@ import type { UsageView } from './model'
 import { NO_QUOTA, parseQuotaNs, pickProviders, pickViews, quotaBand, quotaBandForms, quotaEntries, quotaLiveCandidates, quotaLiveDir, quotaPaneLines, QUOTA_NS_MAX_BYTES } from './quota-view'
 import type { DirEntry, QuotaState } from './quota-view'
 import { byteLength, parseQuotaView, QUOTA_CONTRACT } from './quota'
+import { CONTROL_ROWS, clipCells, newPaneScroll, scrolled, windowOf } from './pane-view'
+import type { PaneScroll } from './pane-view'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -239,6 +241,9 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
 // ---- the 用量 / usage tab (PM G36 phase 4): accounts, then today's models, read from codeforge's summary.json ----
 type PaneTab = 'pet' | 'usage'
 let paneTab: PaneTab = 'pet'
+// the chat-style window (guideline §13), per tab: stuck to the newest row or standing at a row; the content rows the last draw had (what ui.scroll clamps against)
+const paneScroll: Record<PaneTab, PaneScroll> = { pet: newPaneScroll(), usage: newPaneScroll() }
+const paneTotal: Record<PaneTab, number> = { pet: 0, usage: 0 }
 
 // Bounded: a regular file that is not a link and at most USAGE_MAX_BYTES, checked before the read and again on the text. Never spawns codeforge.
 async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
@@ -563,10 +568,22 @@ export const register: Register = on => {
     // bodyColumns may run ~2 cells wider than what draws; keep a margin.
     const cols = Math.max(30, (e.props?.bodyColumns ?? 44) - 2)
 
-    const sprite = p.status === 'ok' && Raster !== undefined ? (p.village?.sprite ?? null) : null
+    // the operation area (tab strip + key hint) is the last CONTROL_ROWS rows; the content above it keeps the rest of bodyRows
+    const bodyRows = e.props.scroll.bodyRows
+    const dock = e.props.placement === 'dock'
+    const room = Math.max(1, bodyRows - CONTROL_ROWS)
+
+    let sprite = p.status === 'ok' && Raster !== undefined && paneTab === 'pet' ? (p.village?.sprite ?? null) : null
     // sprite beside the stats when both fit (sprite + 2 gap + 28 text), else stacked
     const side = sprite !== null && cols >= sprite.width + 2 + 28
-    const petPart = sprite === null ? petLines(p, cols, tr, Date.now()) : petLines(p, side ? cols - sprite.width - 2 : cols, tr, Date.now(), false)
+    let petPart = sprite === null ? petLines(p, cols, tr, Date.now()) : petLines(p, side ? cols - sprite.width - 2 : cols, tr, Date.now(), false)
+    // the Raster is atomic (rule row + sprite block): when it does not fit the content area the text-only pet lines are drawn instead of a sliced Raster
+    const spriteFrame0 = sprite === null ? null : halfBlockCells(sprite, spriteFrame)
+    const blockRows = spriteFrame0 === null ? 0 : side ? Math.max(spriteFrame0.rows, petPart.length) : spriteFrame0.rows + 1 + petPart.length
+    if (sprite !== null && 1 + blockRows > room) {
+      sprite = null
+      petPart = petLines(p, cols, tr, Date.now())
+    }
 
     const now = Date.now()
     const clockMs = Date.now()
@@ -629,8 +646,8 @@ export const register: Register = on => {
       </Box>
     )
     let petBlock = null
-    if (usage === null && sprite !== null && Raster !== undefined) {
-      const frame = halfBlockCells(sprite, spriteFrame)
+    if (usage === null && sprite !== null && Raster !== undefined && spriteFrame0 !== null) {
+      const frame = spriteFrame0
       lastCells = frame.cells
       const art = <Raster key={SPRITE_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
       const stats = <Box flexDirection="column">{petPart.map((l, i) => row(l, 'p' + i))}</Box>
@@ -647,13 +664,39 @@ export const register: Register = on => {
       )
     }
 
+    // the content window: the sprite block fits whole (checked above), so only text lines ever scroll
+    const total = lines.length + (petBlock === null ? 0 : blockRows)
+    paneTotal[paneTab] = total
+    const win = windowOf(total, bodyRows, dock, paneScroll[paneTab])
+    const shown = petBlock === null ? lines.slice(win.top, win.top + win.area) : lines
+    const more = [win.above > 0 ? tr('paneMore', { n: win.above }) : '', win.below > 0 ? '↓ ' + win.below : ''].filter(x => x !== '').join(' · ')
+
+    // top to bottom: blank pad (dock, short content), the "n more" row, the content, then the operation area. An overflowing tree carries one spare row under it so the engine
+    // still has a row to scroll and raises ui.scroll for the arrows (UiScrollInput.by: "an arrow a row while the engine has rows to scroll"); the hook never lets it move.
     return (
       <Box flexDirection="column">
-        {strip}
-        {lines.map((l, i) => row(l, 'l' + i))}
+        {Array.from({ length: win.pad }, (_, i) => <Text key={'pad' + i}> </Text>)}
+        {win.overflow ? <Text key="more" dimColor wrap="truncate">{clipCells(more, cols)}</Text> : null}
+        {shown.map((l, i) => row(l, 'l' + (win.top + i)))}
         {petBlock}
+        {strip}
+        <Text key="hint" dimColor wrap="truncate">{clipCells(tr('paneHint'), cols)}</Text>
+        {win.overflow ? <Text key="spare"> </Text> : null}
       </Box>
     )
+  })
+
+  // The pane draws its own window over the content (guideline §13.3), so the person's wheel and scroll keys move the mod's offset and the engine's window stays at 0. A plugin's own
+  // move (`$.ui.scroll`) is the engine's.
+  on('ui.scroll', { component: 'Pane', requestId: PANE }, ($, e, next) => {
+    if (e.origin.kind !== 'person') return next(e)
+    const was = paneScroll[paneTab]
+    const now = scrolled(was, paneTotal[paneTab], e)
+    if (now.top !== was.top || now.bottom !== was.bottom) {
+      paneScroll[paneTab] = now
+      void $.ui.invalidate('ui.render')
+    }
+    return {}
   })
   // The band above the prompt: Ferris | pet | memory and brain (statusline-band plan §2.5; speed is autopilot's, B32).
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
