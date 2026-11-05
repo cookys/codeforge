@@ -23,8 +23,6 @@ CodeForge 是 **CodePower 生態系裡的私人鍛造間**（personal smithy）�
 
 **「Power 提供能量，Forge 塑形」**。三種用法：(1) Solo Smith — 純單機跑 MUD；(2) Connected Smith — 連到一個 CodePower nation 帶 forged self 參戰；(3) Multi-Nation Pilgrim（Phase 5）— 透過 Nation P2P 同時連多個 nation。
 
-**Vision**: 把 MUD 搬上來。先打鐵，再上場。
-
 ## Tech Stack
 
 - **Language**: Rust (2021 edition)
@@ -52,7 +50,7 @@ cargo clippy                   # lint
 
 # Formatting — ALWAYS via the pinned wrapper, NEVER bare `cargo fmt`
 ./scripts/fmt.sh               # format in place (pinned rustfmt, self-installs)
-./scripts/fmt.sh --check       # verify (CI fmt gate; exit 1 on drift)
+./scripts/fmt.sh --check       # verify (exit 1 on drift; part of check-all)
 
 # Install locally
 cargo install --path .
@@ -65,13 +63,8 @@ cargo run -- pet
 cargo run -- bootstrap --dry-run   # one-command per-machine setup (B14); see README
 ```
 
-> **Formatting is pinned** (`scripts/fmt.sh`, single source of the rustfmt
-> toolchain version). A bare `cargo fmt` uses whatever rustfmt your default
-> toolchain is, which drifts between `stable` versions (RFC 2437 — no
-> cross-version stability) and re-wraps lines. The wrapper pins ONLY formatting
-> via a `+toolchain` override (build/clippy/test stay on rolling stable; MSRV
-> stays in `Cargo.toml`, no `rust-toolchain.toml`). Every machine, the CI `fmt`
-> job, and every agent session format identically by going through it. Details:
+> **Formatting is pinned**: `scripts/fmt.sh` holds the one rustfmt version (rustfmt output drifts
+> between toolchains); build/clippy/test stay on rolling stable. Details:
 > `.claude/quality-gate-config.md` → Formatting.
 
 ## Where the detail lives
@@ -106,7 +99,7 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 - **SQLite PRAGMA**: WAL + foreign_keys + busy_timeout=5000 (set in `db::Context::open_db`)
 - **I18n**: UI strings in `locales/en.yaml` + `locales/zh-TW.yaml`, game content runtime (Phase 2+)
 - **Commit style**: Conventional Commits (`feat/fix/docs/chore/build`)
-- **Branch**: `feature/{name}` for L-size, direct to main for S-size
+- **Branch**: 所有工作先走 feature branch 再進 develop，main 只接受 --no-ff 合併（d-6b183bd3）
 
 ## Session Start (Mandatory)
 
@@ -123,7 +116,7 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 |------|---------|
 | `doc/specs/codeforge-mud-engine.md` | Phase 2+ MUD engine — daemon, combat, TUI, §3 黏著度機制, §3.10 Nation Theme |
 | `doc/specs/nation-p2p-design.md` | Phase 5 Nation P2P — credential schema, Organizer role, P2P integrity |
-| `doc/specs/codeforge-ship.md` | Mnemos source role — L2 ledger producer + cite client (stub; Sprint 1 expand) |
+| `doc/specs/codeforge-ship.md` | Mnemos source role — L2 ledger producer + cite client (shipped v0.0.4) |
 | `doc/specs/codeforge-mnemos-runtime.md` | **運維現況**（非設計）— 腦↔codeforge 目前怎麼跑：拓樸、WRITE/READ live vs 未接、hook chain、自檢指令、fleet 隧道。免每次翻 hook+code |
 | `doc/specs/codeforge-agent-coupling.md` | **ADR** — codeforge↔coding-agent 耦合接縫（4 surface：transcript→signal / hook wiring / session 事件 / statusline）。決策 *A-with-seam*：先綁 CC、命名守住接縫、不過早抽象，留多-agent（B）路 |
 | `doc/specs/codeforge-usage.md` | **用量（G36）** — 每帳號配額快照 + statusline 用量列、轉錄檔收集器（只存數字）、成本估算、`summary.json` 契約與 `usage push` |
@@ -131,7 +124,7 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 | `.claude/rpg-engine-spec.md` | Phase 1 architectural decisions (daemon model, write ownership) |
 | `.claude/i18n-spec.md` | i18n two-layer design (compile-time UI + runtime content) |
 
-> **Cross-project sync rule**: All CodeForge design decisions — including those discussed in CodePower sessions — land in `doc/specs/*.md`. Spec is the single source of truth; conversation logs are not carried across sessions.
+> **Cross-project sync rule**: every CodeForge design decision (also ones made in CodePower sessions) lands in `doc/specs/*.md`, the single source of truth; conversations are not carried over.
 
 ## forge-stats mod
 
@@ -139,9 +132,5 @@ The **forge-stats mod** lives in `plugins/forge-stats/` and is a global plugin, 
 
 ## Knowledge Management
 
-`.claude/knowledge/` — record non-obvious issues and solutions.
-
-**Auto-record when:**
-- Command fails due to path/config, then fixed
-- Rust compile error took 2+ retries
-- Architecture decision iterated multiple times
+`.claude/knowledge/` — record non-obvious issues and solutions (path/config failure then fixed,
+a compile error that took 2+ retries, a design that iterated); `autopilot:learn` has the flow.
