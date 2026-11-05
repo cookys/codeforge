@@ -274,6 +274,14 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 下次動 forge-stats 的 manifest 或 README，或要把 mod 上架到 plugin 目錄。
 **Not done**: 只記錄。
 
+## B48 — MUD TUI 的戰鬥紀錄改成聊天室式（tui-guideline §13）
+
+**Area**: `src/tui/panels/combat_log.rs`、`src/tui/layout.rs`
+**Effort**: S
+**Premise**: 2026-11-05 forge-stats pane 照 §13 改成操作區在底、內容往上長；PM 決定 MUD TUI 這次不改（MUD 在 Goal 的「目前不做」）。`codeforge tui` 的戰鬥紀錄是最新的排最上面（`merge_newest_first`），也沒有操作區，跟 §13 相反。
+**Trigger**: 下次動 MUD TUI（Goal 把 MUD 後段放回目前目標時）。
+**Not done**: 只記錄。
+
 ## B39 — G36 第 1 階段 review 的後續（statusline 配額列）
 
 **Area**: `src/usage/quota.rs`、`src/cli/statusline.rs`（`others_segment`、`own_bars_yellow`、`render_full`）
