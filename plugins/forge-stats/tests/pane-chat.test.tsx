@@ -34,12 +34,16 @@ const summary = (models: number, cost = 1.5) => ({
 })
 
 // the engine beneath: HOME, the live pointer, a pet snapshot (or none) and the usage summary as `world.usage` stands
-const world = (on: Parameters<TestBody>[1], w: { usage?: unknown; pet?: unknown } = {}) => {
+const world = (on: Parameters<TestBody>[1], w: { usage?: unknown; pet?: unknown; log?: string[] } = {}) => {
   on('command.register', () => ({ value: { command: 'forge-stats' } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', (_, e) => {
+    w.log?.push('open focus=' + String(e.focus))
+    return { value: { isPlaced: true } }
+  })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/t' : undefined }))
   on('fs.stat', (_, e) => {
+    if (e.path.endsWith('/.autopilot/quota')) w.log?.push('stat quota')
     if (e.path === SUMMARY && w.usage !== undefined) return { value: { kind: 'file', size: JSON.stringify(w.usage).length, mtimeMs: 0, isLink: false } }
     throw new Error('ENOENT ' + e.path)
   })
@@ -229,4 +233,26 @@ test('the sprite that does not fit with its rule row drops the rule and keeps th
   expect(rowsOf(s).some(r => /^(↑ \d+ more|↓ \d+)/.test(r))).toBe(false)
   expect(kids(s).length).toBeLessThanOrEqual(6)
   expect((await small.find({ type: 'Text', text: /^Ferris$/ })) !== undefined).toBe(true)
+})
+
+// the arrows and page keys reach only a pane that holds the keyboard (§13 rule 7); the wheel needs no focus.
+// `focus` is granted only over an empty composer, so the command asks before its first wait.
+test('/forge-stats opens the pane asking for the keyboard, before it reads anything', async ($, on) => {
+  const log: string[] = []
+  world(on, { usage: summary(3), log })
+  await start($)
+  const run = (args: string) => $.command.run({ command: 'forge-stats', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } } as never)
+  for (const args of ['', 'pet']) {
+    log.length = 0
+    await run(args)
+    expect(log[0]).toBe('open focus=true')
+  }
+  log.length = 0
+  await run('usage')
+  // the open comes first: the usage tab's quota re-read waits on it
+  expect(log[0]).toBe('open focus=true')
+  expect(log.includes('stat quota')).toBe(true)
+  const ui = await $.ui.mount(target(12))
+  expect((await ui.find({ type: 'Text', text: /acct-a/ })) !== undefined).toBe(true)
+  await ui.unmount()
 })

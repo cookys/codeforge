@@ -536,7 +536,7 @@ export const register: Register = on => {
       layout = arg
       await $.store.set('layout', arg)
       bandLastCells = null
-      if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title') })
+      if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title'), focus: true })
       $.ui.invalidate('ui.render')
       await writeHeartbeat($)
       return { text: t()('layoutSet', { layout: arg }) }
@@ -545,10 +545,12 @@ export const register: Register = on => {
     if (verb === 'usage' || verb === 'pet') {
       paneTab = verb
       if (verb === 'pet') lastCells = null
-      if (verb === 'usage') await refreshQuota($, true)
-      void $.ui.invalidate('ui.render')
     }
-    await $.ui.open({ id: PANE, title: t()('title') })
+    // ask for the keys first, while the composer the command came from is still empty (§13 rule 7:
+    // the arrows and page keys only reach a pane that holds the keyboard; the wheel needs no focus)
+    await $.ui.open({ id: PANE, title: t()('title'), focus: true })
+    if (verb === 'usage') await refreshQuota($, true)
+    if (verb === 'usage' || verb === 'pet') void $.ui.invalidate('ui.render')
     void refreshPet($)
     return { text: t()('opened') }
   })
