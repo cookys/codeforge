@@ -127,6 +127,8 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   30 秒寫一次（讀的一方超過 60 秒沒更新就標「資料 N 分鐘前」）；`ui.render` 裡不能寫。autopilot 的面板開著時會寫
   `autopilot.panel_open_at_ms`，forge-stats 讀到最近一分鐘內的值，就照常更新配額鏡像，不需要自己的 band 或 pane 畫過。
   forge-stats 自己的 pane 等操作員看過整合面板的預覽、點頭後才退場。
+  O4 寬度分級（2026-11-06）另加選填的 `side`（右側摘要欄的用量、各模型比例、記憶），分工、欄寬和各級用法見
+  [`panel-band-contract.md`](panel-band-contract.md)。
 - **prompt 提示行的尾巴（PromptHint tail，2026-11-05，PM 採用 slot 調查的建議）**：forge-stats 只設 `PromptHint` 的
   `tail`，不改寫 `hint`（改寫會蓋掉引擎的提示與 pills）。內容是這個 session 的燈號：「記憶 N 條 · 大腦 已連線」，記憶在前；
   hidden 的燈不寫，兩個都 hidden 就不加 tail。引擎把 tail 灰色接在提示行尾，行尾放不下時切掉並補「…」，剩不到 4 欄就整段
