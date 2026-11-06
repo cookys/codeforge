@@ -57,7 +57,7 @@ autopilot band 寬度不夠時的捨棄順序，依 §2.1：配額 → 截短 st
 
 **pane 類畫面**（live 各分頁含艦隊、待決卡、forge-stats pane）：寬度取 `bodyColumns`（live 預設 76，最窄 20：`model.ts` `DEFAULT_PANE_COLS`、`paneWidth`），任何寬度都照 §6「一個項目一列」排。pane **沒有高度分級**：內容比 `scroll.bodyRows` 高時捲動（live 用引擎的捲動，待決分頁自己捲），pane 被縮小也一樣。現況偏差：forge-stats pane 至少畫 30 欄（`register.tsx` 的 `Math.max(30, bodyColumns - 2)`），pane 比 30 欄窄時會超寬，列入 §12。
 
-**statusline**：寬度是 `CODEFORGE_WIDTH`（預設 100），不是終端寬，也沒有高度輸入；列數固定（完整版 5 列、精簡版 2 列）。每一列在寬度內依自己的降級層級排（`statusline.rs`，例如第 3 列的 Level 1–6，依序拿掉中央燈號、版本等），`<90` 拿掉右欄寵物圖（`ART_THRESHOLD`）。設成 24／56／86 時走同一套降級；最後一層以字元數截（`.chars().take`），是 §6.3 的偏差，列入 §12。
+**statusline**：寬度是 `CODEFORGE_WIDTH`，沒設就用 `COLUMNS − 4`（Claude Code 啟動 statusline 時設 `COLUMNS` 為終端寬，resize 後下次刷新跟上；statusline 左縮 2 格、右留 2 格，120／160 欄實測），兩者都沒有才是 100；沒有高度輸入。列數：完整版 5 列；精簡版 2 列，但身分（model、路徑、分支）、2 格以上空白、版本與整段用量在寬度內放得下時併成 1 列（身分靠左、版本和用量靠右；門檻由實際內容的顯示寬度算，不是固定欄數）。每一列在寬度內依自己的降級層級排（`statusline.rs`，例如第 3 列的 Level 1–6，依序拿掉中央燈號、版本等），`<90` 拿掉右欄寵物圖（`ART_THRESHOLD`）。設成 24／56／86 時走同一套降級；最後一層以字元數截（`.chars().take`），是 §6.3 的偏差，列入 §12。
 
 
 
