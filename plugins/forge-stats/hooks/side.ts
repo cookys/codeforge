@@ -57,6 +57,17 @@ function winLine(win: SideWin, w: number, now: number, tr: T): PanelLine {
 
 const width = (l: PanelLine) => l.reduce((n, p) => n + displayWidth(p.text), 0)
 
+// `text` in exactly `w` display cells: cut with … when wider (a wide character never split), padded with spaces when narrower
+function fitCells(text: string, w: number): string {
+  if (displayWidth(text) <= w) return text + ' '.repeat(w - displayWidth(text))
+  let out = ''
+  for (const ch of text) {
+    if (displayWidth(out + ch) > w - 1) break
+    out += ch
+  }
+  return out + '…' + ' '.repeat(w - 1 - displayWidth(out))
+}
+
 /** `side.usage`: ≤ 3 lines, the most constrained account's 5h and 7d, then how many other accounts there are and their highest window. */
 export function sideUsageLines(accts: readonly SideAccount[], w: number, now: number, tr: T): PanelLine[] {
   if (accts.length === 0) return [[{ text: tr('sideNoUsage'), tone: 'dim' }]]
@@ -75,7 +86,7 @@ export function sideFullLines(accts: readonly SideAccount[], view: UsageView, w:
   const nameW = w - barW(w) - 6
   for (const m of [...models].sort((a, b) => b.tokens - a.tokens).slice(0, FULL_MODELS)) {
     if (total === 0) break
-    const name = displayWidth(m.model) > nameW ? [...m.model].slice(0, nameW - 1).join('') + '…' : m.model.padEnd(nameW)
+    const name = fitCells(m.model, nameW)
     const bar = meter(m.tokens / total, barW(w))
     out.push([{ text: name + ' ', tone: 'dim' }, { text: bar.on }, { text: bar.off, tone: 'inactive' }, { text: ' ' + pctOf(m.tokens / total) }])
   }

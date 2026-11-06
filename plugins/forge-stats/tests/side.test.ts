@@ -67,6 +67,11 @@ test('usage_full: the windows, a blank line, the top three models by share; a lo
   const long = (sideState(view({ models: [{ model: 'gpt-6-astra-with-a-very-long-model-name', tokens: 5, requests: 1, cost: null, unpriced: 1 }] }), null, lights, NOW, zh) as PanelSide)
     .usage_full.tiers['40'].map(text)
   expect(long[long.length - 1].includes('…')).toBe(true)
+  // wide characters are counted in display cells: cut and padded to the same width, never past the key
+  for (const model of ['模型', '模型模型模型模型模型模型模型模型模型模型模型模型模型模型']) {
+    const wide = (sideState(view({ models: [{ model, tokens: 5, requests: 1, cost: null, unpriced: 0 }] }), null, lights, NOW, zh) as PanelSide).usage_full.tiers['40']
+    for (const l of wide) expect(width(l) <= 40).toBe(true)
+  }
 })
 
 test('no money and no ● anywhere; a stray $ refuses the whole side', () => {
