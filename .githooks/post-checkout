@@ -19,8 +19,11 @@ git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
 common_dir=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P) || exit 0
 [ "$(cd "$git_dir" && pwd -P)" = "$common_dir" ] || exit 0 # a linked worktree: free to be on any branch
 
-branch=$(git symbolic-ref -q --short HEAD) || branch="(detached HEAD at $(git rev-parse --short HEAD))"
-[ "$branch" = develop ] && exit 0
+# compare the full ref: --short would print heads/develop when a tag is also named develop
+ref=$(git symbolic-ref -q HEAD) || ref=
+[ "$ref" = refs/heads/develop ] && exit 0
+branch=${ref#refs/heads/}
+[ -n "$ref" ] || branch="(detached HEAD at $(git rev-parse --short HEAD))"
 
 top=$(git rev-parse --show-toplevel)
 cat >&2 <<EOF

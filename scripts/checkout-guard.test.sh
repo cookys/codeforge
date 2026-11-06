@@ -35,12 +35,22 @@ name="installer copies the hook"; expect test -x .git/hooks/post-checkout
 out=$(bash scripts/install-checkout-guard.sh)
 name="installer is idempotent"; expect grep -q "already installed" <<<"$out"
 
+chmod 644 .git/hooks/post-checkout
+bash scripts/install-checkout-guard.sh >/dev/null
+name="installer restores a copy that lost its executable bit"; expect test -x .git/hooks/post-checkout
+
 git switch -q feature 2>"$tmp/e1"
 loud "$tmp/e1" "main clone: switching to a feature branch warns"
 name="the warning names the branch"; expect grep -q '現在在 feature' "$tmp/e1"
 
 git switch -q develop 2>"$tmp/e2"
 quiet "$tmp/e2" "main clone: back on develop is quiet"
+
+git tag develop
+git switch -q feature 2>/dev/null
+git switch -q develop 2>"$tmp/e2t"
+quiet "$tmp/e2t" "main clone: back on develop is quiet with a tag also named develop"
+git tag -d develop >/dev/null
 
 echo b > a.txt
 git checkout -q -- a.txt 2>"$tmp/e3"
