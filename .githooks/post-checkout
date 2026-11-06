@@ -1,0 +1,37 @@
+#!/bin/sh
+# post-checkout guard for the main clone (PM, 2026-11-06).
+#
+# The forge-stats plugin is installed from this repo's directory marketplace and is read straight
+# from the main clone's plugins/forge-stats folder (`claude plugin update` says so: "read from its
+# folder ... nothing to update"). Whatever the main clone has checked out is what every Claude Code
+# session runs after its next /reload-plugins or start. So the main clone stays on develop and
+# feature work happens in `git worktree` directories; this hook warns loudly when the main clone
+# leaves develop. A hook cannot stop a checkout, it can only say so.
+#
+# Installed by scripts/install-checkout-guard.sh into the common hooks directory, where the
+# machine's global hook chain (or git itself) runs it. Linked worktrees share that directory, so
+# the hook checks first that it is running in the main clone.
+
+# $3 = 1 for a branch checkout, 0 for a file checkout (git checkout -- <path>)
+[ "${3:-0}" = 1 ] || exit 0
+
+git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
+common_dir=$(cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P) || exit 0
+[ "$(cd "$git_dir" && pwd -P)" = "$common_dir" ] || exit 0 # a linked worktree: free to be on any branch
+
+branch=$(git symbolic-ref -q --short HEAD) || branch="(detached HEAD at $(git rev-parse --short HEAD))"
+[ "$branch" = develop ] && exit 0
+
+top=$(git rev-parse --show-toplevel)
+cat >&2 <<EOF
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!! 警告：主 clone 離開了 develop，現在在 $branch
+!! forge-stats 外掛直接從 $top/plugins/forge-stats 載入：
+!! 各 session 下次 /reload-plugins 或重開之後，跑的就是這個分支的程式。
+!! 請馬上切回：git -C $top switch develop
+!! feature 開發請用 git worktree add ../<目錄> -b <分支> develop
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+EOF
+exit 0
