@@ -283,7 +283,8 @@ fn statusline_width(codeforge_width: Option<&str>, columns: Option<&str>) -> usi
 /// The compact form drawn while the forge-stats band layout runs: the no-pet
 /// identity + usage strip (2 lines, no frame, no pet rows), without the adopt hint.
 /// When the identity, the version and the whole usage part fit on one line with 2
-/// columns between them, it is one line: identity left, version and usage right.
+/// columns between them, it is one line: identity left, usage then version right (the
+/// version rightmost on either form).
 fn render_compact<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
     render_strip(out, data, width, false)
 }
@@ -1142,7 +1143,8 @@ fn render_strip<W: Write>(
     } else {
         None
     };
-    // One line (compact form only): " " identity, at least 2 spaces, version "   " usage.
+    // One line (compact form only): " " identity, at least 2 spaces, usage "   " version
+    // (the version stays rightmost, as on the two-line form's first row).
     // The usage part is the one the two-line form would draw, so nothing is dropped.
     if !adopt_hint {
         let left = format!(
@@ -1154,8 +1156,9 @@ fn render_strip<W: Write>(
             tc(&branch_display, BRANCH_C),
         );
         let left_vis = 1 + model_vis + 4 + cwd_vis + ab_vis + 1 + branch_vis;
-        let right = format!("{ver_str}   {usage_left}");
-        let right_vis = ver_vis + 3 + usage_left_vis;
+        let sep = if ver_vis == 0 { "" } else { "   " };
+        let right = format!("{usage_left}{sep}{ver_str}");
+        let right_vis = usage_left_vis + sep.len() + ver_vis;
         if left_vis + 2 + right_vis <= width {
             let pad = width - left_vis - right_vis;
             let rows = [Row {
@@ -2173,6 +2176,10 @@ mod tests {
             assert!(line.contains(part), "{part} missing: {line:?}");
         }
         assert!(line.find("範例專案") < line.find("5h"));
+        // the version is the last field, flush right; the two-line form's first row too
+        assert!(line.ends_with("v2.1.318"), "{line:?}");
+        assert!(line.find("ctx") < line.find("v2.1.318"));
+        assert!(compact_lines(&data, 80)[0].ends_with("v2.1.318"));
         // the threshold is the content: identity + 2 spaces + version and usage
         let pad = {
             let mut best = 0;
