@@ -3,7 +3,8 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import { parseQuotaView } from '../hooks/quota'
-import { displayWidth, summaryParts } from '../hooks/model'
+import { displayWidth, parseSprite, summaryParts } from '../hooks/model'
+import { FERRIS } from './ferris-sprite'
 import { makeT } from '../hooks/strings'
 import {
   QUOTA_MAX_PROVIDERS, NO_QUOTA, parseQuotaNs, pickProviders, pickViews, quotaBand, quotaBandForms, quotaEntries, quotaLiveCandidates, quotaLiveDir, quotaPaneLines,
@@ -682,4 +683,119 @@ test('B45 pane and band: a shape-c record shows the neutral no-usage wording, an
   // compact lines stay the short word for both; the band counts both as 無資料
   expect(paneText(st, 40).some(l => l.startsWith('b45:only') && l.includes('無資料'))).toBe(true)
   expect(bandText(st)).toEqual(['無資料 2'])
+})
+
+// ---- the integrated panel (codeforge.panel/1, design v2): forge-stats writes `panel`, autopilot's shell draws it ----
+const TONES = ['subtle', 'inactive', 'dim', 'bold', 'mono', 'success']
+type PLine = { text: string; tone?: string }[]
+const tierText = (lines: PLine[]) => lines.map(l => l.map(x => x.text).join(''))
+// an inline autopilot with its panel open: it stamps `panel_open_at_ms` at session start (a register runs in its own environment, so the value is computed there)
+// an inline autopilot whose panel shell reads `forge-stats.panel` while drawing, as the integrated panel will, and draws the value and its version as one Text
+const AUTOPILOT_READER = {
+  name: 'autopilot',
+  register: ((on: any) => {
+    on('ui.render', { component: 'Pane', requestId: 'live' }, async ($: any, e: any) => {
+      const { Text } = $.ui.resolve(e)
+      const got = await $.state.get({ plugin: 'forge-stats', key: 'panel' })
+      return <Text key="v">{JSON.stringify({ version: got.version, value: got.value ?? null })}</Text>
+    })
+  }) as never,
+}
+const LIVE_PANE = { plugin: 'autopilot', component: 'Pane', requestId: 'live', surface: 'terminal', props: { title: 'live', isFocused: false, bodyColumns: 100, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} } } as const
+const readPanel = async ($: Parameters<TestBody>[0]) => {
+  const ui = await $.ui.mount(LIVE_PANE)
+  const t = (await ui.find({ type: 'Text' })) as { text: string } | undefined
+  await ui.unmount()
+  return JSON.parse(t?.text ?? 'null') as { version: number; value: any }
+}
+const AUTOPILOT_PANEL_OPEN = {
+  name: 'autopilot',
+  register: ((on: any) => {
+    on('session.start', async ($: any, e: any, next: any) => {
+      await $.state.set({ plugin: 'autopilot', key: 'panel_open_at_ms' }, Date.now())
+      return next(e)
+    })
+  }) as never,
+}
+
+test('panel state: the schema, one set of lines per tier width, the pane\'s own lines and tones, the sprite as pet.json has it', { plugins: [AUTOPILOT_READER] }, async ($, on) => {
+  const withSprite = { ...PETSNAP, village: { ...PETSNAP.village, sprite: FERRIS } }
+  mirror(on, { ...viewFiles(['claude:work', 'claude:home', 'kimi:main', 'agy:main']), ...NS, [LIVE + '/codeforge/pet.json']: JSON.stringify(withSprite) })
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const { value } = await readPanel($)
+  expect(value.schema).toBe('codeforge.panel/1')
+  expect(typeof value.updated_at_ms).toBe('number')
+  expect(Object.keys(value.usage.tiers)).toEqual(['40', '60', '80', '100', '120'])
+  expect(Object.keys(value.pet.tiers)).toEqual(['40', '60', '80', '100', '120'])
+  // the usage lines are the pane's: the mirror blocks and today's models; below 60 columns the compact block form (one line per account, no blank separator rows)
+  const wide = tierText(value.usage.tiers['100'])
+  expect(wide.join('\n')).toContain('claude:work')
+  expect(wide.join('\n')).toContain('claude-opus-5-5')
+  expect(tierText(value.usage.tiers['40']).length).toBeLessThan(wide.length)
+  for (const [w, lines] of Object.entries(value.usage.tiers) as [string, PLine[]][]) {
+    for (const t of tierText(lines)) expect(displayWidth(t)).toBeLessThanOrEqual(Number(w))
+  }
+  // pet: the stats lines without the ASCII art; the sprite as forge-stats validated it from pet.json (palette as 0xRRGGBB, the shape of SpriteData)
+  expect(tierText(value.pet.tiers['80']).join('\n')).toContain('Ferris')
+  expect(tierText(value.pet.tiers['80']).join('\n')).not.toContain('_~^~^~_')
+  expect(value.pet.sprite).toEqual(parseSprite(FERRIS))
+  expect(value.pet.sprite).not.toBe(null)
+  // tones: only the six of the contract
+  const tones = new Set<string>()
+  for (const lines of [...Object.values(value.usage.tiers), ...Object.values(value.pet.tiers)] as PLine[][]) for (const l of lines) for (const x of l) if (x.tone !== undefined) tones.add(x.tone)
+  expect([...tones].every(t => TONES.includes(t))).toBe(true)
+  expect(tones.has('dim')).toBe(true)
+})
+
+test('panel state is written again only when it changed (or every 30 s): an unchanged 15 s tick leaves the version', { plugins: [AUTOPILOT_READER] }, async ($, on) => {
+  mirror(on, { ...viewFiles(['claude:work']), ...NS })
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const first = await readPanel($)
+  expect(first.version > 0).toBe(true)
+  expect(first.value.schema).toBe('codeforge.panel/1')
+  await clock.advance(15_000)
+  expect((await readPanel($)).version).toBe(first.version)
+})
+
+test('the quota mirror keeps refreshing while autopilot\'s panel is open, with forge-stats\' own band and pane never drawn', { plugins: [AUTOPILOT_PANEL_OPEN] }, async ($, on) => {
+  const f = mirror(on, { ...viewFiles(['claude:work']), ...NS })
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const before = f.lists.filter(d => d === LIVE + '/quota').length
+  await clock.advance(15_000)
+  expect(f.lists.filter(d => d === LIVE + '/quota').length).toBeGreaterThan(before)
+})
+
+const AUTOPILOT_FUTURE_STAMP = {
+  name: 'autopilot',
+  register: ((on: any) => {
+    on('session.start', async ($: any, e: any, next: any) => {
+      await $.state.set({ plugin: 'autopilot', key: 'panel_open_at_ms' }, Number.MAX_SAFE_INTEGER)
+      return next(e)
+    })
+  }) as never,
+}
+
+test('a panel_open_at_ms from the future counts as no panel: the undrawn 15 s tick reads no quota mirror', { plugins: [AUTOPILOT_FUTURE_STAMP] }, async ($, on) => {
+  const f = mirror(on, { ...viewFiles(['claude:work']), ...NS })
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const before = f.lists.filter(d => d === LIVE + '/quota').length
+  await clock.advance(15_000)
+  expect(f.lists.filter(d => d === LIVE + '/quota').length).toBe(before)
+})
+
+test('without autopilot\'s panel and nothing drawn, the 15 s tick reads no quota mirror', async ($, on) => {
+  const f = mirror(on, { ...viewFiles(['claude:work']), ...NS })
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const before = f.lists.filter(d => d === LIVE + '/quota').length
+  await clock.advance(15_000)
+  expect(f.lists.filter(d => d === LIVE + '/quota').length).toBe(before)
 })
