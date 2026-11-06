@@ -15,7 +15,7 @@ mark='post-checkout guard for the main clone'
 [ -f "$src" ] || { echo "install-checkout-guard: $src not found" >&2; exit 1; }
 mkdir -p "$hooks"
 if [ -e "$dst" ] || [ -L "$dst" ]; then
-  if cmp -s "$src" "$dst"; then
+  if cmp -s "$src" "$dst" && [ -x "$dst" ]; then
     echo "install-checkout-guard: already installed ($dst)"
     exit 0
   fi
