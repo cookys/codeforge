@@ -116,6 +116,17 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   原本的速度 34 與最近請求 ≥46 兩欄連同 `turn.step` 量測整包移給 autopilot 的 live mod（B32，owner 卡 d-7b0f7a4a；量法見
   autopilot BL-0359，正確口徑出自 codeforge `405b214` 的 `stepRate`）。沒有 autopilot 時 forge-stats 也不顯示速度。
   `doc/plans/2026-10-31-forge-columns.md` §2.5 的速度與最近請求兩欄已失效。
+- **整合面板（panel state，2026-11-05，操作員 d-fb45042e，autopilot × codeforge 設計 v2）**：autopilot 的 `/live`
+  面板有一條分頁列（待決｜圓桌｜用量｜寵物｜更多 ›），殼和分頁列歸 autopilot，用量和寵物的內容歸 forge-stats。
+  forge-stats 寫 `$.state` key `panel`（`codeforge.panel/1`，型別見 `plugins/forge-stats/types/index.d.ts` 的 `PanelState`）：
+  `{schema, updated_at_ms, usage:{tiers}, pet:{title, sprite, tiers}}`。`tiers` 依寬度 40／60／80／100／120 各放一份排好的列，
+  就是 pane 自己的 `usageLines`／`petLines`（寵物不含 ASCII 圖）。每列是 `[{text, tone?}]`，tone 只有 subtle、inactive、
+  dim、bold、mono、success 六種。讀的一方選不超過自己欄寬的最大一份（不到 40 用 40），每列裁到 cols−1，不重算內容。
+  `sprite` 是 pet.json 的 `village.sprite` 經 forge-stats 驗證後的 `SpriteData`（調色盤 0xRRGGBB），第一版是靜態的：
+  blit 只能打到 forge-stats 自己的 Raster。寫入時機：session 開始寫一次，之後每 15 秒檢查，內容有變才寫，沒變也至少
+  30 秒寫一次（讀的一方超過 60 秒沒更新就標「資料 N 分鐘前」）；`ui.render` 裡不能寫。autopilot 的面板開著時會寫
+  `autopilot.panel_open_at_ms`，forge-stats 讀到最近一分鐘內的值，就照常更新配額鏡像，不需要自己的 band 或 pane 畫過。
+  forge-stats 自己的 pane 等操作員看過整合面板的預覽、點頭後才退場。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、縮圖；tok/s 歸 autopilot）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 
