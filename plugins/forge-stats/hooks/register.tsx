@@ -507,6 +507,17 @@ function bandPetLines(view: PetView, width: number, tr: T, short = false): Line[
   return out
 }
 
+// The dim tail of the prompt hint line (PM, after the prompt-slot probe): this session's memory and brain lights in one short string, the memory first. A hidden light
+// is left out; with both hidden there is no tail. The engine cuts it where the row ends and leaves it out under four columns.
+export function promptTail(lights: SessionView | null, tr: T): string | undefined {
+  if (lights === null) return undefined
+  const parts: string[] = []
+  if (lights.memory !== 'hidden') parts.push(`${tr('memory')} ${lights.active} ${tr('entries')}`)
+  const brain: Record<Exclude<SessionView['brain'], 'hidden'>, string> = { ok: tr('brainOk'), degraded: tr('brainDegraded'), offline: tr('brainOffline'), pending: tr('brainPending') }
+  if (lights.brain !== 'hidden') parts.push(`${tr('brain')} ${brain[lights.brain]}`)
+  return parts.length === 0 ? undefined : parts.join(' · ')
+}
+
 function bandMemoryLines(lights: SessionView | null, tr: T): Line[] {
   const out: Line[] = []
   const brainWord: Record<SessionView['brain'], string> = {
@@ -745,6 +756,15 @@ export const register: Register = on => {
     return {}
   })
   // The band above the prompt: Ferris | pet | memory and brain (statusline-band plan §2.5; speed is autopilot's, B32).
+  // the prompt hint line keeps the engine's text and pills; forge-stats only adds its tail (a rewritten `hint` would replace them)
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const tail = promptTail(await read($, session), t())
+    if (tail === undefined) return next(e)
+    // a tail a plugin above already set stays first; forge-stats' follows it
+    const before = e.props.tail
+    return next({ ...e, props: { ...e.props, tail: before === undefined || before === '' ? tail : before + ' · ' + tail } })
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const props = e.props
     if (e.surface !== 'terminal' || layout !== 'band' || props.hasSurvey || props.maxRows < 1) {

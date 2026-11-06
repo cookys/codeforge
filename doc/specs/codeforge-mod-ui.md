@@ -127,6 +127,11 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   30 秒寫一次（讀的一方超過 60 秒沒更新就標「資料 N 分鐘前」）；`ui.render` 裡不能寫。autopilot 的面板開著時會寫
   `autopilot.panel_open_at_ms`，forge-stats 讀到最近一分鐘內的值，就照常更新配額鏡像，不需要自己的 band 或 pane 畫過。
   forge-stats 自己的 pane 等操作員看過整合面板的預覽、點頭後才退場。
+- **prompt 提示行的尾巴（PromptHint tail，2026-11-05，PM 採用 slot 調查的建議）**：forge-stats 只設 `PromptHint` 的
+  `tail`，不改寫 `hint`（改寫會蓋掉引擎的提示與 pills）。內容是這個 session 的燈號：「記憶 N 條 · 大腦 已連線」，記憶在前；
+  hidden 的燈不寫，兩個都 hidden 就不加 tail。引擎把 tail 灰色接在提示行尾，行尾放不下時切掉並補「…」，剩不到 4 欄就整段
+  不畫（實測 120 欄完整、62–64 欄被切、60 欄消失）。prompt 周圍的位置由上往下：band（AbovePrompt）→ 輸入行 →
+  `$.ui.status`（引擎加「⚠ plugin:」前綴，只放真的警告）→ statusline → 提示行（含 tail）→ SessionMode 標籤。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、縮圖；tok/s 歸 autopilot）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 
