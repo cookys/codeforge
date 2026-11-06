@@ -41,7 +41,7 @@ const band = (bodyColumns: number, over: Record<string, unknown> = {}) =>
     props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns, scroll: { offset: 0, bodyRows: 19 }, view: {}, ...over },
   }) as const
 
-type World = { writes: { path: string; text: string }[]; blits: { requestId: string; key: string; cells: string }[]; store: Record<string, unknown>; opened: number; deny: boolean }
+type World = { writes: { path: string; text: string }[]; blits: { requestId: string; key: string; cells: string }[]; store: Record<string, unknown>; opened: number; deny: boolean; session?: unknown }
 
 // The engine beneath: HOME, the live pointer, pet.json, the session view, the store, writes and blits.
 function world(on: Parameters<TestBody>[1], layout?: string): World {
@@ -57,7 +57,7 @@ function world(on: Parameters<TestBody>[1], layout?: string): World {
   on('fs.read', (_, e) => {
     if (e.path === '/home/t/.autopilot/live-pointer.json') return { value: JSON.stringify({ live_base: LIVE }) }
     if (e.path === LIVE + '/codeforge/pet.json') return { value: JSON.stringify(SNAP) }
-    if (e.path === SESSION_FILE) return { value: JSON.stringify(SESSION) }
+    if (e.path === SESSION_FILE) return { value: JSON.stringify(w.session ?? SESSION) }
     throw new Error('ENOENT ' + e.path)
   })
   on('fs.write', (_, e) => {
@@ -460,4 +460,48 @@ test('after a model step the band and the summary show no speed (B32)', async ($
     expect(await ui.find({ type: 'Text', text: /tok\/s|ϟ/ })).toBe(undefined)
     await ui.unmount()
   }
+})
+
+// ---- the prompt hint tail (PM, after the prompt-slot probe): the lights after the engine's own hint, never a rewrite of it ----
+const HINT = { plugin: 'forge-stats', component: 'PromptHint', requestId: 'hint', surface: 'terminal', props: { isDraft: false, isWorking: false, hint: '? for shortcuts' } } as const
+// beneath: the engine draws the hint; record what reached it
+const hintBeneath = (on: Parameters<TestBody>[1], seen: { hint?: string; tail?: string }[]) =>
+  on('ui.render', { component: 'PromptHint' }, ($, e) => {
+    seen.push({ hint: e.props.hint, tail: e.props.tail })
+    const { Text } = $.ui.resolve(e)
+    return <Text key="hint">{e.props.hint}</Text>
+  })
+
+test('the prompt hint keeps the engine\'s text and gets the memory and brain lights as its tail', async ($, on) => {
+  world(on)
+  const seen: { hint?: string; tail?: string }[] = []
+  hintBeneath(on, seen)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount(HINT)
+  await ui.unmount()
+  expect(seen.at(-1)).toEqual({ hint: '? for shortcuts', tail: 'memory 12 entries · brain connected' })
+})
+
+test('hidden lights are left out of the tail; with both hidden the hint passes unchanged', async ($, on) => {
+  const w = world(on)
+  w.session = { ...SESSION, memory: { light: 'hidden', active: 0 }, brain: { light: 'hidden' } }
+  const seen: { hint?: string; tail?: string }[] = []
+  hintBeneath(on, seen)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount(HINT)
+  await ui.unmount()
+  expect(seen.at(-1)).toEqual({ hint: '? for shortcuts', tail: undefined })
+})
+
+test('a tail a plugin above already set stays, forge-stats\' lights follow it', async ($, on) => {
+  world(on)
+  const seen: { hint?: string; tail?: string }[] = []
+  hintBeneath(on, seen)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...HINT, props: { ...HINT.props, tail: 'other plugin' } })
+  await ui.unmount()
+  expect(seen.at(-1)).toEqual({ hint: '? for shortcuts', tail: 'other plugin · memory 12 entries · brain connected' })
 })
