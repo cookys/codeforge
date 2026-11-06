@@ -23,7 +23,7 @@
 ## 2. gitui
 
 - 網址：https://github.com/gitui-org/gitui
-- 圖：`refs/gitui.gif`，原圖網址 https://raw.githubusercontent.com/gitui-org/gitui/master/demo.gif （README 的 `![](demo.gif)`）
+- 圖：`refs/gitui.gif`，原圖網址 https://raw.githubusercontent.com/gitui-org/gitui/master/demo.gif （README 裡引用的 demo.gif）
   - 看到的畫面：第 1 格（靜態載入顯示的那一格）。最上一列是分頁「Status [1] | Log [2] | Stashing [3] | Stashes [4]」，左邊兩個有框面板，右邊 Diff，最底一列是指令列：「Commit [c] Unstage Item [enter] … more [.]」。
 - 逐字摘錄（README）："Context based help (**no need to memorize** tons of hot-keys)"
 - 借了什麼：底列只放**目前情境**用得到的指令，最後一個是「more」展開其餘；不能用的指令直接不畫（gitui 是畫成暗色，我們只能用字色，所以選擇不畫）。
@@ -89,7 +89,7 @@
 ## 10. Harlequin
 
 - 網址：https://github.com/tconbeer/harlequin
-- 圖：`refs/harlequin.svg`，原圖網址 https://raw.githubusercontent.com/tconbeer/harlequin/main/harlequin.svg （README 的 `![Harlequin](./harlequin.svg)`，Rich 產生的 SVG）；`refs/harlequin.png` 是我用 headless Chrome 把這個 SVG 畫成的 PNG，方便直接看。
+- 圖：`refs/harlequin.svg`，原圖網址 https://raw.githubusercontent.com/tconbeer/harlequin/main/harlequin.svg （README 裡引用的 harlequin.svg，Rich 產生的 SVG）；`refs/harlequin.png` 是我用 headless Chrome 把這個 SVG 畫成的 PNG，方便直接看。
   - 看到的畫面：左邊「Data Catalog」、右上「Query Editor」、右下「Query Results (850 Records)」，**標題都寫在框線上**，筆數直接放在標題裡；有焦點的面板框線換成黃色；最底一列「^q Quit  f1 Help  f8 History」。
 - 逐字摘錄（README）："The SQL IDE for Your Terminal."
 - 借了什麼：用**框線顏色**標出「鍵盤現在在哪個面板」；筆數寫在標題裡；底列只有三個鍵，其中一個是 Help。
