@@ -2,7 +2,7 @@
 
 > 適用於所有我們出貨的終端介面，包括 codeforge statusline、forge-stats（band／pane）、autopilot live mod（band、分頁列、pane、待決卡）和艦隊畫面（G23 分頁、G33 band 欄）。
 > 目的是讓同一個符號、同一個顏色、同一個字在每個畫面上都是同一個意思；畫面再窄、再矮，最重要的那件事也還看得到。
-> 這份文件是規範的單一來源（`doc/specs/codeforge-mod-ui.md` §5 已改成指向本文）。autopilot 的 `docs/plans/2026-10-13-live-pane-design-system.md`（以下簡稱 DS）負責 live mod 內部的實作細節。兩者衝突時以本文為準，並回頭修正 DS。
+> 這份文件是規範的單一來源（`doc/specs/codeforge-mod-ui.md` §5 已改成指向本文）。autopilot 的 `project/plans/2026-10-13-live-pane-design-system.md`（relayout P1 前在 `docs/plans/`）（以下簡稱 DS）負責 live mod 內部的實作細節。兩者衝突時以本文為準，並回頭修正 DS。
 > 狀態：v1（PM G34，2026-11-03）。本文所說的「現況」都附出處，數字以程式碼為準。
 
 ## 1. 空間合約：誰擁有哪幾列、哪幾欄
@@ -325,3 +325,31 @@ tmux kill-session -t cap
 - End 回到最新，Home 到最舊。
 - resize 後，原本在底部的仍在底部。
 - 快照型重新整理後停在原本那一行。追加型在往上捲時出現「有新訊息 ↓」，在底部時跟著最新。
+
+## 14. band 的疊層與焦點（PM 裁定，2026-11-06）
+
+band 的版面（選單列、視窗、對話框）還在等操作員選定（ux-v5 比較頁）。這一節先寫已經裁定、也在真機量過的部分，版面選定後再補完整的互動版面。
+
+**實測版本：Claude Code 2.1.318。** 升級 Claude Code 時，本節每一條都要在真機重測，結果和版本號一起更新到這裡。
+
+### 14.1 疊層是允許的
+
+`Box` 有 `position: "absolute"`（型別檔 `index.d.ts` 905–965 行）：「leaves the flow, as in CSS: placed against its parent by the offsets, no room among its siblings, painted over those before it」，用 `top`／`left`／`right`／`bottom` 定位。下拉選單和對話框可以真的蓋在視窗上，陰影可以不佔版面；疊層裡的 Button 一樣吃數字熱鍵（輸入框空著時直接按得到），`$.ui.focus` 可以把反白移進疊層。
+
+引擎**不會**替你做三件事，所以每個疊層都必須遵守：
+
+| 規範 | 內容 | 為什麼 |
+|---|---|---|
+| R1 右緣自己裁切 | 疊層連同陰影的 `left + 寬度` 不超過 `bodyColumns`，不畫進右邊保留給 `[-]` 的 5 格；高度仍受 band 半個畫面的上限 | 疊層超出右緣不會被裁，會畫進 `[-]` 的位置 |
+| R2 底自己清 | 疊層每一列都用空白補滿到自己的寬度；要讓下層看起來變暗，就自己把下層重畫成 `inactive`／`subtle` 色 | 引擎不清疊層底下的字，也不把下層變暗 |
+| R3 每個疊層一顆接焦點的按鈕 | 疊層打開時，若拿掉了下層的 Button，疊層裡至少要有一顆 Button 接住反白（例如「c: 收起」或第一個選項） | 反白所在的 Button 消失後，落點不固定；實測曾掉回輸入框，之後打的字全進了輸入框 |
+
+不用疊層也可以：在原位重畫 band 的一塊（例如下拉時換掉清單欄），焦點靠沿用 Button 的 key 穩住（ux-v5 的 O1、G1）。
+
+### 14.2 焦點（真機實測）
+
+- 焦點跟著 Button 的 `key` 走：換卡時沿用同一個 key（例如選項一律 `opt:1`、`opt:2`），反白就不跳。
+- 反白所在的 Button 消失時，落點**不固定**（可能是第一個 Button，也可能回到輸入框），所以不要讓焦點所在的 Button 消失而沒有接手的按鈕（見 R3）。
+- `autoFocus` 只在剛拿到鍵盤時生效；之後要移動反白，用 `$.ui.focus`，它只在 band 已經拿著鍵盤時有效。
+- Button 的 hotkey 只能是一個數字或一個小寫字母（型別檔 1117–1122 行）。輸入框空著時，打數字會直接按下 band 上的按鈕；字母熱鍵要先拿到鍵盤（ctrl+x tab 或點一下）。`?` 是 Claude Code 自己的說明鍵，不能拿來當熱鍵。
+
