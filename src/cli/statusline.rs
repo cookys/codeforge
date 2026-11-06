@@ -56,10 +56,10 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let conn = ctx.open_db()?;
     let has_pet = LiveState::exists(&conn).unwrap_or(false);
 
-    let width: usize = std::env::var("CODEFORGE_WIDTH")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(100);
+    let width = statusline_width(
+        std::env::var("CODEFORGE_WIDTH").ok().as_deref(),
+        std::env::var("COLUMNS").ok().as_deref(),
+    );
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -269,8 +269,21 @@ fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> boo
         && v["layout"] == "band"
 }
 
+/// The width to draw at: `CODEFORGE_WIDTH` when set, else the terminal's `COLUMNS` (set by
+/// Claude Code when it starts the statusline, following a resize) minus 4 (Claude Code indents
+/// the statusline 2 columns and keeps 2 free on the right: measured at 120 and 160 columns),
+/// else 100.
+fn statusline_width(codeforge_width: Option<&str>, columns: Option<&str>) -> usize {
+    let parse = |v: Option<&str>| v.and_then(|v| v.trim().parse::<usize>().ok());
+    parse(codeforge_width)
+        .or_else(|| parse(columns).filter(|&c| c > 4).map(|c| c - 4))
+        .unwrap_or(100)
+}
+
 /// The compact form drawn while the forge-stats band layout runs: the no-pet
 /// identity + usage strip (2 lines, no frame, no pet rows), without the adopt hint.
+/// When the identity, the version and the whole usage part fit on one line with 2
+/// columns between them, it is one line: identity left, version and usage right.
 fn render_compact<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
     render_strip(out, data, width, false)
 }
@@ -1129,6 +1142,30 @@ fn render_strip<W: Write>(
     } else {
         None
     };
+    // One line (compact form only): " " identity, at least 2 spaces, version "   " usage.
+    // The usage part is the one the two-line form would draw, so nothing is dropped.
+    if !adopt_hint {
+        let left = format!(
+            " {}{}{}{} {}",
+            model_text,
+            tc(" ── ", delim_c),
+            tc(&cwd_display, CWD_C),
+            ab_part,
+            tc(&branch_display, BRANCH_C),
+        );
+        let left_vis = 1 + model_vis + 4 + cwd_vis + ab_vis + 1 + branch_vis;
+        let right = format!("{ver_str}   {usage_left}");
+        let right_vis = ver_vis + 3 + usage_left_vis;
+        if left_vis + 2 + right_vis <= width {
+            let pad = width - left_vis - right_vis;
+            let rows = [Row {
+                art: None,
+                info: format!("{left}{}{right}", " ".repeat(pad)),
+            }];
+            return render_rows(out, &rows, 0);
+        }
+    }
+
     let row1 = match hint_render {
         Some((h, hv)) => {
             let pad = width.saturating_sub(1 + usage_left_vis + hv + 1);
@@ -2091,6 +2128,71 @@ mod tests {
         );
         assert!(!text.contains("adopt"), "no adopt hint: {text}");
         assert!(text.contains("ctx"), "usage row kept: {text}");
+    }
+
+    #[test]
+    fn width_is_codeforge_width_else_columns_minus_4_else_100() {
+        assert_eq!(statusline_width(Some("90"), Some("160")), 90);
+        assert_eq!(statusline_width(None, Some("160")), 156);
+        assert_eq!(statusline_width(None, Some("120")), 116);
+        assert_eq!(statusline_width(Some("x"), Some("130")), 126);
+        assert_eq!(statusline_width(None, Some("4")), 100);
+        assert_eq!(statusline_width(None, Some("wide")), 100);
+        assert_eq!(statusline_width(None, None), 100);
+    }
+
+    fn compact_lines(data: &StatusInput, width: usize) -> Vec<String> {
+        let mut buf = Vec::new();
+        render_compact(&mut buf, data, width).unwrap();
+        strip_ansi(&String::from_utf8(buf).unwrap())
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn compact_form_is_one_line_exactly_when_everything_fits() {
+        let data = StatusInput {
+            model: Some("Opus 5.5".into()),
+            cwd: Some("/tmp/範例專案".into()),
+            version: Some("2.1.318".into()),
+            context_pct: Some(0.31),
+            five_hour_pct: Some(0.08),
+            five_hour_resets_at: Some(chrono::Utc::now().timestamp() + 1800),
+            seven_day_pct: Some(0.46),
+            seven_day_resets_at: Some(chrono::Utc::now().timestamp() + 5 * 86400),
+            ..Default::default()
+        };
+        // wide: one line, exactly `width` columns, identity left and usage right
+        let wide = compact_lines(&data, 300);
+        assert_eq!(wide.len(), 1, "{wide:?}");
+        let line = &wide[0];
+        assert_eq!(vis(line), 300, "{line:?}");
+        for part in ["Opus 5.5", "範例專案", "5h", "7d", "ctx"] {
+            assert!(line.contains(part), "{part} missing: {line:?}");
+        }
+        assert!(line.find("範例專案") < line.find("5h"));
+        // the threshold is the content: identity + 2 spaces + version and usage
+        let pad = {
+            let mut best = 0;
+            let mut run = 0;
+            for c in line.chars() {
+                run = if c == ' ' { run + 1 } else { 0 };
+                best = best.max(run);
+            }
+            best
+        };
+        let need = 300 - pad + 2;
+        let at = compact_lines(&data, need);
+        assert_eq!(at.len(), 1, "at the threshold {need}: {at:?}");
+        assert!(vis(&at[0]) <= need);
+        let below = compact_lines(&data, need - 1);
+        assert_eq!(below.len(), 2, "one column short of {need}: {below:?}");
+        for l in &below {
+            assert!(vis(l) < need, "{l:?}");
+        }
+        // narrow: the two-line form as before
+        assert_eq!(compact_lines(&data, 80).len(), 2);
     }
 
     /// (g) statusline fixture from p0/statusline.json ⇒ main file matches
