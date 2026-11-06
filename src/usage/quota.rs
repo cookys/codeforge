@@ -245,7 +245,7 @@ fn wider_than_0600(_path: &Path) -> bool {
 
 /// Merge `snap` into the file on disk ([`merge_window`] per window) and write the
 /// result, unless it holds the same values as the file, which was written less than
-/// WRITE_EVERY_MS ago and is not wider than 0600 (a wider one is rewritten at once: the
+/// WRITE_EVERY_MS ago and is not wider than 0600 (a wider one is merged and rewritten at once: the
 /// shared writer creates it 0600). Returns the merged snapshot (what this account's
 /// row should show) and whether it wrote. An invalid alias writes nothing and returns
 /// `snap` as it came.
@@ -258,7 +258,7 @@ pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot,
     }
     let file = format!("{}.json", snap.alias);
     let path = dir.join(&file);
-    let old = read_bounded(&path).filter(|_| !wider_than_0600(&path));
+    let old = read_bounded(&path);
     let merged = match &old {
         None => snap.clone(),
         Some(old) => Snapshot {
@@ -269,7 +269,7 @@ pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot,
             seven_day: merge_window(old.seven_day.as_ref(), snap.seven_day.as_ref()),
         },
     };
-    if let Some(old) = &old {
+    if let Some(old) = old.as_ref().filter(|_| !wider_than_0600(&path)) {
         let age = snap.written_at_ms - old.written_at_ms;
         if same_value(&old.five_hour, &merged.five_hour)
             && same_value(&old.seven_day, &merged.seven_day)
@@ -467,6 +467,24 @@ mod tests {
         };
         assert!(merge_snapshot(&dir, &soon).unwrap().1);
         assert_eq!(mode(&dir.join("acct-a.json")), 0o600);
+        // the rewrite still merges: a lower value of the same window does not land
+        std::fs::set_permissions(
+            dir.join("acct-a.json"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        let lower = snap("acct-a", NOW_MS + 43_000, Some((0.02, NOW_S + 60)), None);
+        let (merged, wrote) = merge_snapshot(&dir, &lower).unwrap();
+        assert!(wrote);
+        assert_eq!(mode(&dir.join("acct-a.json")), 0o600);
+        assert_eq!(merged.five_hour.map(|w| w.pct), Some(0.33));
+        assert_eq!(
+            read_bounded(&dir.join("acct-a.json"))
+                .unwrap()
+                .five_hour
+                .map(|w| w.pct),
+            Some(0.33)
+        );
         // an invalid alias is never written
         let bad = snap("Me@x", NOW_MS, Some((0.1, NOW_S + 60)), None);
         assert!(!merge_snapshot(&dir, &bad).unwrap().1);
