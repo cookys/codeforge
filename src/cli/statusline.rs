@@ -2576,6 +2576,8 @@ mod tests {
     /// G40 transition (design 7 rule 7): with no mirror the quota segment IS the G36 segment, byte for byte.
     #[test]
     fn quota_segment_without_mirror_is_byte_identical_to_the_g36_segment() {
+        // both sides read NO_COLOR, which other tests toggle under ENV_LOCK
+        let _g = ENV_LOCK.lock().unwrap();
         let others = vec![
             quota_snap("acct-b", 0.81, Q_NOW + 3 * 86400 + 7200),
             quota_snap("acct-c", 0.12, Q_NOW + 4 * 3600),
