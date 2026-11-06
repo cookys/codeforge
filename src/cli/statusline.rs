@@ -276,7 +276,7 @@ fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> boo
 fn statusline_width(codeforge_width: Option<&str>, columns: Option<&str>) -> usize {
     let parse = |v: Option<&str>| v.and_then(|v| v.trim().parse::<usize>().ok());
     parse(codeforge_width)
-        .or_else(|| parse(columns).filter(|&c| c > 4).map(|c| c - 4))
+        .or_else(|| parse(columns).map(|c| c.saturating_sub(4)))
         .unwrap_or(100)
 }
 
@@ -2136,7 +2136,8 @@ mod tests {
         assert_eq!(statusline_width(None, Some("160")), 156);
         assert_eq!(statusline_width(None, Some("120")), 116);
         assert_eq!(statusline_width(Some("x"), Some("130")), 126);
-        assert_eq!(statusline_width(None, Some("4")), 100);
+        assert_eq!(statusline_width(None, Some("4")), 0);
+        assert_eq!(statusline_width(None, Some("30")), 26);
         assert_eq!(statusline_width(None, Some("wide")), 100);
         assert_eq!(statusline_width(None, None), 100);
     }
@@ -2191,8 +2192,9 @@ mod tests {
         for l in &below {
             assert!(vis(l) < need, "{l:?}");
         }
-        // narrow: the two-line form as before
+        // narrow: the two-line form as before; a tiny terminal still draws
         assert_eq!(compact_lines(&data, 80).len(), 2);
+        assert_eq!(compact_lines(&data, 0).len(), 2);
     }
 
     /// (g) statusline fixture from p0/statusline.json ⇒ main file matches
