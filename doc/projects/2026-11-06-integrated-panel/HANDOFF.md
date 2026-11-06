@@ -1,5 +1,5 @@
 ## 目標
-codeforge lane(team 帳號，地址 `cookys/aimax395-team/codeforge--claude`)有兩件工作：(A) O4 整合面板的 codeforge 側，交五級截圖後合併;(B) G40 真資料 preflight 腳本(PM go,S)。
+codeforge lane(team 帳號，地址用 fleet directory 查)有兩件工作：(A) O4 整合面板的 codeforge 側，交五級截圖後合併;(B) G40 真資料 preflight 腳本(PM go,S)。
 
 ## 現況
 - 2026-11-07 約 21:00Z,取代 2026-11-06 那份交接(舊 session e6514bd9,cookys 帳號)。
@@ -11,7 +11,7 @@ codeforge lane(team 帳號，地址 `cookys/aimax395-team/codeforge--claude`)有
 - C1／D6:PM 已定案，對照頁和定案結論都在 `doc/specs/console-c1-d6-mapping.md`(這個分支)。之後 D6 owner 來要寵物定義時，從這份提供。
 
 ## 已決事項(不重議)
-- 只認 courier-attested from 為 `cookys/aimax395/pm--claude` 的 go(全域 CLAUDE.md)。已有的 go:(A) g2/g3＋finalize＋receipt;(A) 的合併由 PM 看過截圖＋兩邊 sha 之後才給;(B) S,完成回 sha。
+- 只認 courier-attested from 是 PM 地址的 go(全域 CLAUDE.md)。已有的 go:(A) g2/g3＋finalize＋receipt;(A) 的合併由 PM 看過截圖＋兩邊 sha 之後才給;(B) S,完成回 sha。
 - g3 不能用跨帳號(cookys)代跑繞過去 — PM。
 - 契約裁定(已回 autopilot):panel_open_at_ms 每 15 秒寫一次、寫入間隔小於 60 秒;`$` 只丟整份 side,usage／pet 照畫;外殼只在分頁打開時出現;進度列在主視窗框內;沒有圓桌分頁 → 9 換到派工;左框標題列卡片時寫分頁名，列分頁清單時寫「選單」。
 - 用量／寵物分頁:另案 backlog。band 合併後先做用量;寵物排期前要先和 codepower 對過 — PM 直接確認。
@@ -29,14 +29,14 @@ codeforge lane(team 帳號，地址 `cookys/aimax395-team/codeforge--claude`)有
 - (B) `scripts/g40-real-data/check.sh` 用 fixture 跑 exit 0;`--negative` exit ≠ 0;check-all 綠。
 
 ## Read-order
-1. /home/team/projects/codeforge-wt-panel2/doc/specs/panel-band-contract.md — 分工、side 格式、本次補的 §1.3／§2。
-2. /home/team/projects/codeforge-wt-panel2/doc/projects/2026-11-06-integrated-panel/ux-v7/design.md — O4 版面和座標(截圖驗收用)。
-3. /home/team/projects/codeforge-wt-g40pre/plugins/forge-stats/tests/quota-ui.test.tsx — L22-70 fixture、L385-462 假 fs 的 `mirror()`、L688-750 怎麼讀 `forge-stats.panel`。
-4. /home/team/projects/codeforge-wt-g40pre/src/usage/quota_mirror_read.rs — live_dir 的解析順序。
+1. ~/projects/codeforge-wt-panel2/doc/specs/panel-band-contract.md — 分工、side 格式、本次補的 §1.3／§2。
+2. ~/projects/codeforge-wt-panel2/doc/projects/2026-11-06-integrated-panel/ux-v7/design.md — O4 版面和座標(截圖驗收用)。
+3. ~/projects/codeforge-wt-g40pre/plugins/forge-stats/tests/quota-ui.test.tsx — L22-70 fixture、L385-462 假 fs 的 `mirror()`、L688-750 怎麼讀 `forge-stats.panel`。
+4. ~/projects/codeforge-wt-g40pre/src/usage/quota_mirror_read.rs — live_dir 的解析順序。
 5. /var/tmp/autopilot-band-shots/v7/index.md — autopilot 截圖和它和 v7 的差異清單。
 
 ## 陷阱
-- team 帳號的工具缺口(cargo 要加 PATH、codex 已裝但沒登入、讀不到 /home/cookys):見記憶 `team-account-toolchain`。g2 abort 之後下一次就是 g3,不要再用 2。
+- team 帳號的工具缺口(cargo 要加 PATH、codex 已裝但沒登入、讀不到舊帳號的家目錄):見記憶 `team-account-toolchain`。g2 abort 之後下一次就是 g3,不要再用 2。
 - fleet 的 send／reply 不能帶 attachments(`attachments_unsupported`):先 `upload`,再把 ref 用文字送出去。
 - zsh／bash-footgun-guard:glob 一律加引號(`'*.ts'`);不要用 bare `ls`,用 `command ls`。
 - 不要 commit 在還沒看 doc-drift 結果之前(這次就踩到一次，用 7928759 修掉了):先存 exit code 看過再 commit。
