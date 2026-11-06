@@ -47,8 +47,8 @@ type PanelLine = { text: string; tone?: PanelTone }[]                          /
 type PanelState = {
   schema: 'codeforge.panel/1'
   updated_at_ms: number          // 每次寫入時的 Date.now()
-  usage: { tiers: Record<string, PanelLine[]> }
-  pet:   { title: string; sprite: SpriteData | null; tiers: Record<string, PanelLine[]> }
+  usage: { tiers: Record<string, PanelLine[]> }   // 用量分頁用;band 目前沒有這個分頁:pending,PM 裁定
+  pet:   { title: string; sprite: SpriteData | null; tiers: Record<string, PanelLine[]> }   // 寵物分頁用;同上 pending
   side?: PanelSide               // 本節
 }
 ```
