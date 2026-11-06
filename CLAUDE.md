@@ -42,7 +42,7 @@ cargo build --release          # release build → target/release/codeforge
 cargo check                    # fast type-check (no binary)
 cargo test                     # run tests
 cargo clippy                   # lint
-./scripts/check-all.sh         # THE merge gate (no hosted CI since G38): fmt, clippy --all-targets, test (flake guard), cjk-safe, doc-drift, cargo deny, shellcheck install.sh, MSRV release smoke
+./scripts/check-all.sh         # THE merge gate (no hosted CI since G38): fmt, clippy --all-targets, test (flake guard), cjk-safe, doc-drift, cargo deny, shellcheck, checkout guard (main clone stays on develop), MSRV release smoke
 ./scripts/package.sh <target>  # release tarball + .sha256 named as install.sh downloads them (dist/); --cross, --max-glibc; reproducible
 ./scripts/repro-check.sh <target> # build HEAD twice at two paths; archives must match
 ./scripts/release-local.sh     # local release: linux x86_64/aarch64 via cross (glibc <= 2.35), install.sh verified from a local server, dist/RELEASE.txt; --publish = DRAFT only (operator publishes)
@@ -100,6 +100,7 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 - **I18n**: UI strings in `locales/en.yaml` + `locales/zh-TW.yaml`, game content runtime (Phase 2+)
 - **Commit style**: Conventional Commits (`feat/fix/docs/chore/build`)
 - **Branch**: 所有工作先走 feature branch 再進 develop，main 只接受 --no-ff 合併（d-6b183bd3）
+- **主 clone 永遠停在 develop**（PM 2026-11-06）：forge-stats 外掛直接從主 clone 的 `plugins/forge-stats` 載入（`claude plugin update` 回報 "read from its folder"），主 clone 切到哪個分支、改了什麼還沒 commit 的檔案，各 session 在 `/reload-plugins` 或重開後就跑那一份。所以：feature 開發一律在 `git worktree add ../<目錄> -b <分支> develop` 做，不在主 clone 切分支，也不在主 clone 直接改檔。主 clone 要裝 post-checkout 警告：`./scripts/install-checkout-guard.sh`（切離 develop 時大聲警告；測試 `scripts/checkout-guard.test.sh`，在 check-all 裡）。警告擋不住的：主 clone 上沒 commit 的修改、`git reset --hard` 或 merge 讓 develop 本身指到別的內容、`git bisect`。
 
 ## Session Start (Mandatory)
 
