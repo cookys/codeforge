@@ -12,7 +12,11 @@
 | 讀 `forge-stats.panel` | reader 是這一批的新工作（目前 mods/ 沒有任何地方讀它） | — |
 | 選級 | 依 band 實際拿到的 `bodyColumns` 選級（§1.1） | 不知道級數，只提供「各種欄寬各一份」排好的列 |
 | 資料 | 待送 N 張＝`DecideState.sent`（`mods/live/model.ts`）；圓桌＝`~/.autopilot/rooms/<room>/room.jsonl`；fleet lane＝`FleetSummary.lanes`（`mods/live/fleet.ts`） | 用量（配額比例、今天各模型比例）、記憶／大腦 |
-| 寫入 | `autopilot.panel_open_at_ms`（已有） | `$.state` `forge-stats.panel`（`codeforge.panel/1`，本文加 `side`） |
+| 寫入 | `autopilot.panel_open_at_ms`（這一批新寫，見 §1.3） | `$.state` `forge-stats.panel`（`codeforge.panel/1`，本文加 `side`） |
+
+### 1.3 `autopilot.panel_open_at_ms`
+
+外殼畫在螢幕上時，autopilot 每 15 秒寫一次 `Date.now()`，關掉就停。forge-stats 看到的值如果在 60 秒內（`QUOTA_WATCH_MS`），就照常更新配額鏡像；比現在還晚的值當作沒有。寫入間隔必須小於 60 秒，否則面板開著時鏡像會中斷。外殼關掉後，最多 60 秒內停止掃描。
 
 ### 1.1 選級
 
@@ -34,6 +38,25 @@ side?: {
   memory:     { tiers: { '30': PanelLine[]; '40': PanelLine[]; '50': PanelLine[] } } // ≤ 2 列：記憶 L1 條數、大腦狀態（只寫字，不用狀態符號）
 }
 ```
+
+外層欄位(型別的唯一來源是 `plugins/forge-stats/types/index.d.ts`;這裡列出來方便對照):
+
+```ts
+type PanelTone = 'subtle' | 'inactive' | 'dim' | 'bold' | 'mono' | 'success'   // 只有文字色和字型樣式，沒有底色和反白
+type PanelLine = { text: string; tone?: PanelTone }[]                          // 依序畫出各段，producer 不會裁斷任何一段
+type PanelState = {
+  schema: 'codeforge.panel/1'
+  updated_at_ms: number          // 每次寫入時的 Date.now()
+  usage: { tiers: Record<string, PanelLine[]> }
+  pet:   { title: string; sprite: SpriteData | null; tiers: Record<string, PanelLine[]> }
+  side?: PanelSide               // 本節
+}
+```
+
+reader 的處理(autopilot 實作，codeforge 認可):
+- 沒有檔案、JSON 壞掉、`schema` 不是 `codeforge.panel/1`:一律當作沒有摘要。
+- `side` 任何一段文字含 `$`:整份 `side` 都不畫,`usage`／`pet` 照常畫。這和 producer 寫入前的檢查是同一條規則，兩邊各自守住。
+- `updated_at_ms` 超過 60 秒沒更新：在右欄第一列標「資料 N 分鐘前」。
 
 - 加欄位不改 schema 字串。reader 忽略不認得的欄位；缺 `panel` 或缺 `side` 不算錯誤：右欄只畫圓桌，不留空洞。
 - 讀法同 `tiers`：取不超過欄內寬的最大一份。五級的欄內寬是 32、50、44、45、42，各自取到 30、50、40、40、40。producer 保證每一列不超過自己的 key；band 照常裁到「欄內寬 − 1」並加 `…`。
