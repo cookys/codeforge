@@ -29,13 +29,15 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             .unwrap_or(0);
         // G36: this account's quota snapshot out, the other accounts' back in.
         let (config_dir, alias) = crate::usage::alias::current_claude_account();
-        data.others = record_quota(
-            &data,
+        let others = record_quota(
+            &mut data,
             &crate::usage::quota::quota_dir(&live_base),
             &alias,
             &crate::usage::alias::path_hash8(&config_dir),
+            &crate::live::sanitize_session_id(raw_sid),
             now_ms,
         );
+        data.others = others;
         // G40: once `<live_dir>/quota/` exists the mirror is the only source on this row (design 7 rule 7).
         data.mirror = crate::usage::quota_mirror_read::load_for_statusline(now_ms / 1000);
         // G36: a background `usage collect` at most every 15 min (no SessionEnd hook needed).
@@ -297,19 +299,29 @@ struct StatusInput {
 
 // ─── G36 per-account quota (doc/plans/2026-11-03-usage-collector.md §2–3) ─────
 
-/// Write this account's quota snapshot when Claude Code reported `rate_limits`
-/// (throttled, 0600), then read the other accounts' snapshots back. Never fails
-/// the statusline: a write or read error only means fewer accounts shown.
+/// Merge this account's quota into its snapshot when Claude Code reported `rate_limits`
+/// (throttled, 0600; a window's value only grows, see `quota::merge_snapshot`) and show
+/// the merged value on this session's own bars, so an idle session no longer shows the
+/// lower value of its last API call. Then read the other accounts' snapshots back.
+/// Never fails the statusline: a write or read error only means fewer accounts shown.
 fn record_quota(
-    data: &StatusInput,
+    data: &mut StatusInput,
     dir: &std::path::Path,
     alias: &str,
     root: &str,
+    session: &str,
     now_ms: i64,
 ) -> Vec<crate::usage::quota::Snapshot> {
-    use crate::usage::quota::{read_others, write_snapshot, Snapshot, Window};
+    use crate::usage::quota::{merge_snapshot, read_others, Seen, Snapshot, Window};
     let window = |pct: Option<f64>, at: Option<i64>| match (pct, at) {
-        (Some(pct), Some(resets_at)) => Some(Window { pct, resets_at }),
+        (Some(pct), Some(resets_at)) => Some(Window {
+            pct,
+            resets_at,
+            seen: Some(Seen {
+                at_ms: now_ms,
+                session: session.to_string(),
+            }),
+        }),
         _ => None,
     };
     let snap = Snapshot {
@@ -320,7 +332,16 @@ fn record_quota(
         seven_day: window(data.seven_day_pct, data.seven_day_resets_at),
     };
     if snap.five_hour.is_some() || snap.seven_day.is_some() {
-        let _ = write_snapshot(dir, &snap);
+        if let Ok((merged, _)) = merge_snapshot(dir, &snap) {
+            if let Some(w) = merged.five_hour {
+                data.five_hour_pct = Some(w.pct);
+                data.five_hour_resets_at = Some(w.resets_at);
+            }
+            if let Some(w) = merged.seven_day {
+                data.seven_day_pct = Some(w.pct);
+                data.seven_day_resets_at = Some(w.resets_at);
+            }
+        }
     }
     read_others(dir, alias, now_ms)
 }
@@ -2394,7 +2415,11 @@ mod tests {
             root: None,
             written_at_ms: 0,
             five_hour: None,
-            seven_day: Some(crate::usage::quota::Window { pct, resets_at }),
+            seven_day: Some(crate::usage::quota::Window {
+                pct,
+                resets_at,
+                seen: None,
+            }),
         }
     }
 
@@ -2539,32 +2564,56 @@ mod tests {
         };
         crate::live::write_live_json(&dir, "acct-b.json", &other.to_json()).unwrap();
         // no rate_limits: nothing written, the others still read
-        let none = StatusInput::default();
-        let got = record_quota(&none, &dir, "acct-a", "1a2b3c4d", now_ms);
+        let mut none = StatusInput::default();
+        let got = record_quota(&mut none, &dir, "acct-a", "1a2b3c4d", "sess-1", now_ms);
         assert_eq!(
             got.iter().map(|s| s.alias.as_str()).collect::<Vec<_>>(),
             ["acct-b"]
         );
         assert!(!dir.join("acct-a.json").exists());
         // rate_limits: this account's snapshot written, not shown among the others
-        let data = StatusInput {
+        let mut data = StatusInput {
             seven_day_pct: Some(0.75),
             seven_day_resets_at: Some(Q_NOW + 86400),
             ..Default::default()
         };
-        let got = record_quota(&data, &dir, "acct-a", "1a2b3c4d", now_ms);
+        let got = record_quota(&mut data, &dir, "acct-a", "1a2b3c4d", "sess-1", now_ms);
         assert_eq!(got.len(), 1);
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("acct-a.json")).unwrap())
                 .unwrap();
         assert_eq!(v["seven_day"]["pct"], 0.75);
+        assert_eq!(v["seven_day"]["seen_by"], "sess-1");
+        assert_eq!(v["seven_day"]["seen_at_ms"], now_ms);
         assert_eq!(v["five_hour"], serde_json::Value::Null);
+        // an idle session of the same account, still holding a lower value of the same
+        // window: the file keeps 0.75 and this session's own bar shows 0.75 too
+        let mut idle = StatusInput {
+            seven_day_pct: Some(0.48),
+            seven_day_resets_at: Some(Q_NOW + 86400),
+            ..Default::default()
+        };
+        record_quota(
+            &mut idle,
+            &dir,
+            "acct-a",
+            "1a2b3c4d",
+            "sess-2",
+            now_ms + 1000,
+        );
+        assert_eq!(idle.seven_day_pct, Some(0.75));
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("acct-a.json")).unwrap())
+                .unwrap();
+        assert_eq!(v["seven_day"]["pct"], 0.75);
+        assert_eq!(v["seven_day"]["seen_by"], "sess-1");
         // a missing dir is no error
         assert!(record_quota(
-            &none,
+            &mut none,
             &base.path().join("nope"),
             "acct-a",
             "1a2b3c4d",
+            "sess-1",
             now_ms
         )
         .is_empty());
