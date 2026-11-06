@@ -1,7 +1,7 @@
 # 整合面板 band 的介面約定（O4 寬度分級，2026-11-06）
 
 > 狀態：v1，codeforge 起草，autopilot 審過（`panel-contract-review.md`，逐條附 file:line），改完再請 autopilot 確認一次。
-> 依據：操作員 d-f0bcb1f2（O3 為底＋G3 進度列）、PM 2026-11-06「寬度分級 O4 定案」。版面與真機座標：`ui-preview/codeforge/ux-v7/design.md`（不進 git）。
+> 依據：操作員 d-f0bcb1f2（O3 為底＋G3 進度列）、PM 2026-11-06「寬度分級 O4 定案」。版面與真機座標：[`ux-v7/design.md`](../projects/2026-11-06-integrated-panel/ux-v7/design.md)（截圖不進 git）。
 > 規範：`tui-guideline.md` §3、§14。`codeforge.panel/1` 原有欄位的定義在 `codeforge-mod-ui.md` §7，這裡不重複。
 
 ## 1. 誰做什麼
