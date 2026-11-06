@@ -82,6 +82,15 @@ export type PanelState = {
   usage: { tiers: Record<string, PanelLine[]> }
   /** `sprite` is pet.json's `village.sprite` as forge-stats validated it (SpriteData: palette 0xRRGGBB; static in v1); `tiers` the stats lines without the art. */
   pet: { title: string; sprite: SpriteData | null; tiers: Record<string, PanelLine[]> }
+  /** The O4 band's right-hand summary columns (doc/specs/panel-band-contract.md §2); optional: a reader without it draws the 圓桌 column alone. */
+  side?: PanelSide
+}
+
+/** Lines per column width ("30" … "50"): the reader takes the widest key that fits its inner width. Ratios and counts only, never money. */
+export type PanelSide = {
+  usage: { tiers: Record<string, PanelLine[]> }
+  usage_full: { tiers: Record<string, PanelLine[]> }
+  memory: { tiers: Record<string, PanelLine[]> }
 }
 
 declare module 'claude-code' {
