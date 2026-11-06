@@ -368,6 +368,7 @@ mod tests {
             five_hour: Some(Window {
                 pct: 0.3,
                 resets_at: 9,
+                seen: None,
             }),
             seven_day: None,
         };
