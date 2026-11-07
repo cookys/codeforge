@@ -7,7 +7,7 @@ codeforge lane(team 帳號，地址用 fleet directory 查)有兩件工作：(A)
   - 驗證:check-all 10 步在 03fba21 全綠(team 帳號要加 PATH,見陷阱);forge-stats 171 pass。
   - review:g1 已 finalize;g2 因 team 帳號沒有 codex 記成 aborted(seat_gap)。**下一次是 g3**。ledger 在 `~/.codeforge-backups/side-review-ledger/`(PM 從舊帳號傳過來的)。
   - autopilot 的外殼：**已進 autopilot develop** c63987f2cd4d(Merge band;lane ab679f7bb500)。五級 × 四畫面截圖在 `/var/tmp/autopilot-band-shots/v7/`(index.md),我看過，沒有問題;交件前在真機重拍一次(重載 plugin)。
-- **(B) `feature/g40-real-data-preflight`**,worktree `~/projects/codeforge-wt-g40pre`(從 develop adf4454 開),**還沒寫程式**。
+- **(B) 已完成**:`feature/g40-real-data-preflight` 6146c80(已推，從 feature/panel-side 開的),worktree `~/projects/codeforge-wt-g40pre`。停車單 01M6T847PY 已回 done。要等 O4 合併之後，再請 PM 給這支的合併 go。
 - C1／D6:PM 已定案，對照頁和定案結論都在 `doc/specs/console-c1-d6-mapping.md`(這個分支)。之後 D6 owner 來要寵物定義時，從這份提供。
 
 ## 已決事項(不重議)
@@ -18,10 +18,9 @@ codeforge lane(team 帳號，地址用 fleet directory 查)有兩件工作：(A)
 - (B) 的做法：外掛測試只能 import 相對路徑和 "claude-code",不能用 node:fs,也拿不到 process.env(已探測)。所以腳本把 `plugins/forge-stats` 複製到暫存目錄，把鏡像目錄的檔案寫成一個相對路徑的 input 模組，再放一份 real-data 測試進去，跑 `claude plugin test <暫存目錄>`。真資料不進 repo。Rust 端用 `AUTOPILOT_LIVE_DIR=<dir>`＋`COLUMNS=80/120/160/200/240` 餵 `tests/fixtures/statusline-p0.json` 給 `codeforge statusline`。
 
 ## 下一步
-0. 接手 PM 的停車單 task 01M6T847PYN31KBP8FPZVQMRHV(已 accepted):開工時用 task_result in_progress 回 G40 preflight 的預計時間，做完回 done＋sha。
 1. 先查 `timeout 20 codex login status`。登入了的話，跑 g3:
    `node ~/projects/autopilot/scripts/hetero-review-loop.js collect --repo-root ~/projects/codeforge-wt-panel2 --ledger ~/.codeforge-backups/side-review-ledger/ledger --phase full --generation 3 --branch feature/panel-side --seats 'gpt-6-astra/high@codex' --spec-file ~/.codeforge-backups/side-review-ledger/spec.md --timeout 25m`(run_in_background,輸出存檔、看真的 exit code)。收斂後 finalize g3,resolutions 帶 g1 那條 7fa75441…(fixed in 03fba21);再跑 `check-phase-review-receipt.js --ledger … --phase full --branch feature/panel-side --phase-base 0ae0c34e0086690e711ff6dfea2b2869a0aecb7b --repo-root ~/projects/codeforge-wt-panel2`。
-2. (B) 在 `~/projects/codeforge-wt-g40pre` 寫 `scripts/g40-real-data/`:`check.sh [--negative] [<live_dir>]`。不給 live_dir 時用一份 commit 進去的合成 fixture live 目錄(`quota/namespace.json`、`quota/claude/<alias>.json`(用 `fleet.quota-view/1`,格式照 `plugins/forge-stats/tests/quota-ui.test.tsx:22-70` 的 mkFX／view)、`codeforge/usage/summary.json`);另外一份 test 範本。檢查兩件:panel/1 的 side(以及 usage tiers 的寬度)在每個 tier key 下 displayWidth ≤ key、沒有 `$`、沒有 `acct-`;statusline 五級寬度 ≤ COLUMNS、沒有 `$`、沒有 `acct-`。`--negative` 注入一個寬字元或 `$` 的值，必須轉紅。補一列 backlog,完成回 PM sha。
+2. (B) O4 合進 develop 之後:feature/g40-real-data-preflight rebase 到 develop,跑 check-all,向 PM 要合併 go。真資料到了(d-2a19fdb5)就跑 `scripts/g40-real-data/check.sh <live_dir>`。
 3. autopilot 這邊的 sha 已經有了(c63987f)。g3 receipt 綠了之後:在 panel tip 上用 `PATH="$HOME/.cargo/bin:$PATH" ./scripts/check-all.sh` 重跑 → 把五級截圖、兩邊 sha、receipt 交 PM → PM go 後 `--no-ff` 合 develop(merge 訊息先寫檔再 `-F`,最後一段放 `QC-Verdict: PASS (reviewer codex/gpt-6-astra, <日期>)` 和 Co-Authored-By)→ push → 刪 worktree 和分支。
 4. PM 指示新 session 接 (B) G40 preflight;(A) 等 codex 登入和 autopilot 推送，有動靜再處理。
 
