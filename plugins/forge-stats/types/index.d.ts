@@ -66,7 +66,7 @@ export type SessionView = {
   brain: 'ok' | 'degraded' | 'offline' | 'pending' | 'hidden'
 }
 
-/** A tone of the integrated panel: two theme text-colour keys and three Text styles; never a background or inverse. */
+/** A tone of the integrated panel: three theme text-colour keys (subtle, inactive, success) and three Text styles (dim, bold, mono); never a background or inverse. */
 export type PanelTone = 'subtle' | 'inactive' | 'dim' | 'bold' | 'mono' | 'success'
 
 /** One line as the pane lays it out: parts drawn in order, none ever cut. */
