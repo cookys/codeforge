@@ -47,6 +47,7 @@ cargo clippy                   # lint
 ./scripts/repro-check.sh <target> # build HEAD twice at two paths; archives must match
 ./scripts/release-local.sh     # local release: linux x86_64/aarch64 via cross (glibc <= 2.35), install.sh verified from a local server, dist/RELEASE.txt; --publish = DRAFT only (operator publishes)
 ./scripts/test-flake-guard.sh  # cargo test; a failure is rerun once, a flake is recorded in target/flaky-tests.log (never hidden)
+./scripts/g40-real-data/check.sh [<live_dir>]  # G40: statusline + panel/1 against a quota mirror at 5 widths (sandboxed); no arg = fixture, --negative = must fail
 
 # Formatting — ALWAYS via the pinned wrapper, NEVER bare `cargo fmt`
 ./scripts/fmt.sh               # format in place (pinned rustfmt, self-installs)
