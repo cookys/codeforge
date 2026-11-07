@@ -404,7 +404,17 @@ fn write_settings_atomic(path: &Path, settings: &Value) -> Result<()> {
                     .unwrap_or_else(|| "settings.json".to_string())
             );
             let bak = path.with_file_name(bak_name);
+            // a .bak that is a link is replaced, never written through
+            if fs::symlink_metadata(&bak).is_ok_and(|m| m.file_type().is_symlink()) {
+                fs::remove_file(&bak).with_context(|| format!("備份 {} 失敗", bak.display()))?;
+            }
             fs::write(&bak, &before).with_context(|| format!("備份 {} 失敗", bak.display()))?;
+            // the old text may hold secrets (env tokens): the backup gets the file's own mode
+            let mode = fs::metadata(&target)
+                .with_context(|| format!("備份 {} 失敗", bak.display()))?
+                .permissions();
+            fs::set_permissions(&bak, mode)
+                .with_context(|| format!("備份 {} 失敗", bak.display()))?;
         }
     }
 
@@ -1877,6 +1887,40 @@ mod tests {
         // a no-op re-write leaves the earlier backup as it was
         write_settings_atomic(&path, &json!({"a": 2})).unwrap();
         assert_eq!(fs::read_to_string(&bak).unwrap(), "{\n  \"a\": 1\n}\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_backup_keeps_the_settings_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        write_settings_atomic(&path, &json!({"env": {"TOKEN": "x"}})).unwrap();
+        // the old text may hold secrets too: the backup is never wider than the file it copies
+        let mode = fs::metadata(tmp.path().join("settings.json.bak"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_backup_replaces_a_linked_bak_instead_of_writing_through_it() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}\n").unwrap();
+        let elsewhere = tmp.path().join("elsewhere");
+        fs::write(&elsewhere, "keep").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, tmp.path().join("settings.json.bak")).unwrap();
+        write_settings_atomic(&path, &json!({"d": 1})).unwrap();
+        assert_eq!(fs::read_to_string(&elsewhere).unwrap(), "keep");
+        let bak = tmp.path().join("settings.json.bak");
+        assert!(!fs::symlink_metadata(&bak).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{}\n");
     }
 
     #[cfg(unix)]
