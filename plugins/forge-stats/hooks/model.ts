@@ -421,6 +421,8 @@ export type UsageView = {
 export const USAGE_CONTRACT = {
   "schema": "codeforge.usage-summary/1",
   "top": ["schema", "generated_at_ms", "host", "prices_as_of", "accounts", "days"],
+  "top_optional": ["dropped_accounts"],
+  "drop_reasons": ["written_at_ms_out_of_range", "resets_at_out_of_range", "pct_out_of_range"],
   "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
   "window": ["pct", "resets_at"],
   "day": ["day", "source", "account", "model", "speed", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests", "cost_usd"],
@@ -475,6 +477,13 @@ export function parseUsage(text: string | null, now: number): UsageView {
   } catch {
     return bad
   }
+  if (!isObj(raw)) return bad
+  // the optional drop record (codeforge dropped some bad local snapshots): reason -> count, closed reasons
+  const { dropped_accounts: droppedRaw, ...core } = raw
+  if (droppedRaw !== undefined) {
+    if (!isObj(droppedRaw) || !Object.entries(droppedRaw).every(([k, n]) => inSet(k, C.drop_reasons) && isUint(n))) return bad
+  }
+  raw = core
   if (!exactKeys(raw, C.top) || raw.schema !== C.schema || !isUint(raw.generated_at_ms)) return bad
   if (typeof raw.host !== 'string' || !HOST_RE.test(raw.host) || !isDay(raw.prices_as_of)) return bad
   if (!Array.isArray(raw.accounts) || raw.accounts.length > C.max_accounts || !Array.isArray(raw.days) || raw.days.length > C.max_days) return bad
