@@ -225,7 +225,7 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 - `scripts/lib/quota-contract.json`（autopilot P3）出現後，`QUOTA_CONTRACT` 的 30／7 天、6 h、300 s 改成跟它同步測試（契約 §21.4、N35）。
 - 契約 N37 的 `<live_dir>` 對照向量目前只有名稱沒有值；有具體值後移植成測試。mod 無法判斷 `/tmp` 是否在 RAM、目錄擁有者與權限，現在一律不採 `/tmp`、以「存在」代替 autopilot 的檢查。
 - forge-stats 的 `$.fs.read` 沒有 no-follow、限大小選項：讀後重驗大小與 stat，殘餘競態已註明；API 有了再改（Rust 端已用 `openat` 相對目錄描述元開檔，沒有這個問題）。
-- 真實 mirror 樣本與 Claude 的 `starts_window` 等操作員帳號卡 d-2a19fdb5；拿到後用真資料跑一次畫面。
+- 真實 mirror 樣本與 Claude 的 `starts_window` 等操作員帳號卡 d-2a19fdb5；拿到後跑 `scripts/g40-real-data/check.sh <live_dir>`（statusline 與 panel/1 五級寬度、`acct-`、`$`；2026-11-07 備好，合成 fixture 綠、負控制紅），再看一次畫面。
 **Trigger**: autopilot 宣布 P3／N37 落地或 plan amendment 回覆；或拿到真實 mirror 樣本；或下次動配額顯示。
 **Not done**: 只記錄。
 
