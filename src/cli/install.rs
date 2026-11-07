@@ -392,6 +392,22 @@ fn write_settings_atomic(path: &Path, settings: &Value) -> Result<()> {
     let tmp = target.with_file_name(format!("{file_name}.tmp.{}", std::process::id()));
     let pretty = serde_json::to_string_pretty(settings)? + "\n";
 
+    // A change keeps the previous text in `<path>.bak` (operator card d-f6e451d2), a plain file beside the
+    // path install was given: never inside a symlink's target dir, which may be a git-tracked dotfiles repo.
+    // A no-op re-write leaves an earlier backup alone.
+    if let Ok(before) = fs::read_to_string(&target) {
+        if before != pretty {
+            let bak_name = format!(
+                "{}.bak",
+                path.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "settings.json".to_string())
+            );
+            let bak = path.with_file_name(bak_name);
+            fs::write(&bak, &before).with_context(|| format!("備份 {} 失敗", bak.display()))?;
+        }
+    }
+
     let result = (|| -> Result<()> {
         let mut f = fs::File::create(&tmp)
             .with_context(|| format!("寫入 {} 失敗（目錄不可寫？）", target.display()))?;
@@ -1803,6 +1819,81 @@ mod tests {
             .file_type()
             .is_symlink());
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\n  \"c\": 3\n}\n");
+    }
+
+    /// The d-f6e451d2 rollout: re-running install over an older codeforge install adds
+    /// `statusLine.refreshInterval` and changes nothing else; the old text is in `.bak`.
+    #[test]
+    fn reinstall_over_an_older_install_adds_only_refresh_interval() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        let opts = || InstallOpts {
+            hooks: false,
+            all: true,
+            subagent_statusline: false,
+            project_hooks: false,
+            dry_run: false,
+            force: false,
+            replace_statusline: false,
+            yes: true,
+            settings_path: Some(path.clone()),
+            quiet: true,
+            cleanup_period_days: None,
+        };
+        run(opts()).unwrap();
+        // an install from before the field, with the user's own settings around it
+        let mut older: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        older["statusLine"]
+            .as_object_mut()
+            .unwrap()
+            .remove("refreshInterval");
+        older["theme"] = json!("dark");
+        older["env"] = json!({"X": "1"});
+        let older_text = serde_json::to_string_pretty(&older).unwrap() + "\n";
+        fs::write(&path, &older_text).unwrap();
+
+        run(opts()).unwrap();
+        let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let mut want = older.clone();
+        want["statusLine"]["refreshInterval"] = json!(STATUSLINE_REFRESH_S);
+        assert_eq!(after, want, "only statusLine.refreshInterval may change");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("settings.json.bak")).unwrap(),
+            older_text
+        );
+    }
+
+    #[test]
+    fn write_backs_up_a_changed_file_to_bak() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        let bak = tmp.path().join("settings.json.bak");
+        // no file before: nothing to back up
+        write_settings_atomic(&path, &json!({"a": 1})).unwrap();
+        assert!(!bak.exists());
+        // a change: the previous text is kept in .bak
+        write_settings_atomic(&path, &json!({"a": 2})).unwrap();
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{\n  \"a\": 1\n}\n");
+        // a no-op re-write leaves the earlier backup as it was
+        write_settings_atomic(&path, &json!({"a": 2})).unwrap();
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{\n  \"a\": 1\n}\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_backs_up_a_linked_settings_next_to_the_link() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dots = tmp.path().join("dotfiles");
+        fs::create_dir(&dots).unwrap();
+        fs::write(dots.join("settings.json"), "{}\n").unwrap();
+        let link = tmp.path().join("settings.json");
+        std::os::unix::fs::symlink(dots.join("settings.json"), &link).unwrap();
+        write_settings_atomic(&link, &json!({"b": 1})).unwrap();
+        // the backup is a plain file beside the link, never inside the (possibly git-tracked) target dir
+        let bak = tmp.path().join("settings.json.bak");
+        assert!(!fs::symlink_metadata(&bak).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{}\n");
+        assert!(!dots.join("settings.json.bak").exists());
     }
 
     #[cfg(unix)]
