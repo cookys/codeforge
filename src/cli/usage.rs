@@ -4,6 +4,7 @@ use crate::usage::{collect, price, quota, store, summary};
 use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub enum Action {
     Show { days: u32, by: String, json: bool },
@@ -91,6 +92,41 @@ fn money(c: Option<f64>) -> String {
     c.map_or_else(|| "—".to_string(), |c| format!("${c:.2}"))
 }
 
+/// Column widths of the `usage` table; the 2nd (key) is left-aligned, the rest right-aligned
+/// after the date.
+const COLS: [usize; 8] = [10, 24, 8, 8, 8, 8, 6, 10];
+
+/// `s` cut to at most `cols` display columns (whole chars, CJK-safe).
+fn clip_cols(s: &str, cols: usize) -> String {
+    let mut used = 0;
+    let mut out = String::new();
+    for ch in s.chars() {
+        let w = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used + w > cols {
+            break;
+        }
+        used += w;
+        out.push(ch);
+    }
+    out
+}
+
+/// One table line. Cells are clipped and padded by display width, not char count: a CJK char
+/// is two columns, so `format!("{:<10}")` would misalign the CJK headers.
+fn table_line(cells: &[&str; 8]) -> String {
+    let mut out = Vec::new();
+    for (i, c) in cells.iter().enumerate() {
+        let c = clip_cols(c, COLS[i]);
+        let pad = " ".repeat(COLS[i].saturating_sub(UnicodeWidthStr::width(c.as_str())));
+        out.push(if i < 2 {
+            format!("{c}{pad}")
+        } else {
+            format!("{pad}{c}")
+        });
+    }
+    out.join("  ")
+}
+
 pub fn run(action: Action) -> Result<()> {
     match action {
         Action::Collect { quiet } => {
@@ -143,8 +179,17 @@ pub fn run(action: Action) -> Result<()> {
                 return Ok(());
             }
             println!(
-                "{:<10}  {:<24}  {:>8}  {:>8}  {:>8}  {:>8}  {:>6}  {:>10}",
-                "日期", by, "輸入", "輸出", "快取寫", "快取讀", "請求", "API 等值"
+                "{}",
+                table_line(&[
+                    "日期",
+                    &by,
+                    "輸入",
+                    "輸出",
+                    "快取寫",
+                    "快取讀",
+                    "請求",
+                    "API 等值"
+                ])
             );
             let mut all = Vec::new();
             for ((day, key), (t, req, costs)) in &agg {
@@ -154,17 +199,18 @@ pub fn run(action: Action) -> Result<()> {
                     _ => money(cost),
                 };
                 all.extend(costs.iter().copied());
-                let key_s: String = key.chars().take(24).collect();
                 println!(
-                    "{:<10}  {:<24}  {:>8}  {:>8}  {:>8}  {:>8}  {:>6}  {:>10}",
-                    day,
-                    key_s,
-                    compact(t.input),
-                    compact(t.output),
-                    compact(t.cache_write_5m + t.cache_write_1h),
-                    compact(t.cache_read),
-                    req,
-                    cost_s
+                    "{}",
+                    table_line(&[
+                        day,
+                        key,
+                        &compact(t.input),
+                        &compact(t.output),
+                        &compact(t.cache_write_5m + t.cache_write_1h),
+                        &compact(t.cache_read),
+                        &req.to_string(),
+                        &cost_s,
+                    ])
                 );
             }
             let (total, unpriced) = price::total(all);
@@ -215,4 +261,55 @@ fn accounts(json: bool) -> Result<()> {
         qv::accounts_text(&st, &entries, accounts_width(), now_s, &tr, color)
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn table_rows_have_one_display_width_with_cjk_cells() {
+        let header = table_line(&[
+            "日期",
+            "model",
+            "輸入",
+            "輸出",
+            "快取寫",
+            "快取讀",
+            "請求",
+            "API 等值",
+        ]);
+        let rows = [
+            table_line(&[
+                "2026-11-03",
+                "claude-opus-5-5",
+                "1.0M",
+                "2.5K",
+                "10",
+                "9",
+                "3",
+                "$1.50",
+            ]),
+            // a CJK project name must not push the later columns out
+            table_line(&[
+                "2026-11-03",
+                "專案鍛造間",
+                "1.0M",
+                "2.5K",
+                "10",
+                "9",
+                "3",
+                "≥$1.50",
+            ]),
+            table_line(&["2026-11-03", &"專".repeat(40), "1", "2", "3", "4", "5", "—"]),
+        ];
+        let w = UnicodeWidthStr::width(header.as_str());
+        for r in &rows {
+            assert_eq!(
+                UnicodeWidthStr::width(r.as_str()),
+                w,
+                "{r:?} vs header {header:?}"
+            );
+        }
+    }
 }
