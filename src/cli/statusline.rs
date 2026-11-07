@@ -267,6 +267,9 @@ fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> boo
         && v["session_id"] == raw_sid
         && age.is_some_and(|a| (0..MOD_ALIVE_FRESH_MS).contains(&a))
         && v["layout"] == "band"
+        // B34: a forge-stats whose band was not drawn lately (a plugin above it drew its own band) says
+        // `band_seen: false`; an older one never writes the field and keeps compacting as before.
+        && v["band_seen"] != false
 }
 
 /// The width to draw at: `CODEFORGE_WIDTH` when set, else the terminal's `COLUMNS` (set by
@@ -2058,6 +2061,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         write_heartbeat(dir.path(), HB_SID, &heartbeat(HB_SID, HB_NOW - 1_500, true));
         assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
+    }
+
+    #[test]
+    fn heartbeat_band_not_seen_keeps_the_full_statusline() {
+        let dir = tempfile::tempdir().unwrap();
+        let with = |seen: serde_json::Value| {
+            let mut v: serde_json::Value =
+                serde_json::from_str(&heartbeat(HB_SID, HB_NOW - 1_500, true)).unwrap();
+            v["band_seen"] = seen;
+            v.to_string()
+        };
+        // B34: the band layout chosen, but the band not drawn lately (autopilot's O4 shell above it)
+        write_heartbeat(dir.path(), HB_SID, &with(serde_json::json!(false)));
+        assert!(!read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
+        // drawn lately
+        write_heartbeat(dir.path(), HB_SID, &with(serde_json::json!(true)));
+        assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
+        // an older forge-stats writes no band_seen: it compacts as before (the fresh-band test above)
     }
 
     #[test]

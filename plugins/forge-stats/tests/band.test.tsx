@@ -41,11 +41,11 @@ const band = (bodyColumns: number, over: Record<string, unknown> = {}) =>
     props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns, scroll: { offset: 0, bodyRows: 19 }, view: {}, ...over },
   }) as const
 
-type World = { writes: { path: string; text: string }[]; blits: { requestId: string; key: string; cells: string }[]; store: Record<string, unknown>; opened: number; deny: boolean; session?: unknown }
+type World = { writes: { path: string; text: string }[]; blits: { requestId: string; key: string; cells: string }[]; store: Record<string, unknown>; opened: number; deny: boolean; invalidates: number; session?: unknown }
 
 // The engine beneath: HOME, the live pointer, pet.json, the session view, the store, writes and blits.
 function world(on: Parameters<TestBody>[1], layout?: string): World {
-  const w: World = { writes: [], blits: [], store: layout === undefined ? {} : { layout }, opened: 0, deny: false }
+  const w: World = { writes: [], blits: [], store: layout === undefined ? {} : { layout }, opened: 0, deny: false, invalidates: 0 }
   on('command.register', () => ({ value: { command: 'forge-stats' } }))
   on('ui.open', () => {
     w.opened += 1
@@ -69,7 +69,10 @@ function world(on: Parameters<TestBody>[1], layout?: string): World {
     w.store[e.key] = e.value
     return { value: undefined }
   })
-  on('ui.invalidate', () => ({ value: undefined }))
+  on('ui.invalidate', () => {
+    w.invalidates += 1
+    return { value: undefined }
+  })
   // what draws beneath when the band passes: nothing
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -125,10 +128,42 @@ test('the heartbeat is written at session start, before any tick, and every 2 s'
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const first = lastBeat(w)
-  expect(first).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_000_000, layout: 'band', summary_row: true })
+  expect(first).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_000_000, layout: 'band', summary_row: true, band_seen: false })
   expect(w.writes.filter(x => x.path === HB)[0]!.text.length < 512).toBe(true)
   await clock.advance(2000)
   expect(lastBeat(w)?.written_at_ms).toBe(1_002_000)
+})
+
+// B34: the statusline compacts only for a band that drew lately. A plugin above forge-stats on the AbovePrompt chain that draws its own band and never
+// calls `next(e)` (autopilot's O4 shell) means forge-stats' band hook is never called: the band is not mounted for it.
+
+test('band_seen: true while the band is on screen and drawing; false within 32 s once its hook stops being called (B34)', async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(lastBeat(w)?.band_seen).toBe(false)
+  const ui = await $.ui.mount(band(120))
+  for (let i = 0; i < 20; i++) {
+    await clock.advance(2000)
+    expect(lastBeat(w)).toMatchObject({ layout: 'band', band_seen: true })
+  }
+  // a shell opened over it: the hook is not called any more
+  await ui.unmount()
+  await clock.advance(32_000)
+  expect(lastBeat(w)).toMatchObject({ layout: 'band', summary_row: true, band_seen: false })
+})
+
+test('a band hook never called (a plugin above draws its own band: autopilot\'s O4 shell) never says band_seen; layout stays band (B34)', async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  for (let i = 0; i < 20; i++) {
+    await clock.advance(2000)
+    expect(lastBeat(w)).toMatchObject({ layout: 'band', summary_row: true, band_seen: false })
+  }
+  // and it keeps asking for a render, so a band that does come back is seen within one beat
+  expect(w.invalidates >= 20).toBe(true)
 })
 
 test('the band layout is the default and does not open the pane', async ($, on) => {
@@ -213,7 +248,7 @@ test('/forge-stats layout switches, persists, and the beat follows', async ($, o
   expect(w.store.layout).toBe('pane')
   expect(w.opened).toBe(1)
   await clock.advance(2000)
-  expect(lastBeat(w)).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_002_000, layout: 'pane', summary_row: true })
+  expect(lastBeat(w)).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_002_000, layout: 'pane', summary_row: true, band_seen: false })
   const bad = await $.command.run(cmd('layout sideways'))
   expect(bad.text?.includes('band|pane')).toBe(true)
   expect(w.store.layout).toBe('pane')

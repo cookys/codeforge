@@ -11,6 +11,7 @@ import {
   bandTier,
   halfBlockCells,
   heartbeatPath,
+  BAND_SEEN_MS,
   heartbeatText,
   liveBaseOf,
   meter,
@@ -84,6 +85,10 @@ let bandId: string | null = null
 let bandLastCells: string | null = null
 // The sprite the band drew last (full or mini): its blits must match the mounted Raster's size.
 let bandSprite: SpriteData | null = null
+// B34: the band drew itself (the summary row or the columns) since the last heartbeat; the heartbeat turns it into bandSeenAt on its own clock (a render
+// reads no clock). bandSeenAt is null before the first draw.
+let bandDrew = false
+let bandSeenAt: number | null = null
 const BAND_KEY = 'pet-band'
 const t = (): T => makeT(locale)
 
@@ -154,7 +159,14 @@ async function writeHeartbeat($: EngineInterface) {
   if (liveBase === null || sid === '') return
   try {
     const now = await $.clock.now()
-    await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout))
+    if (bandDrew) {
+      bandSeenAt = now
+      bandDrew = false
+    }
+    const age = bandSeenAt === null ? Infinity : now - bandSeenAt
+    await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout, layout === 'band' && age < BAND_SEEN_MS))
+    // an idle session may not redraw: past half the window, ask for a render, so a band still on screen refreshes bandSeenAt before it ages out
+    if (layout === 'band' && age >= BAND_SEEN_MS / 2) void $.ui.invalidate('ui.render')
   } catch {
     // best effort: no heartbeat means the statusline stays full
   }
@@ -812,13 +824,17 @@ export const register: Register = on => {
       bandSprite = null
       // 1–5 rows (or no sprite): one summary row. With autopilot this is the row it hands down under its tab row (summary_row in the heartbeat); with nothing to
       // draw the row is passed on, never left blank.
-      return summaryRow('summary', true) ?? next(e)
+      const row = summaryRow('summary', true)
+      if (row === null) return next(e)
+      bandDrew = true
+      return row
     }
     const lights = await read($, session)
     const layoutCols = bandLayout(props.bodyColumns, sprite.width)
     const frame = halfBlockCells(sprite, spriteFrame % sprite.frames.length)
     bandId = e.requestId
     bandSprite = sprite
+    bandDrew = true
     bandLastCells = frame.cells
 
     const draw = (s: Seg, i: number) => {
