@@ -404,16 +404,32 @@ fn write_settings_atomic(path: &Path, settings: &Value) -> Result<()> {
                     .unwrap_or_else(|| "settings.json".to_string())
             );
             let bak = path.with_file_name(bak_name);
-            // a .bak that is a link is replaced, never written through
-            if fs::symlink_metadata(&bak).is_ok_and(|m| m.file_type().is_symlink()) {
-                fs::remove_file(&bak).with_context(|| format!("備份 {} 失敗", bak.display()))?;
+            // Any old .bak (a file, a read-only one, or a link) is removed first and the new one is created
+            // fresh: never written through a link, never blocked by a read-only copy. On unix it is created
+            // with the settings file's own mode, so the old text (env tokens) is never readable wider than
+            // the file it copies, not even between create and chmod.
+            match fs::remove_file(&bak) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(e).with_context(|| format!("備份 {} 失敗", bak.display()));
+                }
             }
-            fs::write(&bak, &before).with_context(|| format!("備份 {} 失敗", bak.display()))?;
-            // the old text may hold secrets (env tokens): the backup gets the file's own mode
-            let mode = fs::metadata(&target)
-                .with_context(|| format!("備份 {} 失敗", bak.display()))?
-                .permissions();
-            fs::set_permissions(&bak, mode)
+            let mut opts = fs::OpenOptions::new();
+            opts.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+                let mode = fs::metadata(&target)
+                    .with_context(|| format!("備份 {} 失敗", bak.display()))?
+                    .permissions()
+                    .mode();
+                opts.mode(mode & 0o777);
+            }
+            let mut f = opts
+                .open(&bak)
+                .with_context(|| format!("備份 {} 失敗", bak.display()))?;
+            f.write_all(before.as_bytes())
                 .with_context(|| format!("備份 {} 失敗", bak.display()))?;
         }
     }
@@ -1905,6 +1921,25 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_backup_of_a_read_only_settings_does_not_block_the_next_change() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+        write_settings_atomic(&path, &json!({"e": 1})).unwrap();
+        // the .bak is 0444 now; a second change must still replace it
+        write_settings_atomic(&path, &json!({"e": 2})).unwrap();
+        let bak = tmp.path().join("settings.json.bak");
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{\n  \"e\": 1\n}\n");
+        assert_eq!(
+            fs::metadata(&bak).unwrap().permissions().mode() & 0o777,
+            0o444
+        );
     }
 
     #[cfg(unix)]
