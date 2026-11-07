@@ -6,6 +6,7 @@
 
 | Project | Description | Started |
 |---------|------------|---------|
+| [integrated-panel](2026-11-06-integrated-panel/README.md) | 整合面板 O4：autopilot 畫 band（依 bodyColumns 分 80／120／160／200／240 五級），forge-stats 在 `codeforge.panel/1` 加 `side`。feature/panel-side 待五級截圖後合併；交接見 HANDOFF.md（成員搬遷到 team） | 2026-11-06 |
 | [autopilot-hook-bridge](2026-11-02-autopilot-hook-bridge/README.md) | B31 hooks 段提前：`codeforge hook on <event>` 給 autopilot bridge 呼叫，install 偵測到 bridge 時不寫 hooks 並清掉舊項目。v0.0.8 | 2026-11-02 |
 
 ## Archived
