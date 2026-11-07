@@ -759,6 +759,18 @@ test('panel state: the schema, one set of lines per tier width, the pane\'s own 
   expect(tones.has('dim')).toBe(true)
 })
 
+test('panel state: no pet.json yet, summary.json only under a later candidate (~/.autopilot): the first panel write already has today\'s model lines', { plugins: [AUTOPILOT_READER] }, async ($, on) => {
+  const fx = mirror(on, { '/home/t/.autopilot/codeforge/usage/summary.json': USAGE })
+  delete fx.files[LIVE + '/codeforge/pet.json']
+  delete fx.files[LIVE + '/codeforge/usage/summary.json']
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const { value } = await readPanel($)
+  const text = tierText(value.usage.tiers['100']).join('\n')
+  expect(text).toContain('claude-opus-5-5')
+  expect(text).not.toContain('今天還沒有')
+})
+
 test('panel state is written again only when it changed (or every 30 s): an unchanged 15 s tick leaves the version', { plugins: [AUTOPILOT_READER] }, async ($, on) => {
   mirror(on, { ...viewFiles(['claude:work']), ...NS })
   const clock = mock.clock(on, { now: 1_000_000 })

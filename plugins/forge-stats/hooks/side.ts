@@ -94,13 +94,16 @@ export function sideFullLines(accts: readonly SideAccount[], view: UsageView, w:
 }
 
 /** `side.memory`: ≤ 2 lines, this session's memory and brain lights as words (no state glyph: tui-guideline §3.4). */
+// Never []: both lights hidden draws the same placeholder as no lights at all. An empty memory column with an empty fleet makes autopilot's band drop the
+// 240 tier's third column (shell.ts:293-297); PM 2026-11-07 wants the column kept.
 export function sideMemoryLines(lights: SessionView | null, tr: T): PanelLine[] {
-  if (lights === null) return [[{ text: `${tr('memory')} ${GLYPH.empty}`, tone: 'dim' }]]
+  const placeholder: PanelLine[] = [[{ text: `${tr('memory')} ${GLYPH.empty}`, tone: 'dim' }]]
+  if (lights === null) return placeholder
   const out: PanelLine[] = []
   if (lights.memory !== 'hidden') out.push([{ text: tr('memory') + ' ', tone: 'dim' }, { text: `L1 ${lights.active} ${tr('entries')}` }])
   const brain: Record<Exclude<SessionView['brain'], 'hidden'>, string> = { ok: tr('brainOk'), degraded: tr('brainDegraded'), offline: tr('brainOffline'), pending: tr('brainPending') }
   if (lights.brain !== 'hidden') out.push([{ text: tr('brain') + ' ', tone: 'dim' }, { text: brain[lights.brain], tone: lights.brain === 'ok' ? 'success' : undefined }])
-  return out
+  return out.length > 0 ? out : placeholder
 }
 
 const tiers = (ws: readonly number[], lay: (w: number) => PanelLine[]) => Object.fromEntries(ws.map(w => [String(w), lay(w)]))
