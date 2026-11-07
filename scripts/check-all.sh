@@ -71,7 +71,11 @@ step "cargo deny (licenses)"
 cargo deny check licenses
 
 step "shellcheck install.sh + checkout guard"
-shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh scripts/checkout-guard.test.sh
+shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh scripts/checkout-guard.test.sh \
+  scripts/g40-real-data/check.sh scripts/g40-real-data/scan-statusline.test.sh
+
+step "g40 real-data scan (negative controls)"
+./scripts/g40-real-data/scan-statusline.test.sh
 
 step "checkout guard (the main clone stays on develop)"
 ./scripts/checkout-guard.test.sh
