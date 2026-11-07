@@ -70,6 +70,19 @@ test('parseUsage takes today, sums per model, priced first, and refuses each con
   expect(parseUsage(' '.repeat(USAGE_MAX_BYTES + 1), NOW).status).toBe('bad')
 })
 
+test('parseUsage accepts the optional dropped_accounts record (closed reasons, uint counts) and refuses a malformed one', () => {
+  expect(parseUsage(JSON.stringify(summary({ dropped_accounts: { resets_at_out_of_range: 1, pct_out_of_range: 2 } })), NOW).status).toBe('ok')
+  const bad: unknown[] = [
+    { acct_a: 1 },
+    { resets_at_out_of_range: -1 },
+    { resets_at_out_of_range: 'x' },
+    { resets_at_out_of_range: 2 ** 53 },
+    [],
+    null,
+  ]
+  for (const d of bad) expect(parseUsage(JSON.stringify(summary({ dropped_accounts: d })), NOW).status).toBe('bad')
+})
+
 test('countdown reads minutes, hours and days, and a dash once past', () => {
   expect(countdown(NOW + 45 * 60_000, NOW)).toBe('45m')
   expect(countdown(NOW + 130 * 60_000, NOW)).toBe('2h10m')

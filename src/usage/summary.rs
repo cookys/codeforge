@@ -32,6 +32,14 @@ const TOP_KEYS: [&str; 6] = [
     "accounts",
     "days",
 ];
+/// Present only when a local quota snapshot was dropped: reason -> count. The key is optional so
+/// an unchanged summary keeps the old exact shape; reasons are a closed set, never an alias.
+const DROPPED_KEY: &str = "dropped_accounts";
+const DROP_REASONS: [&str; 3] = [
+    "written_at_ms_out_of_range",
+    "resets_at_out_of_range",
+    "pct_out_of_range",
+];
 const ACCOUNT_KEYS: [&str; 4] = ["alias", "written_at_ms", "five_hour", "seven_day"];
 const WINDOW_KEYS: [&str; 2] = ["pct", "resets_at"];
 const COUNT_KEYS: [&str; 6] = [
@@ -74,7 +82,7 @@ const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 pub fn contract() -> Value {
     json!({
         "schema": SCHEMA,
-        "top": TOP_KEYS, "account": ACCOUNT_KEYS, "window": WINDOW_KEYS, "day": DAY_KEYS,
+        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "window": WINDOW_KEYS, "day": DAY_KEYS,
         "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
         "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE, "uint_max": UINT_MAX,
         "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
@@ -154,20 +162,50 @@ pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Va
             })
         })
         .collect();
-    let accounts: Vec<Value> = accounts
-        .iter()
-        .take(MAX_ACCOUNTS)
-        .map(|s| {
-            json!({
+    // One snapshot off the contract is dropped and counted, never fatal to the whole summary.
+    let mut dropped: BTreeMap<&str, u64> = BTreeMap::new();
+    let mut kept: Vec<Value> = Vec::new();
+    for s in accounts {
+        if let Some(reason) = bad_snapshot(s) {
+            *dropped.entry(reason).or_default() += 1;
+        } else if kept.len() < MAX_ACCOUNTS {
+            kept.push(json!({
                 "alias": s.alias, "written_at_ms": s.written_at_ms,
                 "five_hour": window(&s.five_hour), "seven_day": window(&s.seven_day),
-            })
-        })
-        .collect();
-    json!({
+            }));
+        }
+    }
+    let mut out = json!({
         "schema": SCHEMA, "generated_at_ms": now_ms, "host": host,
-        "prices_as_of": price::PRICES_AS_OF, "accounts": accounts, "days": days,
-    })
+        "prices_as_of": price::PRICES_AS_OF, "accounts": kept, "days": days,
+    });
+    if !dropped.is_empty() {
+        out[DROPPED_KEY] = json!(dropped);
+    }
+    out
+}
+
+/// Why a snapshot cannot enter the summary (a `DROP_REASONS` entry), or `None`.
+fn bad_snapshot(s: &Snapshot) -> Option<&'static str> {
+    if !(0..=UINT_MAX as i64).contains(&s.written_at_ms) {
+        return Some(DROP_REASONS[0]);
+    }
+    for w in [&s.five_hour, &s.seven_day].into_iter().flatten() {
+        if !(0..=UINT_MAX as i64).contains(&w.resets_at) {
+            return Some(DROP_REASONS[1]);
+        }
+        if !(w.pct.is_finite() && (0.0..=PCT_MAX).contains(&w.pct)) {
+            return Some(DROP_REASONS[2]);
+        }
+    }
+    None
+}
+
+/// How many snapshots a built summary dropped.
+pub fn dropped_count(v: &Value) -> u64 {
+    v[DROPPED_KEY]
+        .as_object()
+        .map_or(0, |m| m.values().filter_map(Value::as_u64).sum())
 }
 
 fn obj<'a>(v: &'a Value, keys: &[&str], at: &str) -> Result<&'a Map<String, Value>> {
@@ -218,7 +256,20 @@ fn win(v: &Value, at: &str) -> Result<()> {
 
 /// Keys, types and values, recursively. Anything else is refused.
 pub fn validate(v: &Value) -> Result<()> {
-    let top = obj(v, &TOP_KEYS, "summary")?;
+    // the optional drop record is checked on its own, then the rest must be the exact old shape
+    let mut rest = v.clone();
+    if let Some(d) = rest.as_object_mut().and_then(|m| m.remove(DROPPED_KEY)) {
+        let m = d
+            .as_object()
+            .context("summary.dropped_accounts: 不是物件")?;
+        for (k, n) in m {
+            if !DROP_REASONS.contains(&k.as_str()) {
+                bail!("summary.dropped_accounts: 有不允許的原因");
+            }
+            uint(n, "summary.dropped_accounts 的計數")?;
+        }
+    }
+    let top = obj(&rest, &TOP_KEYS, "summary")?;
     if top["schema"] != SCHEMA {
         bail!("summary.schema: 不是 {SCHEMA}");
     }
@@ -557,6 +608,75 @@ mod tests {
         let blocked = base.path().join("MARKERFILE");
         std::fs::write(&blocked, b"").unwrap();
         clean(write(&blocked.join("usage"), &good()).unwrap_err());
+    }
+
+    fn snap_with(alias: &str, written_at_ms: i64, pct: f64, resets_at: i64) -> Snapshot {
+        Snapshot {
+            alias: alias.into(),
+            root: None,
+            written_at_ms,
+            five_hour: Some(Window {
+                pct,
+                resets_at,
+                seen: None,
+            }),
+            seven_day: None,
+        }
+    }
+
+    #[test]
+    fn one_bad_snapshot_is_dropped_and_counted_not_fatal() {
+        let max = UINT_MAX as i64;
+        let snaps = [
+            snap_with("acct-a", 5, 0.3, 9),
+            snap_with("acct-bad1", 5, 0.3, max + 1),
+            snap_with("acct-bad2", max + 1, 0.3, 9),
+            snap_with("acct-bad3", -1, 0.3, 9),
+            snap_with("acct-bad4", 5, 0.3, -1),
+            snap_with("acct-bad5", 5, 9.0, 9),
+            snap_with("acct-z", 6, 0.1, 10),
+        ];
+        let v = build(
+            &[row("claude-opus-5-5", "standard", "p")],
+            &snaps,
+            &host_alias("h"),
+            7,
+        );
+        validate(&v).expect("a bad snapshot must not fail the whole summary");
+        let aliases: Vec<&str> = v["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["alias"].as_str().unwrap())
+            .collect();
+        assert_eq!(aliases, ["acct-a", "acct-z"]);
+        assert_eq!(v["days"].as_array().unwrap().len(), 1);
+        // not silent: reasons are an enum, counts are numbers, no alias leaks
+        assert_eq!(
+            v["dropped_accounts"],
+            json!({
+                "written_at_ms_out_of_range": 2,
+                "resets_at_out_of_range": 2,
+                "pct_out_of_range": 1,
+            })
+        );
+        assert!(!v.to_string().contains("acct-bad"));
+        // nothing dropped: the key is absent, so the shape is the old one
+        assert!(good().get("dropped_accounts").is_none());
+    }
+
+    #[test]
+    fn validate_refuses_a_malformed_dropped_record() {
+        let ok = |d: Value| {
+            let mut v = good();
+            v["dropped_accounts"] = d;
+            validate(&v)
+        };
+        ok(json!({"resets_at_out_of_range": 1})).unwrap();
+        assert!(ok(json!({"acct-a": 1})).is_err());
+        assert!(ok(json!({"resets_at_out_of_range": -1})).is_err());
+        assert!(ok(json!({"resets_at_out_of_range": "x"})).is_err());
+        assert!(ok(json!([])).is_err());
     }
 
     #[test]
