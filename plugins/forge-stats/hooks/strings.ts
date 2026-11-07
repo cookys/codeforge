@@ -77,6 +77,9 @@ const EN = {
   quotaWCredits: 'credit',
   quotaWRpm: 'rpm',
   quotaWTpm: 'tpm',
+  sideMore: '+{n} accounts · max {pct}',
+  sideReset: 'resets in {t}',
+  sideNoUsage: 'no usage data',
 } as const
 
 export type StringId = keyof typeof EN
@@ -155,6 +158,9 @@ const ZH_TW: Record<StringId, string> = {
   quotaWCredits: '額度',
   quotaWRpm: 'rpm',
   quotaWTpm: 'tpm',
+  sideMore: '另 {n} 個帳號 · 最高 {pct}',
+  sideReset: '{t} 後重置',
+  sideNoUsage: '沒有用量資料',
 }
 
 export type T = (id: StringId, vars?: Record<string, string | number>) => string
