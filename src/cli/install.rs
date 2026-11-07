@@ -594,6 +594,32 @@ fn statusline_is_codeforge(v: &Value) -> bool {
         .is_some_and(|s| s.starts_with(MARKER_PREFIX))
 }
 
+/// An unmarked block install may still take as its own: one written by hand or by an install from
+/// before the marker, whose command is exactly `<codeforge binary> <sub>` (two words; the first one's
+/// file name is `codeforge`, bare or as a path, optionally quoted). Anything else (a wrapper script,
+/// `bash -c …`, extra arguments, another tool) is not ours and is never touched without
+/// --replace-statusline. Install then writes the marker. (PM 2026-11-08: 10 accounts had such blocks.)
+fn statusline_is_plain_codeforge(v: &Value, sub: &str) -> bool {
+    if v.get("type").and_then(|t| t.as_str()) != Some("command") {
+        return false;
+    }
+    let Some(cmd) = v.get("command").and_then(|c| c.as_str()) else {
+        return false;
+    };
+    let words: Vec<&str> = cmd.split_whitespace().collect();
+    let [bin, arg] = words.as_slice() else {
+        return false;
+    };
+    let bin = bin.trim_matches(|c| c == '\'' || c == '"');
+    let name = Path::new(bin).file_name().and_then(|n| n.to_str());
+    *arg == sub && matches!(name, Some("codeforge") | Some("codeforge.exe"))
+}
+
+/// install's ownership test: our marker, or an unmarked plain codeforge command for `sub`.
+fn statusline_owned(v: &Value, sub: &str) -> bool {
+    statusline_is_codeforge(v) || statusline_is_plain_codeforge(v, sub)
+}
+
 /// Seconds between idle re-runs of the statusLine command. Claude Code re-runs it only on events
 /// (a new assistant message, /compact, a mode change…) unless `refreshInterval` is set
 /// (code.claude.com/docs/en/statusline, "When the status line updates"). Without it an idle
@@ -607,7 +633,7 @@ fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'st
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("statusLine").cloned();
     if let Some(p) = &prior {
-        if !statusline_is_codeforge(p) && !force {
+        if !statusline_owned(p, "statusline") && !force {
             bail!("settings.json.statusLine 已被其他程式設定（不是 codeforge）；使用 --replace-statusline 覆蓋（只換這個欄位，hooks 不動）");
         }
     }
@@ -646,7 +672,7 @@ fn patch_subagent_statusline(settings: &mut Value, cmd: &str, force: bool) -> Re
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("subagentStatusLine").cloned();
     if let Some(p) = &prior {
-        if !statusline_is_codeforge(p) && !force {
+        if !statusline_owned(p, "subagent-statusline") && !force {
             bail!("settings.json.subagentStatusLine 已被其他程式設定（不是 codeforge）；使用 --replace-statusline 覆蓋（只換這個欄位，hooks 不動）");
         }
     }
@@ -1165,6 +1191,59 @@ mod tests {
         patch_statusline(&mut user, "/x statusline", true).unwrap();
         assert_eq!(user["statusLine"]["command"], "/x statusline");
         assert_eq!(user["statusLine"]["refreshInterval"], 30);
+    }
+
+    #[test]
+    fn statusline_adopts_an_unmarked_plain_codeforge_command() {
+        for cmd in [
+            "codeforge statusline",
+            "/home/u/.cargo/bin/codeforge statusline",
+            "'/opt/cf/codeforge' statusline",
+        ] {
+            let mut s = json!({"statusLine": {"type": "command", "command": cmd}, "theme": "dark"});
+            assert_eq!(
+                patch_statusline(&mut s, "/x/codeforge statusline", false).unwrap(),
+                "更新",
+                "{cmd}"
+            );
+            assert!(
+                statusline_is_codeforge(&s["statusLine"]),
+                "{cmd}: the marker is written"
+            );
+            assert_eq!(s["statusLine"]["refreshInterval"], 10);
+            assert_eq!(s["theme"], "dark");
+        }
+        // the subagent one by its own subcommand
+        let mut s = json!({"subagentStatusLine": {"type": "command", "command": "codeforge subagent-statusline"}});
+        patch_subagent_statusline(&mut s, "codeforge subagent-statusline", false).unwrap();
+        assert!(statusline_is_codeforge(&s["subagentStatusLine"]));
+    }
+
+    #[test]
+    fn statusline_never_adopts_another_tools_command() {
+        for cmd in [
+            "/user/script",
+            "npx ccusage statusline",
+            "bash -c 'codeforge statusline'",
+            "codeforge statusline --extra",
+            "/opt/notcodeforge statusline",
+            "codeforge subagent-statusline",
+            "/home/u/codeforge-wrapper.sh statusline",
+        ] {
+            let mut s = json!({"statusLine": {"type": "command", "command": cmd}});
+            assert!(
+                patch_statusline(&mut s, "/x/codeforge statusline", false).is_err(),
+                "{cmd}"
+            );
+            assert_eq!(
+                s["statusLine"],
+                json!({"type": "command", "command": cmd}),
+                "{cmd}: untouched"
+            );
+        }
+        // a codeforge command under another type is not ours either
+        let mut s = json!({"statusLine": {"type": "static", "command": "codeforge statusline"}});
+        assert!(patch_statusline(&mut s, "/x/codeforge statusline", false).is_err());
     }
 
     #[test]
