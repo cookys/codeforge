@@ -113,6 +113,9 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   （2026-11-07 rig 實測：110 秒只跑了一次）。所以 `codeforge install` 會寫 `statusLine.refreshInterval: 10`（秒，和心跳 10 秒
   的新鮮度一致）；設定裡原本就有的值（使用者自己設的）不覆蓋。操作員卡 d-f6e451d2。install 每次真的改動 settings.json 前，先把原檔存成
   `settings.json.bak`（放在 install 拿到的路徑旁邊，不放進 symlink 指向的 dotfiles 目錄；內容沒變就不覆蓋舊的 .bak）。
+  沒有 `_installed_by` 標記的 statusLine，只有 command 剛好是「codeforge 執行檔＋`statusline`」兩個詞（執行檔檔名就是
+  `codeforge`，路徑或裸名都可）才認定是自己的，install 會補上標記；包一層 script、`bash -c`、多帶參數、別的工具一律不碰
+  （要接手得加 `--replace-statusline`）。PM 2026-11-08：10 個帳號有這種舊設定。
 - **分頁版 band（forge-tabs，2026-10-31）**：owner 定案 band 一列＝autopilot indicator＋分頁（現況／待決／派工／審查／forge），
   autopilot 以 `maxRows`/`bodyColumns` 分配空間給下層。forge-stats 依 `maxRows` 分級：1 列＝不畫、原樣 `next(e)`（分頁標籤歸 autopilot；
   原本回以 key 標角色的 `Box` 標籤，B32 移除）、2–5 列或不到 26 欄＝一列摘要（只有寵物名與等級）、6–11 列＝16×6 迷你 Ferris

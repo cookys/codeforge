@@ -2150,7 +2150,11 @@ mod tests {
             !text.contains('╭') && !text.contains('│'),
             "no box frame: {text}"
         );
-        assert!(!text.contains("adopt"), "no adopt hint: {text}");
+        // the hint itself, not the word: the line also shows the git branch, which may contain "adopt"
+        assert!(
+            !text.contains("→ adopt") && !text.contains("→ codeforge adopt"),
+            "no adopt hint: {text}"
+        );
         assert!(text.contains("ctx"), "usage row kept: {text}");
     }
 
