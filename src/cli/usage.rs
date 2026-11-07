@@ -66,6 +66,10 @@ fn collect_and_summarize(
     );
     summary::validate(&v)?;
     let path = summary::write(&summary::summary_dir(&live_base), &v)?;
+    let dropped = summary::dropped_count(&v);
+    if !quiet && dropped > 0 {
+        eprintln!("codeforge usage: 有 {dropped} 份本機配額快照不合規格，已略過（見 summary.json 的 dropped_accounts）");
+    }
     if !quiet {
         eprintln!(
             "codeforge usage: 讀了 {} 個轉錄檔（略過 {}）",
