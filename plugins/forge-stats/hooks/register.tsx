@@ -267,7 +267,9 @@ const paneTotal: Record<PaneTab, number> = { pet: 0, usage: 0 }
 
 // Bounded: a regular file that is not a link and at most USAGE_MAX_BYTES, checked before the read and again on the text. Never spawns codeforge.
 async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
-  const bases = liveBase !== null ? [liveBase] : await liveBases($)
+  // liveBase is only a guess until pet.json is found (refreshPet falls back to the first candidate without checking it exists), so the other
+  // candidates stay in the scan, after liveBase: the first summary that exists wins, as codeforge's resolver takes the first dir that exists
+  const bases = [...new Set([...(liveBase !== null ? [liveBase] : []), ...(await liveBases($))])]
   for (const b of bases) {
     const path = usageSummaryPath(b)
     const st = await $.fs.stat(path).catch(() => undefined)
