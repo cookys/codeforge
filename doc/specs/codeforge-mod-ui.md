@@ -100,11 +100,15 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   驗證：`claude plugin test plugins/forge-stats`。
 - **band 版面（statusline-band，2026-10-31）**：`/forge-stats layout band|pane`（存 `$.store`，預設 band）。band 畫在
   prompt 正上方（AbovePrompt），分級與排欄見下面兩條；記憶與大腦讀 `codeforge/session/<sid>.json`。mod 每 2 秒寫
-  `codeforge/mod-alive/<sid>.json` 心跳（`schema`、`session_id`、`written_at_ms`、`layout`）；statusline 讀到自己
-  session、未滿 10 秒、`layout: band` 的心跳就縮成 2 行：寵物歸 band（autopilot 的 forge 分頁），statusline 只留不必即時
-  更新的資料（owner 2026-10-31 定案；原本另看 blit 是否成功的 `pet_shown`，已拿掉）。**依賴**：AbovePrompt 一次只有一個
-  實例，鏈上排在上面的 plugin 不呼叫 `next(e)` 就輪不到 forge-stats；心跳看不到這件事，那種情況下 statusline 仍會縮、寵物
-  哪裡都不顯示（BACKLOG B34）。autopilot 的分頁列用 `await next(e)` 疊在 forge-stats 之上（BL-0352），不受影響。
+  `codeforge/mod-alive/<sid>.json` 心跳（`schema`、`session_id`、`written_at_ms`、`layout`、`summary_row`、`band_seen`）；
+  statusline 讀到自己 session、未滿 10 秒、`layout: band`、而且 `band_seen` 不是 `false` 的心跳就縮成 2 行：寵物歸 band
+  （autopilot 的 forge 分頁），statusline 只留不必即時更新的資料（owner 2026-10-31 定案；原本另看 blit 是否成功的
+  `pet_shown`，已拿掉）。**`band_seen`（B34，2026-11-07）**：forge-stats 的 band 在最近 30 秒內真的畫過（摘要列或欄位）才是
+  `true`。AbovePrompt 一次只有一個實例，鏈上排在上面的 plugin 不呼叫 `next(e)`（例如 autopilot 的 O4 外殼）就輪不到
+  forge-stats，這時 `band_seen` 會變成 `false`，statusline 恢復完整版、把寵物留著。`layout` 照舊寫使用者選的版面，
+  因為 autopilot 靠它決定要不要把一列交給 forge-stats；如果 `layout` 跟著畫面變，forge-stats 就永遠拿不回那一列。
+  閒置時沒有重畫：超過半個視窗（15 秒）沒畫，心跳就請一次重畫，band 還在螢幕上的話會在下一拍更新。
+  舊版 forge-stats 沒有 `band_seen` 欄位，statusline 照舊縮。
 - **分頁版 band（forge-tabs，2026-10-31）**：owner 定案 band 一列＝autopilot indicator＋分頁（現況／待決／派工／審查／forge），
   autopilot 以 `maxRows`/`bodyColumns` 分配空間給下層。forge-stats 依 `maxRows` 分級：1 列＝不畫、原樣 `next(e)`（分頁標籤歸 autopilot；
   原本回以 key 標角色的 `Box` 標籤，B32 移除）、2–5 列或不到 26 欄＝一列摘要（只有寵物名與等級）、6–11 列＝16×6 迷你 Ferris
