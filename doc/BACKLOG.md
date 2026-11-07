@@ -193,7 +193,7 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: operator 對 pm 計畫拍板、fleet 通知 codeforge 寫遷移計畫；計畫寫好後開決策卡給 owner，不先動 code。
 **Not done**: 遷移計畫、schema 增欄、寫入與 recall 路徑改動，全部未開始。
 
-## B34 — 上層 plugin 吃掉 band 時，statusline 仍縮成精簡版、寵物哪裡都不顯示
+## B34 — 上層 plugin 吃掉 band 時，statusline 仍縮成精簡版、寵物哪裡都不顯示 ✅ 2026-11-07（心跳加 `band_seen`，見 `codeforge-mod-ui.md` band 版面；觸發條件成立：autopilot O4 外殼不呼叫 `next(e)`）
 
 **Area**: `.claude/skills/forge-stats/hooks/register.tsx`（心跳每 2 秒無條件寫）、`src/cli/statusline.rs` `read_mod_heartbeat`
 **Premise**: statusline 只看心跳的 `layout: band` 就縮（owner 2026-10-31 定案，拿掉 `pet_shown`）。心跳由計時器寫，不知道 AbovePrompt 的 render hook 有沒有輪到 forge-stats：若鏈上有 plugin 自己畫 band、不呼叫 `next(e)`，forge-stats 的 band 不出現，statusline 卻照樣縮，寵物兩邊都看不到。現在 autopilot 的分頁列用 `await next(e)` 疊在上面（BL-0352），不會發生。
