@@ -741,6 +741,17 @@ test('panel state: the schema, one set of lines per tier width, the pane\'s own 
   expect(tierText(value.pet.tiers['80']).join('\n')).not.toContain('_~^~^~_')
   expect(value.pet.sprite).toEqual(parseSprite(FERRIS))
   expect(value.pet.sprite).not.toBe(null)
+  // side (O4 band contract §2): the right-hand columns per width; the mirror exists here, so its accounts, never money
+  expect(Object.keys(value.side.usage.tiers)).toEqual(['30', '40', '50'])
+  expect(Object.keys(value.side.usage_full.tiers)).toEqual(['40'])
+  expect(Object.keys(value.side.memory.tiers)).toEqual(['30', '40', '50'])
+  expect(tierText(value.side.usage.tiers['50'])[0]).toMatch(/^(5h|7d) /)
+  expect(JSON.stringify(value.side)).not.toContain('$')
+  for (const block of [value.side.usage, value.side.usage_full, value.side.memory]) {
+    for (const [w, lines] of Object.entries(block.tiers) as [string, PLine[]][]) {
+      for (const t of tierText(lines)) expect(displayWidth(t)).toBeLessThanOrEqual(Number(w))
+    }
+  }
   // tones: only the six of the contract
   const tones = new Set<string>()
   for (const lines of [...Object.values(value.usage.tiers), ...Object.values(value.pet.tiers)] as PLine[][]) for (const l of lines) for (const x of l) if (x.tone !== undefined) tones.add(x.tone)

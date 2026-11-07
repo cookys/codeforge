@@ -39,6 +39,7 @@ import { byteLength, parseQuotaView, QUOTA_CONTRACT } from './quota'
 import { CONTROL_ROWS, clipCells, newPaneScroll, scrolled, windowOf } from './pane-view'
 import type { PaneScroll } from './pane-view'
 import { PANEL_REFRESH_MS, panelState, panelTiers } from './panel'
+import { sideState } from './side'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -75,6 +76,8 @@ let sid = ''
 // The live base codeforge wrote pet.json into: heartbeats go there, so the statusline finds them.
 let liveBase: string | null = null
 // the pet view refreshPet last read (the panel writer runs outside a render, where the atom is not read)
+// the session lights refreshSession last read (the panel writer runs outside a render, where the atom is not read)
+let sessionNow: SessionView | null = null
 let petNow: PetView = { status: 'missing', readAt: 0, writtenAt: null, path: null, pet: null, village: null }
 // The band instance the AbovePrompt hook last drew (its `e.requestId`); null when it passed.
 let bandId: string | null = null
@@ -187,6 +190,7 @@ async function refreshPet($: EngineInterface) {
     viewText = null
   }
   const view = parseSessionView(viewText, sid)
+  sessionNow = view
   await update($, session, () => view)
 }
 
@@ -415,10 +419,11 @@ async function writePanel($: EngineInterface) {
   const body = {
     usage: panelTiers(cols => usageLines(usage, cols, tr, now, quota)),
     pet: { title: tr('tabPet'), sprite: petNow.village?.sprite ?? null, tiers: panelTiers(cols => petLines(petNow, cols, tr, now, false)) },
+    side: sideState(usage, quota === null ? null : quotaEntries(quotaState, Math.floor(now / 1000)), sessionNow, now, tr),
   }
   const text = JSON.stringify(body)
   if (text === panelLast && now - panelAt < PANEL_REFRESH_MS) return
-  await $.state.set({ plugin: 'forge-stats', key: 'panel' }, panelState(now, body.usage, body.pet))
+  await $.state.set({ plugin: 'forge-stats', key: 'panel' }, panelState(now, body.usage, body.pet, body.side))
   panelLast = text
   panelAt = now
 }
