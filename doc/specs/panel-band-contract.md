@@ -35,7 +35,7 @@
 side?: {
   usage:      { tiers: { '30': PanelLine[]; '40': PanelLine[]; '50': PanelLine[] } } // ≤ 3 列：最吃緊帳號的 5h、7d（量表＋比例，放得下就加重置倒數）；有其他帳號時第 3 列寫幾個、最高多少
   usage_full: { tiers: { '40': PanelLine[] } }                                       // ≤ 7 列：5h、7d、空一列、今天用量前 3 名模型的比例條
-  memory:     { tiers: { '30': PanelLine[]; '40': PanelLine[]; '50': PanelLine[] } } // ≤ 2 列：記憶 L1 條數、大腦狀態（只寫字，不用狀態符號）
+  memory:     { tiers: { '30': PanelLine[]; '40': PanelLine[]; '50': PanelLine[] } } // 1–2 列：記憶 L1 條數、大腦狀態（只寫字，不用狀態符號）；兩個燈都 hidden 或沒有燈號時寫一列「記憶 —」，永遠不是空的（PM 2026-11-07）
 }
 ```
 

@@ -107,6 +107,11 @@ test('fallbacks: no usage data, no models today, no session lights, hidden light
   expect(side.memory.tiers['30'].map(text)).toEqual(['記憶 —'])
   const lit = (sideState(view(), null, lights, NOW, zh) as PanelSide).memory.tiers['40'].map(text)
   expect(lit).toEqual(['記憶 L1 12 條', '大腦 已連線'])
-  const hidden = (sideState(view(), null, { memory: 'hidden', active: 0, brain: 'hidden' }, NOW, zh) as PanelSide).memory.tiers['40']
-  expect(hidden).toEqual([])
+  // both lights hidden: the same placeholder as no session lights, never [] (autopilot's band drops the 240 tier's third column when fleet and memory are both
+  // empty: shell.ts:293-297; PM 2026-11-07)
+  const hidden = (sideState(view(), null, { memory: 'hidden', active: 0, brain: 'hidden' }, NOW, zh) as PanelSide).memory
+  for (const lines of Object.values(hidden.tiers)) expect(lines.map(text)).toEqual(['記憶 —'])
+  // one light hidden: only the other one, no placeholder
+  const brainOnly = (sideState(view(), null, { memory: 'hidden', active: 0, brain: 'ok' }, NOW, zh) as PanelSide).memory.tiers['40'].map(text)
+  expect(brainOnly).toEqual(['大腦 已連線'])
 })
