@@ -552,13 +552,16 @@ fn statusline_is_codeforge(v: &Value) -> bool {
         .is_some_and(|s| s.starts_with(MARKER_PREFIX))
 }
 
+/// Seconds between idle re-runs of the statusLine command. Claude Code re-runs it only on events
+/// (a new assistant message, /compact, a mode change…) unless `refreshInterval` is set
+/// (code.claude.com/docs/en/statusline, "When the status line updates"). Without it an idle
+/// session keeps the first render: forge-stats' heartbeat (`band_seen`, B34) can change and the
+/// statusline never compacts or expands. 10 matches the heartbeat's 10 s freshness window.
+/// Operator card d-f6e451d2.
+const STATUSLINE_REFRESH_S: u64 = 10;
+
 fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'static str> {
     require_object_root(settings)?;
-    let new_block = json!({
-        "type": "command",
-        "command": cmd,
-        MARKER_KEY: GLOBAL_MARKER,
-    });
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("statusLine").cloned();
     if let Some(p) = &prior {
@@ -566,6 +569,18 @@ fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'st
             bail!("settings.json.statusLine 已被其他程式設定（不是 codeforge）；使用 --replace-statusline 覆蓋（只換這個欄位，hooks 不動）");
         }
     }
+    // a refreshInterval already there (ours, or one the user set) is kept as it is
+    let refresh = prior
+        .as_ref()
+        .and_then(|p| p.get("refreshInterval"))
+        .cloned()
+        .unwrap_or_else(|| json!(STATUSLINE_REFRESH_S));
+    let new_block = json!({
+        "type": "command",
+        "command": cmd,
+        "refreshInterval": refresh,
+        MARKER_KEY: GLOBAL_MARKER,
+    });
     obj.insert("statusLine".to_string(), new_block.clone());
     Ok(match prior {
         None => "新增",
@@ -1079,6 +1094,35 @@ mod tests {
         let action = patch_statusline(&mut s, "/new codeforge statusline", false).unwrap();
         assert_eq!(action, "更新");
         assert_eq!(statusline_cmd(&s), "/new codeforge statusline");
+    }
+
+    #[test]
+    fn statusline_sets_refresh_interval_and_keeps_one_already_there() {
+        // a fresh install: 10 s
+        let mut s = json!({});
+        patch_statusline(&mut s, "/x statusline", false).unwrap();
+        assert_eq!(s["statusLine"]["refreshInterval"], 10);
+        // an install from before the field: re-install adds it (an update, not "no change")
+        let mut old = json!({"statusLine": {"type": "command", "command": "/x statusline", MARKER_KEY: GLOBAL_MARKER}});
+        assert_eq!(
+            patch_statusline(&mut old, "/x statusline", false).unwrap(),
+            "更新"
+        );
+        assert_eq!(old["statusLine"]["refreshInterval"], 10);
+        // the user changed ours to 3: kept, and re-install is a no-op
+        let mut own = json!({});
+        patch_statusline(&mut own, "/x statusline", false).unwrap();
+        own["statusLine"]["refreshInterval"] = json!(3);
+        assert_eq!(
+            patch_statusline(&mut own, "/x statusline", false).unwrap(),
+            "已是最新（無變動）"
+        );
+        assert_eq!(own["statusLine"]["refreshInterval"], 3);
+        // --replace-statusline over the user's own block keeps the user's interval
+        let mut user = json!({"statusLine": {"type": "command", "command": "/user/script", "refreshInterval": 30}});
+        patch_statusline(&mut user, "/x statusline", true).unwrap();
+        assert_eq!(user["statusLine"]["command"], "/x statusline");
+        assert_eq!(user["statusLine"]["refreshInterval"], 30);
     }
 
     #[test]
