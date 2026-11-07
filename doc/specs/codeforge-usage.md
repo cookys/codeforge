@@ -92,6 +92,12 @@ model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註
 每一層的 key、型別、值都驗證（別名格式、`host-` + 8 hex、model id 格式、日期、列舉、非負數）。
 所有整數（計數、時間、`resets_at`）都必須在 0..=2^53−1（`UINT_MAX`，JS number 能精確表示的
 範圍）；飽和後的加總寫出時壓在這個上限。
+某份本機配額快照的值超出契約（`written_at_ms`／`resets_at` 不在 0..=2^53−1、`pct` 不在 0..=1.5）時，
+只丟掉那一份，其他帳號與全部 `days` 照常寫出，不讓整份摘要驗證失敗。丟了多少看頂層選用欄位
+`dropped_accounts`：`{"<原因>": <計數>}`，原因只能是 `written_at_ms_out_of_range`、
+`resets_at_out_of_range`、`pct_out_of_range`，計數是 uint；沒有丟任何東西時這個 key 不存在
+（形狀與舊版相同），絕不帶別名或自由文字。`codeforge usage collect` 非 quiet 時在 stderr 提示丟了幾份。
+forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接受並驗證這個欄位。
 `days` 是最近 7 天，專案已加總掉。`usage push` 讀回、驗證、把驗過的 bytes 以固定檔名
 `usage-summary.json` 交給 `fleet upload`，不送本機路徑。
 
