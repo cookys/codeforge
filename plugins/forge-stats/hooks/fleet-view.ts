@@ -19,6 +19,8 @@ export type FleetWeekly = FleetWin & { warn: 'waste' | 'short' | null; exhaustAt
 export type FleetState = 'ok' | 'stale' | 'expired' | 'no_source'
 export type FleetAccount = {
   alias: string
+  /** `personal` or an org name; null when unknown. */
+  org: string | null
   hosts: string[]
   observedAtMs: number | null
   state: FleetState
@@ -71,7 +73,8 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
   if (!Array.isArray(raw.accounts) || raw.accounts.length > FLEET_MAX_ACCOUNTS) return BAD
   const accounts: FleetAccount[] = []
   for (const a of raw.accounts as unknown[]) {
-    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour'])) return BAD
+    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org'])) return BAD
+    if (a.org !== undefined && a.org !== null && !isLabel(a.org)) return BAD
     if (!isLabel(a.alias) || !isLabel(a.provider)) return BAD
     if (!Array.isArray(a.hosts) || a.hosts.length > 64 || !a.hosts.every(isLabel)) return BAD
     if (a.observed_at_ms !== null && !isInt(a.observed_at_ms)) return BAD
@@ -80,7 +83,7 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
     const w = weekly(a.weekly)
     const f = win(a.five_hour)
     if (w === undefined || f === undefined) return BAD
-    accounts.push({ alias: a.alias, hosts: a.hosts as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
+    accounts.push({ alias: a.alias, org: typeof a.org === 'string' ? a.org : null, hosts: a.hosts as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
   }
   return {
     status: 'ok',
@@ -115,10 +118,13 @@ function fit(forms: QLine[], cols: number): QLine {
   return out
 }
 
+/** The alias, then the org (`personal` shown as 個人 / personal) when known. */
+const label = (a: FleetAccount, tr: T) => (a.org === null ? a.alias : `${a.alias} ${a.org === 'personal' ? tr('fleetPersonal') : a.org}`)
+
 function warnLine(a: FleetAccount, useTarget: number, cols: number, tr: T, now: number): QLine | null {
   const w = a.weekly
   if (w === null || w.warn === null) return null
-  const head: QLine = [seg(tr(w.warn === 'waste' ? 'fleetWaste' : 'fleetShort'), 'bold', 'warning'), seg(SEP, 'dim'), seg(a.alias, 'bold'), seg(SEP, 'dim'), seg(`${tr('quotaWWeekly')} ${pctText(w.pct)}`)]
+  const head: QLine = [seg(tr(w.warn === 'waste' ? 'fleetWaste' : 'fleetShort'), 'bold', 'warning'), seg(SEP, 'dim'), seg(label(a, tr), 'bold'), seg(SEP, 'dim'), seg(`${tr('quotaWWeekly')} ${pctText(w.pct)}`)]
   const runout: QLine = w.warn === 'short' && w.exhaustAt !== null ? [seg(SEP, 'dim'), seg(tr('fleetRunout', { t: countdown(w.exhaustAt * 1000, now) }))] : []
   const reset: QLine = [seg(SEP, 'dim'), seg(`${tr('fleetReset')} ◷ ${countdown(w.resetsAt * 1000, now)}`, 'dim')]
   const target: QLine = w.warn === 'waste' ? [seg(SEP, 'dim'), seg(tr('fleetTarget', { p: pctText(useTarget) }), 'dim')] : []
@@ -126,7 +132,7 @@ function warnLine(a: FleetAccount, useTarget: number, cols: number, tr: T, now: 
 }
 
 function accountLine(a: FleetAccount, aliasW: number, cols: number, tr: T, now: number): QLine {
-  const name = seg(padRight(clipCells(a.alias, aliasW), aliasW + 2), a.state === 'ok' ? undefined : 'idle')
+  const name = seg(padRight(clipCells(label(a, tr), aliasW), aliasW + 2), a.state === 'ok' ? undefined : 'idle')
   const age: QLine =
     a.observedAtMs !== null && (now - a.observedAtMs) / 1000 > AGE_SHOW_S
       ? [seg('  ' + tr('quotaAge', { t: countdown(now + (now - a.observedAtMs), now) }), 'dim')]
@@ -164,7 +170,7 @@ export function fleetLines(view: FleetQuotaView, cols: number, tr: T, now: numbe
   if (warns.length === 0) out.push([seg(clipCells(tr('fleetNoWarn'), cols), 'dim')])
   else out.push(...warns)
   out.push([seg(' ')])
-  const aliasW = Math.min(16, Math.max(0, ...view.accounts.map(a => displayWidth(a.alias))))
+  const aliasW = Math.min(28, Math.max(0, ...view.accounts.map(a => displayWidth(label(a, tr)))))
   for (const a of view.accounts) out.push(accountLine(a, aliasW, cols, tr, now))
   if (view.skipped > 0) out.push([seg(clipCells('  ' + tr('fleetSkipped', { n: view.skipped }), cols), 'dim')])
   return out

@@ -130,12 +130,29 @@ test('a narrow pane (40 cols) keeps every row inside the width, CJK too', async 
   }
 })
 
+test('the org follows the alias: personal as 個人, a named org as written, none when unknown', async ($, on) => {
+  const f = fleet([
+    acct({ alias: 'acct-11111111', org: 'personal', weekly: wk({ pct: 0.2 }) }),
+    acct({ alias: 'acct-22222222', org: 'Acme 研發', weekly: wk({ pct: 0.3 }) }),
+    acct({ alias: 'acct-33333333', org: null, weekly: wk({ pct: 0.4 }) }),
+  ])
+  world(on, { fleet: JSON.stringify(f), zh: true })
+  const ui = await open($)
+  await ui.press({ key: 'tab-fleet' })
+  const rows = rowsOf(await ui.drawn())
+  expect(rows.some(r => /^acct-11111111 個人 +週 20%/.test(r))).toBe(true)
+  expect(rows.some(r => /^acct-22222222 Acme 研發 +週 30%/.test(r))).toBe(true)
+  expect(rows.some(r => /^acct-33333333 +週 40%/.test(r))).toBe(true)
+  await ui.unmount()
+})
+
 const BAD_CASES: [string, string, Record<string, unknown>][] = [
   ['invalid JSON', '{', {}],
   ['another schema', JSON.stringify({ ...fleet([]), schema: 'other/1' }), {}],
   ['an unknown key', JSON.stringify({ ...fleet([]), extra: 1 }), {}],
   ['an unknown state', JSON.stringify(fleet([acct({ alias: 'a', state: 'weird' })])), {}],
   ['a bad window', JSON.stringify(fleet([acct({ alias: 'a', weekly: { pct: 'x', resets_at: 1 } })])), {}],
+  ['an org with a control char', JSON.stringify(fleet([acct({ alias: 'a', org: 'x\u0007y' })])), {}],
   ['a link', JSON.stringify(FIXTURE()), { isLink: true }],
   ['an oversized file', JSON.stringify(FIXTURE()), { size: FLEET_MAX_BYTES + 1 }],
 ]
