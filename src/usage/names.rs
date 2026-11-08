@@ -134,18 +134,104 @@ fn read_table(path: &Path) -> Result<Option<toml::Table>> {
 /// entries [`load`] skips, other tables). A file that cannot be read or parsed is left
 /// untouched and is an error; so is a `names` key that is not a table.
 pub fn set(path: &Path, key: &str, name: &str) -> Result<()> {
+    edit(path, "names", key, Some(name)).map(|_| ())
+}
+
+/// Set (`Some`) or remove (`None`) `key` in the `[table]` of `path`, keeping the rest of the file.
+/// Returns whether the key was there before.
+fn edit(path: &Path, table: &str, key: &str, value: Option<&str>) -> Result<bool> {
     let mut t = read_table(path)?.unwrap_or_default();
-    let names = t
-        .entry("names")
+    let entry = t
+        .entry(table)
         .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let toml::Value::Table(names) = names else {
+    let toml::Value::Table(entries) = entry else {
         anyhow::bail!(
-            "名稱檔 {} 的 names 不是表格，沒有修改；請先修好它",
+            "名稱檔 {} 的 {table} 不是表格，沒有修改；請先修好它",
             path.display()
         );
     };
-    names.insert(key.to_string(), toml::Value::String(name.to_string()));
-    write_table(path, &t)
+    let had = match value {
+        Some(v) => entries
+            .insert(key.to_string(), toml::Value::String(v.to_string()))
+            .is_some(),
+        None => entries.remove(key).is_some(),
+    };
+    write_table(path, &t)?;
+    Ok(had)
+}
+
+/// Widest operator note, in terminal columns.
+pub const NOTE_MAX: usize = 40;
+
+/// A note the operator may attach: 1..=40 columns, trimmed, no `@`, no control char, BOM or
+/// whitespace other than a plain space (the display-name rule, wider and without the key rule).
+pub fn valid_note(s: &str) -> bool {
+    !s.is_empty()
+        && cells(s) <= NOTE_MAX
+        && s.trim() == s
+        && !s.chars().any(|c| {
+            c.is_control() || c == '@' || c == '\u{FEFF}' || (c.is_whitespace() && c != ' ')
+        })
+}
+
+/// Operator notes: a provider label (`kimi`) or an account key → short text. Local only: they go
+/// into `fleet-quota.json` and the screens, never into a summary or `usage push`.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Notes(pub BTreeMap<String, String>);
+
+impl Notes {
+    /// The note for an account: its key's note wins over its provider's.
+    pub fn for_row(&self, key: &str, provider: &str) -> Option<&str> {
+        self.0
+            .get(key)
+            .or_else(|| self.0.get(provider))
+            .map(String::as_str)
+    }
+}
+
+/// The `[notes]` of `path`, for drawing: like [`load`], any error is no notes and an entry that
+/// fails [`valid_note`] is skipped.
+pub fn load_notes(path: &Path) -> Notes {
+    let Ok(Some(t)) = read_table(path) else {
+        return Notes::default();
+    };
+    let mut out = BTreeMap::new();
+    if let Some(toml::Value::Table(notes)) = t.get("notes") {
+        for (k, v) in notes {
+            if let Some(v) = v.as_str() {
+                if !k.is_empty() && valid_note(v) {
+                    out.insert(k.clone(), v.to_string());
+                }
+            }
+        }
+    }
+    Notes(out)
+}
+
+/// The notes from [`default_path`] (none when there is no path).
+pub fn load_notes_default() -> Notes {
+    default_path().map(|p| load_notes(&p)).unwrap_or_default()
+}
+
+/// Set `key`'s note in `path` (same keep-the-rest write as [`set`]).
+pub fn set_note(path: &Path, key: &str, note: &str) -> Result<()> {
+    edit(path, "notes", key, Some(note)).map(|_| ())
+}
+
+/// Remove `key`'s note from `path`; whether there was one. A missing file has none.
+pub fn clear_note(path: &Path, key: &str) -> Result<bool> {
+    if read_table(path)?.is_none() {
+        return Ok(false);
+    }
+    edit(path, "notes", key, None)
+}
+
+/// The provider of a `<provider>-<8 hex>` key (`codex` for `codex-4cc1b5c8`), else `None`.
+pub fn key_provider(key: &str) -> Option<&str> {
+    if key.starts_with("acct-") || !key_like(key) {
+        return None;
+    }
+    key.split_once('-').map(|(p, _)| p)
 }
 
 /// The names from [`default_path`] (none when there is no path).
@@ -167,7 +253,7 @@ fn write_table(path: &Path, table: &toml::Table) -> Result<()> {
     #[cfg(not(unix))]
     std::fs::create_dir_all(dir)?;
     let body = format!(
-        "# codeforge 帳號顯示名（codeforge usage alias set 寫入）。key 是內部帳號 key，只在這裡出現。\n{}",
+        "# codeforge 帳號顯示名與備註（codeforge usage alias set／note set 寫入）。key 是內部帳號 key，只在這裡出現。\n{}",
         toml::to_string(table)?
     );
     let mut tmp = tempfile::Builder::new()
@@ -579,5 +665,94 @@ mod tests {
         ] {
             assert!(!valid_name(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn notes_load_validate_and_set_clear_keeping_the_rest() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("accounts.toml");
+        assert_eq!(load_notes(&p), Notes::default());
+        assert!(!clear_note(&p, "kimi").unwrap(), "no file, no note");
+        std::fs::write(
+            &p,
+            "[names]\n\"acct-1\" = \"work\"\n[notes]\nkimi = \"週配額用完\"\nglm = \"a@b\"\nqoder = 5\nx = \" pad\"\n[other]\nk = 1\n",
+        )
+        .unwrap();
+        // invalid entries are skipped, never fatal
+        assert_eq!(
+            load_notes(&p),
+            Notes(BTreeMap::from([("kimi".into(), "週配額用完".into())]))
+        );
+        set_note(&p, "codex-1a2b3c4d", "plus plan").unwrap();
+        let t: toml::Table = std::fs::read_to_string(&p).unwrap().parse().unwrap();
+        assert_eq!(t["names"]["acct-1"].as_str(), Some("work"));
+        assert_eq!(t["notes"]["glm"].as_str(), Some("a@b"));
+        assert_eq!(t["other"]["k"].as_integer(), Some(1));
+        assert_eq!(load(&p).0.len(), 1, "names untouched");
+        assert_eq!(load_notes(&p).0.len(), 2);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let m = std::fs::metadata(&p).unwrap().permissions().mode() & 0o777;
+            assert_eq!(m, 0o600);
+        }
+        assert!(clear_note(&p, "kimi").unwrap());
+        assert!(!clear_note(&p, "kimi").unwrap());
+        assert_eq!(
+            load_notes(&p),
+            Notes(BTreeMap::from([(
+                "codex-1a2b3c4d".into(),
+                "plus plan".into()
+            )]))
+        );
+        // a broken file is no notes and is never rewritten
+        std::fs::write(&p, "not toml [").unwrap();
+        assert_eq!(load_notes(&p), Notes::default());
+        assert!(set_note(&p, "kimi", "x").is_err());
+        assert!(clear_note(&p, "kimi").is_err());
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "not toml [");
+    }
+
+    #[test]
+    fn an_account_note_wins_over_its_provider_note() {
+        let n = Notes(BTreeMap::from([
+            ("codex".into(), "team plan".into()),
+            ("codex-1a2b3c4d".into(), "mine".into()),
+        ]));
+        assert_eq!(n.for_row("codex-1a2b3c4d", "codex"), Some("mine"));
+        assert_eq!(n.for_row("codex-99999999", "codex"), Some("team plan"));
+        assert_eq!(n.for_row("acct-1", "claude"), None);
+    }
+
+    #[test]
+    fn valid_note_allows_40_cells_and_refuses_emails_and_control_chars() {
+        for ok in [
+            "kimi weekly quota used up",
+            &"x".repeat(40),
+            &"工".repeat(20),
+        ] {
+            assert!(valid_note(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            " x",
+            "x ",
+            "a@b",
+            "a\tb",
+            "a\nb",
+            &"x".repeat(41),
+            &"工".repeat(21),
+            "工作\u{FEFF}",
+        ] {
+            assert!(!valid_note(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn key_provider_names_the_provider_of_a_provider_key_only() {
+        assert_eq!(key_provider("codex-1a2b3c4d"), Some("codex"));
+        assert_eq!(key_provider("acct-1a2b3c4d"), None);
+        assert_eq!(key_provider("ci-20261105"), None);
+        assert_eq!(key_provider("codex-XYZ"), None);
     }
 }

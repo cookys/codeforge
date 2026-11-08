@@ -269,3 +269,85 @@ test('parseFleetQuota never throws and refuses what is not the schema', () => {
   for (const t of ['', '[]', 'null', '{"schema":1}', '"x"']) expect(parseFleetQuota(t).status).toBe('bad')
   expect(parseFleetQuota(JSON.stringify(FIXTURE())).status).toBe('ok')
 })
+
+// (c) every provider row says why it has no source; (d) the operator's note ends the row, dim and cut to fit
+const NOTED = () =>
+  fleet([
+    acct({ alias: 'acct-11111111', name: 'cookys', email: 'me@example.com', weekly: wk({ pct: 0.2 }), note: '公司帳號，週五重置' }),
+    acct({ alias: 'kimi', provider: 'kimi', name: 'kimi', state: 'no_source', hosts: [], observed_at_ms: null, age_s: null, source_note: 'web_only', note: '週配額用完' }),
+    acct({ alias: 'glm', provider: 'glm', name: 'glm', state: 'no_source', hosts: [], observed_at_ms: null, age_s: null, source_note: 'needs_token' }),
+    acct({ alias: 'codex', provider: 'codex', name: 'codex', state: 'no_source', hosts: [], observed_at_ms: null, age_s: null, source_note: 'no_window' }),
+  ])
+
+for (const [zh, web, token, nowin] of [
+  [true, '無來源 · 只有網頁', '無來源 · 要 token，待 autopilot 鏡像', '無來源 · 帳號沒有窗口資料'],
+  [false, 'no source · only on the web page', 'no source · needs a token, awaiting the autopilot mirror', 'no source · no window data for this account'],
+] as const) {
+  test(`a no-source row carries its reason, and a note ends the row (${zh ? 'zh-TW' : 'en'})`, async ($, on) => {
+    world(on, { fleet: JSON.stringify(NOTED()), zh })
+    const ui = await open($, 102)
+    await ui.press({ key: 'tab-fleet' })
+    const rows = rowsOf(await ui.drawn())
+    expect(rows.some(r => /^kimi +/.test(r) && r.includes(web) && r.endsWith('  週配額用完'))).toBe(true)
+    expect(rows.some(r => /^glm +/.test(r) && r.includes(token))).toBe(true)
+    expect(rows.some(r => /^codex +/.test(r) && r.includes(nowin))).toBe(true)
+    expect(rows.some(r => /^cookys · me@example\.com +/.test(r) && r.endsWith('  公司帳號，週五重置'))).toBe(true)
+    // the note and the reason are drawn dim
+    const dim = (await ui.findAll({ type: 'Text' })).filter(n => (n as Node).props?.dimColor === true).map(n => textOf(n as Node))
+    expect(dim.some(t => t.includes('週配額用完'))).toBe(true)
+    expect(dim.some(t => t.includes(zh ? '只有網頁' : 'only on the web page'))).toBe(true)
+    await ui.unmount()
+  })
+}
+
+test('a long CJK note is cut with … to the width; the numbers and the word stay', async ($, on) => {
+  const note = "這是一段很長的中文備註，用來測試寬度裁切是否正確" // the first 20 (40 cells, the most a note may be) are used
+  const f = fleet([
+    acct({ alias: 'acct-11111111', name: 'cookys', weekly: wk({ pct: 0.2 }), note: note.slice(0, 20) }),
+    acct({ alias: 'kimi', provider: 'kimi', name: 'kimi', state: 'no_source', hosts: [], observed_at_ms: null, age_s: null, source_note: 'web_only', note: note.slice(0, 20) }),
+  ])
+  world(on, { fleet: JSON.stringify(f), zh: true })
+  for (const bodyColumns of [42, 52, 62, 82, 102]) {
+    const ui = await open($, bodyColumns)
+    await ui.press({ key: 'tab-fleet' })
+    const rows = rowsOf(await ui.drawn())
+    for (const r of rows) expect(displayWidth(r) <= bodyColumns - 2).toBe(true)
+    if (bodyColumns >= 42) {
+      expect(rows.some(r => /^cookys +週 20%/.test(r))).toBe(true)
+      expect(rows.some(r => /^kimi +無來源/.test(r))).toBe(true)
+    }
+    if (bodyColumns === 52) expect(rows.some(r => r.startsWith('cookys') && r.endsWith('…'))).toBe(true)
+    if (bodyColumns === 102) expect(rows.some(r => r.startsWith('cookys') && r.endsWith(note.slice(0, 20)))).toBe(true)
+    await ui.unmount()
+  }
+})
+
+test('parseFleetQuota reads source_note and note; an old file without them still parses; bad ones are refused', () => {
+  const v = parseFleetQuota(JSON.stringify(NOTED()))
+  if (v.status !== 'ok') throw new Error('not ok')
+  expect(v.accounts.map(a => [a.sourceNote, a.note])).toEqual([
+    [null, '公司帳號，週五重置'],
+    ['web_only', '週配額用完'],
+    ['needs_token', null],
+    ['no_window', null],
+  ])
+  const old = parseFleetQuota(JSON.stringify(FIXTURE()))
+  if (old.status !== 'ok') throw new Error('not ok')
+  expect(old.accounts.every(a => a.sourceNote === null && a.note === null)).toBe(true)
+  const ns = { provider: 'kimi', state: 'no_source', observed_at_ms: null, age_s: null }
+  for (const bad of [
+    acct({ alias: 'kimi', ...ns, source_note: 'maybe' }),
+    acct({ alias: 'kimi', ...ns, source_note: null }),
+    acct({ alias: 'a', source_note: 'web_only' }), // only a no_source row carries a reason
+    acct({ alias: 'a', note: '' }),
+    acct({ alias: 'a', note: ' padded' }),
+    acct({ alias: 'a', note: 'mail me@example.com' }),
+    acct({ alias: 'a', note: 'bell\u0007' }),
+    acct({ alias: 'a', note: 'tab\there' }),
+    acct({ alias: 'a', note: 'x'.repeat(41) }),
+    acct({ alias: 'a', note: '寬'.repeat(21) }),
+    acct({ alias: 'a', note: 5 }),
+  ])
+    expect(parseFleetQuota(JSON.stringify(fleet([bad]))).status).toBe('bad')
+  expect(parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', note: 'x'.repeat(40) })]))).status).toBe('ok')
+})
