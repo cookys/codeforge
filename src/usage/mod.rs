@@ -6,6 +6,7 @@
 pub mod alias;
 pub mod autocollect;
 pub mod collect;
+pub mod fleet_quota;
 pub mod price;
 pub mod quota;
 pub mod quota_mirror;
@@ -14,5 +15,7 @@ pub mod quota_view;
 pub mod store;
 pub mod summary;
 
+#[cfg(test)]
+mod fleet_quota_tests;
 #[cfg(test)]
 mod quota_view_tests;

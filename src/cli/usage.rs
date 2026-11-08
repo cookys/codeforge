@@ -7,10 +7,24 @@ use std::path::PathBuf;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub enum Action {
-    Show { days: u32, by: String, json: bool },
-    Collect { quiet: bool },
+    Show {
+        days: u32,
+        by: String,
+        json: bool,
+    },
+    Collect {
+        quiet: bool,
+    },
     Push,
-    Accounts { json: bool },
+    Accounts {
+        json: bool,
+    },
+    Fleet {
+        dir: PathBuf,
+        json: bool,
+        out: Option<PathBuf>,
+        use_target: f64,
+    },
 }
 
 fn now_ms() -> i64 {
@@ -138,6 +152,12 @@ pub fn run(action: Action) -> Result<()> {
             Ok(())
         }
         Action::Accounts { json } => accounts(json),
+        Action::Fleet {
+            dir,
+            json,
+            out,
+            use_target,
+        } => fleet(&dir, json, out.as_deref(), use_target),
         Action::Push => {
             let (_conn, path) = collected(true)?;
             let dir = path.parent().map(PathBuf::from).unwrap_or_default();
@@ -240,6 +260,34 @@ fn accounts_width() -> usize {
         .or_else(|| std::env::var("COLUMNS").ok().and_then(|v| v.parse().ok()))
         .unwrap_or(100);
     w.clamp(1, 100)
+}
+
+fn fleet(
+    dir: &std::path::Path,
+    json: bool,
+    out: Option<&std::path::Path>,
+    target: f64,
+) -> Result<()> {
+    use crate::usage::{fleet_quota as fq, quota_view as qv};
+    anyhow::ensure!(target > 0.0 && target <= 1.0, "--use-target 要在 (0, 1]");
+    let now = now_ms();
+    let (files, skipped) = fq::load(dir)?;
+    let f = fq::merge(&files, skipped, now, target);
+    let v = fq::to_json(&f, now);
+    if let Some(p) = out {
+        fq::write_atomic(p, &v)?;
+    }
+    if json {
+        println!("{}", serde_json::to_string_pretty(&v)?);
+        return Ok(());
+    }
+    use std::io::IsTerminal;
+    let color = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
+    print!(
+        "{}",
+        fq::text(&f, accounts_width(), now, &qv::Tr::current(), color)
+    );
+    Ok(())
 }
 
 fn accounts(json: bool) -> Result<()> {
