@@ -34,6 +34,9 @@ pub struct Root {
     pub kind: Kind,
     pub dir: PathBuf,
     pub hash: String,
+    /// The alias derived from this root's login file (set by the caller; `None` for Codex
+    /// roots and Claude roots without a usable login).
+    pub account: Option<String>,
 }
 
 /// Canonicalize and deduplicate the roots that exist.
@@ -43,7 +46,12 @@ pub fn roots(claude_dirs: &[PathBuf], codex_dir: Option<&Path>) -> Vec<Root> {
         if let Ok(dir) = std::fs::canonicalize(d) {
             if dir.is_dir() && !out.iter().any(|r| r.dir == dir) {
                 let hash = alias::path_hash8(&dir);
-                out.push(Root { kind, dir, hash });
+                out.push(Root {
+                    kind,
+                    dir,
+                    hash,
+                    account: None,
+                });
             }
         }
     };
@@ -676,7 +684,9 @@ pub fn collect_file(
 
 /// A root's account: Codex roots are `codex-<sha8>`. A Claude root takes the alias of the
 /// newest quota snapshot naming its sha8 as `root` (stored, so attribution does not depend on
-/// which process runs collect), else the stored one, else `acct-<sha8>`.
+/// which process runs collect), else the alias derived from the root's login file
+/// (`root.account`), else the stored one, else `acct-<sha8>`. Known limitation: transcripts
+/// written before a re-login are attributed to the account logged in now.
 /// `AUTOPILOT_ACCOUNT` is never read here.
 pub fn root_alias(
     conn: &Connection,
@@ -691,13 +701,13 @@ pub fn root_alias(
         .iter()
         .filter(|s| s.root.as_deref() == Some(root.hash.as_str()))
         .max_by_key(|s| s.written_at_ms);
-    if let Some(s) = newest {
+    if let Some(alias) = newest.map(|s| &s.alias).or(root.account.as_ref()) {
         conn.execute(
             "INSERT INTO roots VALUES (?1, ?2, ?3)
              ON CONFLICT (root_hash) DO UPDATE SET alias = excluded.alias, seen_ms = excluded.seen_ms",
-            params![root.hash, s.alias, now_ms],
+            params![root.hash, alias, now_ms],
         )?;
-        return Ok(s.alias.clone());
+        return Ok(alias.clone());
     }
     let stored: Option<String> = conn
         .query_row(

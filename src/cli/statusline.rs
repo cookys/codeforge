@@ -28,11 +28,12 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         // G36: this account's quota snapshot out, the other accounts' back in.
-        let (config_dir, alias) = crate::usage::alias::current_claude_account();
+        let (config_dir, acct) = crate::usage::alias::current_claude_account(&live_base);
         let others = record_quota(
             &mut data,
             &crate::usage::quota::quota_dir(&live_base),
-            &alias,
+            &acct.alias,
+            acct.org.as_deref(),
             &crate::usage::alias::path_hash8(&config_dir),
             &crate::live::sanitize_session_id(raw_sid),
             now_ms,
@@ -325,6 +326,7 @@ fn record_quota(
     data: &mut StatusInput,
     dir: &std::path::Path,
     alias: &str,
+    org: Option<&str>,
     root: &str,
     session: &str,
     now_ms: i64,
@@ -343,6 +345,7 @@ fn record_quota(
     };
     let snap = Snapshot {
         alias: alias.to_string(),
+        org: org.map(str::to_string),
         root: crate::usage::quota::is_hash8(root).then(|| root.to_string()),
         written_at_ms: now_ms,
         five_hour: window(data.five_hour_pct, data.five_hour_resets_at),
@@ -2548,6 +2551,7 @@ mod tests {
     fn quota_snap(alias: &str, pct: f64, resets_at: i64) -> crate::usage::quota::Snapshot {
         crate::usage::quota::Snapshot {
             alias: alias.into(),
+            org: None,
             root: None,
             written_at_ms: 0,
             five_hour: None,
@@ -2703,7 +2707,9 @@ mod tests {
         crate::live::write_live_json(&dir, "acct-b.json", &other.to_json()).unwrap();
         // no rate_limits: nothing written, the others still read
         let mut none = StatusInput::default();
-        let got = record_quota(&mut none, &dir, "acct-a", "1a2b3c4d", "sess-1", now_ms);
+        let got = record_quota(
+            &mut none, &dir, "acct-a", None, "1a2b3c4d", "sess-1", now_ms,
+        );
         assert_eq!(
             got.iter().map(|s| s.alias.as_str()).collect::<Vec<_>>(),
             ["acct-b"]
@@ -2715,7 +2721,9 @@ mod tests {
             seven_day_resets_at: Some(Q_NOW + 86400),
             ..Default::default()
         };
-        let got = record_quota(&mut data, &dir, "acct-a", "1a2b3c4d", "sess-1", now_ms);
+        let got = record_quota(
+            &mut data, &dir, "acct-a", None, "1a2b3c4d", "sess-1", now_ms,
+        );
         assert_eq!(got.len(), 1);
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("acct-a.json")).unwrap())
@@ -2735,6 +2743,7 @@ mod tests {
             &mut idle,
             &dir,
             "acct-a",
+            None,
             "1a2b3c4d",
             "sess-2",
             now_ms + 1000,
@@ -2750,6 +2759,7 @@ mod tests {
             &mut none,
             &base.path().join("nope"),
             "acct-a",
+            None,
             "1a2b3c4d",
             "sess-1",
             now_ms

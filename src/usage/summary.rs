@@ -5,7 +5,12 @@
 //! model id grammar, dates, enums), so a path, an email or a prompt cannot ride along. Push
 //! validates, then uploads exactly the validated bytes under a fixed name.
 
-use super::{alias::valid_alias, collect::Row, price, quota::Snapshot};
+use super::{
+    alias::{valid_alias, valid_org},
+    collect::Row,
+    price,
+    quota::Snapshot,
+};
 use anyhow::{bail, Context as _, Result};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -41,6 +46,8 @@ const DROP_REASONS: [&str; 3] = [
     "pct_out_of_range",
 ];
 const ACCOUNT_KEYS: [&str; 4] = ["alias", "written_at_ms", "five_hour", "seven_day"];
+/// Optional account keys: absent = unknown, so a summary from before `org` still validates.
+const ACCOUNT_OPTIONAL: [&str; 1] = ["org"];
 const WINDOW_KEYS: [&str; 2] = ["pct", "resets_at"];
 const COUNT_KEYS: [&str; 6] = [
     "input",
@@ -75,6 +82,8 @@ const ALIAS_RE: &str = "^[a-z0-9-]{1,24}$";
 #[cfg(test)]
 const MODEL_RE: &str = "^[A-Za-z0-9._-]{1,64}$";
 #[cfg(test)]
+const ORG_RE: &str = "^[^@\\p{Cc}]{1,40}$";
+#[cfg(test)]
 const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 
 /// The contract as data, compared against the pane's copy.
@@ -82,7 +91,7 @@ const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 pub fn contract() -> Value {
     json!({
         "schema": SCHEMA,
-        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "window": WINDOW_KEYS, "day": DAY_KEYS,
+        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "window": WINDOW_KEYS, "day": DAY_KEYS,
         "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
         "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE, "uint_max": UINT_MAX,
         "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
@@ -169,10 +178,14 @@ pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Va
         if let Some(reason) = bad_snapshot(s) {
             *dropped.entry(reason).or_default() += 1;
         } else if kept.len() < MAX_ACCOUNTS {
-            kept.push(json!({
+            let mut a = json!({
                 "alias": s.alias, "written_at_ms": s.written_at_ms,
                 "five_hour": window(&s.five_hour), "seven_day": window(&s.seven_day),
-            }));
+            });
+            if let Some(org) = &s.org {
+                a["org"] = json!(org);
+            }
+            kept.push(a);
         }
     }
     let mut out = json!({
@@ -209,11 +222,24 @@ pub fn dropped_count(v: &Value) -> u64 {
 }
 
 fn obj<'a>(v: &'a Value, keys: &[&str], at: &str) -> Result<&'a Map<String, Value>> {
+    obj_with(v, keys, &[], at)
+}
+
+/// `obj` plus keys that may be absent.
+fn obj_with<'a>(
+    v: &'a Value,
+    keys: &[&str],
+    optional: &[&str],
+    at: &str,
+) -> Result<&'a Map<String, Value>> {
     let Some(m) = v.as_object() else {
         bail!("{at}: 不是物件");
     };
     // the unexpected key itself is never echoed: it is exactly what must not leave the machine
-    let extra = m.keys().filter(|k| !keys.contains(&k.as_str())).count();
+    let extra = m
+        .keys()
+        .filter(|k| !keys.contains(&k.as_str()) && !optional.contains(&k.as_str()))
+        .count();
     if extra > 0 {
         bail!("{at}: 有 {extra} 個不允許的欄位");
     }
@@ -288,9 +314,14 @@ pub fn validate(v: &Value) -> Result<()> {
     }
     for (i, a) in accounts.iter().enumerate() {
         let at = format!("summary.accounts[{i}]");
-        let m = obj(a, &ACCOUNT_KEYS, &at)?;
+        let m = obj_with(a, &ACCOUNT_KEYS, &ACCOUNT_OPTIONAL, &at)?;
         if !m["alias"].as_str().is_some_and(valid_alias) {
             bail!("{at}.alias: 不是合法別名");
+        }
+        if m.get("org")
+            .is_some_and(|o| !o.as_str().is_some_and(valid_org))
+        {
+            bail!("{at}.org: 不是合法的組織顯示名");
         }
         uint(&m["written_at_ms"], &format!("{at}.written_at_ms"))?;
         win(&m["five_hour"], &format!("{at}.five_hour"))?;
@@ -414,6 +445,7 @@ mod tests {
     fn good() -> Value {
         let snap = Snapshot {
             alias: "acct-a".into(),
+            org: None,
             root: Some("1a2b3c4d".into()),
             written_at_ms: 5,
             five_hour: Some(Window {
@@ -613,6 +645,7 @@ mod tests {
     fn snap_with(alias: &str, written_at_ms: i64, pct: f64, resets_at: i64) -> Snapshot {
         Snapshot {
             alias: alias.into(),
+            org: None,
             root: None,
             written_at_ms,
             five_hour: Some(Window {

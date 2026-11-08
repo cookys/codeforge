@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use super::alias::valid_alias;
+use super::alias::{valid_alias, valid_org};
 
 pub const SCHEMA: &str = "codeforge.quota/1";
 /// Rewrite an unchanged snapshot at most this often.
@@ -55,6 +55,8 @@ pub struct Window {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
     pub alias: String,
+    /// The org display (`personal` or a sanitized name); `None` = unknown (an old writer).
+    pub org: Option<String>,
     /// sha8 of the canonical config dir this account's sessions run in (`None` from a
     /// pre-phase-2 writer). Lets the collector map a transcript root to an alias.
     pub root: Option<String>,
@@ -152,6 +154,7 @@ impl Snapshot {
         json!({
             "schema": SCHEMA,
             "alias": self.alias,
+            "org": self.org,
             "root": self.root,
             "written_at_ms": self.written_at_ms,
             "five_hour": window_json(&self.five_hour),
@@ -173,8 +176,14 @@ impl Snapshot {
             Value::String(r) if is_hash8(r) => Some(r.clone()),
             _ => return None,
         };
+        // an org off the grammar is dropped, not a reason to lose the quota numbers
+        let org = v["org"]
+            .as_str()
+            .filter(|o| valid_org(o))
+            .map(str::to_string);
         Some(Snapshot {
             alias: alias.to_string(),
+            org,
             root,
             written_at_ms: v["written_at_ms"].as_i64()?,
             five_hour: window_from(&v["five_hour"]),
@@ -263,6 +272,7 @@ pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot,
         None => snap.clone(),
         Some(old) => Snapshot {
             alias: snap.alias.clone(),
+            org: snap.org.clone(),
             root: snap.root.clone().or_else(|| old.root.clone()),
             written_at_ms: snap.written_at_ms,
             five_hour: merge_window(old.five_hour.as_ref(), snap.five_hour.as_ref()),
@@ -356,6 +366,7 @@ mod tests {
         };
         Snapshot {
             alias: alias.into(),
+            org: None,
             root: None,
             written_at_ms: at_ms,
             five_hour: w(five),

@@ -424,29 +424,38 @@ fn refusal_line(m: &MergedQuota, now_s: f64, tr: &Tr, full: bool) -> Line {
     ]
 }
 
-pub(crate) fn header_line(f: &Fact, cols: usize, tr: &Tr) -> Line {
+/// `org`: shown after the name (alias, org, provider, hosts; hosts are cut first).
+pub(crate) fn header_line(f: &Fact, cols: usize, tr: &Tr, org: Option<&str>) -> Line {
     let m = &f.e.m;
     let name = || p(f.e.key.clone(), Style::Bold);
     let dot = || p(" · ", Style::Dim);
-    let host: Option<Part> = m.multi_host.then(|| {
-        let mut roles: Vec<&str> = Vec::new();
-        for h in &m.hosts {
-            if !roles.contains(&h.as_str()) {
-                roles.push(h);
-            }
+    let mut roles: Vec<&str> = Vec::new();
+    for h in &m.hosts {
+        if !roles.contains(&h.as_str()) {
+            roles.push(h);
         }
-        p(
-            tr.t("quota.host", &[("roles", &roles.join(&tr.q("role_sep")))]),
-            Style::Dim,
-        )
-    });
+    }
+    // the first `k` labels and "+N more" for the rest
+    let host_k = |k: usize| -> Part {
+        let mut s = roles[..k].join(&tr.q("role_sep"));
+        if k < roles.len() {
+            s.push(' ');
+            s.push_str(&tr.t("quota.host_more", &[("n", &(roles.len() - k).to_string())]));
+        }
+        p(tr.t("quota.host", &[("roles", &s)]), Style::Dim)
+    };
+    let host: Option<Part> = (m.multi_host && !roles.is_empty()).then(|| host_k(roles.len()));
     let tok: Vec<Part> = match &f.tok {
         None => vec![],
         Some(t) if t.flag => vec![p("▲", Style::Warn), pl(format!(" {}", t.text))],
         Some(t) => vec![p(t.text.clone(), Style::Dim)],
     };
     let join = |parts: Vec<Vec<Part>>| -> Line {
-        let mut out: Line = vec![name(), pl("  "), p(m.level, Style::Dim)];
+        let mut out: Line = vec![name()];
+        if let Some(o) = org {
+            out.push(p(format!(" · {o}"), Style::Dim));
+        }
+        out.extend([pl("  "), p(m.level, Style::Dim)]);
         for x in parts {
             out.push(dot());
             out.extend(x);
@@ -454,20 +463,23 @@ pub(crate) fn header_line(f: &Fact, cols: usize, tr: &Tr) -> Line {
         out
     };
     let mut forms: Vec<Line> = Vec::new();
-    let with = |h: bool, t: bool| {
+    let with_k = |hp: Option<Part>, t: bool| {
         let mut v: Vec<Vec<Part>> = Vec::new();
-        if h {
-            if let Some(hp) = &host {
-                v.push(vec![hp.clone()]);
-            }
+        if let Some(hp) = hp {
+            v.push(vec![hp]);
         }
         if t && !tok.is_empty() {
             v.push(tok.clone());
         }
         v
     };
+    let with = |h: bool, t: bool| with_k(if h { host.clone() } else { None }, t);
     forms.push(join(with(true, true)));
     if host.is_some() {
+        // fewer labels before none at all
+        for k in (1..roles.len()).rev() {
+            forms.push(join(with_k(Some(host_k(k)), true)));
+        }
         forms.push(join(with(false, true)));
     }
     match &f.tok {
@@ -595,7 +607,7 @@ pub fn pane_lines(
             if i > 0 {
                 out.push(vec![pl(" ")]);
             }
-            out.push(header_line(f, cols, tr));
+            out.push(header_line(f, cols, tr, None));
             match f.kind {
                 Kind::Never => out.push(vec![p(format!("  {}", tr.q("never")), Style::Idle)]),
                 Kind::NoUsage => out.push(vec![p(format!("  {}", tr.q("no_usage")), Style::Idle)]),

@@ -1,5 +1,5 @@
 use super::fleet_quota::*;
-use super::quota_view::Tr;
+use super::quota_view::{self as qv, Tr};
 use serde_json::{json, Value};
 use unicode_width::UnicodeWidthStr;
 
@@ -343,4 +343,128 @@ fn json_round_trips_and_out_file_is_written_atomically() {
         1,
         "no temp file left"
     );
+}
+
+fn with_org(mut a: Value, org: &str) -> Value {
+    a["org"] = json!(org);
+    a
+}
+
+#[test]
+fn eight_hosts_at_80_cols_keep_as_many_labels_as_fit_and_count_the_rest() {
+    let names = [
+        "4124gs", "7840hs", "aimax395", "c4140", "cuda", "gentoo", "openclaw", "xl270d",
+    ];
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![with_org(
+            acct(
+                "acct-ae88ee5d",
+                60,
+                Some((0.3, NOW_S + 2 * H)),
+                Some((0.2, NOW_S + 3 * D)),
+            ),
+            "personal",
+        )],
+        vec![],
+    );
+    let files: Vec<(String, &Value)> = names.iter().map(|n| (format!("{n}.json"), &s)).collect();
+    let refs: Vec<(&str, &Value)> = files.iter().map(|(n, v)| (n.as_str(), *v)).collect();
+    let f = run(&refs);
+    assert_eq!(
+        f.rows
+            .iter()
+            .find(|r| r.alias == "acct-ae88ee5d")
+            .unwrap()
+            .hosts
+            .len(),
+        8
+    );
+    for (tr, personal, more) in [("zh-TW", "個人", "等 "), ("en", "personal", "more")] {
+        let txt = text(&f, 80, NOW_MS, &Tr(tr.into()), false);
+        let head = txt.lines().find(|l| l.contains("acct-ae88ee5d")).unwrap();
+        assert!(UnicodeWidthStr::width(head) <= 80, "{head:?}");
+        assert!(head.contains(personal), "{head:?}");
+        assert!(
+            head.contains("4124gs") && head.contains(more),
+            "{tr}: {head:?}"
+        );
+        let pos = |s: &str| head.find(s).unwrap();
+        assert!(
+            pos("acct-ae88ee5d") < pos(personal)
+                && pos(personal) < pos("claude")
+                && pos("claude") < pos("4124gs")
+        );
+    }
+    // JSON carries the org; an account without one has null
+    let js = to_json(&f, NOW_MS);
+    let a = js["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["alias"] == "acct-ae88ee5d")
+        .unwrap();
+    assert_eq!(a["org"], "personal");
+    assert!(js["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|a| a["org"].is_null()));
+}
+
+#[test]
+fn summary_org_validates_when_present_and_is_optional() {
+    let mut v = json!({"schema": "codeforge.usage-summary/1", "generated_at_ms": NOW_MS, "host": "host-aaaaaaaa",
+        "prices_as_of": "2026-10-06", "accounts": [acct("a", 1, None, None)], "days": []});
+    assert!(crate::usage::summary::validate(&v).is_ok());
+    for ok in ["personal", "Acme 公司"] {
+        v["accounts"][0]["org"] = json!(ok);
+        assert!(crate::usage::summary::validate(&v).is_ok(), "{ok}");
+    }
+    for bad in [
+        json!("me@x.com"),
+        json!("a\nb"),
+        json!(""),
+        json!("x".repeat(41)),
+        json!(5),
+    ] {
+        v["accounts"][0]["org"] = bad.clone();
+        assert!(crate::usage::summary::validate(&v).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_40_char_cjk_org_is_cut_and_keeps_the_numbers_on_screen() {
+    let org: String = "研發部門".repeat(10);
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![with_org(
+            acct(
+                "acct-12345678",
+                60,
+                Some((0.95, NOW_S + 2 * H)),
+                Some((0.97, NOW_S + 3 * D)),
+            ),
+            &org,
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &s), ("b.json", &s)]);
+    for cols in [30, 40, 50, 60, 70, 80, 100] {
+        for tr in ["zh-TW", "en"] {
+            let txt = text(&f, cols, NOW_MS, &Tr(tr.into()), false);
+            for l in txt.lines() {
+                assert!(UnicodeWidthStr::width(l) <= cols, "{cols} {tr}: {l:?}");
+            }
+            // the org is cut, so the weekly % stays on the alias line (compact) or below it
+            let head = txt
+                .lines()
+                .find(|l| l.starts_with("acct-12345678"))
+                .unwrap();
+            assert!(
+                txt.contains("97%") && (cols >= qv::COMPACT_COLS || head.contains("97%")),
+                "{cols} {tr}: {txt}"
+            );
+        }
+    }
 }
