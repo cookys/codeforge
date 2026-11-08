@@ -131,6 +131,10 @@ pub struct Row {
     pub source_note: Option<SourceNote>,
     /// The operator's note ([`attach_notes`]); local only.
     pub note: Option<String>,
+    /// The operator's weekly reset rule ([`attach_resets`]) and its next occurrence (epoch s);
+    /// operator-provided, low confidence, and never a replacement for a real window's reset.
+    pub note_reset_rule: Option<String>,
+    pub note_resets_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -374,6 +378,8 @@ pub fn merge(
                 five_reset: false,
                 source_note: None,
                 note: None,
+                note_reset_rule: None,
+                note_resets_at: None,
             };
             if let Some(at) = at {
                 if now_ms - at >= MAX_AGE_MS {
@@ -497,9 +503,23 @@ pub fn attach_notes(f: &mut Fleet, notes: &super::names::Notes) {
         five_reset: false,
         source_note: None,
         note: Some(text.to_string()),
+        note_reset_rule: None,
+        note_resets_at: None,
     })
     .collect();
     f.rows.extend(extra);
+}
+
+/// Attach the operator's weekly reset rules: an account key's rule, else its provider's; the
+/// next occurrence strictly after `now_ms`. Call after [`attach_notes`] (it adds the no-data rows).
+pub fn attach_resets(f: &mut Fleet, resets: &super::names::Resets, now_ms: i64) {
+    for r in &mut f.rows {
+        let rule = resets.for_row(&r.alias, &r.provider);
+        r.note_resets_at = rule
+            .and_then(super::reset_rule::parse)
+            .map(|x| x.next_after(now_ms.div_euclid(1000)));
+        r.note_reset_rule = rule.map(str::to_string);
+    }
 }
 
 fn warn_name(w: Option<Warn>) -> Value {
@@ -543,6 +563,10 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
             }
             if let Some(n) = &r.note {
                 a["note"] = json!(n);
+            }
+            if let (Some(rule), Some(at)) = (&r.note_reset_rule, r.note_resets_at) {
+                a["note_reset_rule"] = json!(rule);
+                a["note_resets_at"] = json!(at);
             }
             a
         })
@@ -787,16 +811,39 @@ fn window_lines_of(r: &Row, e: &QEntry, cols: usize, now_f: f64, tr: &Tr) -> Vec
 /// A note shorter than this needs only its own width; a longer one is cut, but not below this.
 const NOTE_MIN_CELLS: usize = 8;
 
-/// `line` with `text` appended dim after two spaces, cut to the room left (display width, whole
-/// chars); `None` when too little room is left.
-fn with_tail(line: &Line, text: &str, cols: usize) -> Option<Line> {
-    let room = cols.checked_sub(qv::width(line) + 2)?;
-    if room < NOTE_MIN_CELLS.min(UnicodeWidthStr::width(text)) {
-        return None;
+/// The operator's tail for a row: the note, then `◷ 2d3h` to the next operator-rule reset. When
+/// both do not fit in `room` the note is cut, never the countdown; `None` when too little room.
+fn tail_text(r: &Row, now_s: i64, room: usize) -> Option<String> {
+    let cd = r
+        .note_resets_at
+        .map(|at| format!("◷ {}", qv::countdown(at as f64, now_s as f64)));
+    let w = |s: &str| UnicodeWidthStr::width(s);
+    match (&r.note, cd) {
+        (None, None) => None,
+        (None, Some(cd)) => (w(&cd) <= room).then_some(cd),
+        (Some(n), None) => (room >= NOTE_MIN_CELLS.min(w(n))).then(|| super::names::clip(n, room)),
+        (Some(n), Some(cd)) => {
+            let full = format!("{n} {cd}");
+            if w(&full) <= room {
+                return Some(full);
+            }
+            let note_room = room.saturating_sub(w(&cd) + 1);
+            if note_room >= NOTE_MIN_CELLS.min(w(n)) {
+                Some(format!("{} {cd}", super::names::clip(n, note_room)))
+            } else {
+                (w(&cd) <= room).then_some(cd)
+            }
+        }
     }
+}
+
+/// `line` with the operator's tail appended dim after two spaces; `None` when too little room.
+fn with_tail(line: &Line, r: &Row, now_s: i64, cols: usize) -> Option<Line> {
+    let room = cols.checked_sub(qv::width(line) + 2)?;
+    let text = tail_text(r, now_s, room)?;
     let mut l = line.clone();
     l.push(p("  ", Style::Plain));
-    l.extend(qv::clip(&[p(text, Style::Dim)], room));
+    l.push(p(text, Style::Dim));
     Some(l)
 }
 
@@ -856,7 +903,7 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
                 }
             }
             // the operator's note before the email: it is what the schedule needs
-            if let Some(l) = r.note.as_deref().and_then(|n| with_tail(&line, n, cols)) {
+            if let Some(l) = with_tail(&line, r, now_s, cols) {
                 line = l;
             }
             // the email only when the line still fits with it; the numbers come first
@@ -912,11 +959,15 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
             }
         }
         // the operator's note ends the row: on its last line when it fits there, else its own line
-        if let Some(n) = &r.note {
+        if r.note.is_some() || r.note_resets_at.is_some() {
             let last = lines.len() - 1; // the block has at least its header line
-            match with_tail(&lines[last], n, cols) {
+            match with_tail(&lines[last], r, now_s, cols) {
                 Some(l) => lines[last] = l,
-                None => lines.push(qv::clip(&[p(format!("  {n}"), Style::Dim)], cols)),
+                None => {
+                    if let Some(t) = tail_text(r, now_s, cols.saturating_sub(2)) {
+                        lines.push(vec![p(format!("  {t}"), Style::Dim)]);
+                    }
+                }
             }
         }
     }

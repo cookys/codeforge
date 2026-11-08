@@ -28,7 +28,7 @@ fn cells(s: &str) -> usize {
 }
 
 /// The longest prefix of `s` at most `max` columns wide (CJK-safe: whole chars only).
-fn clip(s: &str, max: usize) -> String {
+pub(crate) fn clip(s: &str, max: usize) -> String {
     let mut w = 0;
     s.chars()
         .take_while(|c| {
@@ -140,22 +140,34 @@ pub fn set(path: &Path, key: &str, name: &str) -> Result<()> {
 /// Set (`Some`) or remove (`None`) `key` in the `[table]` of `path`, keeping the rest of the file.
 /// Returns whether the key was there before.
 fn edit(path: &Path, table: &str, key: &str, value: Option<&str>) -> Result<bool> {
+    edit_many(path, &[(table, key, value)]).map(|v| v[0])
+}
+
+/// [`edit`] for several `(table, key, value)` at once: one atomic write. Whether each key was there.
+fn edit_many(path: &Path, ops: &[(&str, &str, Option<&str>)]) -> Result<Vec<bool>> {
     let mut t = read_table(path)?.unwrap_or_default();
-    let entry = t
-        .entry(table)
-        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let toml::Value::Table(entries) = entry else {
-        anyhow::bail!(
-            "名稱檔 {} 的 {table} 不是表格，沒有修改；請先修好它",
-            path.display()
-        );
-    };
-    let had = match value {
-        Some(v) => entries
-            .insert(key.to_string(), toml::Value::String(v.to_string()))
-            .is_some(),
-        None => entries.remove(key).is_some(),
-    };
+    let mut had = Vec::new();
+    for (table, key, value) in ops {
+        if value.is_none() && !t.contains_key(*table) {
+            had.push(false);
+            continue;
+        }
+        let entry = t
+            .entry(*table)
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        let toml::Value::Table(entries) = entry else {
+            anyhow::bail!(
+                "名稱檔 {} 的 {table} 不是表格，沒有修改；請先修好它",
+                path.display()
+            );
+        };
+        had.push(match value {
+            Some(v) => entries
+                .insert(key.to_string(), toml::Value::String(v.to_string()))
+                .is_some(),
+            None => entries.remove(*key).is_some(),
+        });
+    }
     write_table(path, &t)?;
     Ok(had)
 }
@@ -213,17 +225,64 @@ pub fn load_notes_default() -> Notes {
     default_path().map(|p| load_notes(&p)).unwrap_or_default()
 }
 
-/// Set `key`'s note in `path` (same keep-the-rest write as [`set`]).
-pub fn set_note(path: &Path, key: &str, note: &str) -> Result<()> {
-    edit(path, "notes", key, Some(note)).map(|_| ())
+/// Operator weekly reset rules: the same keys as [`Notes`] → a [`super::reset_rule`] string.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Resets(pub BTreeMap<String, String>);
+
+impl Resets {
+    /// The rule for an account: its key's rule wins over its provider's.
+    pub fn for_row(&self, key: &str, provider: &str) -> Option<&str> {
+        self.0
+            .get(key)
+            .or_else(|| self.0.get(provider))
+            .map(String::as_str)
+    }
 }
 
-/// Remove `key`'s note from `path`; whether there was one. A missing file has none.
-pub fn clear_note(path: &Path, key: &str) -> Result<bool> {
+/// The `[resets]` of `path`, for drawing: any error is no rules and an invalid entry is skipped.
+pub fn load_resets(path: &Path) -> Resets {
+    let Ok(Some(t)) = read_table(path) else {
+        return Resets::default();
+    };
+    let mut out = BTreeMap::new();
+    if let Some(toml::Value::Table(rules)) = t.get("resets") {
+        for (k, v) in rules {
+            if let Some(v) = v.as_str() {
+                if !k.is_empty() && super::reset_rule::valid(v) {
+                    out.insert(k.clone(), v.to_string());
+                }
+            }
+        }
+    }
+    Resets(out)
+}
+
+/// The rules from [`default_path`] (none when there is no path).
+pub fn load_resets_default() -> Resets {
+    default_path().map(|p| load_resets(&p)).unwrap_or_default()
+}
+
+/// Set `key`'s note and, when given, its rule, in one write.
+pub fn set_note_and_reset(path: &Path, key: &str, note: &str, rule: Option<&str>) -> Result<()> {
+    let mut ops = vec![("notes", key, Some(note))];
+    if let Some(r) = rule {
+        ops.push(("resets", key, Some(r)));
+    }
+    edit_many(path, &ops).map(|_| ())
+}
+
+/// Set only `key`'s rule.
+pub fn set_reset(path: &Path, key: &str, rule: &str) -> Result<()> {
+    edit(path, "resets", key, Some(rule)).map(|_| ())
+}
+
+/// Remove `key`'s note and rule; whether either was there. A missing file has neither.
+pub fn clear_note_and_reset(path: &Path, key: &str) -> Result<bool> {
     if read_table(path)?.is_none() {
         return Ok(false);
     }
-    edit(path, "notes", key, None)
+    let had = edit_many(path, &[("notes", key, None), ("resets", key, None)])?;
+    Ok(had.contains(&true))
 }
 
 /// The provider of a `<provider>-<8 hex>` key (`codex` for `codex-4cc1b5c8`), else `None`.
@@ -672,7 +731,10 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("accounts.toml");
         assert_eq!(load_notes(&p), Notes::default());
-        assert!(!clear_note(&p, "kimi").unwrap(), "no file, no note");
+        assert!(
+            !clear_note_and_reset(&p, "kimi").unwrap(),
+            "no file, no note"
+        );
         std::fs::write(
             &p,
             "[names]\n\"acct-1\" = \"work\"\n[notes]\nkimi = \"週配額用完\"\nglm = \"a@b\"\nqoder = 5\nx = \" pad\"\n[other]\nk = 1\n",
@@ -683,7 +745,7 @@ mod tests {
             load_notes(&p),
             Notes(BTreeMap::from([("kimi".into(), "週配額用完".into())]))
         );
-        set_note(&p, "codex-1a2b3c4d", "plus plan").unwrap();
+        set_note_and_reset(&p, "codex-1a2b3c4d", "plus plan", None).unwrap();
         let t: toml::Table = std::fs::read_to_string(&p).unwrap().parse().unwrap();
         assert_eq!(t["names"]["acct-1"].as_str(), Some("work"));
         assert_eq!(t["notes"]["glm"].as_str(), Some("a@b"));
@@ -696,8 +758,8 @@ mod tests {
             let m = std::fs::metadata(&p).unwrap().permissions().mode() & 0o777;
             assert_eq!(m, 0o600);
         }
-        assert!(clear_note(&p, "kimi").unwrap());
-        assert!(!clear_note(&p, "kimi").unwrap());
+        assert!(clear_note_and_reset(&p, "kimi").unwrap());
+        assert!(!clear_note_and_reset(&p, "kimi").unwrap());
         assert_eq!(
             load_notes(&p),
             Notes(BTreeMap::from([(
@@ -708,9 +770,51 @@ mod tests {
         // a broken file is no notes and is never rewritten
         std::fs::write(&p, "not toml [").unwrap();
         assert_eq!(load_notes(&p), Notes::default());
-        assert!(set_note(&p, "kimi", "x").is_err());
-        assert!(clear_note(&p, "kimi").is_err());
+        assert!(set_note_and_reset(&p, "kimi", "x", None).is_err());
+        assert!(clear_note_and_reset(&p, "kimi").is_err());
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "not toml [");
+    }
+
+    #[test]
+    fn resets_load_validate_set_and_clear_with_the_note_keeping_the_rest() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("accounts.toml");
+        assert_eq!(load_resets(&p), Resets::default());
+        assert!(!clear_note_and_reset(&p, "kimi").unwrap());
+        std::fs::write(
+            &p,
+            "[resets]\nkimi = \"fri@17:00+08:00\"\nbad = \"friday\"\nnum = 5\n[other]\nk = 1\n",
+        )
+        .unwrap();
+        assert_eq!(
+            load_resets(&p),
+            Resets(BTreeMap::from([("kimi".into(), "fri@17:00+08:00".into())]))
+        );
+        set_note_and_reset(&p, "twgame", "週四重置", Some("thu@00:00+08:00")).unwrap();
+        set_note_and_reset(&p, "glm", "x", None).unwrap();
+        set_reset(&p, "kimi", "sat@01:00+00:00").unwrap();
+        let t: toml::Table = std::fs::read_to_string(&p).unwrap().parse().unwrap();
+        assert_eq!(
+            t["resets"]["bad"].as_str(),
+            Some("friday"),
+            "skipped entry kept"
+        );
+        assert_eq!(t["other"]["k"].as_integer(), Some(1));
+        assert_eq!(t["notes"]["glm"].as_str(), Some("x"));
+        assert!(t["resets"].get("glm").is_none());
+        assert_eq!(load_resets(&p).0.len(), 2);
+        assert!(clear_note_and_reset(&p, "twgame").unwrap());
+        assert!(!clear_note_and_reset(&p, "twgame").unwrap());
+        assert!(clear_note_and_reset(&p, "kimi").unwrap(), "rule only");
+        assert_eq!(load_notes(&p).0.len(), 1);
+        assert!(load_resets(&p).0.is_empty());
+        let r = Resets(BTreeMap::from([
+            ("acct-1".into(), "mon@01:00+00:00".into()),
+            ("kimi".into(), "tue@01:00+00:00".into()),
+        ]));
+        assert_eq!(r.for_row("acct-1", "kimi"), Some("mon@01:00+00:00"));
+        assert_eq!(r.for_row("acct-2", "kimi"), Some("tue@01:00+00:00"));
+        assert_eq!(r.for_row("acct-2", "glm"), None);
     }
 
     #[test]

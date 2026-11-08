@@ -1138,3 +1138,101 @@ fn a_reset_chosen_window_never_warns_even_when_the_stale_one_would() {
     let t = text(&f, 100, NOW_MS, &Tr("en".into()), false);
     assert!(t.contains("5h reset"), "{t}");
 }
+
+fn resets(v: &[(&str, &str)]) -> super::names::Resets {
+    super::names::Resets(
+        v.iter()
+            .map(|(k, n)| (k.to_string(), n.to_string()))
+            .collect(),
+    )
+}
+
+// NOW is Tue 2026-11-03 10:00 UTC: fri 17:00+08:00 = Fri 09:00 UTC (2d23h), thu 00:00+08:00 =
+// Wed 16:00 UTC (1d6h)
+const FRI_0900_UTC: i64 = 1_793_955_600;
+const WED_1600_UTC: i64 = 1_793_808_000;
+
+#[test]
+fn a_reset_rule_adds_the_next_occurrence_to_json_text_and_never_replaces_a_real_reset() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![acct(
+            "work",
+            60,
+            Some((0.3, NOW_S + 2 * H)),
+            Some((0.4, NOW_S + 3 * D)),
+        )],
+        vec![],
+    );
+    let mut f = run(&[("a.json", &s)]);
+    attach_notes(
+        &mut f,
+        &notes(&[("kimi", "本週已用完"), ("twgame", "週四重置")]),
+    );
+    attach_resets(
+        &mut f,
+        &resets(&[
+            ("kimi", "fri@17:00+08:00"),
+            ("twgame", "thu@00:00+08:00"),
+            ("work", "mon@01:00+00:00"),
+            ("claude", "sun@01:00+00:00"),
+        ]),
+        NOW_MS,
+    );
+    let k = row(&f, "kimi");
+    assert_eq!(k.note_resets_at, Some(FRI_0900_UTC));
+    assert_eq!(k.note_reset_rule.as_deref(), Some("fri@17:00+08:00"));
+    assert_eq!(row(&f, "twgame").note_resets_at, Some(WED_1600_UTC));
+    // the account's own key beats its provider's rule; it still keeps its real windows
+    let w = row(&f, "work");
+    assert_eq!(w.note_reset_rule.as_deref(), Some("mon@01:00+00:00"));
+    assert_eq!(w.weekly.as_ref().unwrap().win.resets_at, NOW_S + 3 * D);
+    let j = to_json(&f, NOW_MS);
+    let acc = |a: &str| {
+        j["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["alias"] == a)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(acc("kimi")["note_resets_at"], FRI_0900_UTC);
+    assert_eq!(acc("kimi")["note_reset_rule"], "fri@17:00+08:00");
+    assert_eq!(acc("work")["weekly"]["resets_at"], NOW_S + 3 * D);
+    // no rule, no keys
+    attach_resets(&mut f, &resets(&[]), NOW_MS);
+    let j = to_json(&f, NOW_MS);
+    assert!(j["accounts"][0].get("note_resets_at").is_none());
+    assert!(j["accounts"][0].get("note_reset_rule").is_none());
+}
+
+#[test]
+fn the_text_table_shows_a_dim_countdown_after_the_note_and_cuts_the_note_not_the_countdown() {
+    let s = summary("host-aaaaaaaa", vec![], vec![]);
+    let mut f = run(&[("a.json", &s)]);
+    attach_notes(
+        &mut f,
+        &notes(&[("kimi", "本週已用完"), ("glm", &"週".repeat(20))]),
+    );
+    attach_resets(
+        &mut f,
+        &resets(&[
+            ("kimi", "fri@17:00+08:00"),
+            ("glm", "fri@17:00+08:00"),
+            ("qoder", "thu@00:00+08:00"),
+        ]),
+        NOW_MS,
+    );
+    for cols in [100, 60, 40] {
+        let txt = text(&f, cols, NOW_MS, &Tr("zh-TW".into()), false);
+        for l in txt.lines() {
+            assert!(UnicodeWidthStr::width(l) <= cols, "{cols}: {l:?}");
+        }
+        assert!(txt.contains("◷ 2d23h"), "{cols}: {txt}");
+        // a rule without a note still shows its countdown
+        assert!(txt.contains("◷ 1d6h"), "{cols}: {txt}");
+    }
+    let wide = text(&f, 100, NOW_MS, &Tr("en".into()), false);
+    assert!(wide.contains("本週已用完 ◷ 2d23h"), "{wide}");
+}

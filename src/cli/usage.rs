@@ -34,6 +34,11 @@ pub enum Action {
         target: String,
         text: String,
         new: bool,
+        reset_weekly: Option<String>,
+    },
+    NoteReset {
+        target: String,
+        rule: String,
     },
     NoteClear {
         target: String,
@@ -149,6 +154,7 @@ fn write_fleet_quota(
         &crate::usage::names::load_default(),
     );
     fq::attach_notes(&mut f, &crate::usage::names::load_notes_default());
+    fq::attach_resets(&mut f, &crate::usage::names::load_resets_default(), now);
     let v = fq::to_json(&f, now);
     crate::live::write_live_json(out_dir, FLEET_FILE, &v)
         .map_err(|e| anyhow::anyhow!("無法寫入 {FLEET_FILE}（{:?}）", e.kind()))?;
@@ -215,8 +221,14 @@ pub fn run(action: Action) -> Result<()> {
         Action::Accounts { json } => accounts(json),
         Action::AliasList => alias_list(),
         Action::AliasSet { who, name } => alias_set(&who, &name),
-        Action::NoteSet { target, text, new } => note_set(&target, Some(&text), new),
-        Action::NoteClear { target } => note_set(&target, None, false),
+        Action::NoteSet {
+            target,
+            text,
+            new,
+            reset_weekly,
+        } => note_set(&target, Some(&text), new, reset_weekly.as_deref()),
+        Action::NoteReset { target, rule } => note_reset(&target, &rule),
+        Action::NoteClear { target } => note_set(&target, None, false, None),
         Action::Fleet {
             dir,
             json,
@@ -362,6 +374,7 @@ fn fleet(
         &crate::usage::names::load_default(),
     );
     fq::attach_notes(&mut f, &crate::usage::names::load_notes_default());
+    fq::attach_resets(&mut f, &crate::usage::names::load_resets_default(), now);
     let v = fq::to_json(&f, now);
     if let Some(p) = out {
         fq::write_atomic(p, &v)?;
@@ -476,23 +489,23 @@ fn alias_list() -> Result<()> {
     {
         println!("{k}（無資料）\t—\t—");
     }
-    if !notes.0.is_empty() {
+    let resets = names::load_resets_default();
+    let keys: std::collections::BTreeSet<&String> = notes.0.keys().chain(resets.0.keys()).collect();
+    if !keys.is_empty() {
         // an account key is shown by its name, never itself; a provider label is shown as is
-        let shown = account_names(
-            notes
-                .0
-                .keys()
-                .map(String::as_str)
-                .filter(|k| !is_provider(k)),
-        );
+        let shown = account_names(keys.iter().map(|k| k.as_str()).filter(|k| !is_provider(k)));
         println!("備註：");
-        for (k, text) in &notes.0 {
+        for k in keys {
             let who = if is_provider(k) {
                 k.as_str()
             } else {
                 shown.get(k).map_or("未命名帳號", String::as_str)
             };
-            println!("  {who}\t{text}");
+            let text = notes.0.get(k).map_or("—", String::as_str);
+            match resets.0.get(k) {
+                Some(rule) => println!("  {who}\t{text}\t每週重置 {rule}"),
+                None => println!("  {who}\t{text}"),
+            }
         }
     }
     Ok(())
@@ -555,8 +568,19 @@ fn new_note_key(
     Ok(name.to_string())
 }
 
-/// `usage note set` (`Some(text)`) / `usage note clear` (`None`).
-fn note_set(target: &str, text: Option<&str>, new: bool) -> Result<()> {
+/// A rule the operator typed: valid, else an error with the form.
+fn check_rule(rule: &str) -> Result<()> {
+    anyhow::ensure!(
+        crate::usage::reset_rule::valid(rule),
+        "重置規則格式是 <星期>@<HH:MM><±HH:MM>，星期為 mon tue wed thu fri sat sun（小寫），時區要寫明，例如 {}（每週五 17:00，UTC+8）",
+        crate::usage::reset_rule::EXAMPLE
+    );
+    Ok(())
+}
+
+/// `usage note set` (`Some(text)`, with an optional weekly rule) / `usage note clear` (`None`:
+/// the note and the rule).
+fn note_set(target: &str, text: Option<&str>, new: bool, rule: Option<&str>) -> Result<()> {
     use crate::usage::names;
     if let Some(t) = text {
         anyhow::ensure!(
@@ -564,6 +588,9 @@ fn note_set(target: &str, text: Option<&str>, new: bool) -> Result<()> {
             "備註最寬 {} 欄（中文字算 2 欄），不能有 @、換行或其他控制字元，前後不能有空白",
             names::NOTE_MAX
         );
+    }
+    if let Some(r) = rule {
+        check_rule(r)?;
     }
     let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
     let set = names::load(&path);
@@ -582,12 +609,37 @@ fn note_set(target: &str, text: Option<&str>, new: bool) -> Result<()> {
     };
     match text {
         Some(t) => {
-            names::set_note(&path, &key, t)?;
+            names::set_note_and_reset(&path, &key, t, rule)?;
             println!("已設定備註：{target} → {t}");
+            if let Some(r) = rule {
+                println!("已設定每週重置：{target} → {r}");
+            }
         }
-        None if names::clear_note(&path, &key)? => println!("已清除備註：{target}"),
+        None if names::clear_note_and_reset(&path, &key)? => {
+            println!("已清除備註與重置規則：{target}")
+        }
         None => println!("{target} 沒有備註"),
     }
+    Ok(())
+}
+
+/// `usage note reset <target> <rule>`: only the rule, for a target that already has a note or is a
+/// known account or provider.
+fn note_reset(target: &str, rule: &str) -> Result<()> {
+    use crate::usage::names;
+    check_rule(rule)?;
+    let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
+    let set = names::load(&path);
+    let known = known_accounts();
+    let who = who_of(&known);
+    let key = note_key(target, &who, &set, &names::load_notes(&path))?;
+    names::set_reset(&path, &key, rule)?;
+    let target = if target.contains('@') {
+        "該 email"
+    } else {
+        target
+    };
+    println!("已設定每週重置：{target} → {rule}");
     Ok(())
 }
 
@@ -763,6 +815,18 @@ mod tests {
             note_key("MiniMax", &known, &n).is_err(),
             "labels are lowercase"
         );
+    }
+
+    #[test]
+    fn a_reset_rule_is_checked_with_a_chinese_error_that_shows_the_form() {
+        assert!(check_rule("fri@17:00+08:00").is_ok());
+        for bad in ["fri", "Fri@17:00+08:00", "fri@17:00", "fri@25:00+08:00", ""] {
+            let e = check_rule(bad).unwrap_err().to_string();
+            assert!(
+                e.contains("fri@17:00+08:00") && e.contains("重置規則"),
+                "{bad:?}: {e}"
+            );
+        }
     }
 
     #[test]
