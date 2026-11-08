@@ -566,8 +566,14 @@ fn json_email_is_the_newest_observation_that_carried_one_else_null() {
         ],
         vec![],
     );
-    let f = run(&[("a.json", &old), ("b.json", &newer)]);
-    assert_eq!(row(&f, "w").email.as_deref(), Some("old@example.com"));
+    // whatever the file order (a pushed blob has no email and is often the newer copy)
+    for files in [
+        [("a.json", &old), ("b.json", &newer)],
+        [("a.json", &newer), ("b.json", &old)],
+    ] {
+        let f = run(&files);
+        assert_eq!(row(&f, "w").email.as_deref(), Some("old@example.com"));
+    }
     // a newer one that carries an email replaces it
     let newest = summary(
         "host-cccccccc",

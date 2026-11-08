@@ -187,11 +187,21 @@ struct Ob {
 struct Acc {
     provider: String,
     hosts: BTreeSet<String>,
-    org: Option<String>,
-    email: Option<String>,
-    /// newest `written_at_ms` seen: org and email come from that observation
+    /// org and email, each from the newest observation that carries one (`written_at_ms`)
+    org: Option<(i64, String)>,
+    email: Option<(i64, String)>,
+    /// newest `written_at_ms` seen
     newest_written: Option<i64>,
     obs: Vec<Ob>,
+}
+
+/// Keep `(at, v)` when it is newer than what `slot` holds.
+fn newer(slot: &mut Option<(i64, String)>, at: i64, v: Option<&str>) {
+    if let Some(v) = v {
+        if slot.as_ref().is_none_or(|(n, _)| at > *n) {
+            *slot = Some((at, v.to_string()));
+        }
+    }
 }
 
 fn win_of(v: &Value, written_at: i64) -> Option<(Win, i64)> {
@@ -255,13 +265,10 @@ pub fn merge(
             let e = by.entry(alias.to_string()).or_insert_with(|| new("claude"));
             e.provider = "claude".into();
             e.hosts.insert(stem.clone());
+            // a pushed blob has no email: an older copy that has one still names the account
+            newer(&mut e.org, at, a.get("org").and_then(Value::as_str));
+            newer(&mut e.email, at, a.get("email").and_then(Value::as_str));
             if e.newest_written.is_none_or(|n| at > n) {
-                if let Some(org) = a.get("org").and_then(Value::as_str) {
-                    e.org = Some(org.to_string());
-                }
-                if let Some(email) = a.get("email").and_then(Value::as_str) {
-                    e.email = Some(email.to_string());
-                }
                 e.newest_written = Some(at);
             }
             e.obs.push(Ob {
@@ -305,8 +312,8 @@ pub fn merge(
                 .or(acc.newest_written);
             let mut r = Row {
                 alias,
-                org: acc.org,
-                email: acc.email,
+                org: acc.org.map(|(_, v)| v),
+                email: acc.email.map(|(_, v)| v),
                 provider: acc.provider,
                 hosts: acc.hosts.into_iter().collect(),
                 old_hosts: old_hosts.into_iter().collect(),
