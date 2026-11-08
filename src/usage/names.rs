@@ -55,11 +55,17 @@ pub fn valid_name(s: &str) -> bool {
         && !key_like(s)
 }
 
-/// An internal account key, never a name: `acct-…`, or `<provider>-<8 hex>` (`codex-4cc1b5c8`).
+/// Providers whose account keys are `<provider>-<sha8>` (`collect::root_alias`).
+pub const KEY_PROVIDERS: [&str; 1] = ["codex"];
+
+/// An internal account key, never a name: `acct-…`, or a [`KEY_PROVIDERS`] key such as
+/// `codex-4cc1b5c8` (8 lowercase hex). A chosen `ci-20261105` is a name, not a key.
 pub fn key_like(s: &str) -> bool {
     s.starts_with("acct-")
-        || s.rsplit_once('-').is_some_and(|(p, h)| {
-            !p.is_empty() && h.len() == 8 && h.bytes().all(|b| b.is_ascii_hexdigit())
+        || s.split_once('-').is_some_and(|(p, h)| {
+            KEY_PROVIDERS.contains(&p)
+                && h.len() == 8
+                && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
         })
 }
 
@@ -69,7 +75,7 @@ fn key_default(key: &str) -> Option<&str> {
     if key.starts_with("acct-") {
         None
     } else if key_like(key) {
-        key.rsplit_once('-').map(|(p, _)| p)
+        key.split_once('-').map(|(p, _)| p)
     } else {
         Some(key)
     }
@@ -522,12 +528,28 @@ mod tests {
         let set = Names([("codex-4cc1b5c8".to_string(), "公司 codex".to_string())].into());
         let got = assign(&[who("codex-4cc1b5c8", None, None)], &set);
         assert_eq!(got, [Some("公司 codex".into())]);
-        for bad in ["codex-4cc1b5c8", "grok-DEADBEEF"] {
-            assert!(!valid_name(bad), "{bad}");
-        }
-        for ok in ["codex-2", "work-laptop", "team-cafe"] {
+        assert!(!valid_name("codex-4cc1b5c8"));
+        // a chosen name that only ends in 8 hex digits is kept as is
+        for ok in [
+            "codex-2",
+            "work-laptop",
+            "ci-20261105",
+            "box-cafebabe",
+            "codex-DEADBEEF",
+        ] {
             assert!(valid_name(ok), "{ok}");
         }
+        let got = assign(
+            &[
+                who("ci-20261105", None, None),
+                who("ci-20261106", None, None),
+            ],
+            &Names::default(),
+        );
+        assert_eq!(
+            got,
+            [Some("ci-20261105".into()), Some("ci-20261106".into())]
+        );
     }
 
     #[test]

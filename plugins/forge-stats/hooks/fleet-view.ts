@@ -99,7 +99,7 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
     if (w === undefined || f === undefined) return BAD
     // a writer from before `name`: the email, else the org, else the alias's default name (`codex` for
     // `codex-<hex>`); an `acct-` hash with none of these is an identity from before the login-derived alias: not shown
-    const name = typeof a.name === 'string' ? a.name
+    const name = typeof a.name === 'string' ? keyDefault(a.name)
       : typeof a.email === 'string' ? a.email
       : typeof a.org === 'string' ? a.org
       : keyDefault(a.alias)

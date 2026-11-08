@@ -68,14 +68,14 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   不得晚於該 summary 的 `generated_at_ms` 超過 10 分鐘），表示這筆 rate-limit 資料是何時被擷取的，取自快照視窗的
   `seen.at_ms`；舊快照沒有就省略（舊 summary 仍合格，合併時以帳號 `written_at_ms` 代替）。超出範圍的值在產生時直接不帶，
   不丟掉整個帳號。契約 `window_optional` 與 pane 副本由測試比對。
-- **顯示名（`src/usage/names.rs`）**：`acct-…` 與 `<provider>-<8 碼 hex>` 別名只是內部的合併鍵，**永遠不上畫面**，也不能設成名字。statusline、`usage fleet` 文字表、
+- **顯示名（`src/usage/names.rs`）**：`acct-…` 與 `codex-<8 碼小寫 hex>` 別名只是內部的合併鍵（自選的 `ci-20261105` 不算鍵），**永遠不上畫面**，也不能設成名字。statusline、`usage fleet` 文字表、
   forge-stats「全部帳號」分頁與 `fleet-quota.json` 的 `name` 用同一個顯示名，依序取：
   (1) operator 設的名字（`~/.config/codeforge/accounts.toml`，見下）；(2) org 的第一個字轉小寫（`personal`、`stranity`，最多 16 字元）；
-  (3) email 的 `@` 前段；(4) 鍵給的名字：`<provider>-<8 碼 hex>`（例如 codex 帳號 `codex-4cc1b5c8`）取 provider 名 `codex`，其他不是 `acct-` 開頭的鍵（`AUTOPILOT_ACCOUNT` 選的名字）用鍵本身；(5) 都沒有 → 沒有名字，
+  (3) email 的 `@` 前段；(4) 鍵給的名字：codex 帳號的鍵 `codex-<8 碼小寫 hex>`（例如 `codex-4cc1b5c8`）取 provider 名 `codex`，其他不是 `acct-` 開頭的鍵（`AUTOPILOT_ACCOUNT` 選的名字）用鍵本身；(5) 都沒有 → 沒有名字，
   **這個帳號不顯示**（修正身分前留下的合併快照，例如沒有 org、沒有 email 的 `acct-ae88ee5d`）。`usage fleet` 把它計入
   `skipped["no_identity"]`。預設名撞名時加「·email 前段」，還撞就依鍵的順序加 `-2`、`-3`；operator 設的名字不改。
   文字表頭與分頁標籤是「名字 · email」（email 與名字相同或未知時只有名字；名字欄最多 24 欄，分頁最多 40 欄、窄面板縮短）。
-  `--json` 每筆同時帶 `alias`（鍵）與 `name`。forge-stats 對沒有 `name` 的舊檔：依序退回 email、org、別名給的名字（同 (4)），
+  `--json` 每筆同時帶 `alias`（鍵）與 `name`。forge-stats 對沒有 `name` 的舊檔：依序退回 email、org、別名給的名字（同 (4)）；舊檔的 `name` 若是 codex 鍵，也改顯示 `codex`，
   `acct-` 且三者皆無的列不顯示。
 - **名字設定檔**：`~/.config/codeforge/accounts.toml`（`CODEFORGE_ACCOUNTS_FILE` 可改，其次 `$XDG_CONFIG_HOME/codeforge/`），
   只在本機、不進 repo；`[names]` 表以別名（= sha8(org uuid + email)，即 org uuid＋email 的鍵；codex 等非 `acct-` 鍵也可）對應名字。
