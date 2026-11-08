@@ -664,6 +664,14 @@ mod tests {
         let v = build(&[], std::slice::from_ref(&snap), &host_alias("h"), 7, &set);
         validate(&v).unwrap();
         assert_eq!(v["accounts"][0]["name"], "公司");
+        // an email local part that looks like a key is no name, and the summary still validates
+        let keyish = Snapshot {
+            email: Some("acct-ops@example.com".into()),
+            ..snap.clone()
+        };
+        let v = build(&[], &[keyish], &host_alias("h"), 7, &Default::default());
+        validate(&v).unwrap();
+        assert!(v["accounts"][0].get("name").is_none(), "{v}");
         let bare = Snapshot {
             email: None,
             ..snap

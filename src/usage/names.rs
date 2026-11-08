@@ -42,15 +42,16 @@ fn clip(s: &str, max: usize) -> String {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Names(pub BTreeMap<String, String>);
 
-/// A name the operator may set: 1..=24 columns wide, no control char or whitespace other than
-/// a plain space, no `@` (never an email), and not an `acct-` key.
+/// A name the operator may set: 1..=24 columns wide, no control char, BOM or whitespace other
+/// than a plain space (the pane's `isDisplayName` uses JS `\s`, which includes U+FEFF), no `@`
+/// (never an email), and not an `acct-` key. Every default name passes it too.
 pub fn valid_name(s: &str) -> bool {
     !s.is_empty()
         && cells(s) <= NAME_MAX
         && s.trim() == s
-        && !s
-            .chars()
-            .any(|c| c.is_control() || c == '@' || (c.is_whitespace() && c != ' '))
+        && !s.chars().any(|c| {
+            c.is_control() || c == '@' || c == '\u{FEFF}' || (c.is_whitespace() && c != ' ')
+        })
         && !s.starts_with("acct-")
 }
 
@@ -198,11 +199,16 @@ pub fn assign(items: &[Who], names: &Names) -> Vec<Option<String>> {
         .iter()
         .map(|w| {
             names.0.get(w.key).cloned().or_else(|| {
-                w.org
-                    .map(org_short)
-                    .or_else(|| w.email.map(local_part))
-                    .or_else(|| (!w.key.starts_with("acct-")).then(|| part(w.key)))
-                    .filter(|s| !s.is_empty())
+                // the first default that is itself a valid name (an org or email local part
+                // starting `acct-` is skipped, so a key-like string never shows)
+                [
+                    w.org.map(org_short),
+                    w.email.map(local_part),
+                    Some(part(w.key)),
+                ]
+                .into_iter()
+                .flatten()
+                .find(|s| valid_name(s))
             })
         })
         .collect();
@@ -219,7 +225,10 @@ pub fn assign(items: &[Who], names: &Names) -> Vec<Option<String>> {
     for g in groups(&out) {
         for i in g {
             if let (false, Some(org), Some(email)) = (set(i), items[i].org, items[i].email) {
-                out[i] = Some(pair(org, email));
+                let p = pair(org, email);
+                if valid_name(&p) {
+                    out[i] = Some(p);
+                }
             }
         }
     }
@@ -459,6 +468,19 @@ mod tests {
     }
 
     #[test]
+    fn a_default_that_looks_like_a_key_is_skipped() {
+        let got = assign(
+            &[
+                who("acct-1", None, Some("acct-ops@example.com")),
+                who("acct-2", Some("acct-labs"), Some("dev@example.com")),
+                who("acct-3", Some("acct-x"), Some("acct-y@example.com")),
+            ],
+            &Names::default(),
+        );
+        assert_eq!(got, [None, Some("dev".into()), None]);
+    }
+
+    #[test]
     fn a_resolve_error_never_echoes_an_email() {
         let items = [who("acct-1", Some("Stranity"), Some("a@example.com"))];
         let e = resolve(&items, &Names::default(), "typo@example.com").unwrap_err();
@@ -481,6 +503,7 @@ mod tests {
             "a\nb",
             &"x".repeat(25),
             &"工".repeat(13),
+            "工作\u{FEFF}",
         ] {
             assert!(!valid_name(bad), "{bad:?}");
         }
