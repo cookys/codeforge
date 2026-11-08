@@ -38,6 +38,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             now_ms,
         );
         data.others = others;
+        data.names = crate::usage::names::load_default();
         // G40: once `<live_dir>/quota/` exists the mirror is the only source on this row (design 7 rule 7).
         data.mirror = crate::usage::quota_mirror_read::load_for_statusline(now_ms / 1000);
         // G36: a background `usage collect` at most every 15 min (no SessionEnd hook needed).
@@ -310,6 +311,8 @@ struct StatusInput {
     seven_day_resets_at: Option<i64>,
     /// G36: the other accounts' fresh quota snapshots, most constrained first.
     others: Vec<crate::usage::quota::Snapshot>,
+    /// The operator's account names (`codeforge usage alias set`); see `usage::names`.
+    names: crate::usage::names::Names,
     /// G40: the quota mirror's merged entries; `None` while `<live_dir>/quota/` does not exist (then `others` is drawn, as before).
     mirror: Option<Vec<crate::usage::quota_mirror_read::QEntry>>,
 }
@@ -369,7 +372,7 @@ fn record_quota(
 /// snapshot chips exactly as before. The statusline never draws both.
 fn quota_segment(data: &StatusInput, now_s: i64, avail: usize, yellow_taken: bool) -> String {
     match &data.mirror {
-        None => others_segment(&data.others, now_s, avail, yellow_taken),
+        None => others_segment(&data.others, &data.names, now_s, avail, yellow_taken),
         Some(entries) => mirror_segment(entries, now_s, avail),
     }
 }
@@ -404,54 +407,97 @@ fn mirror_segment(
     String::new()
 }
 
-/// The other accounts on the usage row: ` · alias NN% countdown` per account, most
-/// constrained first, as many as fit in `avail` visible cells (an account that does
-/// not fit with its countdown is tried without it; the first that does not fit ends
-/// the list). Red at 95 %, yellow at 80 % for the first such account only (TUI
-/// guideline: one yellow per row), the rest bold. `yellow_taken`: the row already
-/// shows a yellow (this session's own bars, see [`own_bars_yellow`]).
+/// The other accounts on the usage row, only those with a weekly warning: ` · ⚠ name 週 97% 3d1h
+/// 後重置` when the week will run short (or is at 95 %+), ` · name 週 12% 20h 後重置 會浪費` when
+/// it will be wasted; nothing else. The name comes from `usage::names` (the set name, else the
+/// org short form): the `acct-` key is never drawn, and an account with no name (an identity
+/// from before the login-derived alias) is skipped. Most constrained first, as many as fit in
+/// `avail` cells (an account that does not fit with its countdown is tried without it; the first
+/// that does not fit ends the list). Red at 95 %, else yellow for the first short account only
+/// (one yellow per row), the rest bold. `yellow_taken`: the row already shows a yellow (this
+/// session's own bars, see [`own_bars_yellow`]).
 fn others_segment(
     others: &[crate::usage::quota::Snapshot],
+    names: &crate::usage::names::Names,
     now_s: i64,
     avail: usize,
     yellow_taken: bool,
 ) -> String {
+    use crate::usage::fleet_quota as fq;
+    use crate::usage::names::{assign, Who};
+    let who: Vec<Who> = others
+        .iter()
+        .map(|s| Who {
+            key: &s.alias,
+            org: s.org.as_deref(),
+            email: s.email.as_deref(),
+        })
+        .collect();
+    let tr = crate::usage::quota_view::Tr::current();
     let mut out = String::new();
     let mut used = 0usize;
     let mut yellow_used = yellow_taken;
-    for s in others {
-        let Some((_label, w)) = s.constrained(now_s) else {
+    for (s, name) in others.iter().zip(assign(&who, names)) {
+        // no name: an identity from before the login-derived alias, never drawn
+        let Some(name) = name else {
             continue;
         };
+        let Some(w) = s.seven_day.as_ref().filter(|w| w.resets_at > now_s) else {
+            continue;
+        };
+        let wk = fq::weekly(
+            fq::Win {
+                pct: w.pct,
+                resets_at: w.resets_at,
+            },
+            now_s,
+            fq::DEFAULT_USE_TARGET,
+        );
+        let short = w.pct >= 0.95 || wk.warn == Some(fq::Warn::Short);
+        let waste = !short && wk.warn == Some(fq::Warn::Waste);
+        if !short && !waste {
+            continue;
+        }
         let pct = format!("{:.0}%", w.pct * 100.0);
-        let remain = fmt_remaining_at(w.resets_at, now_s);
-        let pct_c = if w.pct >= 0.95 {
-            tc(&pct, BAR_HIGH)
-        } else if w.pct >= 0.80 && !yellow_used {
-            yellow_used = true;
-            tc(&pct, BAR_MID)
-        } else if w.pct >= 0.80 {
-            tc_bold(&pct, BAR_LBL)
+        let head = if short {
+            format!("⚠ {name} {} {pct}", tr.t("quota.w_weekly", &[]))
         } else {
-            tc(&pct, BAR_LBL)
+            format!("{name} {} {pct}", tr.t("quota.w_weekly", &[]))
+        };
+        let mut tail = tr.t(
+            "quota.sl_resets_in",
+            &[("t", &fmt_remaining_at(w.resets_at, now_s))],
+        );
+        if waste {
+            tail = format!("{tail} {}", tr.t("quota.fleet_waste", &[]));
+        }
+        let color = |t: &str| {
+            if !short {
+                tc(t, REMAIN)
+            } else if w.pct >= 0.95 {
+                tc(t, BAR_HIGH)
+            } else if !yellow_used {
+                tc(t, BAR_MID)
+            } else {
+                tc_bold(t, BAR_LBL)
+            }
         };
         let sep = tc(" · ", DELIM);
-        let head_w = 3 + vis(&s.alias) + 1 + vis(&pct);
-        let full_w = head_w + 1 + vis(&remain);
+        let head_w = 3 + vis(&head);
+        let full_w = head_w + 1 + vis(&tail);
         let (piece, w_piece) = if used + full_w <= avail {
             (
-                format!(
-                    "{sep}{} {pct_c} {}",
-                    tc(&s.alias, BAR_LBL),
-                    tc(&remain, REMAIN)
-                ),
+                format!("{sep}{} {}", color(&head), tc(&tail, REMAIN)),
                 full_w,
             )
         } else if used + head_w <= avail {
-            (format!("{sep}{} {pct_c}", tc(&s.alias, BAR_LBL)), head_w)
+            (format!("{sep}{}", color(&head)), head_w)
         } else {
             break;
         };
+        if short && w.pct < 0.95 {
+            yellow_used = true;
+        }
         out.push_str(&piece);
         used += w_piece;
     }
@@ -514,6 +560,7 @@ fn read_status_input() -> (StatusInput, serde_json::Value) {
                 seven_day_pct,
                 seven_day_resets_at,
                 others: Vec::new(),
+                names: Default::default(),
                 mirror: None,
             };
             return (input, v);
@@ -2547,10 +2594,11 @@ mod tests {
 
     // ── G36 per-account quota ───────────────────────────────────────────────
 
+    /// A snapshot whose org is the alias without `acct-` (so its default name is that).
     fn quota_snap(alias: &str, pct: f64, resets_at: i64) -> crate::usage::quota::Snapshot {
         crate::usage::quota::Snapshot {
             alias: alias.into(),
-            org: None,
+            org: Some(alias.trim_start_matches("acct-").to_string()),
             email: None,
             root: None,
             written_at_ms: 0,
@@ -2566,30 +2614,70 @@ mod tests {
     const Q_NOW: i64 = 1_793_600_000;
 
     #[test]
-    fn others_segment_fits_its_room_and_drops_from_the_end() {
+    fn others_segment_shows_only_warned_weeks_by_name_and_fits_its_room() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let mut old = quota_snap("acct-ae88ee5d", 0.98, Q_NOW + 3 * 86400 + 3600);
+        old.org = None; // an identity from before the login-derived alias
         let others = [
-            quota_snap("acct-b", 0.81, Q_NOW + 3 * 86400 + 7200),
-            quota_snap("acct-c", 0.12, Q_NOW + 4 * 3600),
+            // 97 % with 3d1h left: short
+            quota_snap("acct-Stranity", 0.97, Q_NOW + 3 * 86400 + 3600),
+            old,
+            // 10 % with 20h left: waste
+            quota_snap("acct-work", 0.10, Q_NOW + 20 * 3600),
+            // 30 % mid-week: no warning, not shown
+            quota_snap("acct-calm", 0.30, Q_NOW + 4 * 86400),
         ];
-        let full = strip_ansi(&others_segment(&others, Q_NOW, 200, false));
-        assert_eq!(full, " · acct-b 81% 3d2h · acct-c 12% 4h0m");
+        let tr = crate::usage::quota_view::Tr::current();
+        let wk = tr.t("quota.w_weekly", &[]);
+        let r1 = tr.t("quota.sl_resets_in", &[("t", "3d1h")]);
+        let r2 = tr.t("quota.sl_resets_in", &[("t", "20h0m")]);
+        let waste = tr.t("quota.fleet_waste", &[]);
+        let full = strip_ansi(&others_segment(
+            &others,
+            &Default::default(),
+            Q_NOW,
+            200,
+            false,
+        ));
+        assert_eq!(
+            full,
+            format!(" · ⚠ stranity {wk} 97% {r1} · work {wk} 10% {r2} {waste}")
+        );
+        assert!(!full.contains("acct-") && !full.contains("calm"), "{full}");
         // every room: never wider than given
-        for room in 0..60 {
-            let got = strip_ansi(&others_segment(&others, Q_NOW, room, false));
+        for room in 0..80 {
+            let got = strip_ansi(&others_segment(
+                &others,
+                &Default::default(),
+                Q_NOW,
+                room,
+                false,
+            ));
             assert!(vis(&got) <= room, "room {room}: {got:?}");
         }
-        // room for the first with its countdown and the second without
+        // no countdown when only the head fits; nothing when not even that
+        let head = format!(" · ⚠ stranity {wk} 97%");
         assert_eq!(
-            strip_ansi(&others_segment(&others, Q_NOW, 31, false)),
-            " · acct-b 81% 3d2h · acct-c 12%"
+            strip_ansi(&others_segment(
+                &others,
+                &Default::default(),
+                Q_NOW,
+                vis(&head),
+                false
+            )),
+            head
         );
-        // the first without its countdown only
         assert_eq!(
-            strip_ansi(&others_segment(&others, Q_NOW, 14, false)),
-            " · acct-b 81%"
+            others_segment(&others, &Default::default(), Q_NOW, vis(&head) - 1, false),
+            ""
         );
-        // no room at all
-        assert_eq!(others_segment(&others, Q_NOW, 12, false), "");
+        // a name the operator set wins over the org
+        let names = crate::usage::names::Names(std::collections::BTreeMap::from([(
+            "acct-Stranity".to_string(),
+            "公司".to_string(),
+        )]));
+        let got = strip_ansi(&others_segment(&others, &names, Q_NOW, 200, false));
+        assert!(got.starts_with(&format!(" · ⚠ 公司 {wk} 97%")), "{got}");
     }
 
     fn mirror_entries(now: i64) -> Vec<crate::usage::quota_mirror_read::QEntry> {
@@ -2627,7 +2715,7 @@ mod tests {
             for yellow in [false, true] {
                 assert_eq!(
                     quota_segment(&data, Q_NOW, avail, yellow),
-                    others_segment(&others, Q_NOW, avail, yellow),
+                    others_segment(&others, &Default::default(), Q_NOW, avail, yellow),
                     "avail {avail}"
                 );
             }
@@ -2680,17 +2768,19 @@ mod tests {
             return; // NO_COLOR set for this test run: nothing coloured to check
         }
         let esc = |(r, g, b): Rgb| format!("\x1b[38;2;{r};{g};{b}m");
+        // 2 days into the week: 88 % and 84 % both project past 100 % (short)
+        let left = 5 * 86400;
         let others = [
-            quota_snap("acct-r", 0.97, Q_NOW + 60),
-            quota_snap("acct-y", 0.88, Q_NOW + 60),
-            quota_snap("acct-z", 0.84, Q_NOW + 60),
+            quota_snap("acct-r", 0.97, Q_NOW + left),
+            quota_snap("acct-y", 0.88, Q_NOW + left),
+            quota_snap("acct-z", 0.84, Q_NOW + left),
         ];
-        let seg = others_segment(&others, Q_NOW, 200, false);
+        let seg = others_segment(&others, &Default::default(), Q_NOW, 200, false);
         assert_eq!(seg.matches(&esc(BAR_MID)).count(), 1, "{seg:?}");
         assert_eq!(seg.matches(&esc(BAR_HIGH)).count(), 1, "{seg:?}");
         assert!(
             seg.contains("\x1b[1m"),
-            "the second 80 % account is bold: {seg:?}"
+            "the second short account is bold: {seg:?}"
         );
     }
 
@@ -2809,15 +2899,16 @@ mod tests {
             seven_day_resets_at: Some(chrono::Utc::now().timestamp() + 86400),
             others: vec![quota_snap(
                 "acct-b",
-                0.81,
-                chrono::Utc::now().timestamp() + 7200,
+                0.97,
+                chrono::Utc::now().timestamp() + 3 * 86400,
             )],
             ..Default::default()
         };
         let mut buf = Vec::new();
         render_compact(&mut buf, &data, 100).unwrap();
         let text = strip_ansi(&String::from_utf8(buf).unwrap());
-        assert!(text.contains("· acct-b 81%"), "{text}");
+        assert!(text.contains("· ⚠ b ") && text.contains(" 97%"), "{text}");
+        assert!(!text.contains("acct-"), "{text}");
         for line in text.lines() {
             assert!(vis(line) <= 100, "{line:?}");
         }
@@ -2837,22 +2928,27 @@ mod tests {
                 model: Some("Opus 5.5".into()),
                 seven_day_pct: Some(own),
                 seven_day_resets_at: Some(now + 86400),
-                others: vec![quota_snap("acct-b", 0.85, now + 7200)],
+                // 2 days in at 85 %: short, below red
+                others: vec![quota_snap("acct-b", 0.85, now + 5 * 86400)],
                 ..Default::default()
             };
             let mut buf = Vec::new();
             render_compact(&mut buf, &data, 100).unwrap();
             let text = String::from_utf8(buf).unwrap();
             text.lines()
-                .find(|l| l.contains("acct-b"))
+                .find(|l| l.contains("⚠ b"))
                 .unwrap_or_default()
                 .to_string()
         };
-        let other_part = |r: &str| r[r.find("acct-b").unwrap()..].to_string();
+        // from the separator before the other account (its colour escape precedes the ⚠)
+        let other_part = |r: &str| {
+            let at = r.find("⚠ b").unwrap();
+            r[r[..at].rfind('·').unwrap()..].to_string()
+        };
         // own 7d in the yellow band (50-80 %): the 85 % account is bold, not a second yellow
         let r = row1(0.6);
         assert!(
-            r[..r.find("acct-b").unwrap()].contains(&esc),
+            r[..r.find('·').unwrap()].contains(&esc),
             "own bar is yellow: {r:?}"
         );
         assert!(!other_part(&r).contains(&esc), "{r:?}");
