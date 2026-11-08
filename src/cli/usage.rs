@@ -90,6 +90,7 @@ fn collect_and_summarize(
         &fresh,
         &summary::host_alias(&summary::hostname()),
         now,
+        &crate::usage::names::load_default(),
     );
     summary::validate(&v)?;
     let sdir = summary::summary_dir(&live_base);
@@ -276,8 +277,15 @@ pub fn run(action: Action) -> Result<()> {
                     "API 等值"
                 ])
             );
+            // by account: the display name, never the `acct-` key (--json keeps the key)
+            let shown = if by == "account" {
+                account_names(agg.keys().map(|(_, k)| k.as_str()))
+            } else {
+                BTreeMap::new()
+            };
             let mut all = Vec::new();
             for ((day, key), (t, req, costs)) in &agg {
+                let key = shown.get(key).map_or(key.as_str(), String::as_str);
                 let (cost, unpriced) = price::total(costs.iter().copied());
                 let cost_s = match (cost, unpriced) {
                     (Some(_), n) if n > 0 => format!("≥{}", money(cost)),
@@ -396,6 +404,24 @@ fn known_accounts() -> Vec<(String, Option<String>, Option<String>)> {
     merged
 }
 
+/// Each of `keys` → the name it is shown by: the accounts this host knows, plus any other key
+/// (a codex account shows as itself); an `acct-` key nobody can name shows as 未命名帳號.
+fn account_names<'a>(keys: impl Iterator<Item = &'a str>) -> BTreeMap<String, String> {
+    use crate::usage::names;
+    let mut known = known_accounts();
+    for k in keys {
+        if !known.iter().any(|(kk, _, _)| kk == k) {
+            known.push((k.to_string(), None, None));
+        }
+    }
+    let who = who_of(&known);
+    known
+        .iter()
+        .zip(names::assign(&who, &names::load_default()))
+        .map(|((k, _, _), n)| (k.clone(), n.unwrap_or_else(|| "未命名帳號".into())))
+        .collect()
+}
+
 fn who_of(a: &[(String, Option<String>, Option<String>)]) -> Vec<crate::usage::names::Who<'_>> {
     a.iter()
         .map(|(k, o, e)| crate::usage::names::Who {
@@ -431,10 +457,10 @@ fn alias_set(who: &str, name: &str) -> Result<()> {
     use crate::usage::names;
     anyhow::ensure!(
         names::valid_name(name),
-        "名字要 1 到 24 個字，不能有 @、換行或其他控制字元，也不能以 acct- 開頭"
+        "名字最寬 24 欄（中文字算 2 欄），不能有 @、換行或其他控制字元，也不能以 acct- 開頭"
     );
     let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
-    let mut set = names::load(&path);
+    let set = names::load(&path);
     let known = known_accounts();
     let who_list = who_of(&known);
     let key = names::resolve(&who_list, &set, who)?;
@@ -446,8 +472,7 @@ fn alias_set(who: &str, name: &str) -> Result<()> {
             .any(|((k, _, _), n)| *k != key && n.as_deref() == Some(name)),
         "「{name}」已經是另一個帳號的名字"
     );
-    set.0.insert(key, name.to_string());
-    names::save(&path, &set)?;
+    names::set(&path, &key, name)?;
     println!("已設定：{who} → {name}");
     Ok(())
 }

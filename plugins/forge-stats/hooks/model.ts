@@ -404,7 +404,8 @@ export const USAGE_MAX_BYTES = 256 * 1024
 export const USAGE_STALE_MS = 60 * 60_000
 export const usageSummaryPath = (base: string) => `${base}/codeforge/usage/summary.json`
 export type UsageWindow = { pct: number; resetsAtMs: number }
-export type UsageAccount = { alias: string; writtenAt: number; fiveHour: UsageWindow | null; sevenDay: UsageWindow | null }
+/** `name` is what the pane shows: codeforge's display name; the `acct-` alias is a key and never drawn. */
+export type UsageAccount = { alias: string; name: string; writtenAt: number; fiveHour: UsageWindow | null; sevenDay: UsageWindow | null }
 /** One model's totals for the day; `cost` is the priced part (null when no row of it is priced), `unpriced` its rows without a price. */
 export type UsageModel = { model: string; tokens: number; requests: number; cost: number | null; unpriced: number }
 export type UsageView = {
@@ -424,9 +425,10 @@ export const USAGE_CONTRACT = {
   "top_optional": ["dropped_accounts"],
   "drop_reasons": ["written_at_ms_out_of_range", "resets_at_out_of_range", "pct_out_of_range"],
   "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
-  "account_optional": ["org", "email"],
+  "account_optional": ["org", "email", "name"],
   "org": "^[^@\\p{Cc}]{1,40}$",
   "email": "^(?=.{3,254}$)[^@\\s\\p{Cc}\\uFEFF]+@[^@\\s\\p{Cc}\\uFEFF]+$",
+  "name_max_cells": 24,
   "window": ["pct", "resets_at"],
   "window_optional": ["seen_at_ms"],
   "day": ["day", "source", "account", "model", "speed", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests", "cost_usd"],
@@ -464,6 +466,10 @@ const keysWith = (v: unknown, keys: readonly string[], optional: readonly string
 const exactKeys = (v: unknown, keys: readonly string[]): v is Record<string, unknown> =>
   isObj(v) && Object.keys(v).length === keys.length && keys.every(k => k in v)
 const inSet = (v: unknown, set: readonly string[]) => typeof v === 'string' && set.includes(v)
+/** A display name by codeforge's `names::valid_name`: 1..=name_max_cells columns, trimmed, no `@`, no control char or
+ *  whitespace other than a plain space, not an `acct-` key. */
+export const isDisplayName = (v: unknown): v is string =>
+  typeof v === 'string' && v.length > 0 && displayWidth(v) <= C.name_max_cells && v.trim() === v && !v.startsWith('acct-') && !/[@\p{Cc}]/u.test(v) && !/[^\S ]/u.test(v)
 
 /** A capture time may lead the summary's `generated_at_ms` by this much (mirrors `SEEN_SKEW_MS`). */
 const SEEN_SKEW_MS = 10 * 60 * 1000
@@ -508,7 +514,11 @@ export function parseUsage(text: string | null, now: number): UsageView {
     if (fiveHour === undefined || sevenDay === undefined) return bad
     if ('org' in a && (typeof a.org !== 'string' || !ORG_RE.test(a.org))) return bad
     if ('email' in a && (typeof a.email !== 'string' || !EMAIL_RE.test(a.email))) return bad
-    accounts.push({ alias: a.alias, writtenAt: a.written_at_ms, fiveHour, sevenDay })
+    if ('name' in a && !isDisplayName(a.name)) return bad
+    // a writer from before `name`: the email, else the org, else a chosen (non-hash) alias; an `acct-` hash with none of these is not drawn
+    const name = 'name' in a ? (a.name as string) : 'email' in a ? (a.email as string) : 'org' in a ? (a.org as string) : a.alias.startsWith('acct-') ? null : a.alias
+    if (name === null) continue
+    accounts.push({ alias: a.alias, name, writtenAt: a.written_at_ms, fiveHour, sevenDay })
   }
   const byModel = new Map<string, UsageModel>()
   for (const d of raw.days) {

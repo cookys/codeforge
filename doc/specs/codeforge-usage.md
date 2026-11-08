@@ -78,14 +78,20 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   `--json` 每筆同時帶 `alias`（鍵）與 `name`。forge-stats 對沒有 `name` 的舊檔：依序退回 email、org、非 `acct-` 的別名，
   `acct-` 且三者皆無的列不顯示。
 - **名字設定檔**：`~/.config/codeforge/accounts.toml`（`CODEFORGE_ACCOUNTS_FILE` 可改，其次 `$XDG_CONFIG_HOME/codeforge/`），
-  只在本機、不進 repo；`[names]` 表以別名（= sha8(org uuid + email)，即 org uuid＋email 的鍵）對應名字。檔案 0600、
-  資料夾 0700、原子寫入。名字 1..=24 字元、無 `@`、無控制字元、前後無空白、不以 `acct-` 開頭；不合規的條目讀取時略過。
+  只在本機、不進 repo；`[names]` 表以別名（= sha8(org uuid + email)，即 org uuid＋email 的鍵；codex 等非 `acct-` 鍵也可）對應名字。
+  檔案 0600、資料夾 0700、原子寫入。名字最寬 24 欄（中文字 2 欄）、無 `@`、無控制字元、前後無空白、不以 `acct-` 開頭；
+  不合規的條目畫面上略過。`alias set` 只改一條、檔內其他內容原樣保留；檔案讀不到或不是合法 TOML 時報錯、不覆寫
+  （畫面端照樣當作沒有名字）。錯誤訊息不回顯 email。預設名的各段依欄寬截短（`org·前段` 各最多 10 欄），撞名編號取還沒被用的最小 `-N`。
   `codeforge usage alias list` 列出本機快照與 `fleet-quota.json` 認得的帳號（名字、是否自訂、org、email，只在本機畫面）；
   `codeforge usage alias set <email 或目前顯示名> <新名字>` 設定，拒絕和別的帳號同名。
 - **statusline 其他帳號段**：只看還沒重置的週視窗。週 ≥ 95% 或「會不夠（估）」→「⚠ 名字 週 97% 3d1h 後重置」；
   「會浪費」→「名字 週 NN% … 後重置 會浪費」；其餘帳號不出現，沒有名字的帳號不出現。放不下就只留前面的段。
   （c4140 曾顯示 97%，原因是 statusline 讀到修正身分前的舊合併快照；gpu-lead 實測 /login 後新舊 session 的數字相同，
-  「舊 session 拿舊 token」的推論不成立。）面板「用量」分頁仍顯示 summary 的別名欄（下一步再換）。
+  「舊 session 拿舊 token」的推論不成立。）
+- **summary 帶 `name`**：summary 帳號**選填** `name`（顯示名，由寫 summary 的主機用同一套規則與它自己的名字設定檔算；沒有名字就不帶）。
+  驗證同 `valid_name`，契約 `name_max_cells` = 24 與 pane 副本由測試比對。forge-stats「用量」分頁與側欄畫 `name`；舊 summary 沒有 `name`
+  時依序退回 email、org、非 `acct-` 的別名，`acct-` 且三者皆無的帳號不畫。`usage push` 上傳前同時拿掉 `email` 與 `name`
+  （預設名可能是 email 前段）。`codeforge usage --by account` 的文字表也印顯示名（無法命名的 `acct-` 印「未命名帳號」），`--json` 仍是鍵。
 - 收集：不讀 `AUTOPILOT_ACCOUNT`。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」，其次是該 root 自己的
   登入檔身分（預設 root `~/.claude` 對應 `~/.claude.json`，其他 root 對應 `<root>/.claude.json`），
   再其次是 db 裡存的，最後 `acct-<hash>`。Codex root 是 `codex-<hash>`。
@@ -131,7 +137,7 @@ model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註
 
 ```json
 {"schema":"codeforge.usage-summary/1","generated_at_ms":0,"host":"host-1a2b3c4d","prices_as_of":"2026-10-06",
- "accounts":[{"alias":"acct-a","org":"personal","email":"me@example.com","written_at_ms":0,"five_hour":{"pct":0.3,"resets_at":0},"seven_day":null}],
+ "accounts":[{"alias":"acct-a","org":"personal","email":"me@example.com","name":"personal","written_at_ms":0,"five_hour":{"pct":0.3,"resets_at":0},"seven_day":null}],
  "days":[{"day":"2026-11-03","source":"claude","account":"acct-a","model":"claude-opus-5-5","speed":"standard",
           "input":0,"output":0,"cache_write_5m":0,"cache_write_1h":0,"cache_read":0,"requests":0,"cost_usd":null}]}
 ```

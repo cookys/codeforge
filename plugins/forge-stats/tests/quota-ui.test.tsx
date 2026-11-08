@@ -392,7 +392,7 @@ const PETSNAP = {
 }
 const USAGE = JSON.stringify({
   schema: 'codeforge.usage-summary/1', generated_at_ms: Date.now() - 60_000, host: 'host-1a2b3c4d', prices_as_of: '2026-10-06',
-  accounts: [{ alias: 'acct-a', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: SESSION_NOW + 7800 }, seven_day: null }],
+  accounts: [{ alias: 'smith1', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: SESSION_NOW + 7800 }, seven_day: null }],
   days: [{ day: new Date().toISOString().slice(0, 10), source: 'claude', account: 'acct-a', model: 'claude-opus-5-5', speed: 'standard', input: 100, output: 50, cache_write_5m: 0, cache_write_1h: 0, cache_read: 850, requests: 3, cost_usd: 1.5 }],
 })
 
@@ -469,7 +469,7 @@ test('the usage tab draws the mirror blocks and keeps the models; the G36 accoun
   expect(text).toContain('▲ token 到期 6 天')
   expect(text).toContain('429 冷卻')
   expect(text).toContain('從未觀察')
-  expect(text).not.toContain('acct-a')
+  expect(text).not.toContain('smith1')
   expect(text).toContain('claude-opus-5-5')
   // never a read outside the mirror's own paths; only regular `.json` views and the namespace file
   expect([...new Set(f.reads.filter(p => p.includes('/quota/')))].sort()).toEqual(
@@ -482,7 +482,7 @@ test('rule 7: no quota directory keeps today\'s pane (the accounts rows); an emp
   mirror(on, {}, [], false)
   const old = await openUsage($)
   const text = await flat(old)
-  expect(text).toContain('acct-a')
+  expect(text).toContain('smith1')
   expect(text).not.toContain('配額')
   expect(text).not.toContain('quota')
   await old.unmount()
@@ -493,7 +493,7 @@ test('rule 7: the mirror directory exists but holds nothing', async ($, on) => {
   const ui = await openUsage($)
   const text = await flat(ui)
   expect(text).toContain('尚未收到配額資料（由 autopilot 的 reporter／wrapper 寫入）')
-  expect(text).not.toContain('acct-a')
+  expect(text).not.toContain('smith1')
   expect(text).toContain('claude-opus-5-5')
   await ui.unmount()
 })
