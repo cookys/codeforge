@@ -11,7 +11,7 @@
 | 部分 | 何時跑 | 產出 |
 |---|---|---|
 | 配額快照 | 每次 statusline（有 `rate_limits` 時） | `<live_base>/codeforge/usage/quota/<alias>.json` |
-| 用量列 | 每次 statusline | 本 session 的 5h／7d／ctx 長條，後接其他帳號 `別名 NN% 倒數` |
+| 用量列 | 每次 statusline | 本 session 的 5h／7d／ctx 長條；其他帳號只在週配額會不夠（或 ≥ 95%）／會浪費時才出現，用顯示名（見「顯示名」） |
 | 收集 | `codeforge usage`、`usage collect`、statusline 背景觸發（每 15 分鐘至多一次）、SessionEnd hook | `<data_dir>/usage/usage.db` |
 | 摘要 | 每次收集之後 | `<live_base>/codeforge/usage/summary.json` |
 | 推送 | `codeforge usage push` | `fleet upload`，印出 blob sha |
@@ -47,15 +47,51 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 - 登入檔：`$CLAUDE_CONFIG_DIR/.claude.json`（有設且非空），否則 `$HOME/.claude.json`（在 `~/.claude/` 之外）。
   只讀 `oauthAccount` 底下三個欄位：`organizationUuid`、`organizationName`、`emailAddress`（operator 授權的範圍），
   用只命名這三欄的型別化 serde 結構解析，其餘欄位（token、accountUuid…）由 serde 忽略，不留、不記錄、不複製；
-  從不寫這個檔。email 與 org uuid 不離開本機：快照、summary、`fleet-quota.json` 只有別名（hash）與 org 顯示名。
+  從不寫這個檔。org uuid 不離開本機：快照、summary、`fleet-quota.json` 只有別名（hash）、org 顯示名與登入 email。
+  email 只出現在本機 0600 的快照、身分快取與 summary／`fleet-quota.json` 檔，**不進 repo、不進日誌、不進 fleet 訊息與 blob（`usage push` 上傳前拿掉 email）、
+  不進錯誤訊息**（`Identity` 的 `Debug` 也不印它；測試與 fixture 只用 `@example.com`）。
 - 快取（statusline 每次刷新都跑，登入檔可能數 MB）：`<live_base>/codeforge/usage/identity-<config dir 8 碼>.json`
   （0600），以登入檔的 (mtime_ns, size) 為鍵；沒變就只做一次 stat 加一次小檔讀取，變了才重新解析。解析出「沒有登入」
-  也會快取。任何錯誤都退回路徑 hash，不讓 statusline 失敗。
+  也會快取。任何錯誤都退回路徑 hash，不讓 statusline 失敗。快取也存 `email`（舊快取沒有這欄，讀成未知，
+  登入檔一變就重新解析）。
 - `org`：`organizationName` 以 `'s Organization`（ASCII 或 ’）結尾、或含 `@`，視為個人訂閱，記為 `personal`；
   否則為清掉控制字元後最多 40 字元（`.chars().take(40)`）的名稱。`org` 放在本機快照、summary 帳號（**選填**，
   不存在 = 未知，舊 summary 仍合格；1..=40 字元、無控制字元、無 `@`）與 `fleet-quota.json`（字串或 null）。
   文字表頭在別名後顯示（`personal` 顯示為「個人」／personal），順序：別名、org、provider、主機。
   主機太多放不下時，保留放得下的標籤並以「等 N 台」／「+N more」收尾，不會整段拿掉。
+- `email`：`emailAddress` 去頭尾空白後 3..=254 字元、恰一個 `@` 且兩邊都有字、無空白與控制字元，否則視為未知（None，
+  不是錯誤、不拒收快照）。有 `AUTOPILOT_ACCOUNT` 時別名仍用它，但 email 與 org 照樣取自登入檔。`email` 放在本機快照
+  （壞值丟掉、數字照留）、summary 帳號（**選填**，驗證規則同上，壞值整份 summary 不合格，訊息不含該值；契約的
+  `email` 正規表達式 `^(?=.{3,254}$)[^@\s\p{Cc}\uFEFF]+@[^@\s\p{Cc}\uFEFF]+$` 與 pane 副本由測試比對）與
+  `fleet-quota.json`（字串或 null，取最新且帶 email 的那筆觀察，同 org）。
+- **視窗擷取時間 `seen_at_ms`**：summary 帳號的 `five_hour`／`seven_day` 視窗**選填** `seen_at_ms`（整數毫秒，0..=2^53−1，
+  不得晚於該 summary 的 `generated_at_ms` 超過 10 分鐘），表示這筆 rate-limit 資料是何時被擷取的，取自快照視窗的
+  `seen.at_ms`；舊快照沒有就省略（舊 summary 仍合格，合併時以帳號 `written_at_ms` 代替）。超出範圍的值在產生時直接不帶，
+  不丟掉整個帳號。契約 `window_optional` 與 pane 副本由測試比對。
+- **顯示名（`src/usage/names.rs`）**：`acct-…` 別名只是內部的合併鍵，**永遠不上畫面**。statusline、`usage fleet` 文字表、
+  forge-stats「全部帳號」分頁與 `fleet-quota.json` 的 `name` 用同一個顯示名，依序取：
+  (1) operator 設的名字（`~/.config/codeforge/accounts.toml`，見下）；(2) org 的第一個字轉小寫（`personal`、`stranity`，最多 16 字元）；
+  (3) email 的 `@` 前段；(4) 不是 `acct-` 開頭的鍵本身（`AUTOPILOT_ACCOUNT` 選的名字、codex 帳號）；(5) 都沒有 → 沒有名字，
+  **這個帳號不顯示**（修正身分前留下的合併快照，例如沒有 org、沒有 email 的 `acct-ae88ee5d`）。`usage fleet` 把它計入
+  `skipped["no_identity"]`。預設名撞名時加「·email 前段」，還撞就依鍵的順序加 `-2`、`-3`；operator 設的名字不改。
+  文字表頭與分頁標籤是「名字 · email」（email 與名字相同或未知時只有名字；名字欄最多 24 欄，分頁最多 40 欄、窄面板縮短）。
+  `--json` 每筆同時帶 `alias`（鍵）與 `name`。forge-stats 對沒有 `name` 的舊檔：依序退回 email、org、非 `acct-` 的別名，
+  `acct-` 且三者皆無的列不顯示。
+- **名字設定檔**：`~/.config/codeforge/accounts.toml`（`CODEFORGE_ACCOUNTS_FILE` 可改，其次 `$XDG_CONFIG_HOME/codeforge/`），
+  只在本機、不進 repo；`[names]` 表以別名（= sha8(org uuid + email)，即 org uuid＋email 的鍵；codex 等非 `acct-` 鍵也可）對應名字。
+  檔案 0600、資料夾 0700、原子寫入。名字最寬 24 欄（中文字 2 欄）、無 `@`、無控制字元、前後無空白、不以 `acct-` 開頭；
+  不合規的條目畫面上略過。`alias set` 只改一條、檔內其他內容原樣保留；檔案讀不到或不是合法 TOML 時報錯、不覆寫
+  （畫面端照樣當作沒有名字）。錯誤訊息不回顯 email。預設名的各段依欄寬截短（`org·前段` 各最多 10 欄），撞名編號取還沒被用的最小 `-N`。
+  `codeforge usage alias list` 列出本機快照與 `fleet-quota.json` 認得的帳號（名字、是否自訂、org、email，只在本機畫面）；
+  `codeforge usage alias set <email 或目前顯示名> <新名字>` 設定，拒絕和別的帳號同名。
+- **statusline 其他帳號段**：只看還沒重置的週視窗。週 ≥ 95% 或「會不夠（估）」→「⚠ 名字 週 97% 3d1h 後重置」；
+  「會浪費」→「名字 週 NN% … 後重置 會浪費」；其餘帳號不出現，沒有名字的帳號不出現。放不下就只留前面的段。
+  （c4140 曾顯示 97%，原因是 statusline 讀到修正身分前的舊合併快照；gpu-lead 實測 /login 後新舊 session 的數字相同，
+  「舊 session 拿舊 token」的推論不成立。）
+- **summary 帶 `name`**：summary 帳號**選填** `name`（顯示名，由寫 summary 的主機用同一套規則與它自己的名字設定檔算；沒有名字就不帶）。
+  驗證同 `valid_name`，契約 `name_max_cells` = 24 與 pane 副本由測試比對。forge-stats「用量」分頁與側欄畫 `name`；舊 summary 沒有 `name`
+  時依序退回 email、org、非 `acct-` 的別名，`acct-` 且三者皆無的帳號不畫。`usage push` 上傳前同時拿掉 `email` 與 `name`
+  （預設名可能是 email 前段）。`codeforge usage --by account` 的文字表也印顯示名（無法命名的 `acct-` 印「未命名帳號」），`--json` 仍是鍵。
 - 收集：不讀 `AUTOPILOT_ACCOUNT`。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」，其次是該 root 自己的
   登入檔身分（預設 root `~/.claude` 對應 `~/.claude.json`，其他 root 對應 `<root>/.claude.json`），
   再其次是 db 裡存的，最後 `acct-<hash>`。Codex root 是 `codex-<hash>`。
@@ -97,11 +133,11 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 5 分／1 小時、快取讀、fast 倍率）。標成「API 等值」：訂閱方案不按 token 計費。沒有定價的
 model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註明幾列沒定價。
 
-## summary.json（唯一會離開本機的東西）
+## summary.json（唯一會離開本機的東西；帳號列帶登入 email，`usage push` 上傳的 blob 會先拿掉 email）
 
 ```json
 {"schema":"codeforge.usage-summary/1","generated_at_ms":0,"host":"host-1a2b3c4d","prices_as_of":"2026-10-06",
- "accounts":[{"alias":"acct-a","org":"personal","written_at_ms":0,"five_hour":{"pct":0.3,"resets_at":0},"seven_day":null}],
+ "accounts":[{"alias":"acct-a","org":"personal","email":"me@example.com","name":"personal","written_at_ms":0,"five_hour":{"pct":0.3,"resets_at":0},"seven_day":null}],
  "days":[{"day":"2026-11-03","source":"claude","account":"acct-a","model":"claude-opus-5-5","speed":"standard",
           "input":0,"output":0,"cache_write_5m":0,"cache_write_1h":0,"cache_read":0,"requests":0,"cost_usd":null}]}
 ```
@@ -144,22 +180,29 @@ forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接
 - **資料夾**：每台主機一個 `*.json`，檔名（不含副檔名）就是顯示的主機標籤（由收集端依角色命名，如
   `gpu-a.json`）；summary 裡的 `host` hash 與任何路徑都不顯示。每個檔都過 `summary::validate`，不合格的略過並計數
   （文字顯示「N 份略過」，JSON 的 `skipped` 為 `{原因: 數量}`，原因：`invalid`、`not_json`、`unreadable`、
-  `too_large`（> 4 MiB）、`too_many`（> 256 份）、`bad_name`），不會中斷整張表。
-- **合併**：每個別名一列；`hosts` 是有這個別名的所有檔名；視窗數值取該別名 `written_at_ms` 最新的那筆觀察。
+  `too_large`（> 4 MiB）、`too_many`（> 256 份）、`bad_name`；沒有顯示名的帳號列記為 `no_identity`），不會中斷整張表。
+- **合併**：每個別名一列；`hosts` 是有這個別名的所有檔名。**5h 與 7d 視窗各自取「擷取時間最新」的那筆觀察**
+  （擷取時間 = 視窗的 `seen_at_ms`，沒有就用該帳號的 `written_at_ms`；平手取 `written_at_ms` 較新者，再取標籤較小者），
+  **不是取最大 pct**，也不是整個帳號只看 `written_at_ms`：一台主機的 statusline 久未刷新、檔案卻剛寫出，
+  舊資料不會蓋過另一台較新的擷取。擷取時間較舊**且**內容不同（`resets_at` 或 `pct` 不同）的主機記為「舊」
+  （任一視窗輸了就算）：JSON `old_hosts`、文字與分頁在標籤後加「舊」／old。列的 `observed_at_ms` 與 6 小時過期
+  都看被選中視窗的擷取時間。被選中的視窗 `resets_at` ≤ now 就是「已重置」：JSON `reset: true`，畫成「週 已重置」／
+  `week reset`（不顯示舊的 pct），不估算、不警示（`projected`、`warn`、`exhaust_at` 皆 `null`）。
   只出現在 `days`（source codex）的別名是「無來源」列（summary 不帶 codex 百分比）；grok、MiniMax、agy 固定列
   「無來源」（`NO_SOURCE_PROVIDERS`）。
 - **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗
-  不畫（兩個都過就是「已重置，等新觀察」）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
+  畫成「已重置」而不是 pct（兩個都過就是「已重置，等新觀察」，`state` 為 `stale`）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
 - **警示（只看週視窗、線性估算）**：W = 7 天，remaining = resets_at − now，elapsed = W − remaining；elapsed < 6 小時
   不估（「暖機」）。`projected = pct × W / elapsed`。**會浪費**：remaining < 48 小時且 pct < `--use-target`（預設 0.85）。
   **會不夠（估）**：projected ≥ 1.0 且 pct < 1.0，並估 `now + (1−pct)/(pct/elapsed)` 用完。兩者同時成立時以會不夠為準
   （照現速會用完，就不是浪費）。有警示的列排前面：會浪費、會不夠（各依重置時間由近到遠），其餘依別名。
 - **JSON**（`--json` 印出；`--out <file>` 以暫存檔＋rename 原子寫入，0600，可與文字表並用）：
   `{"schema":"codeforge.fleet-quota/1","generated_at_ms":…,"use_target":0.85,"skipped":{},"accounts":[…]}`，每筆
-  `{alias, provider("claude"|"codex"|"grok"|…), hosts[], observed_at_ms|null, age_s|null, state, weekly, five_hour}`；
+  `{alias, name, org|null, email|null, provider("claude"|"codex"|"grok"|…), hosts[], old_hosts[]（hosts 的子集，排序）, observed_at_ms|null, age_s|null, state, weekly, five_hour}`；
   `state`：`ok`（有視窗可畫）、`stale`（6 小時內有觀察但視窗全已重置）、`expired`（最後觀察超過 6 小時）、`no_source`；
-  `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null}`（`resets_at`、`exhaust_at`
-  為 unix 秒），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at}|null`。`pct` 是小數（1.0 = 100%）。
+  `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null, reset}`（`resets_at`、`exhaust_at`
+  為 unix 秒；`reset` 為 true 時視窗已重置，`pct` 不是現值），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at, reset}|null`。
+  forge-stats 解析器對 `old_hosts`、`reset` 容忍缺席（舊檔：空、false），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
   讀者（forge-stats 分頁、fleet.console/1 的配額區）直接讀，不重算。
 
 **寫檔（`usage collect` 順手維護）**：環境變數 `CODEFORGE_FLEET_USAGE_DIR` 有設且非空時，`codeforge usage collect`
@@ -179,6 +222,8 @@ codeforge usage collect --quiet     # hook 用
 codeforge usage push                # 印出 blob sha
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
 codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）
+codeforge usage alias list          # 帳號與顯示名（本機）
+codeforge usage alias set <email或顯示名> <新名字>
 /forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```
 

@@ -404,7 +404,8 @@ export const USAGE_MAX_BYTES = 256 * 1024
 export const USAGE_STALE_MS = 60 * 60_000
 export const usageSummaryPath = (base: string) => `${base}/codeforge/usage/summary.json`
 export type UsageWindow = { pct: number; resetsAtMs: number }
-export type UsageAccount = { alias: string; writtenAt: number; fiveHour: UsageWindow | null; sevenDay: UsageWindow | null }
+/** `name` is what the pane shows: codeforge's display name; the `acct-` alias is a key and never drawn. */
+export type UsageAccount = { alias: string; name: string; writtenAt: number; fiveHour: UsageWindow | null; sevenDay: UsageWindow | null }
 /** One model's totals for the day; `cost` is the priced part (null when no row of it is priced), `unpriced` its rows without a price. */
 export type UsageModel = { model: string; tokens: number; requests: number; cost: number | null; unpriced: number }
 export type UsageView = {
@@ -424,9 +425,12 @@ export const USAGE_CONTRACT = {
   "top_optional": ["dropped_accounts"],
   "drop_reasons": ["written_at_ms_out_of_range", "resets_at_out_of_range", "pct_out_of_range"],
   "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
-  "account_optional": ["org"],
+  "account_optional": ["org", "email", "name"],
   "org": "^[^@\\p{Cc}]{1,40}$",
+  "email": "^(?=.{3,254}$)[^@\\s\\p{Cc}\\uFEFF]+@[^@\\s\\p{Cc}\\uFEFF]+$",
+  "name_max_cells": 24,
   "window": ["pct", "resets_at"],
+  "window_optional": ["seen_at_ms"],
   "day": ["day", "source", "account", "model", "speed", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests", "cost_usd"],
   "counts": ["input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests"],
   "sources": ["claude", "codex"],
@@ -446,6 +450,7 @@ const ALIAS_RE = new RegExp(C.alias)
 const MODEL_RE = new RegExp(C.model)
 const HOST_RE = new RegExp(C.host)
 const ORG_RE = new RegExp(C.org, 'u')
+const EMAIL_RE = new RegExp(C.email, 'u')
 /** An integer in 0..=uint_max (2^53-1): `Number.isInteger(1e100)` is true, so the bound is checked too. */
 const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= C.uint_max
 /** A real calendar date `YYYY-MM-DD` (not 2026-02-30). */
@@ -461,10 +466,18 @@ const keysWith = (v: unknown, keys: readonly string[], optional: readonly string
 const exactKeys = (v: unknown, keys: readonly string[]): v is Record<string, unknown> =>
   isObj(v) && Object.keys(v).length === keys.length && keys.every(k => k in v)
 const inSet = (v: unknown, set: readonly string[]) => typeof v === 'string' && set.includes(v)
+/** A display name by codeforge's `names::valid_name`: 1..=name_max_cells columns, trimmed, no `@`, no control char or
+ *  whitespace other than a plain space, not an `acct-` key. */
+export const isDisplayName = (v: unknown): v is string =>
+  typeof v === 'string' && v.length > 0 && displayWidth(v) <= C.name_max_cells && v.trim() === v && !v.startsWith('acct-') && !/[@\p{Cc}]/u.test(v) && !/[^\S ]/u.test(v)
 
-function usageWindow(v: unknown): UsageWindow | null | undefined {
+/** A capture time may lead the summary's `generated_at_ms` by this much (mirrors `SEEN_SKEW_MS`). */
+const SEEN_SKEW_MS = 10 * 60 * 1000
+
+function usageWindow(v: unknown, generatedAt: number): UsageWindow | null | undefined {
   if (v === null) return null
-  if (!exactKeys(v, C.window)) return undefined
+  if (!keysWith(v, C.window, C.window_optional)) return undefined
+  if ('seen_at_ms' in v && (!isUint(v.seen_at_ms) || v.seen_at_ms > generatedAt + SEEN_SKEW_MS)) return undefined
   if (typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || v.pct > C.pct_max || !isUint(v.resets_at)) return undefined
   return { pct: v.pct, resetsAtMs: (v.resets_at as number) * 1000 }
 }
@@ -496,11 +509,16 @@ export function parseUsage(text: string | null, now: number): UsageView {
   const accounts: UsageAccount[] = []
   for (const a of raw.accounts) {
     if (!keysWith(a, C.account, C.account_optional) || typeof a.alias !== 'string' || !ALIAS_RE.test(a.alias) || !isUint(a.written_at_ms)) return bad
-    const fiveHour = usageWindow(a.five_hour)
-    const sevenDay = usageWindow(a.seven_day)
+    const fiveHour = usageWindow(a.five_hour, raw.generated_at_ms)
+    const sevenDay = usageWindow(a.seven_day, raw.generated_at_ms)
     if (fiveHour === undefined || sevenDay === undefined) return bad
     if ('org' in a && (typeof a.org !== 'string' || !ORG_RE.test(a.org))) return bad
-    accounts.push({ alias: a.alias, writtenAt: a.written_at_ms, fiveHour, sevenDay })
+    if ('email' in a && (typeof a.email !== 'string' || !EMAIL_RE.test(a.email))) return bad
+    if ('name' in a && !isDisplayName(a.name)) return bad
+    // a writer from before `name`: the email, else the org, else a chosen (non-hash) alias; an `acct-` hash with none of these is not drawn
+    const name = 'name' in a ? (a.name as string) : 'email' in a ? (a.email as string) : 'org' in a ? (a.org as string) : a.alias.startsWith('acct-') ? null : a.alias
+    if (name === null) continue
+    accounts.push({ alias: a.alias, name, writtenAt: a.written_at_ms, fiveHour, sevenDay })
   }
   const byModel = new Map<string, UsageModel>()
   for (const d of raw.days) {

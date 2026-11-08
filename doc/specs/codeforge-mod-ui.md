@@ -151,10 +151,10 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   有設時寫（見 `codeforge-usage.md`）。存在與否只在 render 外 `stat`（session 開始、指令、畫過後每 15 秒），檔案只在這個分頁的 render 裡讀，
   界線同用量摘要：stat 先、一般檔案、不是連結、≤ 512 KiB，不 spawn codeforge。依 `codeforge.fleet-quota/1` 嚴格解析，
   不合就畫一行 dim「全部帳號資料無法讀取」，不 throw。內容：標題列帶檔案年齡（「合併於 N 分鐘前」）；先是警示列（與 CLI 同序、
-  同字：`會浪費 · alias · 週 N% · 重置 ◷ … · 目標 85%`、`會不夠 估 · alias · 週 N% · 估 … 後用完 · 重置 ◷ …`），再每帳號一列
-  `alias  週 N% ◷ 2d5h  5h N%  主機…  年齡`（`緊` ≥ 90%、年齡超過 30 分鐘才顯示、`無來源`／`過期`／`已重置，等新觀察`）。
+  同字：`會浪費 · 名字 · email · 週 N% · 重置 ◷ … · 目標 85%`、`會不夠 估 · 名字 · email · 週 N% · 估 … 後用完 · 重置 ◷ …`），再每帳號一列
+  `名字 · email  週 N% ◷ 2d5h  5h N%  主機…  年齡`（`緊` ≥ 90%、年齡超過 30 分鐘才顯示、`無來源`／`過期`／`已重置，等新觀察`）。
   警示、projected、exhaust_at 全取自 JSON，TS 不重算；過期的檔照原樣畫並標年齡。寬度不夠時整欄丟（主機、年齡、5h、倒數），
-  最後才用 `…` 截。實作 `plugins/forge-stats/hooks/fleet-view.ts`。
+  最後才用 `…` 截。名字取 JSON 的 `name`（`acct-` 鍵永不顯示；舊檔沒有 `name` 的退回規則見 `codeforge-usage.md`「顯示名」）。實作 `plugins/forge-stats/hooks/fleet-view.ts`。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、縮圖；tok/s 歸 autopilot）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 

@@ -14,14 +14,22 @@ export const FLEET_MAX_BYTES = 512 * 1024
 export const FLEET_MAX_ACCOUNTS = 256
 export const fleetQuotaPath = (base: string) => `${base}/codeforge/usage/fleet-quota.json`
 
-export type FleetWin = { pct: number; resetsAt: number }
+/** `reset`: the window's reset time has passed; its pct is not current and it is never warned on. */
+export type FleetWin = { pct: number; resetsAt: number; reset: boolean }
 export type FleetWeekly = FleetWin & { warn: 'waste' | 'short' | null; exhaustAt: number | null }
 export type FleetState = 'ok' | 'stale' | 'expired' | 'no_source'
 export type FleetAccount = {
+  /** Internal key only: never drawn. */
   alias: string
+  /** What the tab shows: codeforge's display name (the operator's name, else the org short form). */
+  name: string
   /** `personal` or an org name; null when unknown. */
   org: string | null
+  /** The login email; null when unknown (the alias then names the row). */
+  email: string | null
   hosts: string[]
+  /** The hosts whose data lost the merge (an older, disagreeing capture); a subset of `hosts`. */
+  oldHosts: string[]
   observedAtMs: number | null
   state: FleetState
   weekly: FleetWeekly | null
@@ -37,19 +45,22 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const onlyKeys = (o: Record<string, unknown>, keys: string[]) => Object.keys(o).every(k => keys.includes(k))
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
 const isPct = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1.5
+// the login email, the same rule as codeforge's `valid_email` (and the summary contract): 3..=254, one `@` with text both sides, no space or control char
+const isEmail = (v: unknown): v is string => typeof v === 'string' && /^(?=.{3,254}$)[^@\s\u0000-\u001f\u007f-\u009f\uFEFF]+@[^@\s\u0000-\u001f\u007f-\u009f\uFEFF]+$/u.test(v)
 // printable, bounded: a label that reaches the screen
 const isLabel = (v: unknown): v is string => typeof v === 'string' && /^[^\u0000-\u001f\u007f]{1,64}$/.test(v)
 
 function win(v: unknown): FleetWin | null | undefined {
   if (v === null) return null
-  if (!isObj(v) || !onlyKeys(v, ['pct', 'resets_at']) || !isPct(v.pct) || !isInt(v.resets_at)) return undefined
-  return { pct: v.pct, resetsAt: v.resets_at }
+  if (!isObj(v) || !onlyKeys(v, ['pct', 'resets_at', 'reset']) || !isPct(v.pct) || !isInt(v.resets_at)) return undefined
+  if (v.reset !== undefined && typeof v.reset !== 'boolean') return undefined
+  return { pct: v.pct, resetsAt: v.resets_at, reset: v.reset === true }
 }
 
 function weekly(v: unknown): FleetWeekly | null | undefined {
   if (v === null) return null
-  if (!isObj(v) || !onlyKeys(v, ['pct', 'resets_at', 'projected', 'warn', 'exhaust_at'])) return undefined
-  const w = win({ pct: v.pct, resets_at: v.resets_at })
+  if (!isObj(v) || !onlyKeys(v, ['pct', 'resets_at', 'projected', 'warn', 'exhaust_at', 'reset'])) return undefined
+  const w = win({ pct: v.pct, resets_at: v.resets_at, reset: v.reset })
   if (!w) return undefined
   if (v.projected !== null && !(typeof v.projected === 'number' && Number.isFinite(v.projected) && v.projected >= 0)) return undefined
   if (v.warn !== null && v.warn !== 'waste' && v.warn !== 'short') return undefined
@@ -73,17 +84,27 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
   if (!Array.isArray(raw.accounts) || raw.accounts.length > FLEET_MAX_ACCOUNTS) return BAD
   const accounts: FleetAccount[] = []
   for (const a of raw.accounts as unknown[]) {
-    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org'])) return BAD
+    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name'])) return BAD
+    if (a.name !== undefined && !isLabel(a.name)) return BAD
     if (a.org !== undefined && a.org !== null && !isLabel(a.org)) return BAD
+    if (a.email !== undefined && a.email !== null && !isEmail(a.email)) return BAD
     if (!isLabel(a.alias) || !isLabel(a.provider)) return BAD
     if (!Array.isArray(a.hosts) || a.hosts.length > 64 || !a.hosts.every(isLabel)) return BAD
+    if (a.old_hosts !== undefined && (!Array.isArray(a.old_hosts) || a.old_hosts.length > 64 || !a.old_hosts.every(isLabel) || !a.old_hosts.every(h => (a.hosts as string[]).includes(h as string)))) return BAD
     if (a.observed_at_ms !== null && !isInt(a.observed_at_ms)) return BAD
     if (a.age_s !== null && !isInt(a.age_s)) return BAD
     if (a.state !== 'ok' && a.state !== 'stale' && a.state !== 'expired' && a.state !== 'no_source') return BAD
     const w = weekly(a.weekly)
     const f = win(a.five_hour)
     if (w === undefined || f === undefined) return BAD
-    accounts.push({ alias: a.alias, org: typeof a.org === 'string' ? a.org : null, hosts: a.hosts as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
+    // a writer from before `name`: the email, else the org, else a chosen (non-hash) alias; an
+    // `acct-` hash with none of these is an identity from before the login-derived alias: not shown
+    const name = typeof a.name === 'string' ? a.name
+      : typeof a.email === 'string' ? a.email
+      : typeof a.org === 'string' ? a.org
+      : a.alias.startsWith('acct-') ? null : a.alias
+    if (name === null) continue
+    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
   }
   return {
     status: 'ok',
@@ -98,6 +119,8 @@ const seg = (text: string, role?: QSeg['role'], color?: string): QSeg => ({ text
 const width = (l: QLine) => l.reduce((n, s) => n + displayWidth(s.text), 0)
 const pctText = (p: number) => `${Math.round(p * 100)}%`
 const SEP = ' · '
+/** The widest the name column (name · email) may be; a narrow pane leaves it less, so the numbers stay on the line. */
+const NAME_MAX = 40
 
 /** The widest form that fits; when none does, the last (shortest) cut to `cols` with `…`. */
 function fit(forms: QLine[], cols: number): QLine {
@@ -118,13 +141,13 @@ function fit(forms: QLine[], cols: number): QLine {
   return out
 }
 
-/** The alias, then the org (`personal` shown as 個人 / personal) when known. */
-const label = (a: FleetAccount, tr: T) => (a.org === null ? a.alias : `${a.alias} ${a.org === 'personal' ? tr('fleetPersonal') : a.org}`)
+/** The display name, then the email when known; never the internal alias. */
+const label = (a: FleetAccount, _tr: T) => (a.email === null || a.email === a.name ? a.name : `${a.name} · ${a.email}`)
 
 function warnLine(a: FleetAccount, useTarget: number, cols: number, tr: T, now: number): QLine | null {
   const w = a.weekly
-  if (w === null || w.warn === null) return null
-  const head: QLine = [seg(tr(w.warn === 'waste' ? 'fleetWaste' : 'fleetShort'), 'bold', 'warning'), seg(SEP, 'dim'), seg(label(a, tr), 'bold'), seg(SEP, 'dim'), seg(`${tr('quotaWWeekly')} ${pctText(w.pct)}`)]
+  if (w === null || w.reset || w.warn === null) return null
+  const head: QLine = [seg(tr(w.warn === 'waste' ? 'fleetWaste' : 'fleetShort'), 'bold', 'warning'), seg(SEP, 'dim'), seg(clipCells(label(a, tr), Math.min(NAME_MAX, Math.max(10, cols - 26))), 'bold'), seg(SEP, 'dim'), seg(`${tr('quotaWWeekly')} ${pctText(w.pct)}`)]
   const runout: QLine = w.warn === 'short' && w.exhaustAt !== null ? [seg(SEP, 'dim'), seg(tr('fleetRunout', { t: countdown(w.exhaustAt * 1000, now) }))] : []
   const reset: QLine = [seg(SEP, 'dim'), seg(`${tr('fleetReset')} ◷ ${countdown(w.resetsAt * 1000, now)}`, 'dim')]
   const target: QLine = w.warn === 'waste' ? [seg(SEP, 'dim'), seg(tr('fleetTarget', { p: pctText(useTarget) }), 'dim')] : []
@@ -137,7 +160,9 @@ function accountLine(a: FleetAccount, aliasW: number, cols: number, tr: T, now: 
     a.observedAtMs !== null && (now - a.observedAtMs) / 1000 > AGE_SHOW_S
       ? [seg('  ' + tr('quotaAge', { t: countdown(now + (now - a.observedAtMs), now) }), 'dim')]
       : []
-  const hosts: QLine = a.hosts.length > 0 ? [seg('  ' + a.hosts.join(','), 'dim')] : []
+  // the chosen hosts first, then the old ones with the marker
+  const shown = [...a.hosts.filter(h => !a.oldHosts.includes(h)), ...a.hosts.filter(h => a.oldHosts.includes(h)).map(h => tr('fleetOld', { h }))]
+  const hosts: QLine = shown.length > 0 ? [seg('  ' + shown.join(','), 'dim')] : []
   const tight = (p: number): QLine => (isTight(p) ? [seg(' ' + tr('quotaTight'), 'bold', 'warning')] : [])
   const word = (id: 'fleetNoSource' | 'fleetExpired' | 'fleetStale'): QLine => [seg(tr(id), 'idle')]
   if (a.state !== 'ok') {
@@ -146,9 +171,10 @@ function accountLine(a: FleetAccount, aliasW: number, cols: number, tr: T, now: 
   }
   const wk = a.weekly
   const five = a.fiveHour
-  const W: QLine = wk === null ? [] : [seg(`${tr('quotaWWeekly')} ${pctText(wk.pct)}`), ...tight(wk.pct)]
-  const R: QLine = wk === null ? [] : [seg(` ◷ ${countdown(wk.resetsAt * 1000, now)}`, 'dim')]
-  const F: QLine = five === null ? [] : [seg((wk === null ? '' : '  ') + `${tr('quotaW5h')} ${pctText(five.pct)}`), ...tight(five.pct)]
+  // a window past its reset says so instead of its old pct
+  const W: QLine = wk === null ? [] : wk.reset ? [seg(`${tr('quotaWWeekly')} ${tr('fleetWinReset')}`, 'idle')] : [seg(`${tr('quotaWWeekly')} ${pctText(wk.pct)}`), ...tight(wk.pct)]
+  const R: QLine = wk === null || wk.reset ? [] : [seg(` ◷ ${countdown(wk.resetsAt * 1000, now)}`, 'dim')]
+  const F: QLine = five === null ? [] : [seg((wk === null ? '' : '  ') + `${tr('quotaW5h')} ${five.reset ? tr('fleetWinReset') : pctText(five.pct)}`, five.reset ? 'idle' : undefined), ...(five.reset ? [] : tight(five.pct))]
   // the widest form first; a field is dropped whole: hosts, the age, the 5h window, then the countdown
   return fit(
     [
@@ -170,7 +196,7 @@ export function fleetLines(view: FleetQuotaView, cols: number, tr: T, now: numbe
   if (warns.length === 0) out.push([seg(clipCells(tr('fleetNoWarn'), cols), 'dim')])
   else out.push(...warns)
   out.push([seg(' ')])
-  const aliasW = Math.min(28, Math.max(0, ...view.accounts.map(a => displayWidth(label(a, tr)))))
+  const aliasW = Math.min(NAME_MAX, Math.max(10, cols - 16), Math.max(0, ...view.accounts.map(a => displayWidth(label(a, tr)))))
   for (const a of view.accounts) out.push(accountLine(a, aliasW, cols, tr, now))
   if (view.skipped > 0) out.push([seg(clipCells('  ' + tr('fleetSkipped', { n: view.skipped }), cols), 'dim')])
   return out

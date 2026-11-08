@@ -25,6 +25,11 @@ pub enum Action {
         out: Option<PathBuf>,
         use_target: f64,
     },
+    AliasList,
+    AliasSet {
+        who: String,
+        name: String,
+    },
 }
 
 fn now_ms() -> i64 {
@@ -85,6 +90,7 @@ fn collect_and_summarize(
         &fresh,
         &summary::host_alias(&summary::hostname()),
         now,
+        &crate::usage::names::load_default(),
     );
     summary::validate(&v)?;
     let sdir = summary::summary_dir(&live_base);
@@ -125,7 +131,13 @@ fn write_fleet_quota(
         return Ok(None);
     };
     let (files, skipped) = fq::load(std::path::Path::new(d))?;
-    let f = fq::merge(&files, skipped, now, fq::DEFAULT_USE_TARGET);
+    let f = fq::merge(
+        &files,
+        skipped,
+        now,
+        fq::DEFAULT_USE_TARGET,
+        &crate::usage::names::load_default(),
+    );
     let v = fq::to_json(&f, now);
     crate::live::write_live_json(out_dir, FLEET_FILE, &v)
         .map_err(|e| anyhow::anyhow!("無法寫入 {FLEET_FILE}（{:?}）", e.kind()))?;
@@ -190,6 +202,8 @@ pub fn run(action: Action) -> Result<()> {
             Ok(())
         }
         Action::Accounts { json } => accounts(json),
+        Action::AliasList => alias_list(),
+        Action::AliasSet { who, name } => alias_set(&who, &name),
         Action::Fleet {
             dir,
             json,
@@ -263,8 +277,15 @@ pub fn run(action: Action) -> Result<()> {
                     "API 等值"
                 ])
             );
+            // by account: the display name, never the `acct-` key (--json keeps the key)
+            let shown = if by == "account" {
+                account_names(agg.keys().map(|(_, k)| k.as_str()))
+            } else {
+                BTreeMap::new()
+            };
             let mut all = Vec::new();
             for ((day, key), (t, req, costs)) in &agg {
+                let key = shown.get(key).map_or(key.as_str(), String::as_str);
                 let (cost, unpriced) = price::total(costs.iter().copied());
                 let cost_s = match (cost, unpriced) {
                     (Some(_), n) if n > 0 => format!("≥{}", money(cost)),
@@ -320,7 +341,13 @@ fn fleet(
     anyhow::ensure!(target > 0.0 && target <= 1.0, "--use-target 要在 (0, 1]");
     let now = now_ms();
     let (files, skipped) = fq::load(dir)?;
-    let f = fq::merge(&files, skipped, now, target);
+    let f = fq::merge(
+        &files,
+        skipped,
+        now,
+        target,
+        &crate::usage::names::load_default(),
+    );
     let v = fq::to_json(&f, now);
     if let Some(p) = out {
         fq::write_atomic(p, &v)?;
@@ -335,6 +362,118 @@ fn fleet(
         "{}",
         fq::text(&f, accounts_width(), now, &qv::Tr::current(), color)
     );
+    Ok(())
+}
+
+/// Every account this host knows: its local quota snapshots, then the rows of the fleet table
+/// next to `summary.json`: (key, org, email), one per key (the first that has an email wins).
+fn known_accounts() -> Vec<(String, Option<String>, Option<String>)> {
+    let (live_base, _) = crate::live::resolve_live_base();
+    let mut out: Vec<(String, Option<String>, Option<String>)> =
+        quota::read_all(&quota::quota_dir(&live_base))
+            .into_iter()
+            .map(|s| (s.alias, s.org, s.email))
+            .collect();
+    let fleet = summary::summary_dir(&live_base).join(FLEET_FILE);
+    if let Some(v) = std::fs::read(&fleet)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+    {
+        let s = |a: &serde_json::Value, k: &str| a[k].as_str().map(str::to_string);
+        for a in v["accounts"].as_array().into_iter().flatten() {
+            if let Some(k) = s(a, "alias") {
+                out.push((k, s(a, "org"), s(a, "email")));
+            }
+        }
+    }
+    let mut seen: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut merged: Vec<(String, Option<String>, Option<String>)> = Vec::new();
+    for (k, org, email) in out {
+        match seen.get(&k) {
+            Some(&i) => {
+                let m = &mut merged[i];
+                m.1 = m.1.take().or(org);
+                m.2 = m.2.take().or(email);
+            }
+            None => {
+                seen.insert(k.clone(), merged.len());
+                merged.push((k, org, email));
+            }
+        }
+    }
+    merged
+}
+
+/// Each of `keys` → the name it is shown by: the accounts this host knows, plus any other key
+/// (a codex account shows as itself); an `acct-` key nobody can name shows as 未命名帳號.
+fn account_names<'a>(keys: impl Iterator<Item = &'a str>) -> BTreeMap<String, String> {
+    use crate::usage::names;
+    let mut known = known_accounts();
+    for k in keys {
+        if !known.iter().any(|(kk, _, _)| kk == k) {
+            known.push((k.to_string(), None, None));
+        }
+    }
+    let who = who_of(&known);
+    known
+        .iter()
+        .zip(names::assign(&who, &names::load_default()))
+        .map(|((k, _, _), n)| (k.clone(), n.unwrap_or_else(|| "未命名帳號".into())))
+        .collect()
+}
+
+fn who_of(a: &[(String, Option<String>, Option<String>)]) -> Vec<crate::usage::names::Who<'_>> {
+    a.iter()
+        .map(|(k, o, e)| crate::usage::names::Who {
+            key: k,
+            org: o.as_deref(),
+            email: e.as_deref(),
+        })
+        .collect()
+}
+
+fn alias_list() -> Result<()> {
+    use crate::usage::names;
+    let names = names::load_default();
+    let known = known_accounts();
+    let who = who_of(&known);
+    for ((k, org, email), n) in known.iter().zip(names::assign(&who, &names)) {
+        let Some(n) = n else { continue };
+        let set = if names.0.contains_key(k) {
+            "（自訂）"
+        } else {
+            ""
+        };
+        println!(
+            "{n}{set}\t{}\t{}",
+            org.as_deref().unwrap_or("—"),
+            email.as_deref().unwrap_or("—")
+        );
+    }
+    Ok(())
+}
+
+fn alias_set(who: &str, name: &str) -> Result<()> {
+    use crate::usage::names;
+    anyhow::ensure!(
+        names::valid_name(name),
+        "名字最寬 24 欄（中文字算 2 欄），不能有 @、換行或其他控制字元，也不能以 acct- 開頭"
+    );
+    let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
+    let set = names::load(&path);
+    let known = known_accounts();
+    let who_list = who_of(&known);
+    let key = names::resolve(&who_list, &set, who)?;
+    let shown = names::assign(&who_list, &set);
+    anyhow::ensure!(
+        !known
+            .iter()
+            .zip(&shown)
+            .any(|((k, _, _), n)| *k != key && n.as_deref() == Some(name)),
+        "「{name}」已經是另一個帳號的名字"
+    );
+    names::set(&path, &key, name)?;
+    println!("已設定：{who} → {name}");
     Ok(())
 }
 
