@@ -98,6 +98,16 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   `no_source`、無視窗、無 `source_note`、`hosts` 空、`note` 為備註文字；別的帳號已顯示同名時帳號優先、這列丟棄。
   文字表與分頁照一般 no_source 列畫（附備註）；`usage alias list` 以「（無資料）」列出。這列不算帳號：
   `alias`／`note` 解析名字時不把它當已知帳號。
+- **operator 每週重置規則（`[resets]`，低可信度）**：同一個 `accounts.toml` 的選填 `[resets]` 表，鍵同 `[notes]`
+  （provider 標籤、帳號鍵或 `--new` 名字），值是規則 `<dow>@<HH:MM><±HH:MM>`：`dow` 為小寫 `mon tue wed thu fri sat sun`，
+  時間 24 小時制，**必須寫明 UTC 偏移**，例如 `fri@17:00+08:00` = 每週五 17:00（UTC+8）。不合規的條目載入時略過（同備註）。
+  `usage fleet` 對符合規則的列（帳號鍵優先於 provider，同備註）加選填 `note_reset_rule`（規則字串）與 `note_resets_at`
+  （下一次發生時間，unix 秒，**嚴格晚於現在**；剛好在該時刻算下週）。兩個鍵同進同出。這是 operator 手填的事實，
+  **低可信度**：有真實配額視窗的列照舊用真實的 `resets_at`，規則只是額外資訊，排程端不該拿它蓋過真實視窗。
+  文字表與 forge-stats 分頁在備註後面淡色加 `◷ 2d3h`（與其他倒數同格式）；寬度不夠時先截短備註（加 `…`），倒數保留；
+  沒有備註時只畫倒數。`codeforge usage note set [--new] <target> <文字> [--reset-weekly <規則>]` 同時存兩者（一次原子寫入）；
+  `usage note reset <target> <規則>` 只設規則（target 須已有備註，或是已知帳號／provider）；`usage note clear <target>`
+  同時清備註與規則；`usage alias list` 的備註區列出規則。規則格式不合時報繁體中文錯誤並附範例。檔案其餘內容原樣保留，0600、原子寫入。
 - **statusline 其他帳號段**：只看還沒重置的週視窗。週 ≥ 95% 或「會不夠（估）」→「⚠ 名字 週 97% 3d1h 後重置」；
   「會浪費」→「名字 週 NN% … 後重置 會浪費」；其餘帳號不出現，沒有名字的帳號不出現。放不下就只留前面的段。
   （c4140 曾顯示 97%，原因是 statusline 讀到修正身分前的舊合併快照；gpu-lead 實測 /login 後新舊 session 的數字相同，
@@ -224,11 +234,11 @@ forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接
 - **JSON**（`--json` 印出；`--out <file>` 以暫存檔＋rename 原子寫入，0600，可與文字表並用）：
   `{"schema":"codeforge.fleet-quota/1","generated_at_ms":…,"use_target":0.85,"skipped":{},"accounts":[…]}`，每筆
   `{alias, name, org|null, email|null, provider("claude"|"codex"|"kimi"|…), hosts[], old_hosts[]（hosts 的子集，排序）, observed_at_ms|null, age_s|null, state, weekly, five_hour}`，
-  另有兩個選填鍵：`source_note`（只在 `no_source` 列，`"web_only"|"needs_token"|"no_window"`）與 `note`（operator 備註，見上）；
+  另有兩個選填鍵：`source_note`（只在 `no_source` 列，`"web_only"|"needs_token"|"no_window"`）、`note`（operator 備註，見上），以及成對的 `note_resets_at`／`note_reset_rule`（operator 每週重置規則，見上；低可信度）；
   `state`：`ok`（有視窗可畫）、`stale`（6 小時內有觀察但視窗全已重置）、`expired`（最後觀察超過 6 小時）、`no_source`；
   `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null, reset}`（`resets_at`、`exhaust_at`
   為 unix 秒；`reset` 為 true 時視窗已重置，`pct` 不是現值），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at, reset}|null`。
-  forge-stats 解析器對 `old_hosts`、`reset`、`source_note`、`note` 容忍缺席（舊檔：空、false、無），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
+  forge-stats 解析器對 `old_hosts`、`reset`、`source_note`、`note`、`note_resets_at`／`note_reset_rule` 容忍缺席（舊檔：空、false、無），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
   讀者（forge-stats 分頁、fleet.console/1 的配額區）直接讀，不重算。
 
 **寫檔（`usage collect` 順手維護）**：環境變數 `CODEFORGE_FLEET_USAGE_DIR` 有設且非空時，`codeforge usage collect`
@@ -252,7 +262,9 @@ codeforge usage alias list          # 帳號與顯示名（本機）
 codeforge usage alias set <email或顯示名> <新名字>
 codeforge usage note set <provider|名字> <文字>   # 本機備註（最多 40 欄），顯示在全帳號表列尾
 codeforge usage note set --new <名字> <文字>      # 沒有任何資料的帳號：以名字當鍵，`usage fleet` 多一列 no_source
-codeforge usage note clear <provider|名字>
+codeforge usage note set <provider|名字> <文字> --reset-weekly fri@17:00+08:00  # 另存每週重置規則，`usage fleet` 算出 note_resets_at
+codeforge usage note reset <provider|名字> <規則>   # 只設規則
+codeforge usage note clear <provider|名字>          # 備註與規則一起清
 /forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```
 

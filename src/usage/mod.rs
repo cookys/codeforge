@@ -13,6 +13,7 @@ pub mod quota;
 pub mod quota_mirror;
 pub mod quota_mirror_read;
 pub mod quota_view;
+pub mod reset_rule;
 pub mod store;
 pub mod summary;
 
