@@ -417,6 +417,7 @@ codeforge usage accounts                # per-account quota from autopilot's mir
 codeforge usage alias list              # accounts and their display names (local only)
 codeforge usage alias set <email|name> <new>  # name an account (~/.config/codeforge/accounts.toml, 0600)
 codeforge usage note set <provider|name> <text>  # a local note (≤ 40 cells) shown dim at the end of the row in `usage fleet`
+codeforge usage note set --new <name> <text>   # an account with no data at all: its own no_source row in `usage fleet`
 codeforge usage note clear <provider|name>
 ```
 

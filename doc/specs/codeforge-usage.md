@@ -91,6 +91,13 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   備註**永遠不進** `summary.json` 與 `usage push`（summary 契約沒有這個鍵）。
   `codeforge usage note set <provider|名字> <文字>`、`usage note clear <provider|名字>` 設定／清除（provider 標籤原樣當鍵，
   否則照 `alias set` 的規則認帳號；只改一條、其餘原樣，0600、原子寫入）；`usage alias list` 一併列出備註。不寫死任何事實。
+  **沒有任何資料的帳號**（例如只存在於沒人能動的正式主機上的 Claude 帳號）：`usage note set --new <名字> <文字>`，
+  以名字本身當鍵。名字須過 `valid_name`（不能是 email、`acct-`／`codex-` 鍵），且不能是 provider 標籤、已有的備註鍵、
+  已知帳號的鍵或顯示名（錯誤訊息請使用者去掉 `--new`）；不帶 `--new` 的 `note set`／`note clear <名字>` 認得這種條目。
+  `usage fleet` 對「鍵不對到任何列、不是 provider 標籤、且是合法名字」的備註多加一列：alias = name = 鍵、provider `claude`、
+  `no_source`、無視窗、無 `source_note`、`hosts` 空、`note` 為備註文字；別的帳號已顯示同名時帳號優先、這列丟棄。
+  文字表與分頁照一般 no_source 列畫（附備註）；`usage alias list` 以「（無資料）」列出。這列不算帳號：
+  `alias`／`note` 解析名字時不把它當已知帳號。
 - **statusline 其他帳號段**：只看還沒重置的週視窗。週 ≥ 95% 或「會不夠（估）」→「⚠ 名字 週 97% 3d1h 後重置」；
   「會浪費」→「名字 週 NN% … 後重置 會浪費」；其餘帳號不出現，沒有名字的帳號不出現。放不下就只留前面的段。
   （c4140 曾顯示 97%，原因是 statusline 讀到修正身分前的舊合併快照；gpu-lead 實測 /login 後新舊 session 的數字相同，
@@ -244,6 +251,7 @@ codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  #
 codeforge usage alias list          # 帳號與顯示名（本機）
 codeforge usage alias set <email或顯示名> <新名字>
 codeforge usage note set <provider|名字> <文字>   # 本機備註（最多 40 欄），顯示在全帳號表列尾
+codeforge usage note set --new <名字> <文字>      # 沒有任何資料的帳號：以名字當鍵，`usage fleet` 多一列 no_source
 codeforge usage note clear <provider|名字>
 /forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```

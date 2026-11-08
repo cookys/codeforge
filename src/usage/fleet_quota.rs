@@ -454,11 +454,52 @@ pub fn merge(
     }
 }
 
-/// Attach the operator's notes: an account key's note, else its provider's.
+/// `claude` or a [`PROVIDERS`] name: a notes key that labels a provider, never an account.
+pub fn is_provider_label(s: &str) -> bool {
+    s == "claude" || PROVIDERS.iter().any(|(p, _)| *p == s)
+}
+
+/// The notes of accounts that have no data (`usage note set --new`): a key that is a valid
+/// display name, not a provider label, and not `taken` by an account.
+pub fn note_only<'a>(
+    notes: &'a super::names::Notes,
+    taken: impl Fn(&str) -> bool + 'a,
+) -> impl Iterator<Item = (&'a str, &'a str)> {
+    notes
+        .0
+        .iter()
+        .filter(move |(k, _)| !is_provider_label(k) && super::names::valid_name(k) && !taken(k))
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+}
+
+/// Attach the operator's notes: an account key's note, else its provider's. A note whose key
+/// matches no row adds a `no_source` Claude row named by the key; when another account already
+/// shows that name, that account wins and the note is dropped.
 pub fn attach_notes(f: &mut Fleet, notes: &super::names::Notes) {
     for r in &mut f.rows {
         r.note = notes.for_row(&r.alias, &r.provider).map(str::to_string);
     }
+    let extra: Vec<Row> = note_only(notes, |k| {
+        f.rows.iter().any(|r| r.alias == k || r.name == k)
+    })
+    .map(|(k, text)| Row {
+        alias: k.to_string(),
+        name: k.to_string(),
+        org: None,
+        email: None,
+        provider: "claude".to_string(),
+        hosts: Vec::new(),
+        old_hosts: Vec::new(),
+        observed_at_ms: None,
+        state: State::NoSource,
+        weekly: None,
+        five_hour: None,
+        five_reset: false,
+        source_note: None,
+        note: Some(text.to_string()),
+    })
+    .collect();
+    f.rows.extend(extra);
 }
 
 fn warn_name(w: Option<Warn>) -> Value {

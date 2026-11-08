@@ -322,6 +322,28 @@ test('a long CJK note is cut with … to the width; the numbers and the word sta
   }
 })
 
+// a note row for a Claude account with no data (`usage note set --new`): plain-name alias, no hosts, no reason, a note
+const NOTE_ROW = () =>
+  fleet([
+    acct({ alias: 'acct-11111111', name: 'cookys', weekly: wk({ pct: 0.2 }) }),
+    acct({ alias: 'twgame', provider: 'claude', name: 'twgame', state: 'no_source', hosts: [], observed_at_ms: null, age_s: null, note: '週四重置' }),
+  ])
+
+test('a no-data note row parses and is drawn with its note', async ($, on) => {
+  const v = parseFleetQuota(JSON.stringify(NOTE_ROW()))
+  if (v.status !== 'ok') throw new Error('not ok')
+  expect(v.accounts.map(a => [a.name, a.state, a.hosts, a.sourceNote, a.note])).toEqual([
+    ['cookys', 'ok', ['gpu-a'], null, null],
+    ['twgame', 'no_source', [], null, '週四重置'],
+  ])
+  world(on, { fleet: JSON.stringify(NOTE_ROW()), zh: true })
+  const ui = await open($, 102)
+  await ui.press({ key: 'tab-fleet' })
+  const rows = rowsOf(await ui.drawn())
+  expect(rows.some(r => /^twgame +/.test(r) && r.includes('無來源') && r.endsWith('  週四重置'))).toBe(true)
+  await ui.unmount()
+})
+
 test('parseFleetQuota reads source_note and note; an old file without them still parses; bad ones are refused', () => {
   const v = parseFleetQuota(JSON.stringify(NOTED()))
   if (v.status !== 'ok') throw new Error('not ok')
