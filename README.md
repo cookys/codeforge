@@ -414,11 +414,14 @@ codeforge usage                         # collect, then the last 7 days by model
 codeforge usage --days 3 --by project   # --by model | project | account; --json
 codeforge usage push                    # validate summary.json and `fleet upload` it; prints the blob sha
 codeforge usage accounts                # per-account quota from autopilot's mirror (read-only; --json)
+codeforge usage alias list              # accounts and their display names (local only)
+codeforge usage alias set <email|name> <new>  # name an account (~/.config/codeforge/accounts.toml, 0600)
 ```
 
-- The statusline usage row shows this session's 5h / 7d / ctx bars, then every other account seen in the
-  last 6 h as `alias NN% countdown`. Each statusline run writes its account's quota snapshot; the alias is
-  `AUTOPILOT_ACCOUNT` when set (autopilot's account-pinned dispatch), else a hash of the config dir.
+- The statusline usage row shows this session's 5h / 7d / ctx bars. Another account appears only when its
+  week will fall short (or is at 95 % or more) or will waste, by display name: `⚠ stranity week 97% resets in 3d1h`.
+  The display name is the one set with `usage alias set`, else the org's short form, else the email's local part;
+  the internal `acct-…` key is never shown, and an account with none of these is not shown at all.
 - `codeforge usage accounts`, the statusline and forge-stats read autopilot's per-account quota mirror
   (`<live_dir>/quota/`) when it exists; until then they show exactly what they show today.
 - Collection needs no hook: the statusline starts a background `codeforge usage collect --quiet` at most

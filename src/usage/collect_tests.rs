@@ -433,6 +433,7 @@ fn a_root_takes_the_alias_of_the_snapshot_naming_it() {
     let snap = |alias: &str, root: Option<&str>, at: i64| Snapshot {
         alias: alias.into(),
         org: None,
+        email: None,
         root: root.map(String::from),
         written_at_ms: at,
         five_hour: None,
@@ -633,6 +634,7 @@ fn counts_off_the_bound_are_skipped_and_an_overflowing_bucket_rolls_the_file_bac
         &[],
         "host-1a2b3c4d",
         NOW,
+        &Default::default(),
     ))
     .unwrap();
     // a bucket one add away from i64::MAX: the add is refused, the file's whole transaction rolls back
@@ -667,6 +669,7 @@ fn counts_off_the_bound_are_skipped_and_an_overflowing_bucket_rolls_the_file_bac
         &[],
         "host-1a2b3c4d",
         NOW,
+        &Default::default(),
     );
     assert_eq!(
         v["days"][0]["input"],

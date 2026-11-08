@@ -19,7 +19,7 @@ const summary = (o: Record<string, unknown> = {}) => ({
   generated_at_ms: Date.now() - 5 * 60_000,
   host: 'host-1a2b3c4d',
   prices_as_of: '2026-10-06',
-  accounts: [{ alias: 'acct-a', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: Math.floor(Date.now() / 1000) + 7800 }, seven_day: null }],
+  accounts: [{ alias: 'smith1', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: Math.floor(Date.now() / 1000) + 7800 }, seven_day: null }],
   days: [
     row({ day: new Date().toISOString().slice(0, 10) }),
     row({ day: new Date().toISOString().slice(0, 10), model: 'gpt-6.1-sol', source: 'codex', account: 'codex-1a2b3c4d', cost_usd: null, requests: 9 }),
@@ -48,9 +48,9 @@ test('parseUsage takes today, sums per model, priced first, and refuses each con
     { ...summary(), days: [{ day: DAY }] },
     // as strict as codeforge's summary::validate (G36 r1 D)
     { ...summary(), extra: 1 },
-    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: null, seven_day: null, email: 'x' }] },
-    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 1, note: 'x' }, seven_day: null }] },
-    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: { pct: 1.6, resets_at: 1 }, seven_day: null }] },
+    { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: null, seven_day: null, email: 'x' }] },
+    { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 1, note: 'x' }, seven_day: null }] },
+    { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 1.6, resets_at: 1 }, seven_day: null }] },
     { ...summary(), days: [{ ...row({}), project: 'repo' }] },
     { ...summary(), host: 'my-laptop' },
     { ...summary(), prices_as_of: 'yesterday' },
@@ -62,8 +62,8 @@ test('parseUsage takes today, sums per model, priced first, and refuses each con
     { ...summary(), days: [row({ input: 1e100 })] },
     { ...summary(), days: [row({ requests: 2 ** 53 })] },
     { ...summary(), generated_at_ms: 1e100 },
-    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 1e100 }, seven_day: null }] },
-    { ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: -1 }, seven_day: null }] },
+    { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 1e100 }, seven_day: null }] },
+    { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: -1 }, seven_day: null }] },
   ]
   for (const b of breaks) expect(parseUsage(JSON.stringify(b), NOW).status).toBe('bad')
   expect(parseUsage('{', NOW).status).toBe('bad')
@@ -126,10 +126,10 @@ test('the pane has a tab strip and the usage tab shows accounts and today\'s mod
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.findAll({ type: 'Button' })).length >= 2).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  expect(await ui.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
   await ui.press({ key: 'tab-usage' })
   expect((await ui.find({ type: 'Text', text: /^Usage$/ }))?.props.bold).toBe(true)
-  expect((await ui.find({ type: 'Text', text: /acct-a/ })) !== undefined).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /smith1/ })) !== undefined).toBe(true)
   expect((await ui.find({ type: 'Text', text: /^30%$/ })) !== undefined).toBe(true)
   expect((await ui.find({ type: 'Text', text: /^ 2h\d+m$/ })) !== undefined).toBe(true)
   expect((await ui.find({ type: 'Text', text: /claude-opus-5-5/ })) !== undefined).toBe(true)
@@ -141,8 +141,31 @@ test('the pane has a tab strip and the usage tab shows accounts and today\'s mod
   expect(await ui.find({ type: 'Text', text: /to refresh/ })).toBe(undefined)
   // and back to the pet
   await ui.press({ key: 'tab-pet' })
-  expect(await ui.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  expect(await ui.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
   await ui.unmount()
+})
+
+test('parseUsage takes an optional account email by the same rule as the writer', () => {
+  const acc = (email: unknown) => ({ ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: null, seven_day: null, email }] })
+  expect(parseUsage(JSON.stringify(acc('me@example.com')), NOW).status).toBe('ok')
+  for (const bad of ['nobody', 'a b@example.com', 'a@@b', '@b', 'a@', '', 'x'.repeat(250) + '@example.com', 5, null]) expect(parseUsage(JSON.stringify(acc(bad)), NOW).status).toBe('bad')
+})
+
+test('parseUsage draws the account by name; an acct- hash with no name, email or org is not drawn; a bad name refuses the summary', () => {
+  const one = (a: Record<string, unknown>) => ({ ...summary(), accounts: [{ alias: 'acct-1a2b3c4d', written_at_ms: 1, five_hour: null, seven_day: null, ...a }] })
+  const names = (a: Record<string, unknown>) => {
+    const v = parseUsage(JSON.stringify(one(a)), NOW)
+    if (v.status !== 'ok') throw new Error('not ok')
+    return v.accounts.map(x => x.name)
+  }
+  expect(names({ name: 'stranity', email: 'me@example.com', org: 'Stranity' })).toEqual(['stranity'])
+  expect(names({ name: '公司帳號' })).toEqual(['公司帳號'])
+  // a writer from before `name`
+  expect(names({ email: 'me@example.com', org: 'Stranity' })).toEqual(['me@example.com'])
+  expect(names({ org: 'Stranity' })).toEqual(['Stranity'])
+  expect(names({})).toEqual([])
+  expect(names({ alias: 'work' })).toEqual(['work'])
+  for (const bad of ['acct-1a2b3c4d', 'a@b', '', ' x', 'a\tb', 'x'.repeat(25), '工'.repeat(13), '工作\uFEFF', 5, null]) expect(parseUsage(JSON.stringify(one({ name: bad })), NOW).status).toBe('bad')
 })
 
 test('a summary older than an hour names `codeforge usage` as the refresh', async ($, on) => {
@@ -164,7 +187,7 @@ test('a summary path that is a link is refused before reading', async ($, on) =>
   base(on, JSON.stringify(summary()), { isLink: true })
   const ui = await openUsage($)
   expect((await ui.find({ type: 'Text', text: /unreadable/ })) !== undefined).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  expect(await ui.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
   await ui.unmount()
 })
 
@@ -172,7 +195,7 @@ test('a summary larger than the bound is refused before reading', async ($, on) 
   base(on, JSON.stringify(summary()), { size: USAGE_MAX_BYTES + 1 })
   const ui = await openUsage($)
   expect((await ui.find({ type: 'Text', text: /unreadable/ })) !== undefined).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  expect(await ui.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
   await ui.unmount()
 })
 
@@ -181,11 +204,11 @@ test('`/forge-stats usage` opens the pane on the usage tab, `/forge-stats pet` b
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.command.run(cmd('usage'))
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Text', text: /acct-a/ })) !== undefined).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /smith1/ })) !== undefined).toBe(true)
   await $.command.run(cmd('pet'))
   await ui.unmount()
   const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await again.find({ type: 'Text', text: /acct-a/ })).toBe(undefined)
+  expect(await again.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
   await again.unmount()
 })
 
@@ -202,7 +225,7 @@ test('a narrow pane drops the requests column and keeps the model id and the tot
 })
 
 test('the account row drops countdowns, then 7d, as the pane narrows, and never cuts a field', async ($, on) => {
-  const both = summary({ accounts: [{ alias: 'acct-1a2b3c4d', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: Math.floor(Date.now() / 1000) + 7800 }, seven_day: { pct: 0.45, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 } }] })
+  const both = summary({ accounts: [{ alias: 'acct-1a2b3c4d', name: 'stranity·amy1', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: Math.floor(Date.now() / 1000) + 7800 }, seven_day: { pct: 0.45, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 } }] })
   base(on, JSON.stringify(both))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await $.command.run(cmd('usage'))
@@ -221,3 +244,12 @@ test('the account row drops countdowns, then 7d, as the pane narrows, and never 
   expect(await at(30)).toEqual({ reset: false, sevenDay: false, fiveHour: true })
 })
 
+
+test('parseUsage takes an optional window seen_at_ms: a uint, at most 10 min after generated_at_ms', () => {
+  const base = summary()
+  const gen = base.generated_at_ms
+  const acc = (seen: unknown) => ({ ...base, accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 5, seen_at_ms: seen }, seven_day: null }] })
+  expect(parseUsage(JSON.stringify(acc(gen)), NOW).status).toBe('ok')
+  expect(parseUsage(JSON.stringify(acc(gen + 600_000)), NOW).status).toBe('ok')
+  for (const bad of [gen + 600_001, -1, 1.5, 'x', null]) expect([bad, parseUsage(JSON.stringify(acc(bad)), NOW).status]).toEqual([bad, 'bad'])
+})

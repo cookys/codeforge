@@ -502,7 +502,7 @@ function usageLines(view: UsageView, cols: number, tr: T, now: number, quota: { 
       w === null
         ? [seg(`  ${label} `, 'dim'), seg(GLYPH.empty, 'dim')]
         : [seg(`  ${label} `, 'dim'), seg(`${Math.floor(w.pct * 100)}%`), ...(withReset ? [seg(' ' + countdown(w.resetsAtMs, now), 'dim')] : [])]
-    const name = seg('  ' + padRight(a.alias, KEY_W))
+    const name = seg('  ' + padRight(a.name, KEY_W))
     // the widest form that fits: both windows with countdowns, then without, then 5h alone; a field is dropped whole, never cut
     const forms: Line[] = [
       [name, ...win('5h', a.fiveHour, true), ...win('7d', a.sevenDay, true)],

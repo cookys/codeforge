@@ -34,7 +34,7 @@ export function sideAccounts(view: UsageView, mirror: readonly QEntry[] | null):
       const wins: SideWin[] = []
       if (a.fiveHour !== null) wins.push({ label: '5h', pct: a.fiveHour.pct, resetsAtMs: a.fiveHour.resetsAtMs })
       if (a.sevenDay !== null) wins.push({ label: '7d', pct: a.sevenDay.pct, resetsAtMs: a.sevenDay.resetsAtMs })
-      if (wins.length > 0) out.push({ alias: a.alias, wins })
+      if (wins.length > 0) out.push({ alias: a.name, wins })
     }
   }
   // the most constrained account first: that is the one the column shows
