@@ -384,6 +384,16 @@ pub fn write(dir: &Path, v: &Value) -> Result<PathBuf> {
     Ok(dir.join(FILE))
 }
 
+/// The summary with every account's `email` removed, or `None` when no account has one.
+/// A blob leaves the host, and the email stays on it (the local file and screen only).
+fn without_email(mut v: Value) -> Option<Vec<u8>> {
+    let mut hit = false;
+    for a in v["accounts"].as_array_mut()? {
+        hit |= a.as_object_mut().and_then(|o| o.remove("email")).is_some();
+    }
+    hit.then(|| serde_json::to_vec(&v).ok()).flatten()
+}
+
 /// Read the summary back, validate it, and upload exactly the validated bytes (copied to a
 /// private 0600 file) as `usage-summary.json`: the local path is never the uploaded name.
 /// Returns the blob sha the fleet printed.
@@ -394,6 +404,7 @@ pub fn push(dir: &Path, fleet_bin: &str) -> Result<String> {
     let v: Value = serde_json::from_slice(&bytes)
         .map_err(|_| anyhow::anyhow!("summary.json 不是合法 JSON"))?;
     validate(&v).context("summary.json 未通過檢查，拒絕上傳")?;
+    let bytes = without_email(v).unwrap_or(bytes);
     let mut tmp = tempfile::Builder::new()
         .prefix(".push.")
         .suffix(".json")
@@ -634,6 +645,24 @@ mod tests {
             std::fs::read(log.with_extension("bytes")).unwrap(),
             std::fs::read(&path).unwrap()
         );
+        // an account email never goes into the blob; the rest is uploaded unchanged
+        let mut with_email = good();
+        with_email["accounts"][0]["email"] = json!("someone@example.com");
+        validate(&with_email).unwrap();
+        crate::live::write_live_json(&dir, FILE, &with_email).unwrap();
+        push(&dir, fake.to_str().unwrap()).unwrap();
+        let sent: Value =
+            serde_json::from_slice(&std::fs::read(log.with_extension("bytes")).unwrap()).unwrap();
+        assert!(sent["accounts"][0].get("email").is_none(), "{sent}");
+        let mut expect = with_email.clone();
+        expect["accounts"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("email");
+        assert_eq!(sent, expect);
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("someone@example.com"));
         // an invalid summary on disk is refused before fleet runs
         std::fs::remove_file(&log).unwrap();
         let mut bad = good();
