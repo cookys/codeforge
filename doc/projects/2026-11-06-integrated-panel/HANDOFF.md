@@ -1,43 +1,54 @@
 ## 目標
-codeforge lane(team 帳號，地址用 fleet directory 查)有兩件工作：(A) O4 整合面板的 codeforge 側，交五級截圖後合併;(B) G40 真資料 preflight 腳本(PM go,S)。
+codeforge lane(team 帳號)的交接。O4 整合面板、G40 真資料檢查腳本、B34 和 statusline／install 的一串修正都已經合進 develop;這條線現在停車，剩下的工作全部在等外部條件。里程碑仍是 G40:用真的本機鏡像資料顯示配額。
 
 ## 現況
-- 2026-11-07 約 21:00Z,取代 2026-11-06 那份交接(舊 session e6514bd9,cookys 帳號)。
-- **(A) `feature/panel-side`**,worktree `~/projects/codeforge-wt-panel2`,tip f8c131c,已推，乾淨。03fba21 之後只有文件 commit:ccd3a44(契約 §1.3 panel_open_at_ms、§2 欄位與 reader 行為)、6cb6061(ux-v7 進 repo)、366b416＋7928759(ux-v4..v6 進 repo)、c4294d1＋f8c131c(用量／寵物分頁標成另案 backlog)。
-  - 驗證:check-all 10 步在 03fba21 全綠(team 帳號要加 PATH,見陷阱);forge-stats 171 pass。
-  - review:g1 已 finalize;g2 因 team 帳號沒有 codex 記成 aborted(seat_gap)。**下一次是 g3**。ledger 在 `~/.codeforge-backups/side-review-ledger/`(PM 從舊帳號傳過來的)。
-  - autopilot 的外殼：**已進 autopilot develop** c63987f2cd4d(Merge band;lane ab679f7bb500)。五級 × 四畫面截圖在 `/var/tmp/autopilot-band-shots/v7/`(index.md),我看過，沒有問題;交件前在真機重拍一次(重載 plugin)。
-- **(B) 已完成**:`feature/g40-real-data-preflight` 6146c80(已推，從 feature/panel-side 開的),worktree `~/projects/codeforge-wt-g40pre`。停車單 01M6T847PY 已回 done。要等 O4 合併之後，再請 PM 給這支的合併 go。
-- C1／D6:PM 已定案，對照頁和定案結論都在 `doc/specs/console-c1-d6-mapping.md`(這個分支)。之後 D6 owner 來要寵物定義時，從這份提供。
+- 寫於 2026-11-08,取代 11-07 那份(那份列的 worktree 和分支都已經刪掉了)。session 要重開(操作員卡 d-b7c4f225:autoCompactWindow 233000 和新版 plugin 生效)。
+- develop 是 835ecd9,已推，主 clone 乾淨，沒有其他 worktree,沒有在跑的背景工作。
+- 已合進 develop 的(每一支都有 PM go,審查都是 seat_gap,只有 claude-native 一席，codex 那一席欠著):
+  - 90bfa22:O4 side 欄(forge-stats `codeforge.panel/1` 的 `side`)、band 契約、ux-v4..v7 設計文件、C1／D6 對照(PM 定案)
+  - cc6d946:G40 真資料檢查 `scripts/g40-real-data/check.sh [<live_dir>]`(五級寬度、`acct-`、`$`;沙盒執行，真資料不進 repo)
+  - ab00b14:B34,心跳加 `band_seen`,statusline 只在 band 真的畫過時才縮;外加 roster override
+  - bb07c3d:side.memory 永遠不會是空的(兩個燈號都 hidden 時寫「記憶 —」)
+  - 22cf4a3:用量摘要一開機就讀得到(readUsage 會掃所有候選目錄)
+  - cdc6ea0:一筆壞的配額快照只丟那一筆，記在 `dropped_accounts`
+  - 76cac4e:`codeforge usage` 表格照顯示寬度對齊
+  - 653ff01 + cbec1e9:install 寫 `statusLine.refreshInterval: 10`(卡 d-f6e451d2),改動前先備份 settings.json.bak(權限沿用原檔、不寫穿 symlink、唯讀的也沒問題)
+  - 835ecd9:沒有標記、但 command 剛好是「codeforge＋statusline」兩個詞的 statusLine,install 會認領並補標記
+- 真機截圖(兩個真外掛、五級 × 四畫面 × 有沒有鏡像兩種資料)和偏離結論在 /var/tmp/codeforge-band-shots/index.md(不進 git)。PM 已經讓 O4 結案。
+- PM 停車單 01M6VYXA6S 已 accepted,最晚 11-10 18:00 TW 回頭確認(這不是交件時間)。
 
 ## 已決事項(不重議)
-- 只認 courier-attested from 是 PM 地址的 go(全域 CLAUDE.md)。已有的 go:(A) g2/g3＋finalize＋receipt;(A) 的合併由 PM 看過截圖＋兩邊 sha 之後才給;(B) S,完成回 sha。
-- g3 不能用跨帳號(cookys)代跑繞過去 — PM。
-- 契約裁定(已回 autopilot):panel_open_at_ms 每 15 秒寫一次、寫入間隔小於 60 秒;`$` 只丟整份 side,usage／pet 照畫;外殼只在分頁打開時出現;進度列在主視窗框內;沒有圓桌分頁 → 9 換到派工;左框標題列卡片時寫分頁名，列分頁清單時寫「選單」。
-- 用量／寵物分頁:另案 backlog。band 合併後先做用量;寵物排期前要先和 codepower 對過 — PM 直接確認。
-- (B) 的做法：外掛測試只能 import 相對路徑和 "claude-code",不能用 node:fs,也拿不到 process.env(已探測)。所以腳本把 `plugins/forge-stats` 複製到暫存目錄，把鏡像目錄的檔案寫成一個相對路徑的 input 模組，再放一份 real-data 測試進去，跑 `claude plugin test <暫存目錄>`。真資料不進 repo。Rust 端用 `AUTOPILOT_LIVE_DIR=<dir>`＋`COLUMNS=80/120/160/200/240` 餵 `tests/fixtures/statusline-p0.json` 給 `codeforge statusline`。
+- 只認 courier-attested from 是 PM 地址的 go;別人轉述的不算(全域 CLAUDE.md)。
+- seat_gap 做法:codex／agy 沒登入時，用 claude-native 單席審查，merge 訊息寫明「codex 欠著」,進 main 或 release 前要補 — PM。
+- codeforge 交給 C2 的資料只有 usage-summary/1;寵物 XP 不進 D6;codeforge 不做 C1 — PM 定案(doc/specs/console-c1-d6-mapping.md)。
+- 用量和寵物分頁是另案(backlog):band 合併後先做用量，寵物排期前要先和 codepower 對過 — PM。
+- 心跳的 `layout` 刻意不跟著畫面變:autopilot 靠它決定要不要把一列交給 forge-stats(doc/specs/codeforge-mod-ui.md)。
+- fleet 用量／quota 一張表:quota 的正本是 autopilot 鏡像，用量的正本是各台的 usage-summary/1,由 C2 收;表格畫面歸操作台 — 已提案給 PM,還沒開工。
 
 ## 下一步
-1. 先查 `timeout 20 codex login status`。登入了的話，跑 g3:
-   `node ~/projects/autopilot/scripts/hetero-review-loop.js collect --repo-root ~/projects/codeforge-wt-panel2 --ledger ~/.codeforge-backups/side-review-ledger/ledger --phase full --generation 3 --branch feature/panel-side --seats 'gpt-6-astra/high@codex' --spec-file ~/.codeforge-backups/side-review-ledger/spec.md --timeout 25m`(run_in_background,輸出存檔、看真的 exit code)。收斂後 finalize g3,resolutions 帶 g1 那條 7fa75441…(fixed in 03fba21);再跑 `check-phase-review-receipt.js --ledger … --phase full --branch feature/panel-side --phase-base 0ae0c34e0086690e711ff6dfea2b2869a0aecb7b --repo-root ~/projects/codeforge-wt-panel2`。
-2. (B) O4 合進 develop 之後:feature/g40-real-data-preflight rebase 到 develop,跑 check-all,向 PM 要合併 go。真資料到了(d-2a19fdb5)就跑 `scripts/g40-real-data/check.sh <live_dir>`。
-3. autopilot 這邊的 sha 已經有了(c63987f)。g3 receipt 綠了之後:在 panel tip 上用 `PATH="$HOME/.cargo/bin:$PATH" ./scripts/check-all.sh` 重跑 → 把五級截圖、兩邊 sha、receipt 交 PM → PM go 後 `--no-ff` 合 develop(merge 訊息先寫檔再 `-F`,最後一段放 `QC-Verdict: PASS (reviewer codex/gpt-6-astra, <日期>)` 和 Co-Authored-By)→ push → 刪 worktree 和分支。
-4. PM 指示新 session 接 (B) G40 preflight;(A) 等 codex 登入和 autopilot 推送，有動靜再處理。
+1. 讀 fleet 新訊息，看有沒有 PM 的 go。沒有的話就繼續停著，不要找事做(PM 的停車單)。
+2. codex 登入後(操作員在 team 帳號跑 team-engine-login.sh,卡 d-56aea4dc;先用 `timeout 20 codex login status` 確認),等 PM 給 go,再一次補 codex 那一席：範圍是 develop 的 adf4454..835ecd9,diff 大的話用 `hetero-review-loop.js --packets` 切開。
+3. 卡 d-2a19fdb5 好了之後(有真的配額鏡像):`PATH="$HOME/.cargo/bin:$PATH" ./scripts/g40-real-data/check.sh <live_dir>`。live_dir 依序是 $AUTOPILOT_LIVE_DIR、/run/user/1001/autopilot、/dev/shm/autopilot-1001、~/.autopilot,要有 quota/ 才有用。
+4. autopilot 的 scripts/lib/quota-contract.json 出現之後:做 B45 的同步測試(見 doc/BACKLOG.md B45)。
+5. backlog 裡 PM 還沒排的：其他引擎的 transcript 收集器、`usage push` 排程、alias 對齊提示(見上面的 fleet 一張表提案)。
 
 ## 驗證方式
-- (A) `claude plugin test plugins/forge-stats` → 171 pass;check-all 最後一行 `check-all: all gates green`;`check-phase-review-receipt.js` exit 0。
-- (B) `scripts/g40-real-data/check.sh` 用 fixture 跑 exit 0;`--negative` exit ≠ 0;check-all 綠。
+- `claude plugin test plugins/forge-stats`:175 pass、0 fail。
+- `PATH="$HOME/.cargo/bin:$PATH" ./scripts/check-all.sh`:最後一行是 `check-all: all gates green`(cargo test 1073+ pass)。
+- `scripts/g40-real-data/check.sh` 不帶參數是 exit 0;`--negative` 是 exit 1。
 
 ## Read-order
-1. ~/projects/codeforge-wt-panel2/doc/specs/panel-band-contract.md — 分工、side 格式、本次補的 §1.3／§2。
-2. ~/projects/codeforge-wt-panel2/doc/projects/2026-11-06-integrated-panel/ux-v7/design.md — O4 版面和座標(截圖驗收用)。
-3. ~/projects/codeforge-wt-g40pre/plugins/forge-stats/tests/quota-ui.test.tsx — L22-70 fixture、L385-462 假 fs 的 `mirror()`、L688-750 怎麼讀 `forge-stats.panel`。
-4. ~/projects/codeforge-wt-g40pre/src/usage/quota_mirror_read.rs — live_dir 的解析順序。
-5. /var/tmp/autopilot-band-shots/v7/index.md — autopilot 截圖和它和 v7 的差異清單。
+1. ~/projects/codeforge/CLAUDE.md:Goal、規則、主 clone 永遠停在 develop。
+2. ~/.claude/projects/-home-team-projects-codeforge/memory/MEMORY.md:team 帳號的工具缺口、lane 狀態、「gate 單獨跑、看完 exit code 再 commit」。
+3. ~/projects/codeforge/doc/specs/panel-band-contract.md:和 autopilot 的分工、side 格式。
+4. ~/projects/codeforge/doc/specs/codeforge-mod-ui.md 的 band 版面段落:心跳、band_seen、refreshInterval、.bak。
+5. ~/projects/codeforge/doc/BACKLOG.md:B41、B45 的剩餘項。
 
 ## 陷阱
-- team 帳號的工具缺口(cargo 要加 PATH、codex 已裝但沒登入、讀不到舊帳號的家目錄):見記憶 `team-account-toolchain`。g2 abort 之後下一次就是 g3,不要再用 2。
-- fleet 的 send／reply 不能帶 attachments(`attachments_unsupported`):先 `upload`,再把 ref 用文字送出去。
-- zsh／bash-footgun-guard:glob 一律加引號(`'*.ts'`);不要用 bare `ls`,用 `command ls`。
-- 不要 commit 在還沒看 doc-drift 結果之前(這次就踩到一次，用 7928759 修掉了):先存 exit code 看過再 commit。
-- 從其他帳號收進來的檔案(PM 上傳的):放到空目錄、先 `tar tzf` 看路徑，本機路徑換成佔位字再進 repo。
+- team 帳號：cargo 要加 `PATH="$HOME/.cargo/bin:$PATH"`;讀不到 /home/cookys;fleet 的 send／reply 不能帶 attachments(先 upload,再送 ref)— 見記憶 team-account-toolchain。
+- gate(check-all、doc-drift)要單獨跑，看完 exit code 才 commit;這次踩過兩次 — 見記憶 gate-before-commit。
+- 外掛測試只能 import 相對路徑和 "claude-code";render 裡不能讀 `$.clock`(用 flag 在 timer 裡換算);mock.clock 不會改 `Date.now()`。
+- 新版 autopilot 的 roster 規則會拒絕沒放在 override 區塊裡的座席欄位(codeforge 已改成 override,until 2026-12-07,到期要續)。
+- statusline 在閒置時只靠 refreshInterval 重跑;測試 statusline 時要確認 Claude Code 真的有重跑。
+- 輸入框裡可能有操作員打了還沒送出的字，不要自己送出，也不要清掉。
+- 審查帳本在 ~/.codeforge-backups/*-review-ledger/(不進 git)。
