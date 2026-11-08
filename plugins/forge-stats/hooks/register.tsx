@@ -41,6 +41,8 @@ import { CONTROL_ROWS, clipCells, newPaneScroll, scrolled, windowOf } from './pa
 import type { PaneScroll } from './pane-view'
 import { PANEL_REFRESH_MS, panelState, panelTiers } from './panel'
 import { sideState } from './side'
+import { FLEET_MAX_BYTES, fleetLines, fleetQuotaPath, parseFleetQuota } from './fleet-view'
+import type { FleetQuotaView } from './fleet-view'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -259,11 +261,11 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
 }
 
 // ---- the 用量 / usage tab (PM G36 phase 4): accounts, then today's models, read from codeforge's summary.json ----
-type PaneTab = 'pet' | 'usage'
+type PaneTab = 'pet' | 'usage' | 'fleet'
 let paneTab: PaneTab = 'pet'
 // the chat-style window (guideline §13), per tab: stuck to the newest row or standing at a row; the content rows the last draw had (what ui.scroll clamps against)
-const paneScroll: Record<PaneTab, PaneScroll> = { pet: newPaneScroll(), usage: newPaneScroll() }
-const paneTotal: Record<PaneTab, number> = { pet: 0, usage: 0 }
+const paneScroll: Record<PaneTab, PaneScroll> = { pet: newPaneScroll(), usage: newPaneScroll(), fleet: newPaneScroll() }
+const paneTotal: Record<PaneTab, number> = { pet: 0, usage: 0, fleet: 0 }
 
 // Bounded: a regular file that is not a link and at most USAGE_MAX_BYTES, checked before the read and again on the text. Never spawns codeforge.
 async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
@@ -283,6 +285,42 @@ async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
     }
   }
   return parseUsage(null, now)
+}
+
+// ---- the 全部帳號 tab: `<base>/codeforge/usage/fleet-quota.json`, written by `codeforge usage collect` when CODEFORGE_FLEET_USAGE_DIR is set ----
+// The tab exists only while that file does. `fleetPresent` is found by a stat outside any render (session start, command, the 15 s timer while drawn); the file itself
+// is read in the render of that tab only, bounded the way the usage summary is. Never spawns codeforge.
+let fleetPresent = false
+async function fleetBases($: EngineInterface): Promise<string[]> {
+  return [...new Set([...(liveBase !== null ? [liveBase] : []), ...(await liveBases($))])]
+}
+async function refreshFleetPresent($: EngineInterface) {
+  let found = false
+  for (const b of await fleetBases($)) {
+    if ((await $.fs.stat(fleetQuotaPath(b)).catch(() => undefined)) !== undefined) {
+      found = true
+      break
+    }
+  }
+  if (found !== fleetPresent) {
+    fleetPresent = found
+    void $.ui.invalidate('ui.render')
+  }
+}
+async function readFleetQuota($: EngineInterface): Promise<FleetQuotaView> {
+  for (const b of await fleetBases($)) {
+    const path = fleetQuotaPath(b)
+    const st = await $.fs.stat(path).catch(() => undefined)
+    if (st === undefined) continue
+    if (st.isLink || st.kind !== 'file' || st.size > FLEET_MAX_BYTES) return parseFleetQuota('{')
+    try {
+      const text = await $.fs.read(path)
+      return parseFleetQuota(typeof text === 'string' ? text : '{')
+    } catch {
+      return parseFleetQuota('{')
+    }
+  }
+  return parseFleetQuota(null)
 }
 
 // ---- the quota mirror (G40): autopilot's `<live_dir>/quota/<provider>/<alias>.json` views, read here, never written, never in a render ----
@@ -581,6 +619,7 @@ export const register: Register = on => {
     if (layout === 'pane') void $.ui.open({ id: PANE, title: t()('title') })
     await refreshPet($)
     await refreshQuota($, true)
+    await refreshFleetPresent($)
     // first heartbeat before any timer (plan §2.5), then every 2 s
     await writeHeartbeat($)
     // statusline rewrites the snapshot every render; a slow poll keeps the pane current
@@ -588,6 +627,8 @@ export const register: Register = on => {
     $.clock.every(15_000, () => void refreshPet($))
     // the quota mirror: every 15 s, and only while the band or pane was drawn in the last minute (never read in a render)
     $.clock.every(15_000, () => void refreshQuota($))
+    // the 全部帳號 tab's file: same rule, only while something was drawn in the last minute
+    $.clock.every(15_000, () => void (Date.now() - drawnAt < QUOTA_WATCH_MS ? refreshFleetPresent($) : undefined))
     // idle animation: 2 fps, interval written as a literal (pixel-pet plan §2.5)
     $.clock.every(500, () => void stepSprite($))
     $.clock.every(2000, () => void writeHeartbeat($))
@@ -664,11 +705,17 @@ export const register: Register = on => {
     const now = Date.now()
     const clockMs = Date.now()
     drawnAt = clockMs
+    // a tab whose file went away is not kept: back to the pet
+    if (paneTab === 'fleet' && !fleetPresent) paneTab = 'pet'
     const usage = paneTab === 'usage' ? await readUsage($, now) : null
+    const fleetView = paneTab === 'fleet' ? await readFleetQuota($) : null
     const lines: Line[] = []
     if (usage !== null) {
       const age = usage.generatedAt === null ? null : Math.floor((now - usage.generatedAt) / 60_000)
       lines.push(rule(tr('usage'), cols, age === null ? undefined : tr('usageAge', { n: age })), ...usageLines(usage, cols, tr, now, { state: quotaState, nowMs: clockMs }))
+    } else if (fleetView !== null) {
+      const gen = fleetView.status === 'ok' ? fleetView.generatedAt : null
+      lines.push(rule(tr('fleetTitle'), cols, gen === null ? undefined : tr('fleetAge', { n: Math.max(0, Math.floor((now - gen) / 60_000)) })), ...fleetLines(fleetView, cols, tr, now))
     } else {
       if (withRule) lines.push(rule(tr('pet'), cols))
       if (sprite === null) lines.push(...petPart)
@@ -699,7 +746,7 @@ export const register: Register = on => {
     )
     // the tab strip: Buttons where the surface has them (a press switches the tab), plain Text otherwise; the active tab bold, the other dim
     const Button = 'Button' in els ? els.Button : undefined
-    const tabs: [PaneTab, string][] = [['pet', tr('tabPet')], ['usage', tr('tabUsage')]]
+    const tabs: [PaneTab, string][] = [['pet', tr('tabPet')], ['usage', tr('tabUsage')], ...(fleetPresent ? [['fleet', tr('tabFleet')] as [PaneTab, string]] : [])]
     const select = (id: PaneTab) => {
       if (paneTab === id) return
       paneTab = id
