@@ -454,12 +454,17 @@ fn warn_line(r: &Row, f: &Fleet, now_s: i64, tr: &Tr) -> Option<Line> {
 /// The org after the alias (the first part of a header/compact line); nothing when unknown.
 fn org_shown(r: &Row, tr: &Tr) -> Option<String> {
     let org = r.org.as_ref()?;
-    Some(if org == super::alias::ORG_PERSONAL {
+    let shown = if org == super::alias::ORG_PERSONAL {
         tr.t("quota.org_personal", &[])
     } else {
         org.clone()
-    })
+    };
+    // at most ORG_CELLS columns, so a long (CJK) org never crowds out the line
+    Some(qv::plain(&qv::clip(&[p(shown, Style::Dim)], ORG_CELLS)))
 }
+
+/// Display columns an org may take on a header or compact line.
+const ORG_CELLS: usize = 16;
 
 fn add_org(line: &mut Line, r: &Row, tr: &Tr, sep: &str) {
     if let Some(shown) = org_shown(r, tr) {
@@ -506,7 +511,12 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
         let fact = &facts[0];
         if compact {
             let mut line = qv::compact_line(fact, now_s as f64, cols, tr);
-            add_org(&mut line, r, tr, " ");
+            // the org only when the line still fits with it; the numbers come first
+            let mut with = line.clone();
+            add_org(&mut with, r, tr, " ");
+            if qv::width(&with) <= cols {
+                line = with;
+            }
             lines.push(line);
             continue;
         }
