@@ -6,7 +6,7 @@
 //! validates, then uploads exactly the validated bytes under a fixed name.
 
 use super::{
-    alias::{valid_alias, valid_org},
+    alias::{valid_alias, valid_email, valid_org},
     collect::Row,
     price,
     quota::Snapshot,
@@ -46,8 +46,8 @@ const DROP_REASONS: [&str; 3] = [
     "pct_out_of_range",
 ];
 const ACCOUNT_KEYS: [&str; 4] = ["alias", "written_at_ms", "five_hour", "seven_day"];
-/// Optional account keys: absent = unknown, so a summary from before `org` still validates.
-const ACCOUNT_OPTIONAL: [&str; 1] = ["org"];
+/// Optional account keys: absent = unknown, so a summary from before `org`/`email` still validates.
+const ACCOUNT_OPTIONAL: [&str; 2] = ["org", "email"];
 const WINDOW_KEYS: [&str; 2] = ["pct", "resets_at"];
 const COUNT_KEYS: [&str; 6] = [
     "input",
@@ -83,6 +83,9 @@ const ALIAS_RE: &str = "^[a-z0-9-]{1,24}$";
 const MODEL_RE: &str = "^[A-Za-z0-9._-]{1,64}$";
 #[cfg(test)]
 const ORG_RE: &str = "^[^@\\p{Cc}]{1,40}$";
+/// `valid_email`: 3..=254 chars, one `@` with text on both sides, no whitespace or control char.
+#[cfg(test)]
+const EMAIL_RE: &str = "^(?=.{3,254}$)[^@\\s\\p{Cc}\\uFEFF]+@[^@\\s\\p{Cc}\\uFEFF]+$";
 #[cfg(test)]
 const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 
@@ -91,7 +94,7 @@ const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 pub fn contract() -> Value {
     json!({
         "schema": SCHEMA,
-        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "window": WINDOW_KEYS, "day": DAY_KEYS,
+        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "email": EMAIL_RE, "window": WINDOW_KEYS, "day": DAY_KEYS,
         "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
         "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE, "uint_max": UINT_MAX,
         "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
@@ -184,6 +187,9 @@ pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Va
             });
             if let Some(org) = &s.org {
                 a["org"] = json!(org);
+            }
+            if let Some(email) = &s.email {
+                a["email"] = json!(email);
             }
             kept.push(a);
         }
@@ -323,6 +329,12 @@ pub fn validate(v: &Value) -> Result<()> {
         {
             bail!("{at}.org: 不是合法的組織顯示名");
         }
+        // the value is never put in the message
+        if m.get("email")
+            .is_some_and(|e| !e.as_str().is_some_and(valid_email))
+        {
+            bail!("{at}.email: 不是合法的登入信箱");
+        }
         uint(&m["written_at_ms"], &format!("{at}.written_at_ms"))?;
         win(&m["five_hour"], &format!("{at}.five_hour"))?;
         win(&m["seven_day"], &format!("{at}.seven_day"))?;
@@ -446,6 +458,7 @@ mod tests {
         let snap = Snapshot {
             alias: "acct-a".into(),
             org: None,
+            email: None,
             root: Some("1a2b3c4d".into()),
             written_at_ms: 5,
             five_hour: Some(Window {
@@ -465,6 +478,53 @@ mod tests {
             &host_alias("MARKERHOST.example"),
             7,
         )
+    }
+
+    #[test]
+    fn email_is_an_optional_account_key_that_validates() {
+        let with = |email: Option<&str>| {
+            let mut v = good();
+            match email {
+                Some(e) => v["accounts"][0]["email"] = json!(e),
+                None => assert!(v["accounts"][0].get("email").is_none()),
+            }
+            v
+        };
+        // absent: the summary from before the key (and one with no known email) validates
+        validate(&with(None)).unwrap();
+        validate(&with(Some("me@example.com"))).unwrap();
+        for bad in [
+            "no-at",
+            "a@@b",
+            "a b@example.com",
+            "@b",
+            "a@",
+            "",
+            &"a".repeat(255),
+        ] {
+            let e = validate(&with(Some(bad))).unwrap_err().to_string();
+            assert!(e.contains("email"), "{bad:?}: {e}");
+            assert!(
+                bad.is_empty() || !e.contains(bad),
+                "the value is never echoed"
+            );
+        }
+        let mut v = good();
+        v["accounts"][0]["email"] = json!(5);
+        assert!(validate(&v).is_err());
+        // build carries a snapshot's email, and only that
+        let snap = Snapshot {
+            alias: "acct-a".into(),
+            org: None,
+            email: Some("me@example.com".into()),
+            root: None,
+            written_at_ms: 5,
+            five_hour: None,
+            seven_day: None,
+        };
+        let v = build(&[], &[snap], &host_alias("h"), 7);
+        validate(&v).unwrap();
+        assert_eq!(v["accounts"][0]["email"], "me@example.com");
     }
 
     #[test]
@@ -499,7 +559,7 @@ mod tests {
         v["extra"] = json!(1);
         cases.push(("top-level key", v));
         let mut v = good();
-        v["accounts"][0]["email"] = json!("me@example.com");
+        v["accounts"][0]["login"] = json!("x");
         cases.push(("key in accounts", v));
         let mut v = good();
         v["days"][0]["project"] = json!("repo");
@@ -646,6 +706,7 @@ mod tests {
         Snapshot {
             alias: alias.into(),
             org: None,
+            email: None,
             root: None,
             written_at_ms,
             five_hour: Some(Window {

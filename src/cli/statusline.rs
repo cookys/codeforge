@@ -32,8 +32,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         let others = record_quota(
             &mut data,
             &crate::usage::quota::quota_dir(&live_base),
-            &acct.alias,
-            acct.org.as_deref(),
+            &acct,
             &crate::usage::alias::path_hash8(&config_dir),
             &crate::live::sanitize_session_id(raw_sid),
             now_ms,
@@ -325,8 +324,7 @@ struct StatusInput {
 fn record_quota(
     data: &mut StatusInput,
     dir: &std::path::Path,
-    alias: &str,
-    org: Option<&str>,
+    acct: &crate::usage::alias::Identity,
     root: &str,
     session: &str,
     now_ms: i64,
@@ -344,8 +342,9 @@ fn record_quota(
         _ => None,
     };
     let snap = Snapshot {
-        alias: alias.to_string(),
-        org: org.map(str::to_string),
+        alias: acct.alias.clone(),
+        org: acct.org.clone(),
+        email: acct.email.clone(),
         root: crate::usage::quota::is_hash8(root).then(|| root.to_string()),
         written_at_ms: now_ms,
         five_hour: window(data.five_hour_pct, data.five_hour_resets_at),
@@ -363,7 +362,7 @@ fn record_quota(
             }
         }
     }
-    read_others(dir, alias, now_ms)
+    read_others(dir, &acct.alias, now_ms)
 }
 
 /// The quota part of the usage row: the mirror's chips when the mirror exists (G40), else the G36
@@ -2552,6 +2551,7 @@ mod tests {
         crate::usage::quota::Snapshot {
             alias: alias.into(),
             org: None,
+            email: None,
             root: None,
             written_at_ms: 0,
             five_hour: None,
@@ -2694,6 +2694,14 @@ mod tests {
         );
     }
 
+    fn ident(alias: &str, email: Option<&str>) -> crate::usage::alias::Identity {
+        crate::usage::alias::Identity {
+            alias: alias.into(),
+            org: None,
+            email: email.map(str::to_string),
+        }
+    }
+
     #[test]
     fn record_quota_writes_this_account_and_reads_the_others() {
         let base = tempfile::tempdir().unwrap();
@@ -2708,7 +2716,12 @@ mod tests {
         // no rate_limits: nothing written, the others still read
         let mut none = StatusInput::default();
         let got = record_quota(
-            &mut none, &dir, "acct-a", None, "1a2b3c4d", "sess-1", now_ms,
+            &mut none,
+            &dir,
+            &ident("acct-a", None),
+            "1a2b3c4d",
+            "sess-1",
+            now_ms,
         );
         assert_eq!(
             got.iter().map(|s| s.alias.as_str()).collect::<Vec<_>>(),
@@ -2722,7 +2735,12 @@ mod tests {
             ..Default::default()
         };
         let got = record_quota(
-            &mut data, &dir, "acct-a", None, "1a2b3c4d", "sess-1", now_ms,
+            &mut data,
+            &dir,
+            &ident("acct-a", None),
+            "1a2b3c4d",
+            "sess-1",
+            now_ms,
         );
         assert_eq!(got.len(), 1);
         let v: serde_json::Value =
@@ -2742,8 +2760,7 @@ mod tests {
         record_quota(
             &mut idle,
             &dir,
-            "acct-a",
-            None,
+            &ident("acct-a", None),
             "1a2b3c4d",
             "sess-2",
             now_ms + 1000,
@@ -2754,12 +2771,29 @@ mod tests {
                 .unwrap();
         assert_eq!(v["seven_day"]["pct"], 0.75);
         assert_eq!(v["seven_day"]["seen_by"], "sess-1");
+        // the login email travels in the snapshot (0600 file), and a newer one replaces it
+        let mut mail = StatusInput {
+            seven_day_pct: Some(0.8),
+            seven_day_resets_at: Some(Q_NOW + 86400),
+            ..Default::default()
+        };
+        record_quota(
+            &mut mail,
+            &dir,
+            &ident("acct-a", Some("me@example.com")),
+            "1a2b3c4d",
+            "sess-1",
+            now_ms + 120_000,
+        );
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("acct-a.json")).unwrap())
+                .unwrap();
+        assert_eq!(v["email"], "me@example.com");
         // a missing dir is no error
         assert!(record_quota(
             &mut none,
             &base.path().join("nope"),
-            "acct-a",
-            None,
+            &ident("acct-a", None),
             "1a2b3c4d",
             "sess-1",
             now_ms

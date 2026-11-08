@@ -140,10 +140,36 @@ test('the org follows the alias: personal as 個人, a named org as written, non
   const ui = await open($)
   await ui.press({ key: 'tab-fleet' })
   const rows = rowsOf(await ui.drawn())
-  expect(rows.some(r => /^acct-11111111 個人 +週 20%/.test(r))).toBe(true)
-  expect(rows.some(r => /^acct-22222222 Acme 研發 +週 30%/.test(r))).toBe(true)
+  expect(rows.some(r => /^acct-11111111 · 個人 +週 20%/.test(r))).toBe(true)
+  expect(rows.some(r => /^acct-22222222 · Acme 研發 +週 30%/.test(r))).toBe(true)
   expect(rows.some(r => /^acct-33333333 +週 40%/.test(r))).toBe(true)
   await ui.unmount()
+})
+
+test('the email names the row: email · org, the alias when there is no email, every row inside the pane', async ($, on) => {
+  const long = 'x'.repeat(240) + '@example.com'
+  const f = fleet([
+    acct({ alias: 'acct-11111111', email: 'me@example.com', org: 'personal', weekly: wk({ pct: 0.2 }) }),
+    acct({ alias: 'acct-22222222', email: 'dev@example.com', org: 'Acme', weekly: wk({ pct: 0.3, warn: 'waste' }) }),
+    acct({ alias: 'acct-33333333', email: null, org: null, weekly: wk({ pct: 0.4 }) }),
+    acct({ alias: 'acct-44444444', email: long, org: 'Acme', weekly: wk({ pct: 0.57 }) }),
+  ])
+  world(on, { fleet: JSON.stringify(f), zh: true })
+  for (const bodyColumns of [42, 52, 72, 102]) {
+    const ui = await open($, bodyColumns)
+    await ui.press({ key: 'tab-fleet' })
+    const rows = rowsOf(await ui.drawn())
+    for (const r of rows) expect(displayWidth(r) <= bodyColumns - 2).toBe(true)
+    if (bodyColumns >= 52) {
+      expect(rows.some(r => /^me@example\.com · 個人 +週 20%/.test(r))).toBe(true)
+      expect(rows.some(r => /^dev@example\.com · Acme +週 30%/.test(r))).toBe(true)
+      expect(rows.some(r => /^acct-33333333 +週 40%/.test(r))).toBe(true)
+      expect(rows.some(r => /^will waste · dev@example\.com · Acme/.test(r) || /^會浪費 · dev@example\.com · Acme/.test(r))).toBe(true)
+    }
+    // the 254-column email never pushes the weekly figure off its line
+    expect(rows.some(r => /^x+.*週 57%/.test(r))).toBe(true)
+    await ui.unmount()
+  }
 })
 
 const BAD_CASES: [string, string, Record<string, unknown>][] = [
@@ -153,6 +179,10 @@ const BAD_CASES: [string, string, Record<string, unknown>][] = [
   ['an unknown state', JSON.stringify(fleet([acct({ alias: 'a', state: 'weird' })])), {}],
   ['a bad window', JSON.stringify(fleet([acct({ alias: 'a', weekly: { pct: 'x', resets_at: 1 } })])), {}],
   ['an org with a control char', JSON.stringify(fleet([acct({ alias: 'a', org: 'x\u0007y' })])), {}],
+  ['an email without an @', JSON.stringify(fleet([acct({ alias: 'a', email: 'nobody' })])), {}],
+  ['an email with a space', JSON.stringify(fleet([acct({ alias: 'a', email: 'a b@example.com' })])), {}],
+  ['an email over 254', JSON.stringify(fleet([acct({ alias: 'a', email: 'x'.repeat(250) + '@example.com' })])), {}],
+  ['an email that is not a string', JSON.stringify(fleet([acct({ alias: 'a', email: 5 })])), {}],
   ['a link', JSON.stringify(FIXTURE()), { isLink: true }],
   ['an oversized file', JSON.stringify(FIXTURE()), { size: FLEET_MAX_BYTES + 1 }],
 ]

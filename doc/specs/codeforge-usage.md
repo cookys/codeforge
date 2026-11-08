@@ -47,15 +47,28 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 - 登入檔：`$CLAUDE_CONFIG_DIR/.claude.json`（有設且非空），否則 `$HOME/.claude.json`（在 `~/.claude/` 之外）。
   只讀 `oauthAccount` 底下三個欄位：`organizationUuid`、`organizationName`、`emailAddress`（operator 授權的範圍），
   用只命名這三欄的型別化 serde 結構解析，其餘欄位（token、accountUuid…）由 serde 忽略，不留、不記錄、不複製；
-  從不寫這個檔。email 與 org uuid 不離開本機：快照、summary、`fleet-quota.json` 只有別名（hash）與 org 顯示名。
+  從不寫這個檔。org uuid 不離開本機：快照、summary、`fleet-quota.json` 只有別名（hash）、org 顯示名與登入 email。
+  email 只出現在本機 0600 的快照、身分快取與 summary／`fleet-quota.json` 檔，**不進 repo、不進日誌、不進 fleet 訊息、
+  不進錯誤訊息**（`Identity` 的 `Debug` 也不印它；測試與 fixture 只用 `@example.com`）。
 - 快取（statusline 每次刷新都跑，登入檔可能數 MB）：`<live_base>/codeforge/usage/identity-<config dir 8 碼>.json`
   （0600），以登入檔的 (mtime_ns, size) 為鍵；沒變就只做一次 stat 加一次小檔讀取，變了才重新解析。解析出「沒有登入」
-  也會快取。任何錯誤都退回路徑 hash，不讓 statusline 失敗。
+  也會快取。任何錯誤都退回路徑 hash，不讓 statusline 失敗。快取也存 `email`（舊快取沒有這欄，讀成未知，
+  登入檔一變就重新解析）。
 - `org`：`organizationName` 以 `'s Organization`（ASCII 或 ’）結尾、或含 `@`，視為個人訂閱，記為 `personal`；
   否則為清掉控制字元後最多 40 字元（`.chars().take(40)`）的名稱。`org` 放在本機快照、summary 帳號（**選填**，
   不存在 = 未知，舊 summary 仍合格；1..=40 字元、無控制字元、無 `@`）與 `fleet-quota.json`（字串或 null）。
   文字表頭在別名後顯示（`personal` 顯示為「個人」／personal），順序：別名、org、provider、主機。
   主機太多放不下時，保留放得下的標籤並以「等 N 台」／「+N more」收尾，不會整段拿掉。
+- `email`：`emailAddress` 去頭尾空白後 3..=254 字元、恰一個 `@` 且兩邊都有字、無空白與控制字元，否則視為未知（None，
+  不是錯誤、不拒收快照）。有 `AUTOPILOT_ACCOUNT` 時別名仍用它，但 email 與 org 照樣取自登入檔。`email` 放在本機快照
+  （壞值丟掉、數字照留）、summary 帳號（**選填**，驗證規則同上，壞值整份 summary 不合格，訊息不含該值；契約的
+  `email` 正規表達式 `^(?=.{3,254}$)[^@\s\p{Cc}\uFEFF]+@[^@\s\p{Cc}\uFEFF]+$` 與 pane 副本由測試比對）與
+  `fleet-quota.json`（字串或 null，取最新且帶 email 的那筆觀察，同 org）。
+  **顯示標籤是「email · org」**（org 為 `personal` 時顯示為「個人」／personal）；沒有 email 就退回「別名 · org」。
+  別名仍是合併的鍵，不再是主標籤。文字表頭與警示列都用這個標籤；表頭 email 最多 32 欄（`EMAIL_CELLS`，用 `…` 收尾），
+  緊湊列（< 60 欄）更短（`欄寬 − 18`，至少 8），讓週百分比留在同一行；org 仍最多 16 欄、緊湊列放不下就不放。
+  forge-stats「全部帳號」分頁同樣顯示 email · org（名稱欄最多 40 欄、窄面板自動縮短），`email` 不合規格整份檔不顯示。
+  statusline 的「其他帳號」列與面板「用量」分頁仍顯示別名（寬度敏感，沒改）。
 - 收集：不讀 `AUTOPILOT_ACCOUNT`。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」，其次是該 root 自己的
   登入檔身分（預設 root `~/.claude` 對應 `~/.claude.json`，其他 root 對應 `<root>/.claude.json`），
   再其次是 db 裡存的，最後 `acct-<hash>`。Codex root 是 `codex-<hash>`。
@@ -97,11 +110,11 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 5 分／1 小時、快取讀、fast 倍率）。標成「API 等值」：訂閱方案不按 token 計費。沒有定價的
 model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註明幾列沒定價。
 
-## summary.json（唯一會離開本機的東西）
+## summary.json（唯一會離開本機的東西；帳號列帶登入 email，`usage push` 會把它傳到 fleet 彙整端）
 
 ```json
 {"schema":"codeforge.usage-summary/1","generated_at_ms":0,"host":"host-1a2b3c4d","prices_as_of":"2026-10-06",
- "accounts":[{"alias":"acct-a","org":"personal","written_at_ms":0,"five_hour":{"pct":0.3,"resets_at":0},"seven_day":null}],
+ "accounts":[{"alias":"acct-a","org":"personal","email":"me@example.com","written_at_ms":0,"five_hour":{"pct":0.3,"resets_at":0},"seven_day":null}],
  "days":[{"day":"2026-11-03","source":"claude","account":"acct-a","model":"claude-opus-5-5","speed":"standard",
           "input":0,"output":0,"cache_write_5m":0,"cache_write_1h":0,"cache_read":0,"requests":0,"cost_usd":null}]}
 ```
@@ -156,7 +169,7 @@ forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接
   （照現速會用完，就不是浪費）。有警示的列排前面：會浪費、會不夠（各依重置時間由近到遠），其餘依別名。
 - **JSON**（`--json` 印出；`--out <file>` 以暫存檔＋rename 原子寫入，0600，可與文字表並用）：
   `{"schema":"codeforge.fleet-quota/1","generated_at_ms":…,"use_target":0.85,"skipped":{},"accounts":[…]}`，每筆
-  `{alias, provider("claude"|"codex"|"grok"|…), hosts[], observed_at_ms|null, age_s|null, state, weekly, five_hour}`；
+  `{alias, org|null, email|null, provider("claude"|"codex"|"grok"|…), hosts[], observed_at_ms|null, age_s|null, state, weekly, five_hour}`；
   `state`：`ok`（有視窗可畫）、`stale`（6 小時內有觀察但視窗全已重置）、`expired`（最後觀察超過 6 小時）、`no_source`；
   `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null}`（`resets_at`、`exhaust_at`
   為 unix 秒），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at}|null`。`pct` 是小數（1.0 = 100%）。

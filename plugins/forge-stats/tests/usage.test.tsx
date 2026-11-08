@@ -145,6 +145,12 @@ test('the pane has a tab strip and the usage tab shows accounts and today\'s mod
   await ui.unmount()
 })
 
+test('parseUsage takes an optional account email by the same rule as the writer', () => {
+  const acc = (email: unknown) => ({ ...summary(), accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: null, seven_day: null, email }] })
+  expect(parseUsage(JSON.stringify(acc('me@example.com')), NOW).status).toBe('ok')
+  for (const bad of ['nobody', 'a b@example.com', 'a@@b', '@b', 'a@', '', 'x'.repeat(250) + '@example.com', 5, null]) expect(parseUsage(JSON.stringify(acc(bad)), NOW).status).toBe('bad')
+})
+
 test('a summary older than an hour names `codeforge usage` as the refresh', async ($, on) => {
   base(on, JSON.stringify(summary({ generated_at_ms: Date.now() - 90 * 60_000 })))
   const ui = await openUsage($)

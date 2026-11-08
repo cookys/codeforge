@@ -73,6 +73,8 @@ pub struct Row {
     pub alias: String,
     /// `personal` or a sanitized org name from the newest observation that carried one.
     pub org: Option<String>,
+    /// The login email from the newest observation that carried one; the alias stays the key.
+    pub email: Option<String>,
     pub provider: String,
     pub hosts: Vec<String>,
     pub observed_at_ms: Option<i64>,
@@ -168,6 +170,7 @@ struct Acc {
     provider: String,
     hosts: BTreeSet<String>,
     org: Option<String>,
+    email: Option<String>,
     /// newest observation: written_at_ms, five_hour, seven_day
     obs: Option<(i64, Option<Win>, Option<Win>)>,
 }
@@ -191,6 +194,7 @@ pub fn merge(
         provider: provider.to_string(),
         hosts: BTreeSet::new(),
         org: None,
+        email: None,
         obs: None,
     };
     for (stem, v) in files {
@@ -204,6 +208,9 @@ pub fn merge(
             if e.obs.as_ref().is_none_or(|o| at > o.0) {
                 if let Some(org) = a.get("org").and_then(Value::as_str) {
                     e.org = Some(org.to_string());
+                }
+                if let Some(email) = a.get("email").and_then(Value::as_str) {
+                    e.email = Some(email.to_string());
                 }
                 e.obs = Some((at, win_of(&a["five_hour"]), win_of(&a["seven_day"])));
             }
@@ -228,6 +235,7 @@ pub fn merge(
             let mut r = Row {
                 alias,
                 org: acc.org,
+                email: acc.email,
                 provider: acc.provider,
                 hosts: acc.hosts.into_iter().collect(),
                 observed_at_ms: acc.obs.map(|o| o.0),
@@ -292,6 +300,7 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
             json!({
                 "alias": r.alias,
                 "org": r.org,
+                "email": r.email,
                 "provider": r.provider,
                 "hosts": r.hosts,
                 "observed_at_ms": r.observed_at_ms,
@@ -419,7 +428,7 @@ fn warn_line(r: &Row, f: &Fleet, now_s: i64, tr: &Tr) -> Option<Line> {
     let mut l: Line = vec![
         p(label, Style::Warn),
         dot(),
-        p(r.alias.clone(), Style::Bold),
+        p(label_of(r, EMAIL_CELLS, tr), Style::Bold),
         dot(),
         p(
             format!("{} {}", tr.t("quota.w_weekly", &[]), pct_of(w.win.pct)),
@@ -465,6 +474,34 @@ fn org_shown(r: &Row, tr: &Tr) -> Option<String> {
 
 /// Display columns an org may take on a header or compact line.
 const ORG_CELLS: usize = 16;
+/// Display columns an email may take on a header or warn line (a compact line gets less, see
+/// [`name_cells`]).
+const EMAIL_CELLS: usize = 32;
+
+/// What names the account: the email cut to `cap` columns, else the alias.
+fn name_shown(r: &Row, cap: usize) -> String {
+    match &r.email {
+        Some(e) => qv::plain(&qv::clip(&[p(e.clone(), Style::Plain)], cap)),
+        None => r.alias.clone(),
+    }
+}
+
+/// The name, then the org when known: `email · org`, or `alias · org`.
+fn label_of(r: &Row, cap: usize, tr: &Tr) -> String {
+    match org_shown(r, tr) {
+        Some(o) => format!("{} · {o}", name_shown(r, cap)),
+        None => name_shown(r, cap),
+    }
+}
+
+/// Columns the email may take on a line of `cols`: the numbers of a compact line come first.
+fn name_cells(cols: usize, compact: bool) -> usize {
+    if compact {
+        cols.saturating_sub(18).clamp(8, EMAIL_CELLS)
+    } else {
+        EMAIL_CELLS
+    }
+}
 
 fn add_org(line: &mut Line, r: &Row, tr: &Tr, sep: &str) {
     if let Some(shown) = org_shown(r, tr) {
@@ -506,7 +543,8 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
     let mut tight = false;
     let mut first = true;
     for r in &f.rows {
-        let e = entry(r, now_ms);
+        let mut e = entry(r, now_ms);
+        e.key = name_shown(r, name_cells(cols, compact));
         let facts = qv::facts_of(std::slice::from_ref(&e), now_s, tr);
         let fact = &facts[0];
         if compact {
