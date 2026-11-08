@@ -362,6 +362,9 @@ pub enum NoteAction {
         target: String,
         /// 備註（最寬 40 欄，不能有 @）
         text: String,
+        /// 為「沒有任何資料」的帳號記一筆備註：target 就是它的名字（不可是 email、acct-／codex- key，也不可是已有的帳號名或 provider）
+        #[arg(long)]
+        new: bool,
     },
     /// 清除備註
     Clear {
@@ -590,7 +593,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 AliasAction::Set { who, name } => usage::Action::AliasSet { who, name },
             },
             Some(UsageAction::Note { action }) => match action {
-                NoteAction::Set { target, text } => usage::Action::NoteSet { target, text },
+                NoteAction::Set { target, text, new } => {
+                    usage::Action::NoteSet { target, text, new }
+                }
                 NoteAction::Clear { target } => usage::Action::NoteClear { target },
             },
             None => usage::Action::Show { days, by, json },

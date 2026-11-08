@@ -367,6 +367,74 @@ fn notes_attach_by_account_key_first_then_provider_and_show_dim_at_the_row_end()
 }
 
 #[test]
+fn a_note_key_with_no_row_adds_a_no_data_claude_row_unless_a_name_is_taken() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![acct("work", 60, None, Some((0.4, NOW_S + 3 * D)))],
+        vec![],
+    );
+    let mut f = run(&[("a.json", &s)]);
+    let before = f.rows.len();
+    attach_notes(
+        &mut f,
+        &notes(&[
+            ("twgame", "週四重置"),
+            ("work", "mine"),
+            ("kimi", "provider"),
+            ("claude", "provider"),
+            ("acct-11111111", "gone"),
+            ("codex-1a2b3c4d", "gone"),
+        ]),
+    );
+    // only twgame is added: `work` has a row, labels and keys are not accounts
+    assert_eq!(f.rows.len(), before + 1);
+    let r = row(&f, "twgame");
+    assert_eq!(r.name, "twgame");
+    assert_eq!(r.provider, "claude");
+    assert_eq!(r.state, State::NoSource);
+    assert!(r.hosts.is_empty() && r.weekly.is_none() && r.five_hour.is_none());
+    assert_eq!(r.source_note, None);
+    assert_eq!(r.note.as_deref(), Some("週四重置"));
+    let v = to_json(&f, NOW_MS);
+    let a = v["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["alias"] == "twgame")
+        .unwrap();
+    assert_eq!(a["name"], "twgame");
+    assert_eq!(a["hosts"], serde_json::json!([]));
+    assert_eq!(a["note"], "週四重置");
+    assert!(a.get("source_note").is_none());
+    for cols in [100, 60, 40, 20] {
+        let txt = text(&f, cols, NOW_MS, &Tr("zh-TW".into()), false);
+        assert!(txt.contains("twgame") || cols < 40, "{cols}: {txt}");
+        for l in txt.lines() {
+            assert!(UnicodeWidthStr::width(l) <= cols, "{cols}: {l:?}");
+        }
+    }
+    let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(
+        txt.contains("twgame") && txt.contains("無來源") && txt.contains("週四重置"),
+        "{txt}"
+    );
+
+    // a name another account shows: the account wins, the note row is dropped
+    let mut f = run(&[("a.json", &s)]);
+    let before = f.rows.len();
+    let shown = f
+        .rows
+        .iter()
+        .find(|r| r.alias == "work")
+        .unwrap()
+        .name
+        .clone();
+    attach_notes(&mut f, &notes(&[(&shown, "x"), ("twgame", "y")]));
+    assert_eq!(f.rows.len(), before + 1);
+    assert_eq!(row(&f, "twgame").note.as_deref(), Some("y"));
+}
+
+#[test]
 fn a_long_cjk_note_is_cut_to_the_width_and_the_numbers_stay() {
     let s = summary(
         "host-aaaaaaaa",
