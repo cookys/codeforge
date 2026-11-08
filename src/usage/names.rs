@@ -52,7 +52,27 @@ pub fn valid_name(s: &str) -> bool {
         && !s.chars().any(|c| {
             c.is_control() || c == '@' || c == '\u{FEFF}' || (c.is_whitespace() && c != ' ')
         })
-        && !s.starts_with("acct-")
+        && !key_like(s)
+}
+
+/// An internal account key, never a name: `acct-…`, or `<provider>-<8 hex>` (`codex-4cc1b5c8`).
+pub fn key_like(s: &str) -> bool {
+    s.starts_with("acct-")
+        || s.rsplit_once('-').is_some_and(|(p, h)| {
+            !p.is_empty() && h.len() == 8 && h.bytes().all(|b| b.is_ascii_hexdigit())
+        })
+}
+
+/// The name a key gives when nothing else does: `codex` for `codex-4cc1b5c8`, the key itself
+/// when someone chose it (`AUTOPILOT_ACCOUNT`), `None` for an `acct-` key.
+fn key_default(key: &str) -> Option<&str> {
+    if key.starts_with("acct-") {
+        None
+    } else if key_like(key) {
+        key.rsplit_once('-').map(|(p, _)| p)
+    } else {
+        Some(key)
+    }
 }
 
 /// `$CODEFORGE_ACCOUNTS_FILE`, else `$XDG_CONFIG_HOME/codeforge/accounts.toml`, else
@@ -190,8 +210,9 @@ fn pair(org: &str, email: &str) -> String {
 }
 
 /// The display name of each of `items`, in order: the set name, else the org short form, else
-/// the email local part, else the key itself when it is a name someone chose (`AUTOPILOT_ACCOUNT`,
-/// a codex account); `None` for an `acct-` key with none of these. Default names that collide get `·<email local part>`, and what still
+/// the email local part, else the key itself when it is a name someone chose (`AUTOPILOT_ACCOUNT`),
+/// else the provider of a `<provider>-<8 hex>` key (`codex`); `None` for an `acct-` key with none
+/// of these. Default names that collide get `·<email local part>`, and what still
 /// collides gets the smallest free `-2`, `-3`… in key order (a set name is never renamed), so no
 /// two accounts end with the same name.
 pub fn assign(items: &[Who], names: &Names) -> Vec<Option<String>> {
@@ -204,7 +225,7 @@ pub fn assign(items: &[Who], names: &Names) -> Vec<Option<String>> {
                 [
                     w.org.map(org_short),
                     w.email.map(local_part),
-                    Some(part(w.key)),
+                    key_default(w.key).map(part),
                 ]
                 .into_iter()
                 .flatten()
@@ -478,6 +499,35 @@ mod tests {
             &Names::default(),
         );
         assert_eq!(got, [None, Some("dev".into()), None]);
+    }
+
+    #[test]
+    fn a_provider_hash_key_is_shown_by_its_provider_never_the_hash() {
+        let got = assign(
+            &[
+                who("codex-4cc1b5c8", None, None),
+                who("codex-0a1b2c3d", None, None),
+                who("work-laptop", None, None),
+            ],
+            &Names::default(),
+        );
+        assert_eq!(
+            got,
+            [
+                Some("codex-2".into()),
+                Some("codex".into()),
+                Some("work-laptop".into())
+            ]
+        );
+        let set = Names([("codex-4cc1b5c8".to_string(), "公司 codex".to_string())].into());
+        let got = assign(&[who("codex-4cc1b5c8", None, None)], &set);
+        assert_eq!(got, [Some("公司 codex".into())]);
+        for bad in ["codex-4cc1b5c8", "grok-DEADBEEF"] {
+            assert!(!valid_name(bad), "{bad}");
+        }
+        for ok in ["codex-2", "work-laptop", "team-cafe"] {
+            assert!(valid_name(ok), "{ok}");
+        }
     }
 
     #[test]

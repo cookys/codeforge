@@ -468,8 +468,15 @@ const exactKeys = (v: unknown, keys: readonly string[]): v is Record<string, unk
 const inSet = (v: unknown, set: readonly string[]) => typeof v === 'string' && set.includes(v)
 /** A display name by codeforge's `names::valid_name`: 1..=name_max_cells columns, trimmed, no `@`, no control char or
  *  whitespace other than a plain space, not an `acct-` key. */
+/** An internal account key, never a name: `acct-…` or `<provider>-<8 hex>` (mirrors `names::key_like`). */
+export const isKeyLike = (s: string): boolean => s.startsWith('acct-') || /^.+-[0-9a-fA-F]{8}$/.test(s)
+
+/** The name a key gives when nothing else does: `codex` for `codex-4cc1b5c8`, a chosen key as is, none for `acct-`. */
+export const keyDefault = (k: string): string | null =>
+  k.startsWith('acct-') ? null : isKeyLike(k) ? k.slice(0, k.lastIndexOf('-')) : k
+
 export const isDisplayName = (v: unknown): v is string =>
-  typeof v === 'string' && v.length > 0 && displayWidth(v) <= C.name_max_cells && v.trim() === v && !v.startsWith('acct-') && !/[@\p{Cc}]/u.test(v) && !/[^\S ]/u.test(v)
+  typeof v === 'string' && v.length > 0 && displayWidth(v) <= C.name_max_cells && v.trim() === v && !isKeyLike(v) && !/[@\p{Cc}]/u.test(v) && !/[^\S ]/u.test(v)
 
 /** A capture time may lead the summary's `generated_at_ms` by this much (mirrors `SEEN_SKEW_MS`). */
 const SEEN_SKEW_MS = 10 * 60 * 1000
@@ -515,8 +522,8 @@ export function parseUsage(text: string | null, now: number): UsageView {
     if ('org' in a && (typeof a.org !== 'string' || !ORG_RE.test(a.org))) return bad
     if ('email' in a && (typeof a.email !== 'string' || !EMAIL_RE.test(a.email))) return bad
     if ('name' in a && !isDisplayName(a.name)) return bad
-    // a writer from before `name`: the email, else the org, else a chosen (non-hash) alias; an `acct-` hash with none of these is not drawn
-    const name = 'name' in a ? (a.name as string) : 'email' in a ? (a.email as string) : 'org' in a ? (a.org as string) : a.alias.startsWith('acct-') ? null : a.alias
+    // a writer from before `name`: the email, else the org, else the alias's default name (`codex` for `codex-<hex>`); an `acct-` hash with none of these is not drawn
+    const name = 'name' in a ? (a.name as string) : 'email' in a ? (a.email as string) : 'org' in a ? (a.org as string) : keyDefault(a.alias)
     if (name === null) continue
     accounts.push({ alias: a.alias, name, writtenAt: a.written_at_ms, fiveHour, sevenDay })
   }
