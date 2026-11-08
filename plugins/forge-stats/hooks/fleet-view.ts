@@ -21,6 +21,8 @@ export type FleetAccount = {
   alias: string
   /** `personal` or an org name; null when unknown. */
   org: string | null
+  /** The login email; null when unknown (the alias then names the row). */
+  email: string | null
   hosts: string[]
   observedAtMs: number | null
   state: FleetState
@@ -37,6 +39,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const onlyKeys = (o: Record<string, unknown>, keys: string[]) => Object.keys(o).every(k => keys.includes(k))
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
 const isPct = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1.5
+// the login email, the same rule as codeforge's `valid_email` (and the summary contract): 3..=254, one `@` with text both sides, no space or control char
+const isEmail = (v: unknown): v is string => typeof v === 'string' && /^(?=.{3,254}$)[^@\s\u0000-\u001f\u007f-\u009f\uFEFF]+@[^@\s\u0000-\u001f\u007f-\u009f\uFEFF]+$/u.test(v)
 // printable, bounded: a label that reaches the screen
 const isLabel = (v: unknown): v is string => typeof v === 'string' && /^[^\u0000-\u001f\u007f]{1,64}$/.test(v)
 
@@ -73,8 +77,9 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
   if (!Array.isArray(raw.accounts) || raw.accounts.length > FLEET_MAX_ACCOUNTS) return BAD
   const accounts: FleetAccount[] = []
   for (const a of raw.accounts as unknown[]) {
-    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org'])) return BAD
+    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email'])) return BAD
     if (a.org !== undefined && a.org !== null && !isLabel(a.org)) return BAD
+    if (a.email !== undefined && a.email !== null && !isEmail(a.email)) return BAD
     if (!isLabel(a.alias) || !isLabel(a.provider)) return BAD
     if (!Array.isArray(a.hosts) || a.hosts.length > 64 || !a.hosts.every(isLabel)) return BAD
     if (a.observed_at_ms !== null && !isInt(a.observed_at_ms)) return BAD
@@ -83,7 +88,7 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
     const w = weekly(a.weekly)
     const f = win(a.five_hour)
     if (w === undefined || f === undefined) return BAD
-    accounts.push({ alias: a.alias, org: typeof a.org === 'string' ? a.org : null, hosts: a.hosts as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
+    accounts.push({ alias: a.alias, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
   }
   return {
     status: 'ok',
@@ -98,6 +103,8 @@ const seg = (text: string, role?: QSeg['role'], color?: string): QSeg => ({ text
 const width = (l: QLine) => l.reduce((n, s) => n + displayWidth(s.text), 0)
 const pctText = (p: number) => `${Math.round(p * 100)}%`
 const SEP = ' · '
+/** The widest the name column (email · org) may be; a narrow pane leaves it less, so the numbers stay on the line. */
+const NAME_MAX = 40
 
 /** The widest form that fits; when none does, the last (shortest) cut to `cols` with `…`. */
 function fit(forms: QLine[], cols: number): QLine {
@@ -118,13 +125,16 @@ function fit(forms: QLine[], cols: number): QLine {
   return out
 }
 
-/** The alias, then the org (`personal` shown as 個人 / personal) when known. */
-const label = (a: FleetAccount, tr: T) => (a.org === null ? a.alias : `${a.alias} ${a.org === 'personal' ? tr('fleetPersonal') : a.org}`)
+/** The email (the alias when there is none), then the org (`personal` shown as 個人 / personal) when known. */
+const label = (a: FleetAccount, tr: T) => {
+  const name = a.email ?? a.alias
+  return a.org === null ? name : `${name} · ${a.org === 'personal' ? tr('fleetPersonal') : a.org}`
+}
 
 function warnLine(a: FleetAccount, useTarget: number, cols: number, tr: T, now: number): QLine | null {
   const w = a.weekly
   if (w === null || w.warn === null) return null
-  const head: QLine = [seg(tr(w.warn === 'waste' ? 'fleetWaste' : 'fleetShort'), 'bold', 'warning'), seg(SEP, 'dim'), seg(label(a, tr), 'bold'), seg(SEP, 'dim'), seg(`${tr('quotaWWeekly')} ${pctText(w.pct)}`)]
+  const head: QLine = [seg(tr(w.warn === 'waste' ? 'fleetWaste' : 'fleetShort'), 'bold', 'warning'), seg(SEP, 'dim'), seg(clipCells(label(a, tr), Math.min(NAME_MAX, Math.max(10, cols - 26))), 'bold'), seg(SEP, 'dim'), seg(`${tr('quotaWWeekly')} ${pctText(w.pct)}`)]
   const runout: QLine = w.warn === 'short' && w.exhaustAt !== null ? [seg(SEP, 'dim'), seg(tr('fleetRunout', { t: countdown(w.exhaustAt * 1000, now) }))] : []
   const reset: QLine = [seg(SEP, 'dim'), seg(`${tr('fleetReset')} ◷ ${countdown(w.resetsAt * 1000, now)}`, 'dim')]
   const target: QLine = w.warn === 'waste' ? [seg(SEP, 'dim'), seg(tr('fleetTarget', { p: pctText(useTarget) }), 'dim')] : []
@@ -170,7 +180,7 @@ export function fleetLines(view: FleetQuotaView, cols: number, tr: T, now: numbe
   if (warns.length === 0) out.push([seg(clipCells(tr('fleetNoWarn'), cols), 'dim')])
   else out.push(...warns)
   out.push([seg(' ')])
-  const aliasW = Math.min(28, Math.max(0, ...view.accounts.map(a => displayWidth(label(a, tr)))))
+  const aliasW = Math.min(NAME_MAX, Math.max(10, cols - 16), Math.max(0, ...view.accounts.map(a => displayWidth(label(a, tr)))))
   for (const a of view.accounts) out.push(accountLine(a, aliasW, cols, tr, now))
   if (view.skipped > 0) out.push([seg(clipCells('  ' + tr('fleetSkipped', { n: view.skipped }), cols), 'dim')])
   return out

@@ -468,3 +468,175 @@ fn a_40_char_cjk_org_is_cut_and_keeps_the_numbers_on_screen() {
         }
     }
 }
+
+fn with_email(mut a: Value, email: &str) -> Value {
+    a["email"] = json!(email);
+    a
+}
+
+#[test]
+fn the_label_is_email_dot_org_and_falls_back_to_the_alias() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![
+            with_org(
+                with_email(
+                    acct("acct-11111111", 60, None, Some((0.4, NOW_S + 3 * D))),
+                    "me@example.com",
+                ),
+                "Acme",
+            ),
+            with_email(
+                acct("acct-22222222", 60, None, Some((0.5, NOW_S + 3 * D))),
+                "solo@example.com",
+            ),
+            with_org(
+                acct("acct-33333333", 60, None, Some((0.6, NOW_S + 3 * D))),
+                "Beta",
+            ),
+            acct("acct-44444444", 60, None, Some((0.7, NOW_S + 3 * D))),
+        ],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let txt = text(&f, 100, NOW_MS, &Tr("en".into()), false);
+    let heads: Vec<&str> = txt
+        .lines()
+        .filter(|l| l.contains("@example.com") || l.starts_with("acct-"))
+        .collect();
+    assert!(
+        heads
+            .iter()
+            .any(|l| l.starts_with("me@example.com · Acme ")),
+        "{txt}"
+    );
+    assert!(heads.iter().any(|l| l.starts_with("solo@example.com ")));
+    assert!(heads.iter().any(|l| l.starts_with("acct-33333333 · Beta ")));
+    assert!(heads.iter().any(|l| l.starts_with("acct-44444444 ")));
+    // the alias stays the merge key and is not the label of an account with an email
+    assert!(!txt.contains("acct-11111111") && !txt.contains("acct-22222222"));
+    // the same on a compact line (which has always joined the org with a space)
+    let txt = text(&f, 50, NOW_MS, &Tr("en".into()), false);
+    assert!(
+        txt.lines().any(|l| l.starts_with("me@example.com Acme")),
+        "{txt}"
+    );
+}
+
+#[test]
+fn a_warn_line_uses_the_same_label() {
+    // 90% of the week used with 3 days left: a short warning
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![with_org(
+            with_email(
+                acct("acct-11111111", 60, None, Some((0.97, NOW_S + 3 * D))),
+                "me@example.com",
+            ),
+            "Acme",
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let txt = text(&f, 100, NOW_MS, &Tr("en".into()), false);
+    let warn = txt.lines().find(|l| l.contains(" · week 97%")).unwrap();
+    assert!(warn.contains("me@example.com · Acme"), "{warn}");
+    assert!(!warn.contains("acct-11111111"));
+}
+
+#[test]
+fn json_email_is_the_newest_observation_that_carried_one_else_null() {
+    let old = summary(
+        "host-aaaaaaaa",
+        vec![
+            with_email(
+                acct("w", 7200, None, Some((0.2, NOW_S + 3 * D))),
+                "old@example.com",
+            ),
+            acct("n", 7200, None, Some((0.2, NOW_S + 3 * D))),
+        ],
+        vec![],
+    );
+    // newer, but from a writer that predates the key: the older email is kept (like org)
+    let newer = summary(
+        "host-bbbbbbbb",
+        vec![
+            acct("w", 60, None, Some((0.5, NOW_S + 3 * D))),
+            acct("n", 60, None, Some((0.5, NOW_S + 3 * D))),
+        ],
+        vec![],
+    );
+    let f = run(&[("a.json", &old), ("b.json", &newer)]);
+    assert_eq!(row(&f, "w").email.as_deref(), Some("old@example.com"));
+    // a newer one that carries an email replaces it
+    let newest = summary(
+        "host-cccccccc",
+        vec![with_email(
+            acct("w", 10, None, Some((0.6, NOW_S + 3 * D))),
+            "new@example.com",
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &old), ("b.json", &newer), ("c.json", &newest)]);
+    let js = to_json(&f, NOW_MS);
+    let get = |alias: &str| {
+        js["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["alias"] == alias)
+            .unwrap()["email"]
+            .clone()
+    };
+    assert_eq!(get("w"), "new@example.com");
+    assert!(get("n").is_null());
+}
+
+#[test]
+fn a_254_char_email_keeps_every_line_inside_the_width_and_the_weekly_on_the_line() {
+    let email = format!("{}@example.com", "x".repeat(240));
+    assert!(email.chars().count() > 250);
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![with_org(
+            with_email(
+                acct(
+                    "acct-12345678",
+                    60,
+                    Some((0.95, NOW_S + 2 * H)),
+                    Some((0.97, NOW_S + 3 * D)),
+                ),
+                &email,
+            ),
+            &"研發部門".repeat(10),
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &s), ("b.json", &s)]);
+    for cols in [30, 40, 60, 80, 100] {
+        for tr in ["zh-TW", "en"] {
+            let txt = text(&f, cols, NOW_MS, &Tr(tr.into()), false);
+            for l in txt.lines() {
+                assert!(UnicodeWidthStr::width(l) <= cols, "{cols} {tr}: {l:?}");
+            }
+            assert!(!txt.contains(&email), "the email is cut: {txt}");
+            if cols >= 40 {
+                let head = txt.lines().find(|l| l.starts_with("xxxx")).unwrap();
+                assert!(
+                    txt.contains("97%") && (cols >= qv::COMPACT_COLS || head.contains("97%")),
+                    "{cols} {tr}: {txt}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn summary_email_validates_when_present_and_is_optional() {
+    let mut v = json!({"schema": "codeforge.usage-summary/1", "generated_at_ms": NOW_MS, "host": "host-aaaaaaaa",
+        "prices_as_of": "2026-10-06", "accounts": [acct("a", 1, None, None)], "days": []});
+    v["accounts"][0]["email"] = json!("me@example.com");
+    assert!(crate::usage::summary::validate(&v).is_ok());
+    v["accounts"][0]["email"] = json!("not-an-email");
+    assert!(crate::usage::summary::validate(&v).is_err());
+}

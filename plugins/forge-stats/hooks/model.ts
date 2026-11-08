@@ -424,8 +424,9 @@ export const USAGE_CONTRACT = {
   "top_optional": ["dropped_accounts"],
   "drop_reasons": ["written_at_ms_out_of_range", "resets_at_out_of_range", "pct_out_of_range"],
   "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
-  "account_optional": ["org"],
+  "account_optional": ["org", "email"],
   "org": "^[^@\\p{Cc}]{1,40}$",
+  "email": "^(?=.{3,254}$)[^@\\s\\p{Cc}\\uFEFF]+@[^@\\s\\p{Cc}\\uFEFF]+$",
   "window": ["pct", "resets_at"],
   "day": ["day", "source", "account", "model", "speed", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests", "cost_usd"],
   "counts": ["input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests"],
@@ -446,6 +447,7 @@ const ALIAS_RE = new RegExp(C.alias)
 const MODEL_RE = new RegExp(C.model)
 const HOST_RE = new RegExp(C.host)
 const ORG_RE = new RegExp(C.org, 'u')
+const EMAIL_RE = new RegExp(C.email, 'u')
 /** An integer in 0..=uint_max (2^53-1): `Number.isInteger(1e100)` is true, so the bound is checked too. */
 const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= C.uint_max
 /** A real calendar date `YYYY-MM-DD` (not 2026-02-30). */
@@ -500,6 +502,7 @@ export function parseUsage(text: string | null, now: number): UsageView {
     const sevenDay = usageWindow(a.seven_day)
     if (fiveHour === undefined || sevenDay === undefined) return bad
     if ('org' in a && (typeof a.org !== 'string' || !ORG_RE.test(a.org))) return bad
+    if ('email' in a && (typeof a.email !== 'string' || !EMAIL_RE.test(a.email))) return bad
     accounts.push({ alias: a.alias, writtenAt: a.written_at_ms, fiveHour, sevenDay })
   }
   const byModel = new Map<string, UsageModel>()

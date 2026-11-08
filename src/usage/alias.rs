@@ -66,11 +66,45 @@ pub fn valid_org(s: &str) -> bool {
     (1..=ORG_MAX).contains(&n) && !s.chars().any(|c| c.is_control() || c == '@')
 }
 
-/// A logged-in account as shown: an opaque alias and the org display (if known).
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Longest email accepted (RFC 5321 path limit).
+pub const EMAIL_MAX: usize = 254;
+
+/// A login email: 3..=254 chars, exactly one `@` with something on both sides, no whitespace or
+/// control char. Anything else is dropped (never an error, never echoed).
+pub fn valid_email(s: &str) -> bool {
+    let n = s.chars().count();
+    if !(3..=EMAIL_MAX).contains(&n) {
+        return false;
+    }
+    if s.chars()
+        .any(|c| c.is_control() || c.is_whitespace() || c == '\u{feff}')
+    {
+        return false;
+    }
+    let mut parts = s.split('@');
+    matches!(
+        (parts.next(), parts.next(), parts.next()),
+        (Some(l), Some(d), None) if !l.is_empty() && !d.is_empty()
+    )
+}
+
+/// A logged-in account as shown: an opaque alias, the org display and the login email (if known).
+#[derive(Clone, PartialEq, Eq)]
 pub struct Identity {
     pub alias: String,
     pub org: Option<String>,
+    pub email: Option<String>,
+}
+
+/// `Debug` never prints the email: an `{:?}` in a log line must not leak it.
+impl std::fmt::Debug for Identity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Identity")
+            .field("alias", &self.alias)
+            .field("org", &self.org)
+            .field("email", &self.email.as_ref().map(|_| "<hidden>"))
+            .finish()
+    }
 }
 
 /// The only three fields ever read from the login file; serde ignores everything else.
@@ -114,9 +148,11 @@ fn derive(bytes: &[u8]) -> Option<Identity> {
     }
     let d = Sha256::digest(format!("{uuid}\n{email}").as_bytes());
     let hex: String = d.iter().take(4).map(|b| format!("{b:02x}")).collect();
+    let email_shown = Some(email.trim().to_string()).filter(|e| valid_email(e));
     Some(Identity {
         alias: format!("acct-{hex}"),
         org: acct.org_name.as_deref().and_then(org_display),
+        email: email_shown,
     })
 }
 
@@ -153,6 +189,8 @@ struct Cached {
     size: u64,
     alias: Option<String>,
     org: Option<String>,
+    #[serde(default)]
+    email: Option<String>,
 }
 
 fn read_small(path: &Path, cap: u64) -> Option<Vec<u8>> {
@@ -203,16 +241,17 @@ fn login_identity_with(
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?
         .as_nanos() as i64;
-    let from = |alias: Option<String>, org: Option<String>| {
-        alias.filter(|a| valid_alias(a)).map(|alias| Identity {
+    let from = |c: Cached| {
+        c.alias.filter(|a| valid_alias(a)).map(|alias| Identity {
             alias,
-            org: org.filter(|o| valid_org(o)),
+            org: c.org.filter(|o| valid_org(o)),
+            email: c.email.filter(|e| valid_email(e)),
         })
     };
     if let Some(c) = read_small(cache, 4096).and_then(|b| serde_json::from_slice::<Cached>(&b).ok())
     {
         if c.mtime_ns == mtime_ns && c.size == meta.len() {
-            return from(c.alias, c.org);
+            return from(c);
         }
     }
     let id = read(login).and_then(|b| derive(&b));
@@ -223,6 +262,7 @@ fn login_identity_with(
             size: meta.len(),
             alias: id.as_ref().map(|i| i.alias.clone()),
             org: id.as_ref().and_then(|i| i.org.clone()),
+            email: id.as_ref().and_then(|i| i.email.clone()),
         },
     );
     id
@@ -234,19 +274,20 @@ pub fn login_identity(login: &Path, cache: &Path) -> Option<Identity> {
 }
 
 /// A session's account: the G37 alias wins; else the login identity; else the config dir hash.
-/// The org comes from the login whenever there is one.
+/// The org and email come from the login whenever there is one (also under a pinned alias).
 pub fn account_from(
     env_account: Option<&str>,
     config_dir: &Path,
     login: Option<Identity>,
 ) -> Identity {
     let org = login.as_ref().and_then(|i| i.org.clone());
+    let email = login.as_ref().and_then(|i| i.email.clone());
     let alias = match (env_account, login) {
         (Some(a), _) if valid_alias(a) => a.to_string(),
         (_, Some(i)) => i.alias,
         _ => claude_alias(None, config_dir),
     };
-    Identity { alias, org }
+    Identity { alias, org, email }
 }
 
 /// This process's config dir and account, read from the environment (the one place G36
@@ -332,9 +373,9 @@ mod tests {
 
     #[test]
     fn same_email_two_orgs_two_aliases_and_same_login_same_alias() {
-        let a = derive(login("org-1", "me@x.com", "Acme").as_bytes()).unwrap();
-        let b = derive(login("org-2", "me@x.com", "Acme").as_bytes()).unwrap();
-        let a2 = derive(login("org-1", "me@x.com", "Acme").as_bytes()).unwrap();
+        let a = derive(login("org-1", "me@example.com", "Acme").as_bytes()).unwrap();
+        let b = derive(login("org-2", "me@example.com", "Acme").as_bytes()).unwrap();
+        let a2 = derive(login("org-1", "me@example.com", "Acme").as_bytes()).unwrap();
         assert_ne!(a.alias, b.alias);
         assert_eq!(a.alias, a2.alias);
         assert!(valid_alias(&a.alias) && a.alias.len() == 13);
@@ -344,7 +385,7 @@ mod tests {
         for d in [&d1, &d2] {
             std::fs::write(
                 d.path().join(".claude.json"),
-                login("org-1", "me@x.com", "Acme"),
+                login("org-1", "me@example.com", "Acme"),
             )
             .unwrap();
         }
@@ -392,7 +433,7 @@ mod tests {
     fn personal_detection_and_org_sanitizing() {
         for p in [
             "Jo Doe's Organization",
-            "me@x.com's Organization",
+            "me@example.com's Organization",
             "Jo\u{2019}s Organization",
             "someone@x.com",
             "  Jo's Organization ",
@@ -414,25 +455,92 @@ mod tests {
     }
 
     #[test]
+    fn email_validation_and_derivation() {
+        for ok in [
+            "a@b",
+            "me@example.com",
+            &format!("{}@example.com", "a".repeat(240)),
+        ] {
+            assert!(valid_email(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "ab",
+            "a@",
+            "@b",
+            "@",
+            "a@@b",
+            "a@b@c",
+            "no-at-sign",
+            "me @example.com",
+            "me@exam\nple.com",
+            "me@example.com\u{7}",
+            "me@exam\u{feff}ple.com",
+            &format!("{}@example.com", "a".repeat(250)),
+        ] {
+            assert!(!valid_email(bad), "{bad:?}");
+        }
+        // trimmed on the way in; a bad one is None but the alias still derives
+        let id = derive(login("o", "  me@example.com ", "Acme").as_bytes()).unwrap();
+        assert_eq!(id.email.as_deref(), Some("me@example.com"));
+        let id = derive(login("o", "not an email", "Acme").as_bytes()).unwrap();
+        assert!(id.alias.starts_with("acct-") && id.email.is_none());
+        // a pinned alias keeps the login's email and org
+        let acct = account_from(
+            Some("work-1"),
+            Path::new("/x"),
+            derive(login("o", "me@example.com", "Acme").as_bytes()),
+        );
+        assert_eq!(
+            (
+                acct.alias.as_str(),
+                acct.org.as_deref(),
+                acct.email.as_deref()
+            ),
+            ("work-1", Some("Acme"), Some("me@example.com"))
+        );
+        // a cache written before the email existed still loads (email None)
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join(".claude.json");
+        std::fs::write(&f, login("o", "me@example.com", "Acme")).unwrap();
+        let cache = dir.path().join("identity.json");
+        let meta = std::fs::metadata(&f).unwrap();
+        let mtime = meta
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as i64;
+        std::fs::write(
+            &cache,
+            format!(
+                r#"{{"mtime_ns":{mtime},"size":{},"alias":"acct-1a2b3c4d","org":"Acme"}}"#,
+                meta.len()
+            ),
+        )
+        .unwrap();
+        let old = login_identity(&f, &cache).unwrap();
+        assert_eq!((old.alias.as_str(), old.email), ("acct-1a2b3c4d", None));
+    }
+
+    #[test]
     fn typed_parse_never_keeps_other_fields_and_the_cache_holds_no_secret() {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join(".claude.json");
-        std::fs::write(&f, login("o", "me@x.com", "Acme")).unwrap();
+        std::fs::write(&f, login("o", "me@example.com", "Acme")).unwrap();
         let cache = dir.path().join("sub").join("identity.json");
         let id = login_identity(&f, &cache).unwrap();
         let out = format!("{id:?}");
         let cached = std::fs::read_to_string(&cache).unwrap();
-        for text in [out, cached] {
-            for secret in [
-                "FAKE-TOKEN",
-                "ACCT-SECRET",
-                "ORGTYPE-SECRET",
-                "me@x.com",
-                "\"o\"",
-            ] {
+        // the email is the one login field the cache keeps (0600); the Debug form hides it
+        assert!(cached.contains("me@example.com"), "{cached}");
+        assert_eq!(id.email.as_deref(), Some("me@example.com"));
+        for text in [out, cached.clone()] {
+            for secret in ["FAKE-TOKEN", "ACCT-SECRET", "ORGTYPE-SECRET", "\"o\""] {
                 assert!(!text.contains(secret), "{secret} in {text}");
             }
         }
+        assert!(!format!("{id:?}").contains("me@example.com"));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -449,7 +557,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join(".claude.json");
         let cache = dir.path().join("identity.json");
-        std::fs::write(&f, login("o1", "me@x.com", "Acme")).unwrap();
+        std::fs::write(&f, login("o1", "me@example.com", "Acme")).unwrap();
         let n = Cell::new(0);
         let rd = |p: &Path| {
             n.set(n.get() + 1);
@@ -459,7 +567,7 @@ mod tests {
         let b = login_identity_with(&f, &cache, &rd).unwrap();
         assert_eq!((n.get(), &a), (1, &b));
         // a different size reparses and yields the new identity
-        std::fs::write(&f, login("o22", "me@x.com", "Acme")).unwrap();
+        std::fs::write(&f, login("o22", "me@example.com", "Acme")).unwrap();
         let c = login_identity_with(&f, &cache, &rd).unwrap();
         assert_eq!(n.get(), 2);
         assert_ne!(a.alias, c.alias);

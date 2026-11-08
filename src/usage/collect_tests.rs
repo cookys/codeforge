@@ -433,6 +433,7 @@ fn a_root_takes_the_alias_of_the_snapshot_naming_it() {
     let snap = |alias: &str, root: Option<&str>, at: i64| Snapshot {
         alias: alias.into(),
         org: None,
+        email: None,
         root: root.map(String::from),
         written_at_ms: at,
         five_hour: None,

@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use super::alias::{valid_alias, valid_org};
+use super::alias::{valid_alias, valid_email, valid_org};
 
 pub const SCHEMA: &str = "codeforge.quota/1";
 /// Rewrite an unchanged snapshot at most this often.
@@ -57,6 +57,8 @@ pub struct Snapshot {
     pub alias: String,
     /// The org display (`personal` or a sanitized name); `None` = unknown (an old writer).
     pub org: Option<String>,
+    /// The login email (local 0600 file only); `None` = unknown (an old writer or a bad value).
+    pub email: Option<String>,
     /// sha8 of the canonical config dir this account's sessions run in (`None` from a
     /// pre-phase-2 writer). Lets the collector map a transcript root to an alias.
     pub root: Option<String>,
@@ -155,6 +157,7 @@ impl Snapshot {
             "schema": SCHEMA,
             "alias": self.alias,
             "org": self.org,
+            "email": self.email,
             "root": self.root,
             "written_at_ms": self.written_at_ms,
             "five_hour": window_json(&self.five_hour),
@@ -181,9 +184,14 @@ impl Snapshot {
             .as_str()
             .filter(|o| valid_org(o))
             .map(str::to_string);
+        let email = v["email"]
+            .as_str()
+            .filter(|e| valid_email(e))
+            .map(str::to_string);
         Some(Snapshot {
             alias: alias.to_string(),
             org,
+            email,
             root,
             written_at_ms: v["written_at_ms"].as_i64()?,
             five_hour: window_from(&v["five_hour"]),
@@ -273,6 +281,7 @@ pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot,
         Some(old) => Snapshot {
             alias: snap.alias.clone(),
             org: snap.org.clone(),
+            email: snap.email.clone(),
             root: snap.root.clone().or_else(|| old.root.clone()),
             written_at_ms: snap.written_at_ms,
             five_hour: merge_window(old.five_hour.as_ref(), snap.five_hour.as_ref()),
@@ -367,6 +376,7 @@ mod tests {
         Snapshot {
             alias: alias.into(),
             org: None,
+            email: None,
             root: None,
             written_at_ms: at_ms,
             five_hour: w(five),
@@ -395,6 +405,35 @@ mod tests {
         let mut v = s.to_json();
         v["root"] = json!("/home/x/.claude");
         assert_eq!(Snapshot::from_json(&v), None);
+    }
+
+    #[test]
+    fn email_round_trips_and_a_bad_one_is_dropped_not_the_snapshot() {
+        let mut s = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
+        s.email = Some("me@example.com".into());
+        assert_eq!(Snapshot::from_json(&s.to_json()), Some(s.clone()));
+        // a snapshot from an older writer has no key at all
+        let mut v = s.to_json();
+        v.as_object_mut().unwrap().remove("email");
+        assert_eq!(Snapshot::from_json(&v).unwrap().email, None);
+        for bad in [
+            json!("no-at"),
+            json!("a b@example.com"),
+            json!(5),
+            json!("a@@b"),
+        ] {
+            let mut v = s.to_json();
+            v["email"] = bad;
+            let got = Snapshot::from_json(&v).expect("the quota numbers survive");
+            assert_eq!((got.email, got.five_hour.is_some()), (None, true));
+        }
+        // the merge keeps the newest writer's email
+        let dir = tempfile::tempdir().unwrap();
+        merge_snapshot(dir.path(), &s).unwrap();
+        let mut t = snap("acct-a", NOW_MS + 60_000, Some((0.5, NOW_S + 60)), None);
+        t.email = Some("new@example.com".into());
+        let (m, _) = merge_snapshot(dir.path(), &t).unwrap();
+        assert_eq!(m.email.as_deref(), Some("new@example.com"));
     }
 
     #[test]
