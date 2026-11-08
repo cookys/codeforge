@@ -71,6 +71,8 @@ pub struct Weekly {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
     pub alias: String,
+    /// `personal` or a sanitized org name from the newest observation that carried one.
+    pub org: Option<String>,
     pub provider: String,
     pub hosts: Vec<String>,
     pub observed_at_ms: Option<i64>,
@@ -165,6 +167,7 @@ pub fn load(dir: &Path) -> Result<(Vec<(String, Value)>, Skipped)> {
 struct Acc {
     provider: String,
     hosts: BTreeSet<String>,
+    org: Option<String>,
     /// newest observation: written_at_ms, five_hour, seven_day
     obs: Option<(i64, Option<Win>, Option<Win>)>,
 }
@@ -187,6 +190,7 @@ pub fn merge(
     let new = |provider: &str| Acc {
         provider: provider.to_string(),
         hosts: BTreeSet::new(),
+        org: None,
         obs: None,
     };
     for (stem, v) in files {
@@ -198,6 +202,9 @@ pub fn merge(
             e.provider = "claude".into();
             e.hosts.insert(stem.clone());
             if e.obs.as_ref().is_none_or(|o| at > o.0) {
+                if let Some(org) = a.get("org").and_then(Value::as_str) {
+                    e.org = Some(org.to_string());
+                }
                 e.obs = Some((at, win_of(&a["five_hour"]), win_of(&a["seven_day"])));
             }
         }
@@ -220,6 +227,7 @@ pub fn merge(
         .map(|(alias, acc)| {
             let mut r = Row {
                 alias,
+                org: acc.org,
                 provider: acc.provider,
                 hosts: acc.hosts.into_iter().collect(),
                 observed_at_ms: acc.obs.map(|o| o.0),
@@ -283,6 +291,7 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
         .map(|r| {
             json!({
                 "alias": r.alias,
+                "org": r.org,
                 "provider": r.provider,
                 "hosts": r.hosts,
                 "observed_at_ms": r.observed_at_ms,
@@ -442,6 +451,22 @@ fn warn_line(r: &Row, f: &Fleet, now_s: i64, tr: &Tr) -> Option<Line> {
     Some(l)
 }
 
+/// The org after the alias (the first part of a header/compact line); nothing when unknown.
+fn org_shown(r: &Row, tr: &Tr) -> Option<String> {
+    let org = r.org.as_ref()?;
+    Some(if org == super::alias::ORG_PERSONAL {
+        tr.t("quota.org_personal", &[])
+    } else {
+        org.clone()
+    })
+}
+
+fn add_org(line: &mut Line, r: &Row, tr: &Tr, sep: &str) {
+    if let Some(shown) = org_shown(r, tr) {
+        line.insert(1, p(format!("{sep}{shown}"), Style::Dim));
+    }
+}
+
 /// The whole screen, `cols` <= 100.
 pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String {
     let now_s = now_ms.div_euclid(1000);
@@ -480,14 +505,16 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
         let facts = qv::facts_of(std::slice::from_ref(&e), now_s, tr);
         let fact = &facts[0];
         if compact {
-            lines.push(qv::compact_line(fact, now_s as f64, cols, tr));
+            let mut line = qv::compact_line(fact, now_s as f64, cols, tr);
+            add_org(&mut line, r, tr, " ");
+            lines.push(line);
             continue;
         }
         if !first {
             lines.push(vec![p(" ", Style::Plain)]);
         }
         first = false;
-        lines.push(qv::header_line(fact, cols, tr));
+        lines.push(qv::header_line(fact, cols, tr, org_shown(r, tr).as_deref()));
         match r.state {
             State::Ok => {
                 lines.extend(qv::window_lines(&e.m, cols, now_s as f64, tr));

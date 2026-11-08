@@ -39,10 +39,27 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 
 ## 帳號別名
 
-- statusline：`AUTOPILOT_ACCOUNT` 符合 `^[a-z0-9-]{1,24}$` 就用它（autopilot G37 設定），否則
-  `acct-` + sha256(canonical config dir) 前 8 碼。快照另帶 `root` = 該 config dir 的 8 碼 hash。
-- 收集：不讀 `AUTOPILOT_ACCOUNT`。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」，
-  對應存進 db；沒有就是 `acct-<hash>`。Codex root 是 `codex-<hash>`。
+- 身分規則（statusline 與收集共用）：(1) `AUTOPILOT_ACCOUNT` 符合 `^[a-z0-9-]{1,24}$` 就用它（autopilot G37）；
+  (2) 否則由登入檔取身分：`acct-` + sha256(`organizationUuid` + "\n" + `emailAddress`) 前 8 碼；
+  (3) 登入檔不存在、讀不了、超過 32 MiB 或沒有這兩個欄位，退回 `acct-` + sha256(canonical config dir) 前 8 碼。
+  為什麼不用路徑：每台主機的 config dir 都是 `/home/cookys/.claude`，路徑 hash 讓 7 台不同配額的主機撞同一個別名，
+  而且換帳號（同 email、個人訂閱 vs 組織訂閱）別名不會變。
+- 登入檔：`$CLAUDE_CONFIG_DIR/.claude.json`（有設且非空），否則 `$HOME/.claude.json`（在 `~/.claude/` 之外）。
+  只讀 `oauthAccount` 底下三個欄位：`organizationUuid`、`organizationName`、`emailAddress`（operator 授權的範圍），
+  用只命名這三欄的型別化 serde 結構解析，其餘欄位（token、accountUuid…）由 serde 忽略，不留、不記錄、不複製；
+  從不寫這個檔。email 與 org uuid 不離開本機：快照、summary、`fleet-quota.json` 只有別名（hash）與 org 顯示名。
+- 快取（statusline 每次刷新都跑，登入檔可能數 MB）：`<live_base>/codeforge/usage/identity-<config dir 8 碼>.json`
+  （0600），以登入檔的 (mtime_ns, size) 為鍵；沒變就只做一次 stat 加一次小檔讀取，變了才重新解析。解析出「沒有登入」
+  也會快取。任何錯誤都退回路徑 hash，不讓 statusline 失敗。
+- `org`：`organizationName` 以 `'s Organization`（ASCII 或 ’）結尾、或含 `@`，視為個人訂閱，記為 `personal`；
+  否則為清掉控制字元後最多 40 字元（`.chars().take(40)`）的名稱。`org` 放在本機快照、summary 帳號（**選填**，
+  不存在 = 未知，舊 summary 仍合格；1..=40 字元、無控制字元、無 `@`）與 `fleet-quota.json`（字串或 null）。
+  文字表頭在別名後顯示（`personal` 顯示為「個人」／personal），順序：別名、org、provider、主機。
+  主機太多放不下時，保留放得下的標籤並以「等 N 台」／「+N more」收尾，不會整段拿掉。
+- 收集：不讀 `AUTOPILOT_ACCOUNT`。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」，其次是該 root 自己的
+  登入檔身分（預設 root `~/.claude` 對應 `~/.claude.json`，其他 root 對應 `<root>/.claude.json`），
+  再其次是 db 裡存的，最後 `acct-<hash>`。Codex root 是 `codex-<hash>`。
+- 已知限制：重新登入之前寫下的轉錄檔，會歸給目前登入的帳號。
 - 限制：轉錄檔不記錄是哪個 OAuth token。同一個 config dir 跑多個帳號時，轉錄用量歸給那個 dir
   的別名（配額快照仍準確）。G37 採「每個帳號一個 config dir」，解除這個限制。
 
@@ -84,7 +101,7 @@ model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註
 
 ```json
 {"schema":"codeforge.usage-summary/1","generated_at_ms":0,"host":"host-1a2b3c4d","prices_as_of":"2026-10-06",
- "accounts":[{"alias":"acct-a","written_at_ms":0,"five_hour":{"pct":0.3,"resets_at":0},"seven_day":null}],
+ "accounts":[{"alias":"acct-a","org":"personal","written_at_ms":0,"five_hour":{"pct":0.3,"resets_at":0},"seven_day":null}],
  "days":[{"day":"2026-11-03","source":"claude","account":"acct-a","model":"claude-opus-5-5","speed":"standard",
           "input":0,"output":0,"cache_write_5m":0,"cache_write_1h":0,"cache_read":0,"requests":0,"cost_usd":null}]}
 ```
