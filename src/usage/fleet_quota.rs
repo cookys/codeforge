@@ -18,8 +18,20 @@ use unicode_width::UnicodeWidthStr;
 
 pub const SCHEMA: &str = "codeforge.fleet-quota/1";
 pub const DEFAULT_USE_TARGET: f64 = 0.85;
-/// Providers that have no quota source yet; always listed as "無來源".
-pub const NO_SOURCE_PROVIDERS: [&str; 3] = ["grok", "MiniMax", "agy"];
+/// Every non-Claude provider, each listed even with no account: without quota data its row is
+/// `no_source` with the reason. codex has windows when its rollouts carried `rate_limits`.
+pub const PROVIDERS: [(&str, SourceNote); 10] = [
+    ("kimi", SourceNote::WebOnly),
+    ("glm", SourceNote::NeedsToken),
+    ("qoder", SourceNote::WebOnly),
+    ("qodercn", SourceNote::WebOnly),
+    ("minimax", SourceNote::NeedsToken),
+    ("codex", SourceNote::NoWindow),
+    ("agy", SourceNote::WebOnly),
+    ("grok", SourceNote::WebOnly),
+    ("cursor", SourceNote::WebOnly),
+    ("opencode", SourceNote::WebOnly),
+];
 const WEEK_S: i64 = 7 * 86400;
 const WARMUP_S: i64 = 6 * 3600;
 const WASTE_WITHIN_S: i64 = 48 * 3600;
@@ -36,6 +48,29 @@ pub struct Win {
 pub enum Warn {
     Waste,
     Short,
+}
+
+/// Why a `no_source` row has no quota data (fleet-quota/1 `source_note`, a closed set).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceNote {
+    /// the provider shows its quota only on its web page
+    WebOnly,
+    /// readable with an API token, which autopilot does not mirror yet
+    NeedsToken,
+    /// the account carries no rate-limit window (codex without `rate_limits`)
+    NoWindow,
+}
+impl SourceNote {
+    pub fn name(self) -> &'static str {
+        match self {
+            SourceNote::WebOnly => "web_only",
+            SourceNote::NeedsToken => "needs_token",
+            SourceNote::NoWindow => "no_window",
+        }
+    }
+    fn text(self, tr: &Tr) -> String {
+        tr.t(&format!("quota.fleet_src_{}", self.name()), &[])
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +127,10 @@ pub struct Row {
     pub five_hour: Option<Win>,
     /// `five_hour` has already reset.
     pub five_reset: bool,
+    /// Why there is no source; only on a `no_source` row of a [`PROVIDERS`] provider.
+    pub source_note: Option<SourceNote>,
+    /// The operator's note ([`attach_notes`]); local only.
+    pub note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -268,8 +307,10 @@ pub fn merge(
             let (Some(alias), Some(at)) = (a["alias"].as_str(), a["written_at_ms"].as_i64()) else {
                 continue;
             };
-            let e = by.entry(alias.to_string()).or_insert_with(|| new("claude"));
-            e.provider = "claude".into();
+            // a `codex-<hex8>` key is a codex account carrying its rollouts' windows
+            let provider = super::names::key_provider(alias).unwrap_or("claude");
+            let e = by.entry(alias.to_string()).or_insert_with(|| new(provider));
+            e.provider = provider.into();
             e.hosts.insert(stem.clone());
             // a pushed blob has no email: an older copy that has one still names the account
             newer(&mut e.org, at, a.get("org").and_then(Value::as_str));
@@ -294,8 +335,10 @@ pub fn merge(
                 .insert(stem.clone());
         }
     }
-    for p in NO_SOURCE_PROVIDERS {
-        by.entry(p.to_string()).or_insert_with(|| new(p));
+    for (p, _) in PROVIDERS {
+        if !by.values().any(|a| a.provider == p) {
+            by.entry(p.to_string()).or_insert_with(|| new(p));
+        }
     }
     let now_s = now_ms.div_euclid(1000);
     let rows: Vec<Row> = by
@@ -329,6 +372,8 @@ pub fn merge(
                 weekly: None,
                 five_hour: None,
                 five_reset: false,
+                source_note: None,
+                note: None,
             };
             if let Some(at) = at {
                 if now_ms - at >= MAX_AGE_MS {
@@ -359,6 +404,12 @@ pub fn merge(
                         r.state = State::Stale;
                     }
                 }
+            }
+            if r.state == State::NoSource {
+                r.source_note = PROVIDERS
+                    .iter()
+                    .find(|(p, _)| *p == r.provider)
+                    .map(|(_, n)| *n);
             }
             r
         })
@@ -403,6 +454,13 @@ pub fn merge(
     }
 }
 
+/// Attach the operator's notes: an account key's note, else its provider's.
+pub fn attach_notes(f: &mut Fleet, notes: &super::names::Notes) {
+    for r in &mut f.rows {
+        r.note = notes.for_row(&r.alias, &r.provider).map(str::to_string);
+    }
+}
+
 fn warn_name(w: Option<Warn>) -> Value {
     match w {
         Some(Warn::Waste) => json!("waste"),
@@ -417,7 +475,7 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
         .rows
         .iter()
         .map(|r| {
-            json!({
+            let mut a = json!({
                 "alias": r.alias,
                 "name": r.name,
                 "org": r.org,
@@ -437,7 +495,15 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
                     "reset": w.reset,
                 })),
                 "five_hour": r.five_hour.map(|w| json!({"pct": w.pct, "resets_at": w.resets_at, "reset": r.five_reset})),
-            })
+            });
+            // optional keys, present only when set (an older reader's file shape is unchanged)
+            if let Some(n) = r.source_note {
+                a["source_note"] = json!(n.name());
+            }
+            if let Some(n) = &r.note {
+                a["note"] = json!(n);
+            }
+            a
         })
         .collect();
     json!({
@@ -677,6 +743,22 @@ fn window_lines_of(r: &Row, e: &QEntry, cols: usize, now_f: f64, tr: &Tr) -> Vec
     out
 }
 
+/// A note shorter than this needs only its own width; a longer one is cut, but not below this.
+const NOTE_MIN_CELLS: usize = 8;
+
+/// `line` with `text` appended dim after two spaces, cut to the room left (display width, whole
+/// chars); `None` when too little room is left.
+fn with_tail(line: &Line, text: &str, cols: usize) -> Option<Line> {
+    let room = cols.checked_sub(qv::width(line) + 2)?;
+    if room < NOTE_MIN_CELLS.min(UnicodeWidthStr::width(text)) {
+        return None;
+    }
+    let mut l = line.clone();
+    l.push(p("  ", Style::Plain));
+    l.extend(qv::clip(&[p(text, Style::Dim)], room));
+    Some(l)
+}
+
 /// The whole screen, `cols` <= 100.
 pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String {
     let now_s = now_ms.div_euclid(1000);
@@ -725,6 +807,17 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
                     line = with;
                 }
             }
+            if let Some(n) = r.source_note {
+                let mut with = line.clone();
+                with.push(p(format!(" · {}", n.text(tr)), Style::Dim));
+                if qv::width(&with) <= cols {
+                    line = with;
+                }
+            }
+            // the operator's note before the email: it is what the schedule needs
+            if let Some(l) = r.note.as_deref().and_then(|n| with_tail(&line, n, cols)) {
+                line = l;
+            }
             // the email only when the line still fits with it; the numbers come first
             let mut with = line.clone();
             add_email(&mut with, r, " ");
@@ -766,10 +859,24 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
                 format!("  {}", tr.t("quota.fleet_expired", &[])),
                 Style::Idle,
             )]),
-            State::NoSource => lines.push(vec![p(
-                format!("  {}", tr.t("quota.fleet_no_source", &[])),
-                Style::Idle,
-            )]),
+            State::NoSource => {
+                let mut l = vec![p(
+                    format!("  {}", tr.t("quota.fleet_no_source", &[])),
+                    Style::Idle,
+                )];
+                if let Some(n) = r.source_note {
+                    l.push(p(format!(" · {}", n.text(tr)), Style::Dim));
+                }
+                lines.push(l);
+            }
+        }
+        // the operator's note ends the row: on its last line when it fits there, else its own line
+        if let Some(n) = &r.note {
+            let last = lines.len() - 1; // the block has at least its header line
+            match with_tail(&lines[last], n, cols) {
+                Some(l) => lines[last] = l,
+                None => lines.push(qv::clip(&[p(format!("  {n}"), Style::Dim)], cols)),
+            }
         }
     }
     let skipped: u64 = f.skipped.values().sum();

@@ -78,7 +78,7 @@ const DAY_KEYS: [&str; 12] = [
 ];
 const SOURCES: [&str; 2] = ["claude", "codex"];
 const SPEEDS: [&str; 2] = ["standard", "fast"];
-const PCT_MAX: f64 = 1.5;
+pub const PCT_MAX: f64 = 1.5;
 /// Every integer (counts, times, `resets_at`) is within 0..=2^53-1, exact in a JS number.
 pub const UINT_MAX: u64 = (1 << 53) - 1;
 /// The grammars `valid_alias`, `model_id` and `is_host` implement, as regexes for the pane.

@@ -30,6 +30,13 @@ pub enum Action {
         who: String,
         name: String,
     },
+    NoteSet {
+        target: String,
+        text: String,
+    },
+    NoteClear {
+        target: String,
+    },
 }
 
 fn now_ms() -> i64 {
@@ -81,10 +88,12 @@ fn collect_and_summarize(
         .format("%Y-%m-%d")
         .to_string();
     let rows = collect::rows_since(&conn, &since)?;
-    let fresh: Vec<_> = snaps
+    let mut fresh: Vec<_> = snaps
         .into_iter()
         .filter(|s| (0..quota::MAX_AGE_MS).contains(&(now - s.written_at_ms)))
         .collect();
+    // codex accounts carry the windows of their newest rollout `rate_limits` the same way
+    fresh.extend(collect::codex_snapshots(&conn, now)?);
     let v = summary::build(
         &rows,
         &fresh,
@@ -131,13 +140,14 @@ fn write_fleet_quota(
         return Ok(None);
     };
     let (files, skipped) = fq::load(std::path::Path::new(d))?;
-    let f = fq::merge(
+    let mut f = fq::merge(
         &files,
         skipped,
         now,
         fq::DEFAULT_USE_TARGET,
         &crate::usage::names::load_default(),
     );
+    fq::attach_notes(&mut f, &crate::usage::names::load_notes_default());
     let v = fq::to_json(&f, now);
     crate::live::write_live_json(out_dir, FLEET_FILE, &v)
         .map_err(|e| anyhow::anyhow!("無法寫入 {FLEET_FILE}（{:?}）", e.kind()))?;
@@ -204,6 +214,8 @@ pub fn run(action: Action) -> Result<()> {
         Action::Accounts { json } => accounts(json),
         Action::AliasList => alias_list(),
         Action::AliasSet { who, name } => alias_set(&who, &name),
+        Action::NoteSet { target, text } => note_set(&target, Some(&text)),
+        Action::NoteClear { target } => note_set(&target, None),
         Action::Fleet {
             dir,
             json,
@@ -341,13 +353,14 @@ fn fleet(
     anyhow::ensure!(target > 0.0 && target <= 1.0, "--use-target 要在 (0, 1]");
     let now = now_ms();
     let (files, skipped) = fq::load(dir)?;
-    let f = fq::merge(
+    let mut f = fq::merge(
         &files,
         skipped,
         now,
         target,
         &crate::usage::names::load_default(),
     );
+    fq::attach_notes(&mut f, &crate::usage::names::load_notes_default());
     let v = fq::to_json(&f, now);
     if let Some(p) = out {
         fq::write_atomic(p, &v)?;
@@ -449,6 +462,77 @@ fn alias_list() -> Result<()> {
             org.as_deref().unwrap_or("—"),
             email.as_deref().unwrap_or("—")
         );
+    }
+    let notes = names::load_notes_default();
+    if !notes.0.is_empty() {
+        // an account key is shown by its name, never itself; a provider label is shown as is
+        let shown = account_names(
+            notes
+                .0
+                .keys()
+                .map(String::as_str)
+                .filter(|k| !is_provider(k)),
+        );
+        println!("備註：");
+        for (k, text) in &notes.0 {
+            let who = if is_provider(k) {
+                k.as_str()
+            } else {
+                shown.get(k).map_or("未命名帳號", String::as_str)
+            };
+            println!("  {who}\t{text}");
+        }
+    }
+    Ok(())
+}
+
+/// A provider label a note may be keyed by: `claude` or a [`fleet_quota::PROVIDERS`] name.
+fn is_provider(s: &str) -> bool {
+    s == "claude"
+        || crate::usage::fleet_quota::PROVIDERS
+            .iter()
+            .any(|(p, _)| *p == s)
+}
+
+/// The notes-table key `target` names: a provider label as is, else the one account whose email
+/// or shown name it is (the same lookup as `alias set`).
+fn note_key(
+    target: &str,
+    known: &[crate::usage::names::Who],
+    names: &crate::usage::names::Names,
+) -> Result<String> {
+    if is_provider(target) {
+        return Ok(target.to_string());
+    }
+    crate::usage::names::resolve(known, names, target)
+}
+
+/// `usage note set` (`Some(text)`) / `usage note clear` (`None`).
+fn note_set(target: &str, text: Option<&str>) -> Result<()> {
+    use crate::usage::names;
+    if let Some(t) = text {
+        anyhow::ensure!(
+            names::valid_note(t),
+            "備註最寬 {} 欄（中文字算 2 欄），不能有 @、換行或其他控制字元，前後不能有空白",
+            names::NOTE_MAX
+        );
+    }
+    let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
+    let set = names::load(&path);
+    let known = known_accounts();
+    let key = note_key(target, &who_of(&known), &set)?;
+    let target = if target.contains('@') {
+        "該 email"
+    } else {
+        target
+    };
+    match text {
+        Some(t) => {
+            names::set_note(&path, &key, t)?;
+            println!("已設定備註：{target} → {t}");
+        }
+        None if names::clear_note(&path, &key)? => println!("已清除備註：{target}"),
+        None => println!("{target} 沒有備註"),
     }
     Ok(())
 }
@@ -592,6 +676,55 @@ mod tests {
             std::fs::read_to_string(out.join(FLEET_FILE)).unwrap(),
             "old"
         );
+    }
+
+    #[test]
+    fn a_note_target_is_a_provider_label_else_one_account() {
+        use crate::usage::names::{Names, Who};
+        let known = [
+            Who {
+                key: "acct-11111111",
+                org: Some("Stranity"),
+                email: Some("me@example.com"),
+            },
+            Who {
+                key: "codex-1a2b3c4d",
+                org: None,
+                email: None,
+            },
+        ];
+        let n = Names::default();
+        assert_eq!(note_key("kimi", &known, &n).unwrap(), "kimi");
+        // `codex` is the provider label (every codex row), not the one account shown as codex
+        assert_eq!(note_key("codex", &known, &n).unwrap(), "codex");
+        assert_eq!(note_key("stranity", &known, &n).unwrap(), "acct-11111111");
+        assert_eq!(
+            note_key("ME@example.com", &known, &n).unwrap(),
+            "acct-11111111"
+        );
+        assert!(note_key("nobody", &known, &n).is_err());
+        assert!(
+            note_key("MiniMax", &known, &n).is_err(),
+            "labels are lowercase"
+        );
+    }
+
+    #[test]
+    fn fleet_file_carries_the_no_source_reasons() {
+        let t = tempfile::tempdir().unwrap();
+        let hosts = fleet_dir_with_host(t.path());
+        let out = t.path().join("usage");
+        let p = write_fleet_quota(&out, hosts.to_str(), 1_000_000)
+            .unwrap()
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&p).unwrap()).unwrap();
+        let kimi = v["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["provider"] == "kimi")
+            .unwrap();
+        assert_eq!(kimi["source_note"], "web_only");
     }
 
     #[test]
