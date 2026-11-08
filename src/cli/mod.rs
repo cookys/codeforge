@@ -329,8 +329,9 @@ pub enum UsageAction {
     /// 全帳號配額表：合併資料夾裡各主機的 usage-summary，標出會浪費／會不夠（估）
     Fleet {
         /// 資料夾：每台主機一個 `*.json`（codeforge.usage-summary/1），檔名（不含副檔名）就是主機標籤
+        /// 省略時用環境變數 CODEFORGE_FLEET_USAGE_DIR
         #[arg(long)]
-        dir: std::path::PathBuf,
+        dir: Option<std::path::PathBuf>,
         /// 印 JSON（codeforge.fleet-quota/1）而不是表
         #[arg(long)]
         json: bool,
