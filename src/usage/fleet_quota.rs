@@ -66,6 +66,8 @@ pub struct Weekly {
     pub warn: Option<Warn>,
     /// unix seconds
     pub exhaust_at: Option<i64>,
+    /// The window's `resets_at` has passed: shown as reset, never warned on.
+    pub reset: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -77,10 +79,16 @@ pub struct Row {
     pub email: Option<String>,
     pub provider: String,
     pub hosts: Vec<String>,
+    /// Hosts whose data for this alias lost the merge: an older capture that disagrees with the
+    /// chosen one (subset of `hosts`, sorted).
+    pub old_hosts: Vec<String>,
+    /// Capture time of the newest chosen window (written_at_ms when no window).
     pub observed_at_ms: Option<i64>,
     pub state: State,
     pub weekly: Option<Weekly>,
     pub five_hour: Option<Win>,
+    /// `five_hour` has already reset.
+    pub five_reset: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +107,7 @@ pub fn weekly(win: Win, now_s: i64, use_target: f64) -> Weekly {
         projected: None,
         warn: None,
         exhaust_at: None,
+        reset: false,
     };
     if elapsed >= WARMUP_S {
         let rate = win.pct / elapsed as f64; // fraction per second
@@ -166,20 +175,60 @@ pub fn load(dir: &Path) -> Result<(Vec<(String, Value)>, Skipped)> {
     Ok((ok, skipped))
 }
 
+/// One host's reading of an alias: each window with its capture time (`seen_at_ms`, else the
+/// account's `written_at_ms`).
+struct Ob {
+    host: String,
+    written_at: i64,
+    five: Option<(Win, i64)>,
+    seven: Option<(Win, i64)>,
+}
+
 struct Acc {
     provider: String,
     hosts: BTreeSet<String>,
     org: Option<String>,
     email: Option<String>,
-    /// newest observation: written_at_ms, five_hour, seven_day
-    obs: Option<(i64, Option<Win>, Option<Win>)>,
+    /// newest `written_at_ms` seen: org and email come from that observation
+    newest_written: Option<i64>,
+    obs: Vec<Ob>,
 }
 
-fn win_of(v: &Value) -> Option<Win> {
-    Some(Win {
+fn win_of(v: &Value, written_at: i64) -> Option<(Win, i64)> {
+    let w = Win {
         pct: v.get("pct")?.as_f64()?,
         resets_at: v.get("resets_at")?.as_i64()?,
-    })
+    };
+    let at = v
+        .get("seen_at_ms")
+        .and_then(Value::as_i64)
+        .unwrap_or(written_at);
+    Some((w, at))
+}
+
+/// The observation with the newest capture time; a tie goes to the newer file, then the smaller label.
+fn pick(obs: &[Ob], of: fn(&Ob) -> Option<(Win, i64)>) -> Option<(String, Win, i64)> {
+    let mut best: Option<(String, Win, i64, i64)> = None;
+    for o in obs {
+        let Some((w, at)) = of(o) else { continue };
+        let better = best.as_ref().is_none_or(|(h, _, bat, bw)| {
+            (at, o.written_at) > (*bat, *bw) || ((at, o.written_at) == (*bat, *bw) && o.host < *h)
+        });
+        if better {
+            best = Some((o.host.clone(), w, at, o.written_at));
+        }
+    }
+    best.map(|(h, w, at, _)| (h, w, at))
+}
+
+/// A host whose reading of this window is older than the chosen one and says something else.
+fn lost(o: &Ob, of: fn(&Ob) -> Option<(Win, i64)>, chosen: &Option<(String, Win, i64)>) -> bool {
+    match (of(o), chosen) {
+        (Some((w, at)), Some((_, cw, cat))) => {
+            at < *cat && (w.pct != cw.pct || w.resets_at != cw.resets_at)
+        }
+        _ => false,
+    }
 }
 
 /// Merge validated summaries into rows at `now_ms`, sorted: warnings first.
@@ -195,7 +244,8 @@ pub fn merge(
         hosts: BTreeSet::new(),
         org: None,
         email: None,
-        obs: None,
+        newest_written: None,
+        obs: Vec::new(),
     };
     for (stem, v) in files {
         for a in v["accounts"].as_array().into_iter().flatten() {
@@ -205,15 +255,21 @@ pub fn merge(
             let e = by.entry(alias.to_string()).or_insert_with(|| new("claude"));
             e.provider = "claude".into();
             e.hosts.insert(stem.clone());
-            if e.obs.as_ref().is_none_or(|o| at > o.0) {
+            if e.newest_written.is_none_or(|n| at > n) {
                 if let Some(org) = a.get("org").and_then(Value::as_str) {
                     e.org = Some(org.to_string());
                 }
                 if let Some(email) = a.get("email").and_then(Value::as_str) {
                     e.email = Some(email.to_string());
                 }
-                e.obs = Some((at, win_of(&a["five_hour"]), win_of(&a["seven_day"])));
+                e.newest_written = Some(at);
             }
+            e.obs.push(Ob {
+                host: stem.clone(),
+                written_at: at,
+                five: win_of(&a["five_hour"], at),
+                seven: win_of(&a["seven_day"], at),
+            });
         }
         for d in v["days"].as_array().into_iter().flatten() {
             let (Some(alias), Some(src)) = (d["account"].as_str(), d["source"].as_str()) else {
@@ -232,30 +288,62 @@ pub fn merge(
     let mut rows: Vec<Row> = by
         .into_iter()
         .map(|(alias, acc)| {
+            let five = pick(&acc.obs, |o| o.five);
+            let seven = pick(&acc.obs, |o| o.seven);
+            let mut old_hosts: BTreeSet<String> = BTreeSet::new();
+            for o in &acc.obs {
+                if lost(o, |o| o.five, &five) || lost(o, |o| o.seven, &seven) {
+                    old_hosts.insert(o.host.clone());
+                }
+            }
+            // the capture time of the newest chosen window; the newest file when it has no window
+            let at = [&five, &seven]
+                .into_iter()
+                .flatten()
+                .map(|c| c.2)
+                .max()
+                .or(acc.newest_written);
             let mut r = Row {
                 alias,
                 org: acc.org,
                 email: acc.email,
                 provider: acc.provider,
                 hosts: acc.hosts.into_iter().collect(),
-                observed_at_ms: acc.obs.map(|o| o.0),
+                old_hosts: old_hosts.into_iter().collect(),
+                observed_at_ms: at,
                 state: State::NoSource,
                 weekly: None,
                 five_hour: None,
+                five_reset: false,
             };
-            if let Some((at, five, seven)) = acc.obs {
+            if let Some(at) = at {
                 if now_ms - at >= MAX_AGE_MS {
                     r.state = State::Expired;
                 } else {
-                    r.five_hour = five.filter(|w| w.resets_at > now_s);
-                    r.weekly = seven
-                        .filter(|w| w.resets_at > now_s)
-                        .map(|w| weekly(w, now_s, use_target));
-                    r.state = if r.five_hour.is_some() || r.weekly.is_some() {
-                        State::Ok
+                    let five = five.map(|c| c.1);
+                    let seven = seven.map(|c| c.1);
+                    let live = |w: &Option<Win>| w.is_some_and(|w| w.resets_at > now_s);
+                    if live(&five) || live(&seven) {
+                        // a window past its reset is shown as reset and never warned on
+                        r.five_reset = five.is_some_and(|w| w.resets_at <= now_s);
+                        r.five_hour = five;
+                        r.weekly = seven.map(|w| {
+                            if w.resets_at > now_s {
+                                weekly(w, now_s, use_target)
+                            } else {
+                                Weekly {
+                                    win: w,
+                                    projected: None,
+                                    warn: None,
+                                    exhaust_at: None,
+                                    reset: true,
+                                }
+                            }
+                        });
+                        r.state = State::Ok;
                     } else {
-                        State::Stale
-                    };
+                        r.state = State::Stale;
+                    }
                 }
             }
             r
@@ -303,6 +391,7 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
                 "email": r.email,
                 "provider": r.provider,
                 "hosts": r.hosts,
+                "old_hosts": r.old_hosts,
                 "observed_at_ms": r.observed_at_ms,
                 "age_s": r.observed_at_ms.map(|t| ((now_ms - t) / 1000).max(0)),
                 "state": r.state.name(),
@@ -312,8 +401,9 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
                     "projected": w.projected,
                     "warn": warn_name(w.warn),
                     "exhaust_at": w.exhaust_at,
+                    "reset": w.reset,
                 })),
-                "five_hour": r.five_hour.map(|w| json!({"pct": w.pct, "resets_at": w.resets_at})),
+                "five_hour": r.five_hour.map(|w| json!({"pct": w.pct, "resets_at": w.resets_at, "reset": r.five_reset})),
             })
         })
         .collect();
@@ -362,7 +452,17 @@ fn level_of(provider: &str) -> &'static str {
     }
 }
 
-fn entry(r: &Row, now_ms: i64) -> QEntry {
+/// The host labels as drawn: the chosen hosts first, then the old ones, each with the 舊 / old marker.
+fn hosts_shown(r: &Row, tr: &Tr) -> Vec<String> {
+    let (old, new): (Vec<&String>, Vec<&String>) =
+        r.hosts.iter().partition(|h| r.old_hosts.contains(h));
+    new.into_iter()
+        .cloned()
+        .chain(old.into_iter().map(|h| tr.t("quota.host_old", &[("h", h)])))
+        .collect()
+}
+
+fn entry(r: &Row, now_ms: i64, tr: &Tr) -> QEntry {
     let at = r.observed_at_ms.unwrap_or(0);
     let mk = |kind: &'static str, w: Win| MergedWindow {
         kind,
@@ -380,10 +480,11 @@ fn entry(r: &Row, now_ms: i64) -> QEntry {
         estimated: false,
     };
     let mut windows = Vec::new();
-    if let Some(w) = r.five_hour {
+    // a window that has already reset is not drawn as a gauge: `window_lines_of` words it
+    if let Some(w) = r.five_hour.filter(|_| !r.five_reset) {
         windows.push(mk("rolling_5h", w));
     }
-    if let Some(w) = &r.weekly {
+    if let Some(w) = r.weekly.as_ref().filter(|w| !w.reset) {
         windows.push(mk("weekly", w.win));
     }
     QEntry {
@@ -399,7 +500,7 @@ fn entry(r: &Row, now_ms: i64) -> QEntry {
             had_observation: r.state != State::NoSource,
             had_window: true,
             level: level_of(&r.provider),
-            hosts: r.hosts.clone(),
+            hosts: hosts_shown(r, tr),
             multi_host: !r.hosts.is_empty(),
         },
     }
@@ -509,6 +610,49 @@ fn add_org(line: &mut Line, r: &Row, tr: &Tr, sep: &str) {
     }
 }
 
+/// `週 已重置` for the reset windows of a row (compact line); `None` when none has reset.
+fn reset_note(r: &Row, tr: &Tr) -> Option<String> {
+    let mut v = Vec::new();
+    if r.five_reset {
+        v.push(tr.t("quota.w_5h", &[]));
+    }
+    if r.weekly.as_ref().is_some_and(|w| w.reset) {
+        v.push(tr.t("quota.w_weekly", &[]));
+    }
+    (!v.is_empty()).then(|| format!("{} {}", v.join("/"), tr.t("quota.fleet_win_reset", &[])))
+}
+
+/// One line per window in 5h, week order: the live ones from the G40 renderer, a reset one as
+/// `週 已重置` (its old pct is not shown as current).
+fn window_lines_of(r: &Row, e: &QEntry, cols: usize, now_f: f64, tr: &Tr) -> Vec<Line> {
+    let mut live = qv::window_lines(&e.m, cols, now_f, tr).into_iter();
+    let mut out = Vec::new();
+    let mut one = |present: bool, reset: bool, label: &str| {
+        if !present {
+            return;
+        }
+        if reset {
+            out.push(vec![p(
+                format!("  {label} {}", tr.t("quota.fleet_win_reset", &[])),
+                Style::Idle,
+            )]);
+        } else if let Some(l) = live.next() {
+            out.push(l);
+        }
+    };
+    one(
+        r.five_hour.is_some(),
+        r.five_reset,
+        &tr.t("quota.w_5h", &[]),
+    );
+    one(
+        r.weekly.is_some(),
+        r.weekly.as_ref().is_some_and(|w| w.reset),
+        &tr.t("quota.w_weekly", &[]),
+    );
+    out
+}
+
 /// The whole screen, `cols` <= 100.
 pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String {
     let now_s = now_ms.div_euclid(1000);
@@ -543,12 +687,20 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
     let mut tight = false;
     let mut first = true;
     for r in &f.rows {
-        let mut e = entry(r, now_ms);
+        let mut e = entry(r, now_ms, tr);
         e.key = name_shown(r, name_cells(cols, compact));
         let facts = qv::facts_of(std::slice::from_ref(&e), now_s, tr);
         let fact = &facts[0];
         if compact {
             let mut line = qv::compact_line(fact, now_s as f64, cols, tr);
+            // a reset window is named when it still fits
+            if let Some(l) = reset_note(r, tr) {
+                let mut with = line.clone();
+                with.push(p(format!(" {l}"), Style::Idle));
+                if qv::width(&with) <= cols {
+                    line = with;
+                }
+            }
             // the org only when the line still fits with it; the numbers come first
             let mut with = line.clone();
             add_org(&mut with, r, tr, " ");
@@ -565,9 +717,12 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
         lines.push(qv::header_line(fact, cols, tr, org_shown(r, tr).as_deref()));
         match r.state {
             State::Ok => {
-                lines.extend(qv::window_lines(&e.m, cols, now_s as f64, tr));
+                lines.extend(window_lines_of(r, &e, cols, now_s as f64, tr));
                 tight |= e.m.windows.iter().any(qv::win_tight);
-                if r.weekly.as_ref().is_some_and(|w| w.projected.is_none()) {
+                if r.weekly
+                    .as_ref()
+                    .is_some_and(|w| !w.reset && w.projected.is_none())
+                {
                     lines.push(vec![p(
                         format!("  {}", tr.t("quota.fleet_warmup", &[])),
                         Style::Idle,

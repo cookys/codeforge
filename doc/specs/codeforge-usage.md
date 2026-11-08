@@ -64,6 +64,10 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   （壞值丟掉、數字照留）、summary 帳號（**選填**，驗證規則同上，壞值整份 summary 不合格，訊息不含該值；契約的
   `email` 正規表達式 `^(?=.{3,254}$)[^@\s\p{Cc}\uFEFF]+@[^@\s\p{Cc}\uFEFF]+$` 與 pane 副本由測試比對）與
   `fleet-quota.json`（字串或 null，取最新且帶 email 的那筆觀察，同 org）。
+- **視窗擷取時間 `seen_at_ms`**：summary 帳號的 `five_hour`／`seven_day` 視窗**選填** `seen_at_ms`（整數毫秒，0..=2^53−1，
+  不得晚於該 summary 的 `generated_at_ms` 超過 10 分鐘），表示這筆 rate-limit 資料是何時被擷取的，取自快照視窗的
+  `seen.at_ms`；舊快照沒有就省略（舊 summary 仍合格，合併時以帳號 `written_at_ms` 代替）。超出範圍的值在產生時直接不帶，
+  不丟掉整個帳號。契約 `window_optional` 與 pane 副本由測試比對。
   **顯示標籤是「email · org」**（org 為 `personal` 時顯示為「個人」／personal）；沒有 email 就退回「別名 · org」。
   別名仍是合併的鍵，不再是主標籤。文字表頭與警示列都用這個標籤；表頭 email 最多 32 欄（`EMAIL_CELLS`，用 `…` 收尾），
   緊湊列（< 60 欄）更短（`欄寬 − 18`，至少 8），讓週百分比留在同一行；org 仍最多 16 欄、緊湊列放不下就不放。
@@ -158,21 +162,28 @@ forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接
   `gpu-a.json`）；summary 裡的 `host` hash 與任何路徑都不顯示。每個檔都過 `summary::validate`，不合格的略過並計數
   （文字顯示「N 份略過」，JSON 的 `skipped` 為 `{原因: 數量}`，原因：`invalid`、`not_json`、`unreadable`、
   `too_large`（> 4 MiB）、`too_many`（> 256 份）、`bad_name`），不會中斷整張表。
-- **合併**：每個別名一列；`hosts` 是有這個別名的所有檔名；視窗數值取該別名 `written_at_ms` 最新的那筆觀察。
+- **合併**：每個別名一列；`hosts` 是有這個別名的所有檔名。**5h 與 7d 視窗各自取「擷取時間最新」的那筆觀察**
+  （擷取時間 = 視窗的 `seen_at_ms`，沒有就用該帳號的 `written_at_ms`；平手取 `written_at_ms` 較新者，再取標籤較小者），
+  **不是取最大 pct**，也不是整個帳號只看 `written_at_ms`：一台主機的 statusline 久未刷新、檔案卻剛寫出，
+  舊資料不會蓋過另一台較新的擷取。擷取時間較舊**且**內容不同（`resets_at` 或 `pct` 不同）的主機記為「舊」
+  （任一視窗輸了就算）：JSON `old_hosts`、文字與分頁在標籤後加「舊」／old。列的 `observed_at_ms` 與 6 小時過期
+  都看被選中視窗的擷取時間。被選中的視窗 `resets_at` ≤ now 就是「已重置」：JSON `reset: true`，畫成「週 已重置」／
+  `week reset`（不顯示舊的 pct），不估算、不警示（`projected`、`warn`、`exhaust_at` 皆 `null`）。
   只出現在 `days`（source codex）的別名是「無來源」列（summary 不帶 codex 百分比）；grok、MiniMax、agy 固定列
   「無來源」（`NO_SOURCE_PROVIDERS`）。
 - **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗
-  不畫（兩個都過就是「已重置，等新觀察」）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
+  畫成「已重置」而不是 pct（兩個都過就是「已重置，等新觀察」，`state` 為 `stale`）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
 - **警示（只看週視窗、線性估算）**：W = 7 天，remaining = resets_at − now，elapsed = W − remaining；elapsed < 6 小時
   不估（「暖機」）。`projected = pct × W / elapsed`。**會浪費**：remaining < 48 小時且 pct < `--use-target`（預設 0.85）。
   **會不夠（估）**：projected ≥ 1.0 且 pct < 1.0，並估 `now + (1−pct)/(pct/elapsed)` 用完。兩者同時成立時以會不夠為準
   （照現速會用完，就不是浪費）。有警示的列排前面：會浪費、會不夠（各依重置時間由近到遠），其餘依別名。
 - **JSON**（`--json` 印出；`--out <file>` 以暫存檔＋rename 原子寫入，0600，可與文字表並用）：
   `{"schema":"codeforge.fleet-quota/1","generated_at_ms":…,"use_target":0.85,"skipped":{},"accounts":[…]}`，每筆
-  `{alias, org|null, email|null, provider("claude"|"codex"|"grok"|…), hosts[], observed_at_ms|null, age_s|null, state, weekly, five_hour}`；
+  `{alias, org|null, email|null, provider("claude"|"codex"|"grok"|…), hosts[], old_hosts[]（hosts 的子集，排序）, observed_at_ms|null, age_s|null, state, weekly, five_hour}`；
   `state`：`ok`（有視窗可畫）、`stale`（6 小時內有觀察但視窗全已重置）、`expired`（最後觀察超過 6 小時）、`no_source`；
-  `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null}`（`resets_at`、`exhaust_at`
-  為 unix 秒），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at}|null`。`pct` 是小數（1.0 = 100%）。
+  `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null, reset}`（`resets_at`、`exhaust_at`
+  為 unix 秒；`reset` 為 true 時視窗已重置，`pct` 不是現值），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at, reset}|null`。
+  forge-stats 解析器對 `old_hosts`、`reset` 容忍缺席（舊檔：空、false），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
   讀者（forge-stats 分頁、fleet.console/1 的配額區）直接讀，不重算。
 
 **寫檔（`usage collect` 順手維護）**：環境變數 `CODEFORGE_FLEET_USAGE_DIR` 有設且非空時，`codeforge usage collect`

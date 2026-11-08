@@ -49,6 +49,10 @@ const ACCOUNT_KEYS: [&str; 4] = ["alias", "written_at_ms", "five_hour", "seven_d
 /// Optional account keys: absent = unknown, so a summary from before `org`/`email` still validates.
 const ACCOUNT_OPTIONAL: [&str; 2] = ["org", "email"];
 const WINDOW_KEYS: [&str; 2] = ["pct", "resets_at"];
+/// Optional window keys: `seen_at_ms` = when the rate-limit data was captured; absent = unknown.
+const WINDOW_OPTIONAL: [&str; 1] = ["seen_at_ms"];
+/// A capture time may be this far ahead of the summary's own `generated_at_ms` (clock skew).
+pub const SEEN_SKEW_MS: u64 = 10 * 60 * 1000;
 const COUNT_KEYS: [&str; 6] = [
     "input",
     "output",
@@ -94,7 +98,7 @@ const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 pub fn contract() -> Value {
     json!({
         "schema": SCHEMA,
-        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "email": EMAIL_RE, "window": WINDOW_KEYS, "day": DAY_KEYS,
+        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "email": EMAIL_RE, "window": WINDOW_KEYS, "window_optional": WINDOW_OPTIONAL, "day": DAY_KEYS,
         "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
         "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE, "uint_max": UINT_MAX,
         "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
@@ -136,9 +140,18 @@ pub fn hostname() -> String {
     std::env::var("COMPUTERNAME").unwrap_or_default()
 }
 
-fn window(w: &Option<super::quota::Window>) -> Value {
+fn window(w: &Option<super::quota::Window>, now_ms: i64) -> Value {
     match w {
-        Some(w) => json!({ "pct": w.pct, "resets_at": w.resets_at }),
+        Some(w) => {
+            let mut v = json!({ "pct": w.pct, "resets_at": w.resets_at });
+            // the capture time, when the snapshot carries one the contract accepts
+            if let Some(seen) = &w.seen {
+                if (0..=now_ms.saturating_add(SEEN_SKEW_MS as i64)).contains(&seen.at_ms) {
+                    v["seen_at_ms"] = json!(seen.at_ms);
+                }
+            }
+            v
+        }
         None => Value::Null,
     }
 }
@@ -183,7 +196,7 @@ pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Va
         } else if kept.len() < MAX_ACCOUNTS {
             let mut a = json!({
                 "alias": s.alias, "written_at_ms": s.written_at_ms,
-                "five_hour": window(&s.five_hour), "seven_day": window(&s.seven_day),
+                "five_hour": window(&s.five_hour, now_ms), "seven_day": window(&s.seven_day, now_ms),
             });
             if let Some(org) = &s.org {
                 a["org"] = json!(org);
@@ -272,11 +285,20 @@ fn is_host(s: &str) -> bool {
     s.strip_prefix("host-").is_some_and(super::quota::is_hash8)
 }
 
-fn win(v: &Value, at: &str) -> Result<()> {
+fn win(v: &Value, at: &str, generated_at_ms: u64) -> Result<()> {
     if v.is_null() {
         return Ok(());
     }
-    let m = obj(v, &WINDOW_KEYS, at)?;
+    let m = obj_with(v, &WINDOW_KEYS, &WINDOW_OPTIONAL, at)?;
+    if let Some(seen) = m.get("seen_at_ms") {
+        uint(seen, &format!("{at}.seen_at_ms"))?;
+        if seen
+            .as_u64()
+            .is_some_and(|n| n > generated_at_ms.saturating_add(SEEN_SKEW_MS))
+        {
+            bail!("{at}.seen_at_ms: 在 generated_at_ms 之後太久");
+        }
+    }
     let pct = m["pct"]
         .as_f64()
         .filter(|p| p.is_finite() && (0.0..=PCT_MAX).contains(p));
@@ -336,8 +358,9 @@ pub fn validate(v: &Value) -> Result<()> {
             bail!("{at}.email: 不是合法的登入信箱");
         }
         uint(&m["written_at_ms"], &format!("{at}.written_at_ms"))?;
-        win(&m["five_hour"], &format!("{at}.five_hour"))?;
-        win(&m["seven_day"], &format!("{at}.seven_day"))?;
+        let gen = top["generated_at_ms"].as_u64().unwrap_or(0);
+        win(&m["five_hour"], &format!("{at}.five_hour"), gen)?;
+        win(&m["seven_day"], &format!("{at}.seven_day"), gen)?;
     }
     let days = top["days"].as_array().context("summary.days: 不是陣列")?;
     if days.len() > MAX_DAYS_ROWS {
@@ -489,6 +512,62 @@ mod tests {
             &host_alias("MARKERHOST.example"),
             7,
         )
+    }
+
+    #[test]
+    fn seen_at_ms_is_optional_validated_and_carried_from_the_snapshot() {
+        use super::super::quota::Seen;
+        let seen = |at_ms: i64| {
+            Some(Window {
+                pct: 0.3,
+                resets_at: 9,
+                seen: Some(Seen {
+                    at_ms,
+                    session: "s1".into(),
+                }),
+            })
+        };
+        let mk = |at_ms: i64| {
+            let snap = Snapshot {
+                alias: "acct-a".into(),
+                org: None,
+                email: None,
+                root: None,
+                written_at_ms: 5,
+                five_hour: seen(at_ms),
+                seven_day: None,
+            };
+            build(&[], &[snap], &host_alias("h"), 1_000_000)
+        };
+        // carried, and valid
+        let v = mk(900_000);
+        assert_eq!(v["accounts"][0]["five_hour"]["seen_at_ms"], json!(900_000));
+        validate(&v).unwrap();
+        // a capture time in the future past the skew is not carried (the window stays valid)
+        let v = mk(1_000_000 + SEEN_SKEW_MS as i64 + 1);
+        assert!(v["accounts"][0]["five_hour"].get("seen_at_ms").is_none());
+        validate(&v).unwrap();
+        // within the skew is kept
+        let v = mk(1_000_000 + SEEN_SKEW_MS as i64);
+        validate(&v).unwrap();
+        // an older summary without the key stays valid
+        validate(&good()).unwrap();
+        assert!(good()["accounts"][0]["five_hour"]
+            .get("seen_at_ms")
+            .is_none());
+        // validate refuses a bad one
+        for bad in [
+            json!(-1),
+            json!(1.5),
+            json!("x"),
+            json!(null),
+            json!(1_000_000 + SEEN_SKEW_MS + 1),
+            json!(UINT_MAX + 1),
+        ] {
+            let mut v = mk(900_000);
+            v["accounts"][0]["five_hour"]["seen_at_ms"] = bad.clone();
+            assert!(validate(&v).is_err(), "{bad} passed");
+        }
     }
 
     #[test]
