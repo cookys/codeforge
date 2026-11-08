@@ -1,5 +1,5 @@
 use super::fleet_quota::*;
-use super::quota_view::Tr;
+use super::quota_view::{self as qv, Tr};
 use serde_json::{json, Value};
 use unicode_width::UnicodeWidthStr;
 
@@ -430,5 +430,41 @@ fn summary_org_validates_when_present_and_is_optional() {
     ] {
         v["accounts"][0]["org"] = bad.clone();
         assert!(crate::usage::summary::validate(&v).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_40_char_cjk_org_is_cut_and_keeps_the_numbers_on_screen() {
+    let org: String = "研發部門".repeat(10);
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![with_org(
+            acct(
+                "acct-12345678",
+                60,
+                Some((0.95, NOW_S + 2 * H)),
+                Some((0.97, NOW_S + 3 * D)),
+            ),
+            &org,
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &s), ("b.json", &s)]);
+    for cols in [30, 40, 50, 60, 70, 80, 100] {
+        for tr in ["zh-TW", "en"] {
+            let txt = text(&f, cols, NOW_MS, &Tr(tr.into()), false);
+            for l in txt.lines() {
+                assert!(UnicodeWidthStr::width(l) <= cols, "{cols} {tr}: {l:?}");
+            }
+            // the org is cut, so the weekly % stays on the alias line (compact) or below it
+            let head = txt
+                .lines()
+                .find(|l| l.starts_with("acct-12345678"))
+                .unwrap();
+            assert!(
+                txt.contains("97%") && (cols >= qv::COMPACT_COLS || head.contains("97%")),
+                "{cols} {tr}: {txt}"
+            );
+        }
     }
 }
