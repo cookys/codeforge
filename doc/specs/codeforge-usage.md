@@ -119,6 +119,32 @@ forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接
 - 只有 token 狀態、從沒有過 window 的記錄（契約 §21.6 shape c）畫「沒有用量資料」，不是「過期或已重置，等新觀察」（後者只給有過 window 但全被丟掉的）；`--json` 的 `state` 為 `no_usage`。
 - `--json` 輸出解讀後的清單（已套用丟棄規則），schema `codeforge.usage-accounts/1`。
 
+## 全帳號配額表（`usage fleet`）
+
+`codeforge usage fleet --dir <D>`：把許多主機的 `codeforge.usage-summary/1` 合併成一張全帳號配額表，
+頂端列出「會浪費／會不夠（估）」的帳號。只讀、不連網、不存任何東西；實作 `src/usage/fleet_quota.rs`。
+
+- **資料夾**：每台主機一個 `*.json`，檔名（不含副檔名）就是顯示的主機標籤（由收集端依角色命名，如
+  `gpu-a.json`）；summary 裡的 `host` hash 與任何路徑都不顯示。每個檔都過 `summary::validate`，不合格的略過並計數
+  （文字顯示「N 份略過」，JSON 的 `skipped` 為 `{原因: 數量}`，原因：`invalid`、`not_json`、`unreadable`、
+  `too_large`（> 4 MiB）、`too_many`（> 256 份）、`bad_name`），不會中斷整張表。
+- **合併**：每個別名一列；`hosts` 是有這個別名的所有檔名；視窗數值取該別名 `written_at_ms` 最新的那筆觀察。
+  只出現在 `days`（source codex）的別名是「無來源」列（summary 不帶 codex 百分比）；grok、MiniMax、agy 固定列
+  「無來源」（`NO_SOURCE_PROVIDERS`）。
+- **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗
+  不畫（兩個都過就是「已重置，等新觀察」）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
+- **警示（只看週視窗、線性估算）**：W = 7 天，remaining = resets_at − now，elapsed = W − remaining；elapsed < 6 小時
+  不估（「暖機」）。`projected = pct × W / elapsed`。**會浪費**：remaining < 48 小時且 pct < `--use-target`（預設 0.85）。
+  **會不夠（估）**：projected ≥ 1.0 且 pct < 1.0，並估 `now + (1−pct)/(pct/elapsed)` 用完。兩者同時成立時以會不夠為準
+  （照現速會用完，就不是浪費）。有警示的列排前面：會浪費、會不夠（各依重置時間由近到遠），其餘依別名。
+- **JSON**（`--json` 印出；`--out <file>` 以暫存檔＋rename 原子寫入，0600，可與文字表並用）：
+  `{"schema":"codeforge.fleet-quota/1","generated_at_ms":…,"use_target":0.85,"skipped":{},"accounts":[…]}`，每筆
+  `{alias, provider("claude"|"codex"|"grok"|…), hosts[], observed_at_ms|null, age_s|null, state, weekly, five_hour}`；
+  `state`：`ok`（有視窗可畫）、`stale`（6 小時內有觀察但視窗全已重置）、`expired`（最後觀察超過 6 小時）、`no_source`；
+  `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null}`（`resets_at`、`exhaust_at`
+  為 unix 秒），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at}|null`。`pct` 是小數（1.0 = 100%）。
+  讀者（forge-stats 分頁、fleet.console/1 的配額區）直接讀，不重算。
+
 ## 指令
 
 ```bash
@@ -128,6 +154,7 @@ codeforge usage --json
 codeforge usage collect --quiet     # hook 用
 codeforge usage push                # 印出 blob sha
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
+codeforge usage fleet --dir <D> [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）
 /forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```
 

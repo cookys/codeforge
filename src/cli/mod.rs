@@ -326,6 +326,21 @@ pub enum UsageAction {
         #[arg(long)]
         json: bool,
     },
+    /// 全帳號配額表：合併資料夾裡各主機的 usage-summary，標出會浪費／會不夠（估）
+    Fleet {
+        /// 資料夾：每台主機一個 `*.json`（codeforge.usage-summary/1），檔名（不含副檔名）就是主機標籤
+        #[arg(long)]
+        dir: std::path::PathBuf,
+        /// 印 JSON（codeforge.fleet-quota/1）而不是表
+        #[arg(long)]
+        json: bool,
+        /// 同時把 JSON 寫到這個檔（暫存檔＋rename，原子替換）
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// 週視窗用量目標：重置前不到這個比例就算會浪費
+        #[arg(long, default_value_t = crate::usage::fleet_quota::DEFAULT_USE_TARGET)]
+        use_target: f64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -519,6 +534,17 @@ pub fn run(cli: Cli) -> Result<()> {
             Some(UsageAction::Collect { quiet }) => usage::Action::Collect { quiet },
             Some(UsageAction::Push) => usage::Action::Push,
             Some(UsageAction::Accounts { json }) => usage::Action::Accounts { json },
+            Some(UsageAction::Fleet {
+                dir,
+                json,
+                out,
+                use_target,
+            }) => usage::Action::Fleet {
+                dir,
+                json,
+                out,
+                use_target,
+            },
             None => usage::Action::Show { days, by, json },
         }),
         Commands::MnemosCli { action } => mnemos_cli::run(

@@ -153,7 +153,7 @@ fn label_of(w: &MergedWindow, tr: &Tr) -> String {
 fn is_gauge(w: &MergedWindow) -> bool {
     GAUGE_KINDS.contains(&w.kind)
 }
-fn win_tight(w: &MergedWindow) -> bool {
+pub(crate) fn win_tight(w: &MergedWindow) -> bool {
     is_gauge(w) && w.utilization.is_some_and(is_tight)
 }
 /// Minutes-granular countdown to `at_s` (epoch seconds, local clock), as `countdown` in model.ts.
@@ -424,7 +424,7 @@ fn refusal_line(m: &MergedQuota, now_s: f64, tr: &Tr, full: bool) -> Line {
     ]
 }
 
-fn header_line(f: &Fact, cols: usize, tr: &Tr) -> Line {
+pub(crate) fn header_line(f: &Fact, cols: usize, tr: &Tr) -> Line {
     let m = &f.e.m;
     let name = || p(f.e.key.clone(), Style::Bold);
     let dot = || p(" · ", Style::Dim);
@@ -479,7 +479,7 @@ fn header_line(f: &Fact, cols: usize, tr: &Tr) -> Line {
     fit(forms, cols)
 }
 
-fn compact_line(f: &Fact, now_s: f64, cols: usize, tr: &Tr) -> Line {
+pub(crate) fn compact_line(f: &Fact, now_s: f64, cols: usize, tr: &Tr) -> Line {
     let m = &f.e.m;
     let name = || p(f.e.key.clone(), Style::Bold);
     let flag = || -> Line {
@@ -555,6 +555,22 @@ fn compact_line(f: &Fact, now_s: f64, cols: usize, tr: &Tr) -> Line {
     )
 }
 
+/// One line per window of `m`, fitted to `cols` (design 6.2: below 80 columns the age goes first).
+pub(crate) fn window_lines(m: &MergedQuota, cols: usize, now_f: f64, tr: &Tr) -> Vec<Line> {
+    let skip = usize::from(cols < AGE_MIN_COLS);
+    m.windows
+        .iter()
+        .map(|w| {
+            let forms = WIN_FORMS
+                .iter()
+                .skip(skip)
+                .map(|wf| win_line(w, now_f, tr, *wf))
+                .collect();
+            fit(forms, cols)
+        })
+        .collect()
+}
+
 /// The `usage accounts` body: one block per (provider, alias); the footer carries the unreadable count and the legend.
 pub fn pane_lines(
     state: &QuotaState,
@@ -589,16 +605,7 @@ pub fn pane_lines(
                     if m.refusal.is_some() {
                         out.push(refusal_line(m, now_f, tr, true));
                     }
-                    for w in &m.windows {
-                        // design 6.2: below 80 columns the age goes first
-                        let skip = usize::from(cols < AGE_MIN_COLS);
-                        let forms = WIN_FORMS
-                            .iter()
-                            .skip(skip)
-                            .map(|wf| win_line(w, now_f, tr, *wf))
-                            .collect();
-                        out.push(fit(forms, cols));
-                    }
+                    out.extend(window_lines(m, cols, now_f, tr));
                 }
             }
         }
@@ -904,7 +911,7 @@ pub fn band_forms(b: &Band) -> Vec<Line> {
 }
 
 // ---- `usage accounts` text ----
-fn paint(s: &Part, color: bool) -> String {
+pub(crate) fn paint(s: &Part, color: bool) -> String {
     if !color {
         return s.text.clone();
     }
