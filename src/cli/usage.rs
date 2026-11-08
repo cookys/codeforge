@@ -60,8 +60,15 @@ fn collect_and_summarize(
         .filter(|d| !d.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".codex"));
-    let roots = collect::roots(&claude_dirs, Some(&codex));
+    let mut roots = collect::roots(&claude_dirs, Some(&codex));
     let (live_base, _) = crate::live::resolve_live_base();
+    for r in roots.iter_mut().filter(|r| r.kind == collect::Kind::Claude) {
+        r.account = crate::usage::alias::login_identity(
+            &crate::usage::alias::login_path_for_root(&r.dir, &home),
+            &crate::usage::alias::identity_cache_path(&live_base, &r.dir),
+        )
+        .map(|i| i.alias);
+    }
     let snaps = quota::read_all(&quota::quota_dir(&live_base));
     let now = now_ms();
     let rep = collect::collect(&mut conn, &roots, &snaps, now)?;

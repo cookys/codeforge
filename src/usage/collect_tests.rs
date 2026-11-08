@@ -432,6 +432,7 @@ fn a_root_takes_the_alias_of_the_snapshot_naming_it() {
     let hash = rs[0].hash.clone();
     let snap = |alias: &str, root: Option<&str>, at: i64| Snapshot {
         alias: alias.into(),
+        org: None,
         root: root.map(String::from),
         written_at_ms: at,
         five_hour: None,
@@ -673,4 +674,35 @@ fn counts_off_the_bound_are_skipped_and_an_overflowing_bucket_rolls_the_file_bac
         "saturated, then capped at the contract bound"
     );
     crate::usage::summary::validate(&v).unwrap();
+}
+
+#[test]
+fn a_root_without_a_snapshot_takes_its_login_alias_over_a_stored_one() {
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &claude("req_1", 1, 1, json!({})),
+    );
+    let mut rs = roots(std::slice::from_ref(&e.cfg), None);
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(
+        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
+        format!("acct-{}", rs[0].hash)
+    );
+    rs[0].account = Some("acct-1111aaaa".into());
+    assert_eq!(
+        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
+        "acct-1111aaaa"
+    );
+    // a re-login changes it; a lost login keeps the stored one
+    rs[0].account = Some("acct-2222bbbb".into());
+    assert_eq!(
+        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
+        "acct-2222bbbb"
+    );
+    rs[0].account = None;
+    assert_eq!(
+        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
+        "acct-2222bbbb"
+    );
 }
