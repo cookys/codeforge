@@ -709,3 +709,178 @@ fn a_root_without_a_snapshot_takes_its_login_alias_over_a_stored_one() {
         "acct-2222bbbb"
     );
 }
+
+/// A codex rollout of `token_count` lines carrying `rate_limits` (each `(timestamp or None, rl)`).
+fn codex_rl_file(e: &Env, uuid: &str, lines: &[(Option<&str>, Value)]) -> PathBuf {
+    let f = e.codex.join(format!(
+        "sessions/2026/11/03/rollout-2026-11-03T10-00-00-{uuid}.jsonl"
+    ));
+    let mut s = String::new();
+    for (ts, rl) in lines {
+        let mut v = json!({"type": "event_msg", "payload": {"type": "token_count", "info": null, "rate_limits": rl}});
+        if let Some(ts) = ts {
+            v["timestamp"] = json!(ts);
+        }
+        s += &(v.to_string() + "\n");
+    }
+    write(&f, &s);
+    f
+}
+
+/// One rollout window; `resets_at` = NOW + `secs`.
+fn rl_win(pct: f64, minutes: u64, secs: i64) -> Value {
+    json!({"used_percent": pct, "window_minutes": minutes, "resets_at": NOW / 1000 + secs})
+}
+
+fn rl(primary: Value, secondary: Value) -> Value {
+    json!({"limit_id": "codex", "primary": primary, "secondary": secondary,
+           "credits": {"has_credits": true, "balance": "MARKERCREDIT"}, "plan_type": "MARKERPLAN"})
+}
+
+const RL_UUID: &str = "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0009";
+
+#[test]
+fn codex_rate_limits_keep_the_newest_observation_as_windows() {
+    let e = env();
+    codex_rl_file(
+        &e,
+        RL_UUID,
+        &[
+            (
+                Some("2026-11-03T11:00:00.000Z"),
+                rl(rl_win(42.0, 300, 3600), rl_win(17.5, 10_080, 86_400)),
+            ),
+            // older line later in the file: never replaces the newer observation
+            (
+                Some("2026-11-03T09:00:00.000Z"),
+                rl(rl_win(90.0, 300, 600), rl_win(80.0, 10_080, 600)),
+            ),
+        ],
+    );
+    let conn = run(&e, &[]);
+    let s = codex_snapshots(&conn, NOW).unwrap();
+    assert_eq!(s.len(), 1);
+    let s = &s[0];
+    assert!(s.alias.starts_with("codex-"));
+    let at = 1_793_703_600_000; // 11:00Z
+    assert_eq!(s.written_at_ms, at);
+    let five = s.five_hour.as_ref().unwrap();
+    let week = s.seven_day.as_ref().unwrap();
+    assert_eq!((five.pct, five.resets_at), (0.42, NOW / 1000 + 3600));
+    assert_eq!((week.pct, week.resets_at), (0.175, NOW / 1000 + 86_400));
+    assert_eq!(five.seen.as_ref().unwrap().at_ms, at);
+    assert_eq!((s.org.as_deref(), s.email.as_deref()), (None, None));
+}
+
+#[test]
+fn codex_rate_limits_store_only_numbers_and_survive_a_later_run() {
+    let e = env();
+    let f = codex_rl_file(
+        &e,
+        RL_UUID,
+        &[(Some(TS), rl(json!(null), rl_win(30.0, 10_080, 86_400)))],
+    );
+    run(&e, &[]);
+    // the next run reads only the appended bytes: a line without rate_limits keeps the observation
+    append(
+        &f,
+        &(json!({"timestamp": "2026-11-03T11:30:00.000Z", "type": "event_msg", "payload": {"type": "token_count", "info": null}}).to_string() + "\n"),
+    );
+    let conn = run(&e, &[]);
+    let s = codex_snapshots(&conn, NOW).unwrap();
+    assert_eq!(s.len(), 1);
+    assert!(s[0].five_hour.is_none(), "a null primary is no window");
+    assert_eq!(s[0].seven_day.as_ref().unwrap().pct, 0.3);
+    // the table holds the account key and numbers, nothing of credits or plan
+    let cols: Vec<String> = conn
+        .prepare("SELECT name FROM pragma_table_info('codex_limits') ORDER BY cid")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(
+        cols,
+        [
+            "account",
+            "observed_ms",
+            "five_pct",
+            "five_resets",
+            "week_pct",
+            "week_resets"
+        ]
+    );
+    let dump: String = conn
+        .query_row(
+            "SELECT group_concat(quote(account) || quote(observed_ms) || quote(five_pct) || quote(five_resets) || quote(week_pct) || quote(week_resets)) FROM codex_limits",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!dump.contains("MARKER"));
+}
+
+#[test]
+fn codex_rate_limits_ignore_other_windows_and_say_nothing_once_reset() {
+    let e = env();
+    codex_rl_file(
+        &e,
+        RL_UUID,
+        &[(
+            Some(TS),
+            rl(rl_win(50.0, 60, 3600), rl_win(20.0, 10_080, 60)),
+        )],
+    );
+    let conn = run(&e, &[]);
+    let s = codex_snapshots(&conn, NOW).unwrap();
+    assert!(
+        s[0].five_hour.is_none(),
+        "a 60-minute window is not a 5h one"
+    );
+    assert!(s[0].seven_day.is_some());
+    // after the weekly reset nothing current is left: the account is no_window
+    assert!(codex_snapshots(&conn, NOW + 61_000).unwrap().is_empty());
+    // an observation with neither window is nothing too
+    let e = env();
+    codex_rl_file(&e, RL_UUID, &[(Some(TS), rl(json!(null), json!(null)))]);
+    assert!(codex_snapshots(&run(&e, &[]), NOW).unwrap().is_empty());
+}
+
+#[test]
+fn codex_rate_limits_without_a_timestamp_take_the_file_mtime() {
+    let e = env();
+    let f = codex_rl_file(
+        &e,
+        RL_UUID,
+        &[(None, rl(rl_win(10.0, 300, 3600), json!(null)))],
+    );
+    let mtime = std::time::UNIX_EPOCH + std::time::Duration::from_millis((NOW - 60_000) as u64);
+    std::fs::File::options()
+        .write(true)
+        .open(&f)
+        .unwrap()
+        .set_modified(mtime)
+        .unwrap();
+    let s = codex_snapshots(&run(&e, &[]), NOW).unwrap();
+    assert_eq!(s[0].written_at_ms, NOW - 60_000);
+}
+
+#[test]
+fn a_codex_account_with_windows_validates_in_the_summary() {
+    let e = env();
+    codex_rl_file(
+        &e,
+        RL_UUID,
+        &[(
+            Some(TS),
+            rl(rl_win(42.0, 300, 3600), rl_win(17.5, 10_080, 86_400)),
+        )],
+    );
+    let snaps = codex_snapshots(&run(&e, &[]), NOW).unwrap();
+    let v = crate::usage::summary::build(&[], &snaps, "host-1a2b3c4d", NOW, &Default::default());
+    crate::usage::summary::validate(&v).unwrap();
+    let a = &v["accounts"][0];
+    assert!(a["alias"].as_str().unwrap().starts_with("codex-"));
+    assert_eq!(a["seven_day"]["pct"], json!(0.175));
+    assert!(a["five_hour"]["seen_at_ms"].is_u64());
+}

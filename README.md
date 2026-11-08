@@ -416,6 +416,8 @@ codeforge usage push                    # validate summary.json and `fleet uploa
 codeforge usage accounts                # per-account quota from autopilot's mirror (read-only; --json)
 codeforge usage alias list              # accounts and their display names (local only)
 codeforge usage alias set <email|name> <new>  # name an account (~/.config/codeforge/accounts.toml, 0600)
+codeforge usage note set <provider|name> <text>  # a local note (≤ 40 cells) shown dim at the end of the row in `usage fleet`
+codeforge usage note clear <provider|name>
 ```
 
 - The statusline usage row shows this session's 5h / 7d / ctx bars. Another account appears only when its
