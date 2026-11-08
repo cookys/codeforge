@@ -2,7 +2,7 @@
 // set), pure: no `$`, no I/O. The JSON already carries the warnings and projections; nothing is recomputed here, a stale file is shown with its age.
 // Spec: doc/specs/codeforge-usage.md (全帳號配額表), doc/specs/codeforge-mod-ui.md.
 
-import { countdown, displayWidth, padRight } from './model'
+import { countdown, displayWidth, keyDefault, padRight } from './model'
 import { clipCells } from './pane-view'
 import { AGE_SHOW_S } from './quota-view'
 import type { QLine, QSeg } from './quota-view'
@@ -97,12 +97,12 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
     const w = weekly(a.weekly)
     const f = win(a.five_hour)
     if (w === undefined || f === undefined) return BAD
-    // a writer from before `name`: the email, else the org, else a chosen (non-hash) alias; an
-    // `acct-` hash with none of these is an identity from before the login-derived alias: not shown
-    const name = typeof a.name === 'string' ? a.name
+    // a writer from before `name`: the email, else the org, else the alias's default name (`codex` for
+    // `codex-<hex>`); an `acct-` hash with none of these is an identity from before the login-derived alias: not shown
+    const name = typeof a.name === 'string' ? keyDefault(a.name)
       : typeof a.email === 'string' ? a.email
       : typeof a.org === 'string' ? a.org
-      : a.alias.startsWith('acct-') ? null : a.alias
+      : keyDefault(a.alias)
     if (name === null) continue
     accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
   }
