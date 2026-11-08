@@ -172,6 +172,63 @@ test('the email names the row: email · org, the alias when there is no email, e
   }
 })
 
+// the real failure: one account on two hosts; the newer capture is a weekly that has reset, the older one still says 97 %
+const REAL = () =>
+  fleet([
+    acct({
+      alias: 'acct-65d2bffc',
+      org: 'Stranity',
+      hosts: ['4124gs', 'c4140'],
+      old_hosts: ['c4140'],
+      weekly: { pct: 0.04, resets_at: s() - 360, projected: null, warn: null, exhaust_at: null, reset: true },
+      five_hour: { pct: 0.25, resets_at: s() + 13000, reset: false },
+    }),
+  ])
+
+for (const [zh, reset, old, none] of [
+  [true, /週 已重置/, /4124gs,c4140 舊/, '目前沒有會浪費或會不夠的帳號'],
+  [false, /week reset/, /4124gs,c4140 old/, 'no account will waste or fall short'],
+] as const) {
+  test(`an old host and a reset window (${zh ? 'zh-TW' : 'en'}): 舊 / old and 已重置 / reset, never the old pct, no warning`, async ($, on) => {
+    world(on, { fleet: JSON.stringify(REAL()), zh })
+    for (const bodyColumns of [42, 62, 82]) {
+      const ui = await open($, bodyColumns)
+      await ui.press({ key: 'tab-fleet' })
+      const rows = rowsOf(await ui.drawn())
+      for (const r of rows) expect(displayWidth(r) <= bodyColumns - 2).toBe(true)
+      expect(rows.some(r => r.includes('4%') || r.includes('97%'))).toBe(false)
+      if (bodyColumns >= 82) {
+        const line = rows.find(r => r.startsWith('acct-65d2bffc'))
+        expect(line).toMatch(reset)
+        expect(line).toMatch(old)
+        expect(rows.some(r => r.includes(none))).toBe(true)
+      }
+      await ui.unmount()
+    }
+  })
+}
+
+test('parseFleetQuota reads old_hosts and reset, and refuses a bad one', () => {
+  const v = parseFleetQuota(JSON.stringify(REAL()))
+  if (v.status !== 'ok') throw new Error('not ok')
+  expect(v.accounts[0]?.oldHosts).toEqual(['c4140'])
+  expect(v.accounts[0]?.weekly?.reset).toBe(true)
+  expect(v.accounts[0]?.fiveHour?.reset).toBe(false)
+  // absent from an older file: no old hosts, not reset
+  const old = parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', weekly: wk({}) })])))
+  if (old.status !== 'ok') throw new Error('not ok')
+  expect(old.accounts[0]?.oldHosts).toEqual([])
+  expect(old.accounts[0]?.weekly?.reset).toBe(false)
+  for (const bad of [
+    acct({ alias: 'a', old_hosts: 'c4140' }),
+    acct({ alias: 'a', old_hosts: ['nope'] }),
+    acct({ alias: 'a', old_hosts: ['gpu-a\u0007'], hosts: ['gpu-a\u0007'] }),
+    acct({ alias: 'a', weekly: wk({ reset: 'yes' }) }),
+    acct({ alias: 'a', five_hour: { pct: 0.1, resets_at: 5, reset: 1 } }),
+  ])
+    expect(parseFleetQuota(JSON.stringify(fleet([bad]))).status).toBe('bad')
+})
+
 const BAD_CASES: [string, string, Record<string, unknown>][] = [
   ['invalid JSON', '{', {}],
   ['another schema', JSON.stringify({ ...fleet([]), schema: 'other/1' }), {}],

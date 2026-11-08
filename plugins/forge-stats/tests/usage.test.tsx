@@ -227,3 +227,12 @@ test('the account row drops countdowns, then 7d, as the pane narrows, and never 
   expect(await at(30)).toEqual({ reset: false, sevenDay: false, fiveHour: true })
 })
 
+
+test('parseUsage takes an optional window seen_at_ms: a uint, at most 10 min after generated_at_ms', () => {
+  const base = summary()
+  const gen = base.generated_at_ms
+  const acc = (seen: unknown) => ({ ...base, accounts: [{ alias: 'acct-a', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 5, seen_at_ms: seen }, seven_day: null }] })
+  expect(parseUsage(JSON.stringify(acc(gen)), NOW).status).toBe('ok')
+  expect(parseUsage(JSON.stringify(acc(gen + 600_000)), NOW).status).toBe('ok')
+  for (const bad of [gen + 600_001, -1, 1.5, 'x', null]) expect([bad, parseUsage(JSON.stringify(acc(bad)), NOW).status]).toEqual([bad, 'bad'])
+})

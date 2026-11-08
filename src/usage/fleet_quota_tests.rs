@@ -197,7 +197,7 @@ fn passed_reset_is_not_drawn() {
     assert!(g.weekly.is_none() && g.five_hour.is_none());
     let h = row(&f, "half");
     assert_eq!(h.state, State::Ok);
-    assert!(h.five_hour.is_none() && h.weekly.is_some());
+    assert!(h.five_hour.is_some() && h.five_reset && h.weekly.is_some());
     let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
     assert!(txt.contains("已重置，等新觀察"), "{txt}");
 }
@@ -639,4 +639,237 @@ fn summary_email_validates_when_present_and_is_optional() {
     assert!(crate::usage::summary::validate(&v).is_ok());
     v["accounts"][0]["email"] = json!("not-an-email");
     assert!(crate::usage::summary::validate(&v).is_err());
+}
+
+// ---- newest captured quota wins (seen_at_ms), old hosts, reset windows ----
+
+/// An account whose windows carry a capture time: (pct, resets_at, seen_at_ms).
+fn acct_seen(
+    alias: &str,
+    age_s: i64,
+    five: Option<(f64, i64, Option<i64>)>,
+    seven: Option<(f64, i64, Option<i64>)>,
+) -> Value {
+    let w = |x: Option<(f64, i64, Option<i64>)>| {
+        x.map_or(Value::Null, |(p, r, s)| {
+            let mut v = json!({"pct": p, "resets_at": r});
+            if let Some(s) = s {
+                v["seen_at_ms"] = json!(s);
+            }
+            v
+        })
+    };
+    json!({"alias": alias, "written_at_ms": (NOW_S - age_s) * 1000, "five_hour": w(five), "seven_day": w(seven)})
+}
+
+fn seen_ms(age_s: i64) -> Option<i64> {
+    Some((NOW_S - age_s) * 1000)
+}
+
+/// The real failure: both files written 17 min ago; 4124gs captured a weekly 4 % that has since
+/// reset, c4140 still carries a 97 % captured days ago with a future reset.
+fn real_case() -> Fleet {
+    let a = summary(
+        "host-aaaaaaaa",
+        vec![acct_seen(
+            "acct-65d2bffc",
+            1020,
+            Some((0.25, NOW_S + 3 * H + 36 * 60, seen_ms(60))),
+            Some((0.04, NOW_S - 360, seen_ms(900))),
+        )],
+        vec![],
+    );
+    let b = summary(
+        "host-bbbbbbbb",
+        vec![acct_seen(
+            "acct-65d2bffc",
+            1020,
+            Some((0.27, NOW_S + 3 * H + 36 * 60, seen_ms(120))),
+            Some((0.97, NOW_S + 73 * H + 54 * 60, seen_ms(2 * D))),
+        )],
+        vec![],
+    );
+    run(&[("4124gs.json", &a), ("c4140.json", &b)])
+}
+
+#[test]
+fn real_case_newest_capture_wins_so_the_weekly_is_reset_not_97() {
+    let f = real_case();
+    let r = row(&f, "acct-65d2bffc");
+    let w = r.weekly.as_ref().unwrap();
+    assert!(
+        w.reset,
+        "4124gs has the newest weekly capture and it has reset"
+    );
+    assert_eq!(w.win.pct, 0.04);
+    assert_eq!((w.warn, w.projected, w.exhaust_at), (None, None, None));
+    // 5h: c4140 captured 120 s ago vs 60 s: 4124gs is newer, c4140's 0.27 disagrees
+    assert_eq!(r.five_hour.unwrap().pct, 0.25);
+    assert!(!r.five_reset);
+    assert_eq!(r.old_hosts, vec!["c4140"]);
+    assert_eq!(r.hosts, vec!["4124gs", "c4140"]);
+    assert_eq!(r.state, State::Ok);
+    let js = to_json(&f, NOW_MS);
+    let a = js["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["alias"] == "acct-65d2bffc")
+        .unwrap();
+    assert_eq!(a["old_hosts"], json!(["c4140"]));
+    assert_eq!(a["weekly"]["reset"], json!(true));
+    assert!(a["weekly"]["warn"].is_null() && a["weekly"]["projected"].is_null());
+    assert_eq!(a["five_hour"]["reset"], json!(false));
+    for (tr, reset, old) in [
+        ("zh-TW", "已重置", "c4140 舊"),
+        ("en", "reset", "c4140 old"),
+    ] {
+        for cols in [40usize, 60, 80, 100] {
+            let txt = text(&f, cols, NOW_MS, &Tr(tr.into()), false);
+            assert!(!txt.contains("97%"), "{tr} {cols}: {txt}");
+            for l in txt.lines() {
+                assert!(UnicodeWidthStr::width(l) <= cols, "{tr} {cols}: {l:?}");
+            }
+            if cols >= 80 {
+                assert!(txt.contains(reset), "{tr} {cols}: {txt}");
+                assert!(txt.contains(old), "{tr} {cols}: {txt}");
+            }
+        }
+    }
+    let t = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(t.contains("週 已重置"), "{t}");
+    assert!(t.contains("目前沒有會浪費或會不夠的帳號"), "{t}");
+}
+
+#[test]
+fn newer_capture_with_a_future_reset_beats_an_older_higher_pct() {
+    let a = summary(
+        "host-aaaaaaaa",
+        vec![acct_seen(
+            "work",
+            60,
+            None,
+            Some((0.30, NOW_S + 3 * D, seen_ms(60))),
+        )],
+        vec![],
+    );
+    let b = summary(
+        "host-bbbbbbbb",
+        vec![acct_seen(
+            "work",
+            60,
+            None,
+            Some((0.90, NOW_S + 3 * D, seen_ms(3 * H))),
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &a), ("b.json", &b)]);
+    let r = row(&f, "work");
+    assert_eq!(r.weekly.as_ref().unwrap().win.pct, 0.30);
+    assert!(!r.weekly.as_ref().unwrap().reset);
+    assert_eq!(r.old_hosts, vec!["b"]);
+    // the other way round: a low newer capture, a higher older one, hosts swapped
+    let f2 = run(&[("a.json", &b), ("b.json", &a)]);
+    assert_eq!(row(&f2, "work").weekly.as_ref().unwrap().win.pct, 0.30);
+    assert_eq!(row(&f2, "work").old_hosts, vec!["a"]);
+}
+
+#[test]
+fn without_seen_at_ms_the_written_time_is_the_capture_time() {
+    let a = summary(
+        "host-aaaaaaaa",
+        vec![acct("work", 7200, None, Some((0.9, NOW_S + 3 * D)))],
+        vec![],
+    );
+    let b = summary(
+        "host-bbbbbbbb",
+        vec![acct("work", 60, None, Some((0.2, NOW_S + 3 * D)))],
+        vec![],
+    );
+    let f = run(&[("a.json", &a), ("b.json", &b)]);
+    let r = row(&f, "work");
+    assert_eq!(r.weekly.as_ref().unwrap().win.pct, 0.2);
+    assert_eq!(r.old_hosts, vec!["a"]);
+    assert_eq!(r.observed_at_ms, Some((NOW_S - 60) * 1000));
+    // a mixed pair: an old file with no seen_at_ms (written 1 h ago) loses to a capture 5 min ago
+    let c = summary(
+        "host-cccccccc",
+        vec![acct_seen(
+            "work",
+            4000,
+            None,
+            Some((0.5, NOW_S + 3 * D, seen_ms(300))),
+        )],
+        vec![],
+    );
+    let d = summary(
+        "host-dddddddd",
+        vec![acct("work", 3600, None, Some((0.8, NOW_S + 3 * D)))],
+        vec![],
+    );
+    let f = run(&[("c.json", &c), ("d.json", &d)]);
+    assert_eq!(row(&f, "work").weekly.as_ref().unwrap().win.pct, 0.5);
+}
+
+#[test]
+fn an_older_host_that_agrees_is_not_marked_old() {
+    let a = summary(
+        "host-aaaaaaaa",
+        vec![acct_seen(
+            "work",
+            60,
+            Some((0.3, NOW_S + 2 * H, seen_ms(60))),
+            Some((0.2, NOW_S + 3 * D, seen_ms(60))),
+        )],
+        vec![],
+    );
+    let b = summary(
+        "host-bbbbbbbb",
+        vec![acct_seen(
+            "work",
+            60,
+            Some((0.3, NOW_S + 2 * H, seen_ms(600))),
+            Some((0.2, NOW_S + 3 * D, seen_ms(600))),
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &a), ("b.json", &b)]);
+    assert!(row(&f, "work").old_hosts.is_empty());
+    let js = to_json(&f, NOW_MS);
+    let w = js["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["alias"] == "work")
+        .unwrap();
+    assert_eq!(w["old_hosts"], json!([]));
+}
+
+#[test]
+fn a_reset_chosen_window_never_warns_even_when_the_stale_one_would() {
+    // the only fresh capture is a weekly that has reset; the old 97 % must not produce a warning
+    let f = real_case();
+    assert!(row(&f, "acct-65d2bffc")
+        .weekly
+        .as_ref()
+        .unwrap()
+        .warn
+        .is_none());
+    // a reset 5h with a live weekly: 5h shown reset, weekly still evaluated
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![acct(
+            "work",
+            60,
+            Some((0.4, NOW_S - 5)),
+            Some((0.1, NOW_S + 20 * H)),
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let r = row(&f, "work");
+    assert!(r.five_reset);
+    assert_eq!(r.weekly.as_ref().unwrap().warn, Some(Warn::Waste));
+    let t = text(&f, 100, NOW_MS, &Tr("en".into()), false);
+    assert!(t.contains("5h reset"), "{t}");
 }
