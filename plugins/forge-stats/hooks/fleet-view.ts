@@ -19,7 +19,10 @@ export type FleetWin = { pct: number; resetsAt: number; reset: boolean }
 export type FleetWeekly = FleetWin & { warn: 'waste' | 'short' | null; exhaustAt: number | null }
 export type FleetState = 'ok' | 'stale' | 'expired' | 'no_source'
 export type FleetAccount = {
+  /** Internal key only: never drawn. */
   alias: string
+  /** What the tab shows: codeforge's display name (the operator's name, else the org short form). */
+  name: string
   /** `personal` or an org name; null when unknown. */
   org: string | null
   /** The login email; null when unknown (the alias then names the row). */
@@ -81,7 +84,8 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
   if (!Array.isArray(raw.accounts) || raw.accounts.length > FLEET_MAX_ACCOUNTS) return BAD
   const accounts: FleetAccount[] = []
   for (const a of raw.accounts as unknown[]) {
-    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts'])) return BAD
+    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name'])) return BAD
+    if (a.name !== undefined && !isLabel(a.name)) return BAD
     if (a.org !== undefined && a.org !== null && !isLabel(a.org)) return BAD
     if (a.email !== undefined && a.email !== null && !isEmail(a.email)) return BAD
     if (!isLabel(a.alias) || !isLabel(a.provider)) return BAD
@@ -93,7 +97,14 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
     const w = weekly(a.weekly)
     const f = win(a.five_hour)
     if (w === undefined || f === undefined) return BAD
-    accounts.push({ alias: a.alias, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
+    // a writer from before `name`: the email, else the org, else a chosen (non-hash) alias; an
+    // `acct-` hash with none of these is an identity from before the login-derived alias: not shown
+    const name = typeof a.name === 'string' ? a.name
+      : typeof a.email === 'string' ? a.email
+      : typeof a.org === 'string' ? a.org
+      : a.alias.startsWith('acct-') ? null : a.alias
+    if (name === null) continue
+    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
   }
   return {
     status: 'ok',
@@ -108,7 +119,7 @@ const seg = (text: string, role?: QSeg['role'], color?: string): QSeg => ({ text
 const width = (l: QLine) => l.reduce((n, s) => n + displayWidth(s.text), 0)
 const pctText = (p: number) => `${Math.round(p * 100)}%`
 const SEP = ' · '
-/** The widest the name column (email · org) may be; a narrow pane leaves it less, so the numbers stay on the line. */
+/** The widest the name column (name · email) may be; a narrow pane leaves it less, so the numbers stay on the line. */
 const NAME_MAX = 40
 
 /** The widest form that fits; when none does, the last (shortest) cut to `cols` with `…`. */
@@ -130,11 +141,8 @@ function fit(forms: QLine[], cols: number): QLine {
   return out
 }
 
-/** The email (the alias when there is none), then the org (`personal` shown as 個人 / personal) when known. */
-const label = (a: FleetAccount, tr: T) => {
-  const name = a.email ?? a.alias
-  return a.org === null ? name : `${name} · ${a.org === 'personal' ? tr('fleetPersonal') : a.org}`
-}
+/** The display name, then the email when known; never the internal alias. */
+const label = (a: FleetAccount, _tr: T) => (a.email === null || a.email === a.name ? a.name : `${a.name} · ${a.email}`)
 
 function warnLine(a: FleetAccount, useTarget: number, cols: number, tr: T, now: number): QLine | null {
   const w = a.weekly

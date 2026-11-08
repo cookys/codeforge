@@ -1,4 +1,5 @@
 use super::fleet_quota::*;
+use super::names::Names;
 use super::quota_view::{self as qv, Tr};
 use serde_json::{json, Value};
 use unicode_width::UnicodeWidthStr;
@@ -38,7 +39,7 @@ fn fixture_dir(files: &[(&str, &Value)]) -> tempfile::TempDir {
 fn run(files: &[(&str, &Value)]) -> Fleet {
     let d = fixture_dir(files);
     let (ok, skipped) = load(d.path()).unwrap();
-    merge(&ok, skipped, NOW_MS, DEFAULT_USE_TARGET)
+    merge(&ok, skipped, NOW_MS, DEFAULT_USE_TARGET, &Names::default())
 }
 
 fn row<'a>(f: &'a Fleet, alias: &str) -> &'a Row {
@@ -76,7 +77,7 @@ fn invalid_file_is_skipped_and_counted_not_fatal() {
     let d = fixture_dir(&[("ok.json", &a), ("bad.json", &bad)]);
     std::fs::write(d.path().join("junk.json"), b"{nope").unwrap();
     let (ok, skipped) = load(d.path()).unwrap();
-    let f = merge(&ok, skipped, NOW_MS, DEFAULT_USE_TARGET);
+    let f = merge(&ok, skipped, NOW_MS, DEFAULT_USE_TARGET, &Names::default());
     assert_eq!(f.skipped.get("invalid"), Some(&1));
     assert_eq!(f.skipped.get("not_json"), Some(&1));
     assert!(f.rows.iter().any(|r| r.alias == "work"));
@@ -258,7 +259,7 @@ fn host_label_is_file_stem_and_no_hash_or_path_in_output() {
     );
     let d = fixture_dir(&[("gpu-a.json", &s)]);
     let (ok, skipped) = load(d.path()).unwrap();
-    let f = merge(&ok, skipped, NOW_MS, DEFAULT_USE_TARGET);
+    let f = merge(&ok, skipped, NOW_MS, DEFAULT_USE_TARGET, &Names::default());
     let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
     let js = serde_json::to_string(&to_json(&f, NOW_MS)).unwrap();
     assert!(txt.contains("gpu-a"));
@@ -380,21 +381,17 @@ fn eight_hosts_at_80_cols_keep_as_many_labels_as_fit_and_count_the_rest() {
             .len(),
         8
     );
-    for (tr, personal, more) in [("zh-TW", "個人", "等 "), ("en", "personal", "more")] {
+    for (tr, more) in [("zh-TW", "等 "), ("en", "more")] {
         let txt = text(&f, 80, NOW_MS, &Tr(tr.into()), false);
-        let head = txt.lines().find(|l| l.contains("acct-ae88ee5d")).unwrap();
+        assert!(!txt.contains("acct-"), "the key is never drawn: {txt}");
+        let head = txt.lines().find(|l| l.starts_with("personal")).unwrap();
         assert!(UnicodeWidthStr::width(head) <= 80, "{head:?}");
-        assert!(head.contains(personal), "{head:?}");
         assert!(
             head.contains("4124gs") && head.contains(more),
             "{tr}: {head:?}"
         );
         let pos = |s: &str| head.find(s).unwrap();
-        assert!(
-            pos("acct-ae88ee5d") < pos(personal)
-                && pos(personal) < pos("claude")
-                && pos("claude") < pos("4124gs")
-        );
+        assert!(pos("personal") < pos("claude") && pos("claude") < pos("4124gs"));
     }
     // JSON carries the org; an account without one has null
     let js = to_json(&f, NOW_MS);
@@ -456,11 +453,9 @@ fn a_40_char_cjk_org_is_cut_and_keeps_the_numbers_on_screen() {
             for l in txt.lines() {
                 assert!(UnicodeWidthStr::width(l) <= cols, "{cols} {tr}: {l:?}");
             }
-            // the org is cut, so the weekly % stays on the alias line (compact) or below it
-            let head = txt
-                .lines()
-                .find(|l| l.starts_with("acct-12345678"))
-                .unwrap();
+            // the name (org short form) is cut, so the weekly % stays on its line (compact) or below it
+            let head = txt.lines().find(|l| l.starts_with("研發部門")).unwrap();
+            assert!(!txt.contains("acct-"));
             assert!(
                 txt.contains("97%") && (cols >= qv::COMPACT_COLS || head.contains("97%")),
                 "{cols} {tr}: {txt}"
@@ -475,7 +470,7 @@ fn with_email(mut a: Value, email: &str) -> Value {
 }
 
 #[test]
-fn the_label_is_email_dot_org_and_falls_back_to_the_alias() {
+fn the_label_is_the_name_then_the_email_and_never_the_key() {
     let s = summary(
         "host-aaaaaaaa",
         vec![
@@ -499,28 +494,38 @@ fn the_label_is_email_dot_org_and_falls_back_to_the_alias() {
         vec![],
     );
     let f = run(&[("a.json", &s)]);
-    let txt = text(&f, 100, NOW_MS, &Tr("en".into()), false);
-    let heads: Vec<&str> = txt
-        .lines()
-        .filter(|l| l.contains("@example.com") || l.starts_with("acct-"))
-        .collect();
-    assert!(
-        heads
+    // an acct- key with neither org nor email is an identity from before the login-derived
+    // alias: dropped and counted, never drawn
+    assert_eq!(
+        f.rows
             .iter()
-            .any(|l| l.starts_with("me@example.com · Acme ")),
-        "{txt}"
+            .filter(|r| r.alias.starts_with("acct-"))
+            .count(),
+        3
     );
-    assert!(heads.iter().any(|l| l.starts_with("solo@example.com ")));
-    assert!(heads.iter().any(|l| l.starts_with("acct-33333333 · Beta ")));
-    assert!(heads.iter().any(|l| l.starts_with("acct-44444444 ")));
-    // the alias stays the merge key and is not the label of an account with an email
-    assert!(!txt.contains("acct-11111111") && !txt.contains("acct-22222222"));
-    // the same on a compact line (which has always joined the org with a space)
+    assert_eq!(f.skipped.get("no_identity"), Some(&1));
+    let txt = text(&f, 100, NOW_MS, &Tr("en".into()), false);
+    assert!(!txt.contains("acct-"), "the key is never drawn: {txt}");
+    let starts = |p: &str| txt.lines().any(|l| l.starts_with(p));
+    assert!(starts("acme · me@example.com "), "{txt}");
+    assert!(starts("solo · solo@example.com "), "{txt}");
+    assert!(starts("beta "), "{txt}");
+    // JSON: the name for screens, the alias as the key
+    let v = to_json(&f, NOW_MS);
+    let a = v["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["alias"] == "acct-11111111")
+        .unwrap();
+    assert_eq!(a["name"], "acme");
+    // a compact line joins the email with a space when it fits
     let txt = text(&f, 50, NOW_MS, &Tr("en".into()), false);
-    assert!(
-        txt.lines().any(|l| l.starts_with("me@example.com Acme")),
-        "{txt}"
-    );
+    assert!(starts_with_any(&txt, "acme me@example.com"), "{txt}");
+}
+
+fn starts_with_any(txt: &str, p: &str) -> bool {
+    txt.lines().any(|l| l.starts_with(p))
 }
 
 #[test]
@@ -540,7 +545,7 @@ fn a_warn_line_uses_the_same_label() {
     let f = run(&[("a.json", &s)]);
     let txt = text(&f, 100, NOW_MS, &Tr("en".into()), false);
     let warn = txt.lines().find(|l| l.contains(" · week 97%")).unwrap();
-    assert!(warn.contains("me@example.com · Acme"), "{warn}");
+    assert!(warn.contains("acme · me@example.com"), "{warn}");
     assert!(!warn.contains("acct-11111111"));
 }
 
@@ -627,7 +632,7 @@ fn a_254_char_email_keeps_every_line_inside_the_width_and_the_weekly_on_the_line
             }
             assert!(!txt.contains(&email), "the email is cut: {txt}");
             if cols >= 40 {
-                let head = txt.lines().find(|l| l.starts_with("xxxx")).unwrap();
+                let head = txt.lines().find(|l| l.starts_with("研發部門")).unwrap();
                 assert!(
                     txt.contains("97%") && (cols >= qv::COMPACT_COLS || head.contains("97%")),
                     "{cols} {tr}: {txt}"
@@ -677,21 +682,27 @@ fn seen_ms(age_s: i64) -> Option<i64> {
 fn real_case() -> Fleet {
     let a = summary(
         "host-aaaaaaaa",
-        vec![acct_seen(
-            "acct-65d2bffc",
-            1020,
-            Some((0.25, NOW_S + 3 * H + 36 * 60, seen_ms(60))),
-            Some((0.04, NOW_S - 360, seen_ms(900))),
+        vec![with_org(
+            acct_seen(
+                "acct-65d2bffc",
+                1020,
+                Some((0.25, NOW_S + 3 * H + 36 * 60, seen_ms(60))),
+                Some((0.04, NOW_S - 360, seen_ms(900))),
+            ),
+            "Stranity",
         )],
         vec![],
     );
     let b = summary(
         "host-bbbbbbbb",
-        vec![acct_seen(
-            "acct-65d2bffc",
-            1020,
-            Some((0.27, NOW_S + 3 * H + 36 * 60, seen_ms(120))),
-            Some((0.97, NOW_S + 73 * H + 54 * 60, seen_ms(2 * D))),
+        vec![with_org(
+            acct_seen(
+                "acct-65d2bffc",
+                1020,
+                Some((0.27, NOW_S + 3 * H + 36 * 60, seen_ms(120))),
+                Some((0.97, NOW_S + 73 * H + 54 * 60, seen_ms(2 * D))),
+            ),
+            "Stranity",
         )],
         vec![],
     );

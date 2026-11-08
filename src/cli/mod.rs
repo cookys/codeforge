@@ -342,6 +342,24 @@ pub enum UsageAction {
         #[arg(long, default_value_t = crate::usage::fleet_quota::DEFAULT_USE_TARGET)]
         use_target: f64,
     },
+    /// 帳號顯示名：statusline、全帳號表、全部帳號分頁都用這個名字（存在 ~/.config/codeforge/accounts.toml）
+    Alias {
+        #[command(subcommand)]
+        action: AliasAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AliasAction {
+    /// 列出每個帳號的顯示名、org、email
+    List,
+    /// 設定顯示名：`set <email 或現在的顯示名> <新名字>`
+    Set {
+        /// 帳號的 email，或 `alias list` 顯示的名字
+        who: String,
+        /// 新名字（1 到 24 個字，不能有 @）
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -545,6 +563,10 @@ pub fn run(cli: Cli) -> Result<()> {
                 json,
                 out,
                 use_target,
+            },
+            Some(UsageAction::Alias { action }) => match action {
+                AliasAction::List => usage::Action::AliasList,
+                AliasAction::Set { who, name } => usage::Action::AliasSet { who, name },
             },
             None => usage::Action::Show { days, by, json },
         }),

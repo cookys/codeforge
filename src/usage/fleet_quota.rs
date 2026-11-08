@@ -72,7 +72,10 @@ pub struct Weekly {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row {
+    /// Internal key only: never drawn (see [`super::names`]).
     pub alias: String,
+    /// What the screens show: the operator's name for the account, else the org short form.
+    pub name: String,
     /// `personal` or a sanitized org name from the newest observation that carried one.
     pub org: Option<String>,
     /// The login email from the newest observation that carried one; the alias stays the key.
@@ -241,12 +244,15 @@ fn lost(o: &Ob, of: fn(&Ob) -> Option<(Win, i64)>, chosen: &Option<(String, Win,
     }
 }
 
-/// Merge validated summaries into rows at `now_ms`, sorted: warnings first.
+/// Merge validated summaries into rows at `now_ms`, sorted: warnings first. Each row is named by
+/// `names` (else its org or email); an account with neither (an identity from before the
+/// login-derived alias) is dropped and counted under `skipped.no_identity`.
 pub fn merge(
     files: &[(String, Value)],
-    skipped: BTreeMap<&'static str, u64>,
+    mut skipped: BTreeMap<&'static str, u64>,
     now_ms: i64,
     use_target: f64,
+    names: &super::names::Names,
 ) -> Fleet {
     let mut by: BTreeMap<String, Acc> = BTreeMap::new();
     let new = |provider: &str| Acc {
@@ -292,7 +298,7 @@ pub fn merge(
         by.entry(p.to_string()).or_insert_with(|| new(p));
     }
     let now_s = now_ms.div_euclid(1000);
-    let mut rows: Vec<Row> = by
+    let rows: Vec<Row> = by
         .into_iter()
         .map(|(alias, acc)| {
             let five = pick(&acc.obs, |o| o.five);
@@ -312,6 +318,7 @@ pub fn merge(
                 .or(acc.newest_written);
             let mut r = Row {
                 alias,
+                name: String::new(),
                 org: acc.org.map(|(_, v)| v),
                 email: acc.email.map(|(_, v)| v),
                 provider: acc.provider,
@@ -356,6 +363,24 @@ pub fn merge(
             r
         })
         .collect();
+    let who: Vec<super::names::Who> = rows
+        .iter()
+        .map(|r| super::names::Who {
+            key: &r.alias,
+            org: r.org.as_deref(),
+            email: r.email.as_deref(),
+        })
+        .collect();
+    let shown = super::names::assign(&who, names);
+    let before = rows.len();
+    let mut rows: Vec<Row> = rows
+        .into_iter()
+        .zip(shown)
+        .filter_map(|(r, n)| n.map(|name| Row { name, ..r }))
+        .collect();
+    if rows.len() < before {
+        *skipped.entry("no_identity").or_default() += (before - rows.len()) as u64;
+    }
     let key = |r: &Row| {
         let w = r.weekly.as_ref();
         let rank = match w.and_then(|w| w.warn) {
@@ -394,6 +419,7 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
         .map(|r| {
             json!({
                 "alias": r.alias,
+                "name": r.name,
                 "org": r.org,
                 "email": r.email,
                 "provider": r.provider,
@@ -496,8 +522,8 @@ fn entry(r: &Row, now_ms: i64, tr: &Tr) -> QEntry {
     }
     QEntry {
         provider: r.provider.clone(),
-        alias: r.alias.clone(),
-        key: r.alias.clone(),
+        alias: r.name.clone(),
+        key: r.name.clone(),
         m: MergedQuota {
             windows,
             refusal: None,
@@ -536,7 +562,7 @@ fn warn_line(r: &Row, f: &Fleet, now_s: i64, tr: &Tr) -> Option<Line> {
     let mut l: Line = vec![
         p(label, Style::Warn),
         dot(),
-        p(label_of(r, EMAIL_CELLS, tr), Style::Bold),
+        p(label_of(r), Style::Bold),
         dot(),
         p(
             format!("{} {}", tr.t("quota.w_weekly", &[]), pct_of(w.win.pct)),
@@ -568,51 +594,42 @@ fn warn_line(r: &Row, f: &Fleet, now_s: i64, tr: &Tr) -> Option<Line> {
     Some(l)
 }
 
-/// The org after the alias (the first part of a header/compact line); nothing when unknown.
-fn org_shown(r: &Row, tr: &Tr) -> Option<String> {
-    let org = r.org.as_ref()?;
-    let shown = if org == super::alias::ORG_PERSONAL {
-        tr.t("quota.org_personal", &[])
-    } else {
-        org.clone()
-    };
-    // at most ORG_CELLS columns, so a long (CJK) org never crowds out the line
-    Some(qv::plain(&qv::clip(&[p(shown, Style::Dim)], ORG_CELLS)))
+/// The email after the name (the first part of a header/compact line), cut to `cap` columns;
+/// nothing when unknown.
+fn email_shown(r: &Row, cap: usize) -> Option<String> {
+    let e = r.email.as_ref()?;
+    Some(qv::plain(&qv::clip(&[p(e.clone(), Style::Dim)], cap)))
 }
 
-/// Display columns an org may take on a header or compact line.
-const ORG_CELLS: usize = 16;
-/// Display columns an email may take on a header or warn line (a compact line gets less, see
-/// [`name_cells`]).
+/// Display columns an email may take on a header or warn line.
 const EMAIL_CELLS: usize = 32;
+/// Display columns the name may take (names are at most 24 chars).
+const NAME_CELLS: usize = 24;
 
-/// What names the account: the email cut to `cap` columns, else the alias.
+/// The account's name cut to `cap` columns; never the internal alias.
 fn name_shown(r: &Row, cap: usize) -> String {
-    match &r.email {
-        Some(e) => qv::plain(&qv::clip(&[p(e.clone(), Style::Plain)], cap)),
-        None => r.alias.clone(),
+    qv::plain(&qv::clip(&[p(r.name.clone(), Style::Plain)], cap))
+}
+
+/// The name, then the email when known: `name · email`.
+fn label_of(r: &Row) -> String {
+    match email_shown(r, EMAIL_CELLS) {
+        Some(e) => format!("{} · {e}", name_shown(r, NAME_CELLS)),
+        None => name_shown(r, NAME_CELLS),
     }
 }
 
-/// The name, then the org when known: `email · org`, or `alias · org`.
-fn label_of(r: &Row, cap: usize, tr: &Tr) -> String {
-    match org_shown(r, tr) {
-        Some(o) => format!("{} · {o}", name_shown(r, cap)),
-        None => name_shown(r, cap),
-    }
-}
-
-/// Columns the email may take on a line of `cols`: the numbers of a compact line come first.
+/// Columns the name may take on a line of `cols`: the numbers of a compact line come first.
 fn name_cells(cols: usize, compact: bool) -> usize {
     if compact {
-        cols.saturating_sub(18).clamp(8, EMAIL_CELLS)
+        cols.saturating_sub(18).clamp(8, NAME_CELLS)
     } else {
-        EMAIL_CELLS
+        NAME_CELLS
     }
 }
 
-fn add_org(line: &mut Line, r: &Row, tr: &Tr, sep: &str) {
-    if let Some(shown) = org_shown(r, tr) {
+fn add_email(line: &mut Line, r: &Row, sep: &str) {
+    if let Some(shown) = email_shown(r, EMAIL_CELLS) {
         line.insert(1, p(format!("{sep}{shown}"), Style::Dim));
     }
 }
@@ -708,9 +725,9 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
                     line = with;
                 }
             }
-            // the org only when the line still fits with it; the numbers come first
+            // the email only when the line still fits with it; the numbers come first
             let mut with = line.clone();
-            add_org(&mut with, r, tr, " ");
+            add_email(&mut with, r, " ");
             if qv::width(&with) <= cols {
                 line = with;
             }
@@ -721,7 +738,12 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
             lines.push(vec![p(" ", Style::Plain)]);
         }
         first = false;
-        lines.push(qv::header_line(fact, cols, tr, org_shown(r, tr).as_deref()));
+        lines.push(qv::header_line(
+            fact,
+            cols,
+            tr,
+            email_shown(r, EMAIL_CELLS).as_deref(),
+        ));
         match r.state {
             State::Ok => {
                 lines.extend(window_lines_of(r, &e, cols, now_s as f64, tr));
