@@ -167,7 +167,10 @@ test('parseUsage draws the account by name; an acct- hash with no name, email or
   expect(names({ alias: 'work' })).toEqual(['work'])
   // a provider key shows its provider, never the hash
   expect(names({ alias: 'codex-4cc1b5c8' })).toEqual(['codex'])
-  for (const bad of ['acct-1a2b3c4d', 'codex-4cc1b5c8', 'a@b', '', ' x', 'a\tb', 'x'.repeat(25), '工'.repeat(13), '工作\uFEFF', 5, null]) expect(parseUsage(JSON.stringify(one({ name: bad })), NOW).status).toBe('bad')
+  expect(names({ alias: 'ci-20261105' })).toEqual(['ci-20261105'])
+  // a file from before the key rule
+  expect(names({ name: 'codex-4cc1b5c8' })).toEqual(['codex'])
+  for (const bad of ['acct-1a2b3c4d', 'a@b', '', ' x', 'a\tb', 'x'.repeat(25), '工'.repeat(13), '工作\uFEFF', 5, null]) expect(parseUsage(JSON.stringify(one({ name: bad })), NOW).status).toBe('bad')
 })
 
 test('a summary older than an hour names `codeforge usage` as the refresh', async ($, on) => {

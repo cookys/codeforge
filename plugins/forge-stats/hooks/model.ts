@@ -466,15 +466,15 @@ const keysWith = (v: unknown, keys: readonly string[], optional: readonly string
 const exactKeys = (v: unknown, keys: readonly string[]): v is Record<string, unknown> =>
   isObj(v) && Object.keys(v).length === keys.length && keys.every(k => k in v)
 const inSet = (v: unknown, set: readonly string[]) => typeof v === 'string' && set.includes(v)
-/** A display name by codeforge's `names::valid_name`: 1..=name_max_cells columns, trimmed, no `@`, no control char or
- *  whitespace other than a plain space, not an `acct-` key. */
-/** An internal account key, never a name: `acct-…` or `<provider>-<8 hex>` (mirrors `names::key_like`). */
-export const isKeyLike = (s: string): boolean => s.startsWith('acct-') || /^.+-[0-9a-fA-F]{8}$/.test(s)
+/** An internal account key, never a name: `acct-…` or `codex-<8 lowercase hex>` (mirrors `names::key_like`). */
+export const isKeyLike = (s: string): boolean => s.startsWith('acct-') || /^codex-[0-9a-f]{8}$/.test(s)
 
 /** The name a key gives when nothing else does: `codex` for `codex-4cc1b5c8`, a chosen key as is, none for `acct-`. */
 export const keyDefault = (k: string): string | null =>
   k.startsWith('acct-') ? null : isKeyLike(k) ? k.slice(0, k.lastIndexOf('-')) : k
 
+/** A display name by codeforge's `names::valid_name`: 1..=name_max_cells columns, trimmed, no `@`, no control char or
+ *  whitespace other than a plain space, not an account key. */
 export const isDisplayName = (v: unknown): v is string =>
   typeof v === 'string' && v.length > 0 && displayWidth(v) <= C.name_max_cells && v.trim() === v && !isKeyLike(v) && !/[@\p{Cc}]/u.test(v) && !/[^\S ]/u.test(v)
 
@@ -521,9 +521,10 @@ export function parseUsage(text: string | null, now: number): UsageView {
     if (fiveHour === undefined || sevenDay === undefined) return bad
     if ('org' in a && (typeof a.org !== 'string' || !ORG_RE.test(a.org))) return bad
     if ('email' in a && (typeof a.email !== 'string' || !EMAIL_RE.test(a.email))) return bad
-    if ('name' in a && !isDisplayName(a.name)) return bad
+    // a writer from before the key rule could name a codex account by its key: shown by its provider instead
+    if ('name' in a && !(isDisplayName(a.name) || (typeof a.name === 'string' && isKeyLike(a.name) && keyDefault(a.name) !== null))) return bad
     // a writer from before `name`: the email, else the org, else the alias's default name (`codex` for `codex-<hex>`); an `acct-` hash with none of these is not drawn
-    const name = 'name' in a ? (a.name as string) : 'email' in a ? (a.email as string) : 'org' in a ? (a.org as string) : keyDefault(a.alias)
+    const name = 'name' in a ? keyDefault(a.name as string) : 'email' in a ? (a.email as string) : 'org' in a ? (a.org as string) : keyDefault(a.alias)
     if (name === null) continue
     accounts.push({ alias: a.alias, name, writtenAt: a.written_at_ms, fiveHour, sevenDay })
   }
