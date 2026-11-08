@@ -424,6 +424,8 @@ export const USAGE_CONTRACT = {
   "top_optional": ["dropped_accounts"],
   "drop_reasons": ["written_at_ms_out_of_range", "resets_at_out_of_range", "pct_out_of_range"],
   "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
+  "account_optional": ["org"],
+  "org": "^[^@\\p{Cc}]{1,40}$",
   "window": ["pct", "resets_at"],
   "day": ["day", "source", "account", "model", "speed", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests", "cost_usd"],
   "counts": ["input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests"],
@@ -443,6 +445,7 @@ const C = USAGE_CONTRACT
 const ALIAS_RE = new RegExp(C.alias)
 const MODEL_RE = new RegExp(C.model)
 const HOST_RE = new RegExp(C.host)
+const ORG_RE = new RegExp(C.org, 'u')
 /** An integer in 0..=uint_max (2^53-1): `Number.isInteger(1e100)` is true, so the bound is checked too. */
 const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= C.uint_max
 /** A real calendar date `YYYY-MM-DD` (not 2026-02-30). */
@@ -451,6 +454,9 @@ const isDay = (v: unknown): v is string => {
   const d = new Date(v + 'T00:00:00Z')
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
 }
+/** Exactly these keys, plus any of `optional`: none missing, none unknown. */
+const keysWith = (v: unknown, keys: readonly string[], optional: readonly string[]): v is Record<string, unknown> =>
+  isObj(v) && keys.every(k => k in v) && Object.keys(v).every(k => keys.includes(k) || optional.includes(k))
 /** Exactly these keys: none missing, none extra. */
 const exactKeys = (v: unknown, keys: readonly string[]): v is Record<string, unknown> =>
   isObj(v) && Object.keys(v).length === keys.length && keys.every(k => k in v)
@@ -489,10 +495,11 @@ export function parseUsage(text: string | null, now: number): UsageView {
   if (!Array.isArray(raw.accounts) || raw.accounts.length > C.max_accounts || !Array.isArray(raw.days) || raw.days.length > C.max_days) return bad
   const accounts: UsageAccount[] = []
   for (const a of raw.accounts) {
-    if (!exactKeys(a, C.account) || typeof a.alias !== 'string' || !ALIAS_RE.test(a.alias) || !isUint(a.written_at_ms)) return bad
+    if (!keysWith(a, C.account, C.account_optional) || typeof a.alias !== 'string' || !ALIAS_RE.test(a.alias) || !isUint(a.written_at_ms)) return bad
     const fiveHour = usageWindow(a.five_hour)
     const sevenDay = usageWindow(a.seven_day)
     if (fiveHour === undefined || sevenDay === undefined) return bad
+    if ('org' in a && (typeof a.org !== 'string' || !ORG_RE.test(a.org))) return bad
     accounts.push({ alias: a.alias, writtenAt: a.written_at_ms, fiveHour, sevenDay })
   }
   const byModel = new Map<string, UsageModel>()
