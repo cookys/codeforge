@@ -16,20 +16,37 @@ use anyhow::{Context, Result};
 
 /// Env override of the names file (tests, or a second operator profile).
 pub const ENV_FILE: &str = "CODEFORGE_ACCOUNTS_FILE";
-/// Longest name, in chars.
-const NAME_MAX: usize = 24;
-/// Longest default part (org short form, email local part), in chars.
+/// Widest name, in terminal columns (the fleet table's name column).
+pub const NAME_MAX: usize = 24;
+/// Widest default part (org short form, email local part), in columns.
 const PART_MAX: usize = 16;
+/// Widest part in a disambiguated default (`org·local`): 10 + 1 + 10, room left for `-NN`.
+const PAIR_PART_MAX: usize = 10;
+
+fn cells(s: &str) -> usize {
+    unicode_width::UnicodeWidthStr::width(s)
+}
+
+/// The longest prefix of `s` at most `max` columns wide (CJK-safe: whole chars only).
+fn clip(s: &str, max: usize) -> String {
+    let mut w = 0;
+    s.chars()
+        .take_while(|c| {
+            w += unicode_width::UnicodeWidthChar::width(*c).unwrap_or(0);
+            w <= max
+        })
+        .collect()
+}
 
 /// Operator-set names: alias → name.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Names(pub BTreeMap<String, String>);
 
-/// A name the operator may set: 1..=24 chars, no control char or whitespace other than a
-/// plain space, no `@` (never an email), and not an `acct-` key.
+/// A name the operator may set: 1..=24 columns wide, no control char or whitespace other than
+/// a plain space, no `@` (never an email), and not an `acct-` key.
 pub fn valid_name(s: &str) -> bool {
-    let n = s.chars().count();
-    (1..=NAME_MAX).contains(&n)
+    !s.is_empty()
+        && cells(s) <= NAME_MAX
         && s.trim() == s
         && !s
             .chars()
@@ -50,20 +67,18 @@ pub fn default_path() -> Option<PathBuf> {
     Some(base.join("codeforge").join("accounts.toml"))
 }
 
-/// The names in `path`. A missing or unreadable file is no names; an entry whose key is not an
-/// `acct-` alias or whose name fails [`valid_name`] is dropped (the file is hand-editable).
+/// The names in `path`, for drawing (statusline runs this every refresh): a missing, unreadable
+/// or unparseable file is no names; an entry whose name fails [`valid_name`] is skipped (the file
+/// is hand-editable).
 pub fn load(path: &Path) -> Names {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return Names::default();
-    };
-    let Ok(t) = text.parse::<toml::Table>() else {
+    let Ok(Some(t)) = read_table(path) else {
         return Names::default();
     };
     let mut out = BTreeMap::new();
     if let Some(toml::Value::Table(names)) = t.get("names") {
         for (k, v) in names {
             if let Some(v) = v.as_str() {
-                if k.starts_with("acct-") && valid_name(v) {
+                if !k.is_empty() && valid_name(v) {
                     out.insert(k.clone(), v.to_string());
                 }
             }
@@ -72,13 +87,47 @@ pub fn load(path: &Path) -> Names {
     Names(out)
 }
 
+/// The file as a table; `None` when it does not exist. A read or parse error is an error.
+fn read_table(path: &Path) -> Result<Option<toml::Table>> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e).with_context(|| format!("讀不到名稱檔 {}", path.display())),
+    };
+    let t = text.parse::<toml::Table>().with_context(|| {
+        format!(
+            "名稱檔 {} 不是合法的 TOML，沒有修改；請先修好它",
+            path.display()
+        )
+    })?;
+    Ok(Some(t))
+}
+
+/// Set `key`'s name in `path`, keeping everything else in the file as it is (other names,
+/// entries [`load`] skips, other tables). A file that cannot be read or parsed is left
+/// untouched and is an error; so is a `names` key that is not a table.
+pub fn set(path: &Path, key: &str, name: &str) -> Result<()> {
+    let mut t = read_table(path)?.unwrap_or_default();
+    let names = t
+        .entry("names")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    let toml::Value::Table(names) = names else {
+        anyhow::bail!(
+            "名稱檔 {} 的 names 不是表格，沒有修改；請先修好它",
+            path.display()
+        );
+    };
+    names.insert(key.to_string(), toml::Value::String(name.to_string()));
+    write_table(path, &t)
+}
+
 /// The names from [`default_path`] (none when there is no path).
 pub fn load_default() -> Names {
     default_path().map(|p| load(&p)).unwrap_or_default()
 }
 
-/// Write `names` to `path`: 0600, atomic, the directory created 0700.
-pub fn save(path: &Path, names: &Names) -> Result<()> {
+/// Write `table` to `path`: 0600, atomic, the directory created 0700.
+fn write_table(path: &Path, table: &toml::Table) -> Result<()> {
     let dir = path.parent().context("名稱檔路徑沒有上層資料夾")?;
     #[cfg(unix)]
     {
@@ -90,20 +139,9 @@ pub fn save(path: &Path, names: &Names) -> Result<()> {
     }
     #[cfg(not(unix))]
     std::fs::create_dir_all(dir)?;
-    let mut table = toml::Table::new();
-    table.insert(
-        "names".into(),
-        toml::Value::Table(
-            names
-                .0
-                .iter()
-                .map(|(k, v)| (k.clone(), toml::Value::String(v.clone())))
-                .collect(),
-        ),
-    );
     let body = format!(
         "# codeforge 帳號顯示名（codeforge usage alias set 寫入）。key 是內部帳號 key，只在這裡出現。\n{}",
-        toml::to_string(&table)?
+        toml::to_string(table)?
     );
     let mut tmp = tempfile::Builder::new()
         .prefix(".accounts.toml.")
@@ -128,7 +166,7 @@ pub struct Who<'a> {
 }
 
 fn part(s: &str) -> String {
-    s.chars().take(PART_MAX).collect()
+    clip(s, PART_MAX)
 }
 
 /// `personal`, or the org's first word lowercased.
@@ -141,10 +179,20 @@ fn local_part(email: &str) -> String {
     part(email.split('@').next().unwrap_or(email))
 }
 
+/// `org·local`, each part cut so the pair and a `-NN` suffix fit [`NAME_MAX`].
+fn pair(org: &str, email: &str) -> String {
+    format!(
+        "{}·{}",
+        clip(&org_short(org), PAIR_PART_MAX),
+        clip(&local_part(email), PAIR_PART_MAX)
+    )
+}
+
 /// The display name of each of `items`, in order: the set name, else the org short form, else
 /// the email local part, else the key itself when it is a name someone chose (`AUTOPILOT_ACCOUNT`,
 /// a codex account); `None` for an `acct-` key with none of these. Default names that collide get `·<email local part>`, and what still
-/// collides gets `-2`, `-3`… in key order (a set name is never renamed).
+/// collides gets the smallest free `-2`, `-3`… in key order (a set name is never renamed), so no
+/// two accounts end with the same name.
 pub fn assign(items: &[Who], names: &Names) -> Vec<Option<String>> {
     let mut out: Vec<Option<String>> = items
         .iter()
@@ -171,19 +219,28 @@ pub fn assign(items: &[Who], names: &Names) -> Vec<Option<String>> {
     for g in groups(&out) {
         for i in g {
             if let (false, Some(org), Some(email)) = (set(i), items[i].org, items[i].email) {
-                out[i] = Some(format!("{}·{}", org_short(org), local_part(email)));
+                out[i] = Some(pair(org, email));
             }
         }
     }
-    for mut g in groups(&out) {
-        // a set name keeps its place and is never renamed; defaults are numbered after it
+    let mut taken: std::collections::HashSet<String> = out.iter().flatten().cloned().collect();
+    let mut groups = groups(&out);
+    groups.sort_by_key(|g| g.iter().map(|&i| items[i].key).min());
+    for mut g in groups {
+        // a set name keeps its place and is never renamed; defaults are numbered after it,
+        // each with the smallest suffix no other account already shows
         g.sort_by_key(|&i| (!set(i), items[i].key));
-        for (n, i) in g.into_iter().enumerate().skip(1) {
+        for i in g.into_iter().skip(1) {
             if set(i) {
                 continue;
             }
-            if let Some(s) = &out[i] {
-                out[i] = Some(format!("{s}-{}", n + 1));
+            if let Some(base) = out[i].clone() {
+                let n = (2..)
+                    .find(|n| !taken.contains(&format!("{base}-{n}")))
+                    .unwrap_or(2);
+                let s = format!("{base}-{n}");
+                taken.insert(s.clone());
+                out[i] = Some(s);
             }
         }
     }
@@ -205,9 +262,23 @@ pub fn resolve(items: &[Who], names: &Names, who: &str) -> Result<String> {
     match hits.as_slice() {
         [k] => Ok(k.to_string()),
         [] => anyhow::bail!(
-            "找不到「{who}」：請用帳號的 email 或 `codeforge usage alias list` 顯示的名字"
+            "找不到「{}」：請用帳號的 email 或 `codeforge usage alias list` 顯示的名字",
+            shown_who(who)
         ),
-        _ => anyhow::bail!("「{who}」對到 {} 個帳號，請改用 email 指定", hits.len()),
+        _ => anyhow::bail!(
+            "「{}」對到 {} 個帳號，請改用 email 指定",
+            shown_who(who),
+            hits.len()
+        ),
+    }
+}
+
+/// `who` for an error message: an email is never echoed (errors reach stderr and logs).
+fn shown_who(who: &str) -> &str {
+    if who.contains('@') {
+        "該 email"
+    } else {
+        who
     }
 }
 
@@ -299,30 +370,101 @@ mod tests {
     }
 
     #[test]
-    fn names_round_trip_through_a_0600_file_and_bad_entries_are_dropped() {
+    fn set_writes_a_0600_file_and_keeps_everything_else_in_it() {
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("sub/accounts.toml");
-        let names = Names(BTreeMap::from([("acct-11111111".into(), "work".into())]));
-        save(&p, &names).unwrap();
-        assert_eq!(load(&p), names);
+        set(&p, "acct-11111111", "work").unwrap();
+        assert_eq!(
+            load(&p),
+            Names(BTreeMap::from([("acct-11111111".into(), "work".into())]))
+        );
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let m = std::fs::metadata(&p).unwrap().permissions().mode() & 0o777;
             assert_eq!(m, 0o600);
         }
+        // hand-edited: entries load skips stay in the file across a set
         std::fs::write(
             &p,
-            "[names]\n\"acct-1\" = \"ok\"\n\"x\" = \"no-key\"\n\"acct-2\" = \"a@b.c\"\n\"acct-3\" = 5\n",
+            "[names]\n\"acct-1\" = \"ok\"\n\"codex-1a2b3c4d\" = \"mycodex\"\n\"acct-2\" = \"a@b.c\"\n\"acct-3\" = 5\n[other]\nk = 1\n",
         )
         .unwrap();
         assert_eq!(
             load(&p),
-            Names(BTreeMap::from([("acct-1".into(), "ok".into())]))
+            Names(BTreeMap::from([
+                ("acct-1".into(), "ok".into()),
+                ("codex-1a2b3c4d".into(), "mycodex".into()),
+            ]))
         );
+        set(&p, "acct-4", "new").unwrap();
+        let t: toml::Table = std::fs::read_to_string(&p).unwrap().parse().unwrap();
+        assert_eq!(t["names"]["acct-2"].as_str(), Some("a@b.c"));
+        assert_eq!(t["names"]["acct-3"].as_integer(), Some(5));
+        assert_eq!(t["other"]["k"].as_integer(), Some(1));
+        assert_eq!(load(&p).0.len(), 3);
+        // a file that does not parse is drawn as no names, and set refuses to touch it
         std::fs::write(&p, "not toml [").unwrap();
         assert_eq!(load(&p), Names::default());
+        assert!(set(&p, "acct-1", "x").is_err());
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), "not toml [");
+        std::fs::write(&p, "names = 3\n").unwrap();
+        assert!(set(&p, "acct-1", "x").is_err());
         assert_eq!(load(&d.path().join("missing.toml")), Names::default());
+    }
+
+    #[test]
+    fn defaults_fit_the_name_column_and_numbering_never_lands_on_a_taken_name() {
+        let got = assign(
+            &[
+                who(
+                    "acct-1",
+                    Some("Internationalization Corp"),
+                    Some("jonathan.smith@example.com"),
+                ),
+                who(
+                    "acct-2",
+                    Some("Internationalization Corp"),
+                    Some("jonathan.smyth@example.com"),
+                ),
+                who(
+                    "acct-3",
+                    Some("研發中心研發中心研發中心"),
+                    Some("a@example.com"),
+                ),
+            ],
+            &Names::default(),
+        );
+        let got: Vec<String> = got.into_iter().map(Option::unwrap).collect();
+        for n in &got {
+            assert!(cells(n) <= NAME_MAX, "{n}");
+        }
+        assert_eq!(got[0], "internatio·jonathan.s");
+        assert_eq!(got[1], "internatio·jonathan.s-2");
+        assert_eq!(got[2], "研發中心研發中心");
+        // personal ×2 beside an org that already shows as personal-2
+        let got = assign(
+            &[
+                who("acct-1", Some("personal"), None),
+                who("acct-2", Some("personal"), None),
+                who("acct-3", Some("Personal-2"), None),
+            ],
+            &Names::default(),
+        );
+        let got: Vec<String> = got.into_iter().map(Option::unwrap).collect();
+        let mut uniq = got.clone();
+        uniq.sort();
+        uniq.dedup();
+        assert_eq!(uniq.len(), 3, "{got:?}");
+    }
+
+    #[test]
+    fn a_resolve_error_never_echoes_an_email() {
+        let items = [who("acct-1", Some("Stranity"), Some("a@example.com"))];
+        let e = resolve(&items, &Names::default(), "typo@example.com").unwrap_err();
+        assert!(!format!("{e:#}").contains("typo@example.com"), "{e:#}");
+        let e = resolve(&items, &Names::default(), "nobody").unwrap_err();
+        assert!(format!("{e:#}").contains("nobody"));
     }
 
     #[test]
@@ -338,6 +480,7 @@ mod tests {
             "a\tb",
             "a\nb",
             &"x".repeat(25),
+            &"工".repeat(13),
         ] {
             assert!(!valid_name(bad), "{bad:?}");
         }

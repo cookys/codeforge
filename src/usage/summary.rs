@@ -47,7 +47,8 @@ const DROP_REASONS: [&str; 3] = [
 ];
 const ACCOUNT_KEYS: [&str; 4] = ["alias", "written_at_ms", "five_hour", "seven_day"];
 /// Optional account keys: absent = unknown, so a summary from before `org`/`email` still validates.
-const ACCOUNT_OPTIONAL: [&str; 2] = ["org", "email"];
+/// `name` = the display name ([`super::names`]), present when the account has one.
+const ACCOUNT_OPTIONAL: [&str; 3] = ["org", "email", "name"];
 const WINDOW_KEYS: [&str; 2] = ["pct", "resets_at"];
 /// Optional window keys: `seen_at_ms` = when the rate-limit data was captured; absent = unknown.
 const WINDOW_OPTIONAL: [&str; 1] = ["seen_at_ms"];
@@ -98,7 +99,7 @@ const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 pub fn contract() -> Value {
     json!({
         "schema": SCHEMA,
-        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "email": EMAIL_RE, "window": WINDOW_KEYS, "window_optional": WINDOW_OPTIONAL, "day": DAY_KEYS,
+        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "email": EMAIL_RE, "name_max_cells": super::names::NAME_MAX, "window": WINDOW_KEYS, "window_optional": WINDOW_OPTIONAL, "day": DAY_KEYS,
         "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
         "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE, "uint_max": UINT_MAX,
         "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
@@ -158,7 +159,13 @@ fn window(w: &Option<super::quota::Window>, now_ms: i64) -> Value {
 
 /// Build the summary from bucket rows (any days; the caller passes the last 7) and the
 /// fresh quota snapshots. Projects are summed away.
-pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Value {
+pub fn build(
+    rows: &[Row],
+    accounts: &[Snapshot],
+    host: &str,
+    now_ms: i64,
+    names: &super::names::Names,
+) -> Value {
     let mut days: BTreeMap<DayKey, (price::Tokens, u64)> = BTreeMap::new();
     for r in rows {
         let e = days
@@ -205,6 +212,20 @@ pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Va
                 a["email"] = json!(email);
             }
             kept.push(a);
+        }
+    }
+    let who: Vec<super::names::Who> = kept
+        .iter()
+        .map(|a| super::names::Who {
+            key: a["alias"].as_str().unwrap_or_default(),
+            org: a["org"].as_str(),
+            email: a["email"].as_str(),
+        })
+        .collect();
+    let shown = super::names::assign(&who, names);
+    for (a, n) in kept.iter_mut().zip(shown) {
+        if let Some(n) = n {
+            a["name"] = json!(n);
         }
     }
     let mut out = json!({
@@ -351,6 +372,11 @@ pub fn validate(v: &Value) -> Result<()> {
         {
             bail!("{at}.org: 不是合法的組織顯示名");
         }
+        if m.get("name")
+            .is_some_and(|n| !n.as_str().is_some_and(super::names::valid_name))
+        {
+            bail!("{at}.name: 不是合法的顯示名");
+        }
         // the value is never put in the message
         if m.get("email")
             .is_some_and(|e| !e.as_str().is_some_and(valid_email))
@@ -407,12 +433,16 @@ pub fn write(dir: &Path, v: &Value) -> Result<PathBuf> {
     Ok(dir.join(FILE))
 }
 
-/// The summary with every account's `email` removed, or `None` when no account has one.
-/// A blob leaves the host, and the email stays on it (the local file and screen only).
+/// The summary with every account's `email` and `name` removed (a default name can be the
+/// email's local part), or `None` when no account has either. A blob leaves the host, and
+/// these stay on it (the local file and screen only).
 fn without_email(mut v: Value) -> Option<Vec<u8>> {
     let mut hit = false;
     for a in v["accounts"].as_array_mut()? {
-        hit |= a.as_object_mut().and_then(|o| o.remove("email")).is_some();
+        if let Some(o) = a.as_object_mut() {
+            hit |= o.remove("email").is_some();
+            hit |= o.remove("name").is_some();
+        }
     }
     hit.then(|| serde_json::to_vec(&v).ok()).flatten()
 }
@@ -511,6 +541,7 @@ mod tests {
             &[snap],
             &host_alias("MARKERHOST.example"),
             7,
+            &Default::default(),
         )
     }
 
@@ -537,7 +568,13 @@ mod tests {
                 five_hour: seen(at_ms),
                 seven_day: None,
             };
-            build(&[], &[snap], &host_alias("h"), 1_000_000)
+            build(
+                &[],
+                &[snap],
+                &host_alias("h"),
+                1_000_000,
+                &Default::default(),
+            )
         };
         // carried, and valid
         let v = mk(900_000);
@@ -612,9 +649,31 @@ mod tests {
             five_hour: None,
             seven_day: None,
         };
-        let v = build(&[], &[snap], &host_alias("h"), 7);
+        let v = build(
+            &[],
+            std::slice::from_ref(&snap),
+            &host_alias("h"),
+            7,
+            &Default::default(),
+        );
         validate(&v).unwrap();
         assert_eq!(v["accounts"][0]["email"], "me@example.com");
+        // and its display name: the default, or the operator's; never for a bare acct- hash
+        assert_eq!(v["accounts"][0]["name"], "me");
+        let set = super::super::names::Names([("acct-a".to_string(), "公司".to_string())].into());
+        let v = build(&[], std::slice::from_ref(&snap), &host_alias("h"), 7, &set);
+        validate(&v).unwrap();
+        assert_eq!(v["accounts"][0]["name"], "公司");
+        let bare = Snapshot {
+            email: None,
+            ..snap
+        };
+        let v = build(&[], &[bare], &host_alias("h"), 7, &Default::default());
+        validate(&v).unwrap();
+        assert!(v["accounts"][0].get("name").is_none(), "{v}");
+        let mut bad = v.clone();
+        bad["accounts"][0]["name"] = json!("acct-a");
+        assert!(validate(&bad).is_err());
     }
 
     #[test]
@@ -727,17 +786,18 @@ mod tests {
         // an account email never goes into the blob; the rest is uploaded unchanged
         let mut with_email = good();
         with_email["accounts"][0]["email"] = json!("someone@example.com");
+        with_email["accounts"][0]["name"] = json!("someone");
         validate(&with_email).unwrap();
         crate::live::write_live_json(&dir, FILE, &with_email).unwrap();
         push(&dir, fake.to_str().unwrap()).unwrap();
         let sent: Value =
             serde_json::from_slice(&std::fs::read(log.with_extension("bytes")).unwrap()).unwrap();
         assert!(sent["accounts"][0].get("email").is_none(), "{sent}");
+        assert!(sent["accounts"][0].get("name").is_none(), "{sent}");
         let mut expect = with_email.clone();
-        expect["accounts"][0]
-            .as_object_mut()
-            .unwrap()
-            .remove("email");
+        let o = expect["accounts"][0].as_object_mut().unwrap();
+        o.remove("email");
+        o.remove("name");
         assert_eq!(sent, expect);
         assert!(std::fs::read_to_string(&path)
             .unwrap()
@@ -843,6 +903,7 @@ mod tests {
             &snaps,
             &host_alias("h"),
             7,
+            &Default::default(),
         );
         validate(&v).expect("a bad snapshot must not fail the whole summary");
         let aliases: Vec<&str> = v["accounts"]

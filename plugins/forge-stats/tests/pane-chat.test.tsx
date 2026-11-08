@@ -26,7 +26,7 @@ const summary = (models: number, cost = 1.5) => ({
   generated_at_ms: Date.now() - 5 * 60_000,
   host: 'host-1a2b3c4d',
   prices_as_of: '2026-10-06',
-  accounts: [{ alias: 'acct-a', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: Math.floor(Date.now() / 1000) + 7800 }, seven_day: null }],
+  accounts: [{ alias: 'smith1', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: Math.floor(Date.now() / 1000) + 7800 }, seven_day: null }],
   days: Array.from({ length: models }, (_, i) => ({
     day, source: 'claude', account: 'acct-a', model: 'claude-opus-5-' + i, speed: 'standard',
     input: 100, output: 50, cache_write_5m: 0, cache_write_1h: 0, cache_read: 850, requests: 3, cost_usd: cost,
@@ -265,7 +265,7 @@ test('/forge-stats opens the pane asking for the keyboard, before it reads anyth
   expect(log[0]).toBe('open focus=true')
   expect(log.includes('stat quota')).toBe(true)
   const ui = await $.ui.mount(target(12))
-  expect((await ui.find({ type: 'Text', text: /acct-a/ })) !== undefined).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /smith1/ })) !== undefined).toBe(true)
   await ui.unmount()
 })
 
