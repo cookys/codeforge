@@ -145,6 +145,13 @@ forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接
   為 unix 秒），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at}|null`。`pct` 是小數（1.0 = 100%）。
   讀者（forge-stats 分頁、fleet.console/1 的配額區）直接讀，不重算。
 
+**寫檔（`usage collect` 順手維護）**：環境變數 `CODEFORGE_FLEET_USAGE_DIR` 有設且非空時，`codeforge usage collect`
+（每 15 分鐘由 statusline 的 autocollect 觸發，也可手動）寫完 `summary.json` 後，對該資料夾做同一套合併（直接呼叫
+`fleet_quota` 的函式，不開子行程），把 `codeforge.fleet-quota/1` 寫到 `summary.json` 旁邊的 `fleet-quota.json`
+（暫存檔＋rename，0600，同 summary.json 的 `write_live_json`）。沒設環境變數：什麼都不做，不寫檔，也不清掉以前留下的舊檔。
+合併失敗（資料夾讀不了等）不讓 collect 失敗；`--quiet` 靜默，否則在 stderr 報一行。`codeforge usage fleet` 省略 `--dir`
+時也用這個環境變數（兩者都沒有就報錯）。讀者是 forge-stats 的「全部帳號」分頁（`codeforge-mod-ui.md`），只在這個檔存在時才出現。
+
 ## 指令
 
 ```bash
@@ -154,7 +161,7 @@ codeforge usage --json
 codeforge usage collect --quiet     # hook 用
 codeforge usage push                # 印出 blob sha
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
-codeforge usage fleet --dir <D> [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）
+codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）
 /forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```
 
