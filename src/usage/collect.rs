@@ -415,15 +415,124 @@ fn codex_session(path: &Path) -> Option<String> {
         .then(|| id.to_ascii_lowercase())
 }
 
+/// Codex `rate_limits.primary`/`secondary` minutes of the windows kept; any other is ignored.
+const FIVE_HOUR_MIN: u64 = 300;
+const WEEK_MIN: u64 = 10_080;
+
+/// One rate-limit window: (fraction used, resets_at unix seconds).
+pub type Limit = (f64, i64);
+
+/// The 5h and weekly windows of a `rate_limits` object: only `used_percent` (kept as a fraction,
+/// in the summary's range), `window_minutes` and `resets_at` are read; credits, plan and the rest never are.
+/// A null or malformed window, or one of another length, is no window. `None` when `rl` is not
+/// an object (no observation).
+fn rate_limits(rl: &Value) -> Option<(Option<Limit>, Option<Limit>)> {
+    rl.as_object()?;
+    let (mut five, mut week) = (None, None);
+    for w in [&rl["primary"], &rl["secondary"]] {
+        let pct = w["used_percent"]
+            .as_f64()
+            .map(|p| p / 100.0)
+            .filter(|p| p.is_finite() && (0.0..=super::summary::PCT_MAX).contains(p));
+        let resets = w["resets_at"]
+            .as_u64()
+            .filter(|r| *r <= super::summary::UINT_MAX);
+        let (Some(pct), Some(resets)) = (pct, resets) else {
+            continue;
+        };
+        let lim = Some((pct, resets as i64));
+        match w["window_minutes"].as_u64() {
+            Some(FIVE_HOUR_MIN) => five = lim,
+            Some(WEEK_MIN) => week = lim,
+            _ => {}
+        }
+    }
+    Some((five, week))
+}
+
+/// Keep the observation when it is at least as new as the stored one for `account` (a reread of
+/// the same line writes the same values).
+fn store_limits(
+    tx: &Transaction,
+    account: &str,
+    at_ms: i64,
+    (five, week): (Option<Limit>, Option<Limit>),
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO codex_limits VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT (account) DO UPDATE SET observed_ms = excluded.observed_ms,
+             five_pct = excluded.five_pct, five_resets = excluded.five_resets,
+             week_pct = excluded.week_pct, week_resets = excluded.week_resets
+         WHERE excluded.observed_ms >= codex_limits.observed_ms",
+        params![
+            account,
+            at_ms,
+            five.map(|w| w.0),
+            five.map(|w| w.1),
+            week.map(|w| w.0),
+            week.map(|w| w.1)
+        ],
+    )?;
+    Ok(())
+}
+
+/// The newest rate-limit observation of every codex account, as quota snapshots for the summary
+/// (`seen_at_ms` = the observation time). An observation with no window, or whose windows have
+/// all reset by `now_ms`, says nothing current and is left out: that account is `no_window`.
+pub fn codex_snapshots(conn: &Connection, now_ms: i64) -> Result<Vec<quota::Snapshot>> {
+    let mut st = conn.prepare(
+        "SELECT account, observed_ms, five_pct, five_resets, week_pct, week_resets
+         FROM codex_limits ORDER BY account",
+    )?;
+    let now_s = now_ms.div_euclid(1000);
+    let rows = st.query_map([], |r| {
+        let at: i64 = r.get(1)?;
+        let win = |p: Option<f64>, s: Option<i64>| {
+            p.zip(s).map(|(pct, resets_at)| quota::Window {
+                pct,
+                resets_at,
+                seen: Some(quota::Seen {
+                    at_ms: at,
+                    session: String::new(),
+                }),
+            })
+        };
+        Ok(quota::Snapshot {
+            alias: r.get(0)?,
+            org: None,
+            email: None,
+            root: None,
+            written_at_ms: at,
+            five_hour: win(r.get(2)?, r.get(3)?),
+            seven_day: win(r.get(4)?, r.get(5)?),
+        })
+    })?;
+    let mut out = Vec::new();
+    for s in rows {
+        let s = s?;
+        if [&s.five_hour, &s.seven_day]
+            .into_iter()
+            .flatten()
+            .any(|w| w.resets_at > now_s)
+        {
+            out.push(s);
+        }
+    }
+    Ok(out)
+}
+
 /// One Codex line. `turn_context` sets the session's model and project; a `token_count`
 /// event adds only what its cumulative totals exceed the highest already counted for the
-/// session (copies, replacements and decreasing totals add nothing).
+/// session (copies, replacements and decreasing totals add nothing), and its `rate_limits` are
+/// kept when newer than the account's stored observation (at the line's timestamp, else
+/// `mtime_ms`, the file's).
 fn codex_line(
     tx: &Transaction,
     v: &Value,
     session: &str,
     account: &str,
     now_ms: i64,
+    mtime_ms: Option<i64>,
 ) -> Result<()> {
     let p = &v["payload"];
     let stored = tx
@@ -460,6 +569,11 @@ fn codex_line(
     }
     if p["type"] != "token_count" {
         return Ok(());
+    }
+    if let Some(lim) = rate_limits(&p["rate_limits"]) {
+        if let Some(at) = stamp(v).map(|(ms, _)| ms).or(mtime_ms) {
+            store_limits(tx, account, at, lim)?;
+        }
     }
     let t = &p["info"]["total_token_usage"];
     if !t.is_object() {
@@ -600,8 +714,8 @@ pub fn collect_file(
         .modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(i64::MAX, |d| d.as_millis() as i64);
-    if now_ms - mtime_ms > HORIZON_DAYS * DAY_MS {
+        .map(|d| d.as_millis() as i64);
+    if mtime_ms.is_some_and(|m| now_ms - m > HORIZON_DAYS * DAY_MS) {
         return Ok(true);
     }
     let (ino, size) = (inode(&meta), meta.len());
@@ -660,7 +774,7 @@ pub fn collect_file(
         };
         match &session {
             None => claude_line(&tx, &v, account, now_ms)?,
-            Some(s) => codex_line(&tx, &v, s, account, now_ms)?,
+            Some(s) => codex_line(&tx, &v, s, account, now_ms, mtime_ms)?,
         }
     }
     let head_len = consumed.min(HEAD_MAX);

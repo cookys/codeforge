@@ -204,18 +204,198 @@ fn passed_reset_is_not_drawn() {
 }
 
 #[test]
-fn codex_only_alias_and_fixed_providers_are_no_source() {
+fn codex_only_alias_and_every_provider_are_no_source_with_a_reason() {
     let s = summary("host-aaaaaaaa", vec![], vec![day("cx", "codex")]);
     let f = run(&[("box.json", &s)]);
     let r = row(&f, "cx");
     assert_eq!(r.state, State::NoSource);
     assert_eq!(r.provider, "codex");
     assert_eq!(r.hosts, vec!["box"]);
-    for p in NO_SOURCE_PROVIDERS {
-        assert_eq!(row(&f, p).state, State::NoSource);
+    assert_eq!(r.source_note, Some(SourceNote::NoWindow));
+    // a codex account exists, so no extra `codex` placeholder row
+    assert!(f.rows.iter().all(|r| r.alias != "codex"));
+    for (p, note) in PROVIDERS.into_iter().filter(|(p, _)| *p != "codex") {
+        let r = row(&f, p);
+        assert_eq!((r.state, r.provider.as_str()), (State::NoSource, p));
+        assert_eq!(r.source_note, Some(note), "{p}");
+        assert_eq!(p, p.to_lowercase(), "labels are lowercase");
     }
+    let v = to_json(&f, NOW_MS);
+    let notes: std::collections::BTreeMap<&str, &str> = v["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| {
+            (
+                a["alias"].as_str().unwrap(),
+                a["source_note"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(notes["kimi"], "web_only");
+    assert_eq!(notes["glm"], "needs_token");
+    assert_eq!(notes["minimax"], "needs_token");
+    assert_eq!(notes["cx"], "no_window");
     let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
-    assert!(txt.contains("無來源"), "{txt}");
+    assert!(txt.contains("無來源 · 只有網頁"), "{txt}");
+    assert!(
+        txt.contains("無來源 · 要 token，待 autopilot 鏡像"),
+        "{txt}"
+    );
+    assert!(txt.contains("無來源 · 帳號沒有窗口資料"), "{txt}");
+    let en = text(&f, 100, NOW_MS, &Tr("en".into()), false);
+    assert!(en.contains("no source · only on the web page"), "{en}");
+}
+
+#[test]
+fn with_no_codex_account_a_codex_row_says_no_window() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![acct("work", 60, None, Some((0.2, NOW_S + 3 * D)))],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let r = row(&f, "codex");
+    assert_eq!(
+        (r.state, r.source_note),
+        (State::NoSource, Some(SourceNote::NoWindow))
+    );
+    // a Claude row never carries a source note, in the JSON either
+    assert_eq!(row(&f, "work").source_note, None);
+    let v = to_json(&f, NOW_MS);
+    let w = v["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["alias"] == "work")
+        .unwrap();
+    assert!(
+        w.get("source_note").is_none() && w.get("note").is_none(),
+        "{w}"
+    );
+}
+
+#[test]
+fn a_codex_account_with_windows_is_merged_like_a_claude_one() {
+    // the collector puts codex windows in the summary account entry keyed `codex-<hex8>`
+    let a = summary(
+        "host-aaaaaaaa",
+        vec![acct(
+            "codex-1a2b3c4d",
+            7200,
+            Some((0.1, NOW_S + 2 * H)),
+            Some((0.2, NOW_S + 3 * D)),
+        )],
+        vec![day("codex-1a2b3c4d", "codex")],
+    );
+    let b = summary(
+        "host-bbbbbbbb",
+        vec![acct(
+            "codex-1a2b3c4d",
+            60,
+            None,
+            Some((0.72, NOW_S + 4 * D)),
+        )],
+        vec![],
+    );
+    let f = run(&[("gpu-a.json", &a), ("gpu-b.json", &b)]);
+    let r = row(&f, "codex-1a2b3c4d");
+    assert_eq!(r.provider, "codex");
+    assert_eq!(r.name, "codex");
+    assert_eq!(r.state, State::Ok);
+    assert_eq!(r.source_note, None);
+    let w = r.weekly.as_ref().unwrap();
+    assert_eq!((w.win.pct, w.warn), (0.72, Some(Warn::Short)));
+    assert_eq!(r.old_hosts, vec!["gpu-a"]);
+    assert!(f.rows.iter().all(|r| r.alias != "codex"), "no placeholder");
+    let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(txt.contains("會不夠 估 · codex · 週 72%"), "{txt}");
+}
+
+fn notes(v: &[(&str, &str)]) -> super::names::Notes {
+    super::names::Notes(
+        v.iter()
+            .map(|(k, n)| (k.to_string(), n.to_string()))
+            .collect(),
+    )
+}
+
+#[test]
+fn notes_attach_by_account_key_first_then_provider_and_show_dim_at_the_row_end() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![
+            acct("codex-1a2b3c4d", 60, None, Some((0.2, NOW_S + 3 * D))),
+            acct("codex-99999999", 60, None, Some((0.3, NOW_S + 3 * D))),
+            acct("work", 60, None, Some((0.4, NOW_S + 3 * D))),
+        ],
+        vec![],
+    );
+    let mut f = run(&[("a.json", &s)]);
+    attach_notes(
+        &mut f,
+        &notes(&[
+            ("kimi", "週配額用完"),
+            ("codex", "team plan"),
+            ("codex-1a2b3c4d", "mine"),
+        ]),
+    );
+    assert_eq!(row(&f, "codex-1a2b3c4d").note.as_deref(), Some("mine"));
+    assert_eq!(row(&f, "codex-99999999").note.as_deref(), Some("team plan"));
+    assert_eq!(row(&f, "kimi").note.as_deref(), Some("週配額用完"));
+    assert_eq!(row(&f, "work").note, None);
+    let v = to_json(&f, NOW_MS);
+    let by = |alias: &str| {
+        v["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["alias"] == alias)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(by("kimi")["note"], "週配額用完");
+    assert!(by("work").get("note").is_none());
+    let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(txt.contains("無來源 · 只有網頁  週配額用完"), "{txt}");
+    assert!(txt.contains("mine"), "{txt}");
+    // dim when painted
+    let colored = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), true);
+    let line = colored.lines().find(|l| l.contains("週配額用完")).unwrap();
+    let at = line.find("週配額用完").unwrap();
+    assert!(line[..at].ends_with("\u{1b}[2m"), "{line:?}");
+}
+
+#[test]
+fn a_long_cjk_note_is_cut_to_the_width_and_the_numbers_stay() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![acct(
+            "work",
+            60,
+            Some((0.3, NOW_S + 2 * H)),
+            Some((0.4, NOW_S + 3 * D)),
+        )],
+        vec![],
+    );
+    let mut f = run(&[("a.json", &s)]);
+    let long = "週".repeat(20);
+    attach_notes(&mut f, &notes(&[("work", &long), ("kimi", &long)]));
+    for cols in [100, 80, 60, 40, 20] {
+        for tr in ["zh-TW", "en"] {
+            let txt = text(&f, cols, NOW_MS, &Tr(tr.into()), false);
+            for l in txt.lines() {
+                assert!(UnicodeWidthStr::width(l) <= cols, "{cols} {tr}: {l:?}");
+            }
+            if cols >= 40 {
+                assert!(txt.contains("40%"), "{cols} {tr}: {txt}");
+                assert!(
+                    txt.contains("週週週"),
+                    "{cols} {tr}: the note is shown: {txt}"
+                );
+            }
+        }
+    }
 }
 
 #[test]

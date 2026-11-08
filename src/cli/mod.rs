@@ -347,6 +347,27 @@ pub enum UsageAction {
         #[command(subcommand)]
         action: AliasAction,
     },
+    /// 備註：在全帳號表與全部帳號分頁的列尾顯示（只存在本機 ~/.config/codeforge/accounts.toml，不上傳）
+    Note {
+        #[command(subcommand)]
+        action: NoteAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum NoteAction {
+    /// 設定備註：`set <provider 或帳號> <文字>`（provider 如 kimi，套用到該 provider 的每一列；帳號的備註優先）
+    Set {
+        /// provider 名（小寫，如 kimi、codex），或帳號的 email／`alias list` 顯示的名字
+        target: String,
+        /// 備註（最寬 40 欄，不能有 @）
+        text: String,
+    },
+    /// 清除備註
+    Clear {
+        /// provider 名，或帳號的 email／顯示名
+        target: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -567,6 +588,10 @@ pub fn run(cli: Cli) -> Result<()> {
             Some(UsageAction::Alias { action }) => match action {
                 AliasAction::List => usage::Action::AliasList,
                 AliasAction::Set { who, name } => usage::Action::AliasSet { who, name },
+            },
+            Some(UsageAction::Note { action }) => match action {
+                NoteAction::Set { target, text } => usage::Action::NoteSet { target, text },
+                NoteAction::Clear { target } => usage::Action::NoteClear { target },
             },
             None => usage::Action::Show { days, by, json },
         }),

@@ -258,3 +258,12 @@ test('parseUsage takes an optional window seen_at_ms: a uint, at most 10 min aft
   expect(parseUsage(JSON.stringify(acc(gen + 600_000)), NOW).status).toBe('ok')
   for (const bad of [gen + 600_001, -1, 1.5, 'x', null]) expect([bad, parseUsage(JSON.stringify(acc(bad)), NOW).status]).toEqual([bad, 'bad'])
 })
+
+test('parseUsage accepts a codex account entry with rollout windows; a note never belongs in a summary', () => {
+  const t = Math.floor(Date.now() / 1000)
+  const codex = { alias: 'codex-1a2b3c4d', written_at_ms: Date.now() - 60_000, five_hour: { pct: 0.42, resets_at: t + 3600, seen_at_ms: Date.now() - 60_000 }, seven_day: { pct: 0.175, resets_at: t + 86400, seen_at_ms: Date.now() - 60_000 } }
+  const v = parseUsage(JSON.stringify(summary({ accounts: [codex] })), NOW)
+  if (v.status !== 'ok') throw new Error('not ok')
+  expect(v.accounts[0]?.sevenDay?.pct).toBe(0.175)
+  expect(parseUsage(JSON.stringify(summary({ accounts: [{ ...codex, note: 'x' }] })), NOW).status).toBe('bad')
+})

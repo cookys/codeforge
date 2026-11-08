@@ -18,6 +18,8 @@ export const fleetQuotaPath = (base: string) => `${base}/codeforge/usage/fleet-q
 export type FleetWin = { pct: number; resetsAt: number; reset: boolean }
 export type FleetWeekly = FleetWin & { warn: 'waste' | 'short' | null; exhaustAt: number | null }
 export type FleetState = 'ok' | 'stale' | 'expired' | 'no_source'
+/** Why a `no_source` row has no data (a closed set). */
+export type FleetSourceNote = 'web_only' | 'needs_token' | 'no_window'
 export type FleetAccount = {
   /** Internal key only: never drawn. */
   alias: string
@@ -34,6 +36,10 @@ export type FleetAccount = {
   state: FleetState
   weekly: FleetWeekly | null
   fiveHour: FleetWin | null
+  /** Only on a `no_source` row; null from a writer before the key. */
+  sourceNote: FleetSourceNote | null
+  /** The operator's local note for the row; null when none. */
+  note: string | null
 }
 export type FleetQuotaView =
   | { status: 'ok'; generatedAt: number; useTarget: number; skipped: number; accounts: FleetAccount[] }
@@ -49,6 +55,13 @@ const isPct = (v: unknown): v is number => typeof v === 'number' && Number.isFin
 const isEmail = (v: unknown): v is string => typeof v === 'string' && /^(?=.{3,254}$)[^@\s\u0000-\u001f\u007f-\u009f\uFEFF]+@[^@\s\u0000-\u001f\u007f-\u009f\uFEFF]+$/u.test(v)
 // printable, bounded: a label that reaches the screen
 const isLabel = (v: unknown): v is string => typeof v === 'string' && /^[^\u0000-\u001f\u007f]{1,64}$/.test(v)
+const SOURCE_NOTES: readonly string[] = ['web_only', 'needs_token', 'no_window']
+const isSourceNote = (v: unknown): v is FleetSourceNote => typeof v === 'string' && SOURCE_NOTES.includes(v)
+/** The widest an operator note may be, the same rule as codeforge's `valid_note`. */
+export const NOTE_MAX = 40
+// non-empty, trimmed, at most NOTE_MAX cells, no control char, no `@`, no BOM, no whitespace but the space
+const isNote = (v: unknown): v is string =>
+  typeof v === 'string' && v !== '' && v === v.trim() && !/[\u0000-\u001f\u007f-\u009f@\uFEFF]|[^\S ]/u.test(v) && displayWidth(v) <= NOTE_MAX
 
 function win(v: unknown): FleetWin | null | undefined {
   if (v === null) return null
@@ -84,7 +97,9 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
   if (!Array.isArray(raw.accounts) || raw.accounts.length > FLEET_MAX_ACCOUNTS) return BAD
   const accounts: FleetAccount[] = []
   for (const a of raw.accounts as unknown[]) {
-    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name'])) return BAD
+    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name', 'source_note', 'note'])) return BAD
+    if (a.source_note !== undefined && (a.state !== 'no_source' || !isSourceNote(a.source_note))) return BAD
+    if (a.note !== undefined && !isNote(a.note)) return BAD
     if (a.name !== undefined && !isLabel(a.name)) return BAD
     if (a.org !== undefined && a.org !== null && !isLabel(a.org)) return BAD
     if (a.email !== undefined && a.email !== null && !isEmail(a.email)) return BAD
@@ -104,7 +119,7 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
       : typeof a.org === 'string' ? a.org
       : keyDefault(a.alias)
     if (name === null) continue
-    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f })
+    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f, sourceNote: isSourceNote(a.source_note) ? a.source_note : null, note: isNote(a.note) ? a.note : null })
   }
   return {
     status: 'ok',
@@ -154,7 +169,24 @@ function warnLine(a: FleetAccount, useTarget: number, cols: number, tr: T, now: 
   return fit([[...head, ...runout, ...reset, ...target], [...head, ...runout, ...reset], [...head, ...runout], head], cols)
 }
 
+const SOURCE_TEXT = { web_only: 'fleetSrcWebOnly', needs_token: 'fleetSrcNeedsToken', no_window: 'fleetSrcNoWindow' } as const
+/** A note is shown only with at least this many cells (or all of it, when shorter). */
+const NOTE_MIN_CELLS = 8
+
+/** `line` with the operator's note dim at its end, cut with `…` to the room left; `line` alone when too little is left. */
+function withNote(line: QLine, note: string | null, cols: number): QLine {
+  if (note === null) return line
+  const room = cols - width(line) - 2
+  const w = displayWidth(note)
+  if (room < Math.min(NOTE_MIN_CELLS, w)) return line
+  return [...line, seg('  ' + (w <= room ? note : clipCells(note, room - 1) + '…'), 'dim')]
+}
+
 function accountLine(a: FleetAccount, aliasW: number, cols: number, tr: T, now: number): QLine {
+  return withNote(accountBody(a, aliasW, cols, tr, now), a.note, cols)
+}
+
+function accountBody(a: FleetAccount, aliasW: number, cols: number, tr: T, now: number): QLine {
   const name = seg(padRight(clipCells(label(a, tr), aliasW), aliasW + 2), a.state === 'ok' ? undefined : 'idle')
   const age: QLine =
     a.observedAtMs !== null && (now - a.observedAtMs) / 1000 > AGE_SHOW_S
@@ -167,7 +199,9 @@ function accountLine(a: FleetAccount, aliasW: number, cols: number, tr: T, now: 
   const word = (id: 'fleetNoSource' | 'fleetExpired' | 'fleetStale'): QLine => [seg(tr(id), 'idle')]
   if (a.state !== 'ok') {
     const w = word(a.state === 'no_source' ? 'fleetNoSource' : a.state === 'expired' ? 'fleetExpired' : 'fleetStale')
-    return fit([[name, ...w, ...hosts, ...age], [name, ...w, ...age], [name, ...w]], cols)
+    // the reason a row has no source, dim after the word; dropped before the word itself
+    const why: QLine = a.sourceNote === null ? [] : [seg(SEP + tr(SOURCE_TEXT[a.sourceNote]), 'dim')]
+    return fit([[name, ...w, ...why, ...hosts, ...age], [name, ...w, ...why, ...age], [name, ...w, ...why], [name, ...w]], cols)
   }
   const wk = a.weekly
   const five = a.fiveHour

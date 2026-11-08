@@ -84,6 +84,13 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   （畫面端照樣當作沒有名字）。錯誤訊息不回顯 email。預設名的各段依欄寬截短（`org·前段` 各最多 10 欄），撞名編號取還沒被用的最小 `-N`。
   `codeforge usage alias list` 列出本機快照與 `fleet-quota.json` 認得的帳號（名字、是否自訂、org、email，只在本機畫面）；
   `codeforge usage alias set <email 或目前顯示名> <新名字>` 設定，拒絕和別的帳號同名。
+- **operator 備註（只在本機）**：同一個 `accounts.toml` 的選填 `[notes]` 表，鍵是 provider 標籤（`kimi`、`codex`、`claude`…）
+  或帳號鍵，值是短文字。規則同名字但最寬 40 欄：無控制字元、無 `@`、前後無空白（不檢查 `acct-` 前綴）；不合規的條目略過。
+  `usage fleet`（文字表、`--json`、`fleet-quota.json`）把備註掛成選填 `note`，帳號鍵的備註優先於 provider 的。
+  文字表與 forge-stats 分頁把它淡色放在列尾，依剩餘寬度截短（中文字 2 欄、加 `…`；剩不到 8 欄就不畫）。
+  備註**永遠不進** `summary.json` 與 `usage push`（summary 契約沒有這個鍵）。
+  `codeforge usage note set <provider|名字> <文字>`、`usage note clear <provider|名字>` 設定／清除（provider 標籤原樣當鍵，
+  否則照 `alias set` 的規則認帳號；只改一條、其餘原樣，0600、原子寫入）；`usage alias list` 一併列出備註。不寫死任何事實。
 - **statusline 其他帳號段**：只看還沒重置的週視窗。週 ≥ 95% 或「會不夠（估）」→「⚠ 名字 週 97% 3d1h 後重置」；
   「會浪費」→「名字 週 NN% … 後重置 會浪費」；其餘帳號不出現，沒有名字的帳號不出現。放不下就只留前面的段。
   （c4140 曾顯示 97%，原因是 statusline 讀到修正身分前的舊合併快照；gpu-lead 實測 /login 後新舊 session 的數字相同，
@@ -104,7 +111,15 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 | 來源 | glob | 存下 |
 |---|---|---|
 | Claude | `<cfg>/projects/*/*.jsonl`、`<cfg>/projects/*/*/subagents/*.jsonl` | request id、UTC 日、model id、token 數、speed、cwd 最後一段 |
-| Codex | `<codex>/sessions/YYYY/MM/DD/rollout-*.jsonl` | session id（檔名）、UTC 日、model id、token 數、cwd 最後一段 |
+| Codex | `<codex>/sessions/YYYY/MM/DD/rollout-*.jsonl` | session id（檔名）、UTC 日、model id、token 數、cwd 最後一段；`rate_limits` 的窗口數字（見下） |
+
+- **Codex 窗口（rollout `rate_limits`）**：`payload.type == "token_count"` 行的 `payload.rate_limits.primary`／`secondary`
+  各是 `{used_percent, window_minutes, resets_at}` 或 `null`。只讀這三個數字：`window_minutes` 300 = 5 小時窗、10080 = 週窗，
+  其他長度與 `null` 都是「沒有這個窗」；`used_percent / 100` 存成 0..1.5 的小數。觀察時間取該行 `timestamp`，沒有就用檔案 mtime。
+  每個 codex 帳號（`codex-<hash>`）只留**最新**的一筆（db 表 `codex_limits`：帳號、觀察時間、兩窗的 pct 與 `resets_at`），
+  比已存的舊的不覆蓋；collector 是增量的，表存在 db 裡，所以下一輪沒讀到新行也不會掉。credits、plan_type、limit_id 等一律不讀不存。
+  summary 建立時，至少還有一個窗沒重置的觀察變成該 codex 別名的帳號項（形狀同 Claude 帳號：`alias`、`written_at_ms` = 觀察時間、
+  `five_hour`／`seven_day` 帶 `seen_at_ms`），不套 6 小時新鮮度篩選（舊觀察在全帳號表上照樣顯示「過期」，不會變成誤導的「沒有窗口資料」）。
 
 - 不進 symlink 目錄、不拿 symlink 或特殊檔；`O_NOFOLLOW | O_NONBLOCK` 開檔，必須在 root 的
   canonical path 底下。glob 以外（`settings.json`、`.credentials.json`、`auth.json`）一律不開。
@@ -188,8 +203,11 @@ forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接
   （任一視窗輸了就算）：JSON `old_hosts`、文字與分頁在標籤後加「舊」／old。列的 `observed_at_ms` 與 6 小時過期
   都看被選中視窗的擷取時間。被選中的視窗 `resets_at` ≤ now 就是「已重置」：JSON `reset: true`，畫成「週 已重置」／
   `week reset`（不顯示舊的 pct），不估算、不警示（`projected`、`warn`、`exhaust_at` 皆 `null`）。
-  只出現在 `days`（source codex）的別名是「無來源」列（summary 不帶 codex 百分比）；grok、MiniMax、agy 固定列
-  「無來源」（`NO_SOURCE_PROVIDERS`）。
+  帳號的 provider 由鍵的形式推得（`codex-<8 碼 hex>` → `codex`，其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
+  只出現在 `days`（source codex）的別名是「無來源」列。provider 列（`PROVIDERS`，小寫標籤）在沒有任何該 provider 的列時補一列
+  「無來源」，並帶原因 `source_note`：kimi、qoder、qodercn、agy、grok、cursor、opencode → `web_only`（只有網頁）；
+  glm、minimax → `needs_token`（要 token，待 autopilot 鏡像）；codex → `no_window`（帳號沒有窗口資料，有窗口時就不是無來源）。
+  文字表與分頁在「無來源」後淡色接「 · 原因」（i18n：`quota.fleet_src_*`、forge-stats `fleetSrc*`）。
 - **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗
   畫成「已重置」而不是 pct（兩個都過就是「已重置，等新觀察」，`state` 為 `stale`）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
 - **警示（只看週視窗、線性估算）**：W = 7 天，remaining = resets_at − now，elapsed = W − remaining；elapsed < 6 小時
@@ -198,11 +216,12 @@ forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接
   （照現速會用完，就不是浪費）。有警示的列排前面：會浪費、會不夠（各依重置時間由近到遠），其餘依別名。
 - **JSON**（`--json` 印出；`--out <file>` 以暫存檔＋rename 原子寫入，0600，可與文字表並用）：
   `{"schema":"codeforge.fleet-quota/1","generated_at_ms":…,"use_target":0.85,"skipped":{},"accounts":[…]}`，每筆
-  `{alias, name, org|null, email|null, provider("claude"|"codex"|"grok"|…), hosts[], old_hosts[]（hosts 的子集，排序）, observed_at_ms|null, age_s|null, state, weekly, five_hour}`；
+  `{alias, name, org|null, email|null, provider("claude"|"codex"|"kimi"|…), hosts[], old_hosts[]（hosts 的子集，排序）, observed_at_ms|null, age_s|null, state, weekly, five_hour}`，
+  另有兩個選填鍵：`source_note`（只在 `no_source` 列，`"web_only"|"needs_token"|"no_window"`）與 `note`（operator 備註，見上）；
   `state`：`ok`（有視窗可畫）、`stale`（6 小時內有觀察但視窗全已重置）、`expired`（最後觀察超過 6 小時）、`no_source`；
   `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null, reset}`（`resets_at`、`exhaust_at`
   為 unix 秒；`reset` 為 true 時視窗已重置，`pct` 不是現值），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at, reset}|null`。
-  forge-stats 解析器對 `old_hosts`、`reset` 容忍缺席（舊檔：空、false），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
+  forge-stats 解析器對 `old_hosts`、`reset`、`source_note`、`note` 容忍缺席（舊檔：空、false、無），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
   讀者（forge-stats 分頁、fleet.console/1 的配額區）直接讀，不重算。
 
 **寫檔（`usage collect` 順手維護）**：環境變數 `CODEFORGE_FLEET_USAGE_DIR` 有設且非空時，`codeforge usage collect`
@@ -224,6 +243,8 @@ codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額
 codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）
 codeforge usage alias list          # 帳號與顯示名（本機）
 codeforge usage alias set <email或顯示名> <新名字>
+codeforge usage note set <provider|名字> <文字>   # 本機備註（最多 40 欄），顯示在全帳號表列尾
+codeforge usage note clear <provider|名字>
 /forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```
 
