@@ -20,7 +20,7 @@ pub enum Action {
         json: bool,
     },
     Fleet {
-        dir: PathBuf,
+        dir: Option<PathBuf>,
         json: bool,
         out: Option<PathBuf>,
         use_target: f64,
@@ -87,7 +87,14 @@ fn collect_and_summarize(
         now,
     );
     summary::validate(&v)?;
-    let path = summary::write(&summary::summary_dir(&live_base), &v)?;
+    let sdir = summary::summary_dir(&live_base);
+    let path = summary::write(&sdir, &v)?;
+    let fleet_env = std::env::var("CODEFORGE_FLEET_USAGE_DIR").ok();
+    if let Err(e) = write_fleet_quota(&sdir, fleet_env.as_deref(), now) {
+        if !quiet {
+            eprintln!("codeforge usage: 全帳號配額表沒有更新（{e:#}）");
+        }
+    }
     let dropped = summary::dropped_count(&v);
     if !quiet && dropped > 0 {
         eprintln!("codeforge usage: 有 {dropped} 份本機配額快照不合規格，已略過（見 summary.json 的 dropped_accounts）");
@@ -99,6 +106,30 @@ fn collect_and_summarize(
         );
     }
     Ok(Some((conn, path)))
+}
+
+/// File next to `summary.json` that the forge-stats「全部帳號」tab reads.
+pub const FLEET_FILE: &str = "fleet-quota.json";
+
+/// When `fleet_dir` (the value of `CODEFORGE_FLEET_USAGE_DIR`) is set and non-empty, merge the
+/// hosts' summaries in it and write `fleet-quota.json` into `out_dir` (0600, atomic). `None` or
+/// empty: nothing happens, and an older file is left alone. The env value is a parameter so tests
+/// do not touch the process env.
+fn write_fleet_quota(
+    out_dir: &std::path::Path,
+    fleet_dir: Option<&str>,
+    now: i64,
+) -> Result<Option<PathBuf>> {
+    use crate::usage::fleet_quota as fq;
+    let Some(d) = fleet_dir.filter(|d| !d.is_empty()) else {
+        return Ok(None);
+    };
+    let (files, skipped) = fq::load(std::path::Path::new(d))?;
+    let f = fq::merge(&files, skipped, now, fq::DEFAULT_USE_TARGET);
+    let v = fq::to_json(&f, now);
+    crate::live::write_live_json(out_dir, FLEET_FILE, &v)
+        .map_err(|e| anyhow::anyhow!("無法寫入 {FLEET_FILE}（{:?}）", e.kind()))?;
+    Ok(Some(out_dir.join(FLEET_FILE)))
 }
 
 fn collected(quiet: bool) -> Result<(rusqlite::Connection, PathBuf)> {
@@ -164,7 +195,17 @@ pub fn run(action: Action) -> Result<()> {
             json,
             out,
             use_target,
-        } => fleet(&dir, json, out.as_deref(), use_target),
+        } => {
+            let dir = dir
+                .or_else(|| {
+                    std::env::var("CODEFORGE_FLEET_USAGE_DIR")
+                        .ok()
+                        .filter(|d| !d.is_empty())
+                        .map(PathBuf::from)
+                })
+                .context("請用 --dir 指定資料夾，或設環境變數 CODEFORGE_FLEET_USAGE_DIR")?;
+            fleet(&dir, json, out.as_deref(), use_target)
+        }
         Action::Push => {
             let (_conn, path) = collected(true)?;
             let dir = path.parent().map(PathBuf::from).unwrap_or_default();
@@ -370,5 +411,56 @@ mod tests {
                 "{r:?} vs header {header:?}"
             );
         }
+    }
+
+    fn fleet_dir_with_host(root: &std::path::Path) -> PathBuf {
+        let d = root.join("hosts");
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn fleet_file_written_when_env_set() {
+        let t = tempfile::tempdir().unwrap();
+        let hosts = fleet_dir_with_host(t.path());
+        let out = t.path().join("usage");
+        let p = write_fleet_quota(&out, hosts.to_str(), 1_000_000)
+            .unwrap()
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&p).unwrap()).unwrap();
+        assert_eq!(v["schema"], "codeforge.fleet-quota/1");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+    }
+
+    #[test]
+    fn no_fleet_file_when_env_unset_or_empty_and_old_one_stays() {
+        let t = tempfile::tempdir().unwrap();
+        let out = t.path().join("usage");
+        assert!(write_fleet_quota(&out, None, 1).unwrap().is_none());
+        assert!(write_fleet_quota(&out, Some(""), 1).unwrap().is_none());
+        assert!(!out.join(FLEET_FILE).exists());
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join(FLEET_FILE), "old").unwrap();
+        assert!(write_fleet_quota(&out, None, 1).unwrap().is_none());
+        assert_eq!(
+            std::fs::read_to_string(out.join(FLEET_FILE)).unwrap(),
+            "old"
+        );
+    }
+
+    #[test]
+    fn bad_fleet_dir_is_an_error_for_the_caller_to_swallow() {
+        let t = tempfile::tempdir().unwrap();
+        let out = t.path().join("usage");
+        let bad = t.path().join("nope");
+        assert!(write_fleet_quota(&out, bad.to_str(), 1).is_err());
+        assert!(!out.join(FLEET_FILE).exists());
     }
 }

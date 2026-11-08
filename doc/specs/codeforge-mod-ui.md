@@ -145,6 +145,16 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   hidden 的燈不寫，兩個都 hidden 就不加 tail。引擎把 tail 灰色接在提示行尾，行尾放不下時切掉並補「…」，剩不到 4 欄就整段
   不畫（實測 120 欄完整、62–64 欄被切、60 欄消失）。prompt 周圍的位置由上往下：band（AbovePrompt）→ 輸入行 →
   `$.ui.status`（引擎加「⚠ plugin:」前綴，只放真的警告）→ statusline → 提示行（含 tail）→ SessionMode 標籤。
+- **「全部帳號」分頁（forge-stats pane 的第三個分頁，2026-11-09）**：pane 分頁列原本是 寵物｜用量；**只有** `<base>/codeforge/usage/fleet-quota.json`
+  存在時才多一個「全部帳號」（`<base>` 的掃描順序同用量分頁：liveBase 先，再 `liveBases()`）。沒有這個檔時分頁列和每一個畫面都和
+  之前逐位元組相同（測試 `tests/fleet-tab.test.tsx` 比對）。檔由 `codeforge usage collect` 在環境變數 `CODEFORGE_FLEET_USAGE_DIR`
+  有設時寫（見 `codeforge-usage.md`）。存在與否只在 render 外 `stat`（session 開始、指令、畫過後每 15 秒），檔案只在這個分頁的 render 裡讀，
+  界線同用量摘要：stat 先、一般檔案、不是連結、≤ 512 KiB，不 spawn codeforge。依 `codeforge.fleet-quota/1` 嚴格解析，
+  不合就畫一行 dim「全部帳號資料無法讀取」，不 throw。內容：標題列帶檔案年齡（「合併於 N 分鐘前」）；先是警示列（與 CLI 同序、
+  同字：`會浪費 · alias · 週 N% · 重置 ◷ … · 目標 85%`、`會不夠 估 · alias · 週 N% · 估 … 後用完 · 重置 ◷ …`），再每帳號一列
+  `alias  週 N% ◷ 2d5h  5h N%  主機…  年齡`（`緊` ≥ 90%、年齡超過 30 分鐘才顯示、`無來源`／`過期`／`已重置，等新觀察`）。
+  警示、projected、exhaust_at 全取自 JSON，TS 不重算；過期的檔照原樣畫並標年齡。寬度不夠時整欄丟（主機、年齡、5h、倒數），
+  最後才用 `…` 截。實作 `plugins/forge-stats/hooks/fleet-view.ts`。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、縮圖；tok/s 歸 autopilot）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 
