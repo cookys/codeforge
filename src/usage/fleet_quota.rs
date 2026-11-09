@@ -130,6 +130,10 @@ pub struct Row {
     pub five_hour: Option<Win>,
     /// `five_hour` has already reset.
     pub five_reset: bool,
+    /// No 5h reading although the account was used after its last 5h window reset (a weekly
+    /// reading came later): Claude Code passed no `five_hour` since then. `five_hour` is then
+    /// `None` and the old reading is not shown.
+    pub five_no_source: bool,
     /// Why there is no source; only on a `no_source` row of a [`PROVIDERS`] provider.
     pub source_note: Option<SourceNote>,
     /// The operator's note ([`attach_notes`]); local only.
@@ -383,6 +387,7 @@ pub fn merge(
                 weekly: None,
                 five_hour: None,
                 five_reset: false,
+                five_no_source: false,
                 source_note: None,
                 note: None,
                 note_reset_rule: None,
@@ -400,6 +405,16 @@ pub fn merge(
                         // a window past its reset is shown as reset and never warned on
                         r.five_reset = five.is_some_and(|w| w.resets_at <= now_s);
                         r.five_hour = five;
+                        // used after the 5h reset (a later weekly reading) but no 5h reading came
+                        if r.five_reset
+                            && five
+                                .zip(r.weekly_seen_ms)
+                                .is_some_and(|(w, t)| t > w.resets_at * 1000)
+                        {
+                            r.five_no_source = true;
+                            r.five_reset = false;
+                            r.five_hour = None;
+                        }
                         r.weekly = seven.map(|w| {
                             if w.resets_at > now_s {
                                 weekly(w, now_s, use_target)
@@ -511,6 +526,7 @@ pub fn attach_notes(f: &mut Fleet, notes: &super::names::Notes) {
         weekly: None,
         five_hour: None,
         five_reset: false,
+        five_no_source: false,
         source_note: None,
         note: Some(text.to_string()),
         note_reset_rule: None,
@@ -595,6 +611,9 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
                 age_keys(&mut a["five_hour"], r.five_seen_ms, now_ms);
             }
             // optional keys, present only when set (an older reader's file shape is unchanged)
+            if r.five_no_source {
+                a["five_hour_state"] = json!("no_source");
+            }
             if let Some(n) = r.source_note {
                 a["source_note"] = json!(n.name());
             }
@@ -837,6 +856,16 @@ fn reset_note(r: &Row, tr: &Tr) -> Option<String> {
 fn window_lines_of(r: &Row, e: &QEntry, cols: usize, now_f: f64, tr: &Tr) -> Vec<Line> {
     let mut live = qv::window_lines(&e.m, cols, now_f, tr).into_iter();
     let mut out = Vec::new();
+    if r.five_no_source {
+        out.push(vec![p(
+            format!(
+                "  {} {}",
+                tr.t("quota.w_5h", &[]),
+                tr.t("quota.fleet_no_source", &[])
+            ),
+            Style::Idle,
+        )]);
+    }
     let mut one = |present: bool, reset: bool, label: &str| {
         if !present {
             return;
