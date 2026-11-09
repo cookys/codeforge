@@ -42,6 +42,8 @@ export type FleetAccount = {
   state: FleetState
   weekly: FleetWeekly | null
   fiveHour: FleetWin | null
+  /** Used after its 5h window reset but no 5h reading came (`five_hour_state: "no_source"`); `fiveHour` is then null. */
+  fiveNoSource: boolean
   /** Only on a `no_source` row; null from a writer before the key. */
   sourceNote: FleetSourceNote | null
   /** The operator's local note for the row; null when none. */
@@ -116,7 +118,8 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
   if (!Array.isArray(raw.accounts) || raw.accounts.length > FLEET_MAX_ACCOUNTS) return BAD
   const accounts: FleetAccount[] = []
   for (const a of raw.accounts as unknown[]) {
-    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name', 'source_note', 'note', 'note_resets_at', 'note_reset_rule', 'plan'])) return BAD
+    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name', 'source_note', 'note', 'note_resets_at', 'note_reset_rule', 'plan', 'five_hour_state'])) return BAD
+    if (a.five_hour_state !== undefined && (a.five_hour_state !== 'no_source' || a.five_hour !== null)) return BAD
     if (a.source_note !== undefined && (a.state !== 'no_source' || !isSourceNote(a.source_note))) return BAD
     if (a.note !== undefined && !isNote(a.note)) return BAD
     if ((a.note_resets_at === undefined) !== (a.note_reset_rule === undefined) || (a.note_resets_at !== undefined && (!isInt(a.note_resets_at) || !isRule(a.note_reset_rule)))) return BAD
@@ -139,7 +142,7 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
       : typeof a.org === 'string' ? a.org
       : keyDefault(a.alias)
     if (name === null) continue
-    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f, sourceNote: isSourceNote(a.source_note) ? a.source_note : null, note: isNote(a.note) ? a.note : null, noteResetRule: isRule(a.note_reset_rule) ? a.note_reset_rule : null, noteResetsAt: isInt(a.note_resets_at) ? a.note_resets_at : null, plan: asPlan(a.plan) })
+    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f, fiveNoSource: a.five_hour_state === 'no_source', sourceNote: isSourceNote(a.source_note) ? a.source_note : null, note: isNote(a.note) ? a.note : null, noteResetRule: isRule(a.note_reset_rule) ? a.note_reset_rule : null, noteResetsAt: isInt(a.note_resets_at) ? a.note_resets_at : null, plan: asPlan(a.plan) })
   }
   return {
     status: 'ok',
@@ -240,7 +243,8 @@ function accountBody(a: FleetAccount, aliasW: number, cols: number, tr: T, now: 
   // a window past its reset says so instead of its old pct
   const W: QLine = wk === null ? [] : wk.reset ? [seg(`${tr('quotaWWeekly')} ${tr('fleetWinReset')}`, 'idle')] : [seg(`${tr('quotaWWeekly')} ${pctText(wk.pct)}`), ...tight(wk.pct)]
   const R: QLine = wk === null || wk.reset ? [] : [seg(` ◷ ${countdown(wk.resetsAt * 1000, now)}`, 'dim')]
-  const F: QLine = five === null ? [] : [seg((wk === null ? '' : '  ') + `${tr('quotaW5h')} ${five.reset ? tr('fleetWinReset') : pctText(five.pct)}`, five.reset ? 'idle' : undefined), ...(five.reset ? [] : tight(five.pct))]
+  const lead = wk === null ? '' : '  '
+  const F: QLine = five === null ? (a.fiveNoSource ? [seg(`${lead}${tr('quotaW5h')} ${tr('fleetNoSource')}`, 'idle')] : []) : [seg((wk === null ? '' : '  ') + `${tr('quotaW5h')} ${five.reset ? tr('fleetWinReset') : pctText(five.pct)}`, five.reset ? 'idle' : undefined), ...(five.reset ? [] : tight(five.pct))]
   // the widest form first; a field is dropped whole: hosts, the age, the 5h window, then the countdown
   return fit(
     [
