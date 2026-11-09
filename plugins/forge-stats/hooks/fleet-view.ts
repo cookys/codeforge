@@ -46,7 +46,7 @@ export type FleetAccount = {
   sourceNote: FleetSourceNote | null
   /** The operator's local note for the row; null when none. */
   note: string | null
-  /** The operator's weekly reset rule (`fri@17:00+08:00`) and its next occurrence (epoch s): operator-provided, low confidence, extra to any real window. Both or neither. */
+  /** The operator's reset rule (weekly `fri@17:00+08:00`, monthly `17@00:00+08:00` or one-shot RFC 3339) and its next occurrence (epoch s): operator-provided, low confidence, extra to any real window. Both or neither. */
   noteResetRule: string | null
   noteResetsAt: number | null
   /** The operator's subscription plan; null when unknown (absent, or not one of the closed set). */
@@ -68,8 +68,12 @@ const isEmail = (v: unknown): v is string => typeof v === 'string' && /^(?=.{3,2
 const isLabel = (v: unknown): v is string => typeof v === 'string' && /^[^\u0000-\u001f\u007f]{1,64}$/.test(v)
 const SOURCE_NOTES: readonly string[] = ['web_only', 'needs_token', 'no_window']
 const isSourceNote = (v: unknown): v is FleetSourceNote => typeof v === 'string' && SOURCE_NOTES.includes(v)
-// the operator's weekly reset rule, the same form as codeforge's `reset_rule`: `<dow>@<HH:MM><±HH:MM>`
-const isRule = (v: unknown): v is string => typeof v === 'string' && /^(mon|tue|wed|thu|fri|sat|sun)@([01]\d|2[0-3]):[0-5]\d[+-]([01]\d|2[0-3]):[0-5]\d$/.test(v)
+// the operator's reset rule, the same forms as codeforge's `reset_rule`: weekly `<dow>@<HH:MM><±HH:MM>`,
+// monthly `<day 1..31>@<HH:MM><±HH:MM>`, or one-shot RFC 3339 `YYYY-MM-DDTHH:MM:SS<±HH:MM|Z>`
+// (codeforge also checks the calendar date; a rule only reaches here from codeforge)
+const HM = '([01]\\d|2[0-3]):[0-5]\\d'
+const RULE = new RegExp(`^(?:(?:mon|tue|wed|thu|fri|sat|sun|[1-9]|[12]\\d|3[01])@${HM}[+-]${HM}|\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])T${HM}:[0-5]\\d(?:Z|[+-]${HM}))$`)
+const isRule = (v: unknown): v is string => typeof v === 'string' && RULE.test(v)
 /** The widest an operator note may be, the same rule as codeforge's `valid_note`. */
 export const NOTE_MAX = 40
 // non-empty, trimmed, at most NOTE_MAX cells, no control char, no `@`, no BOM, no whitespace but the space

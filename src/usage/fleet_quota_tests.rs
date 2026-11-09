@@ -1302,3 +1302,49 @@ fn a_row_carries_plan_in_json_only_when_set_and_the_text_says_unknown_otherwise(
         }
     }
 }
+
+#[test]
+fn monthly_and_one_shot_rules_count_down_and_a_passed_one_shot_drops_out() {
+    let s = summary("host-aaaaaaaa", vec![], vec![]);
+    let mut f = run(&[("a.json", &s)]);
+    attach_resets(
+        &mut f,
+        &resets(&[
+            // 21st 00:00 +08:00 = 2026-11-20 16:00 UTC = NOW + 17d6h
+            ("qodercn", "21@00:00+08:00"),
+            // = 2026-11-16 16:00 UTC = NOW + 13d6h
+            ("cursor", "2026-11-17T00:00:00+08:00"),
+            // already passed
+            ("glm", "2026-11-01T00:00:00Z"),
+        ]),
+        NOW_MS,
+    );
+    assert_eq!(
+        row(&f, "qodercn").note_resets_at,
+        Some(NOW_S + 17 * D + 6 * H)
+    );
+    assert_eq!(
+        row(&f, "cursor").note_resets_at,
+        Some(NOW_S + 13 * D + 6 * H)
+    );
+    let g = row(&f, "glm");
+    assert_eq!(g.note_resets_at, None);
+    let j = to_json(&f, NOW_MS);
+    let acc = |a: &str| {
+        j["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["provider"] == a)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(acc("qodercn")["note_reset_rule"], "21@00:00+08:00");
+    assert_eq!(acc("cursor")["note_resets_at"], NOW_S + 13 * D + 6 * H);
+    // the pair travels together: a passed one-shot sends neither key
+    assert!(acc("glm").get("note_resets_at").is_none());
+    assert!(acc("glm").get("note_reset_rule").is_none());
+    let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(txt.contains("◷ 17d6h") || txt.contains("◷ 17d"), "{txt}");
+    assert!(txt.contains("◷ 13d"), "{txt}");
+}
