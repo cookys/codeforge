@@ -322,6 +322,28 @@ test('a long CJK note is cut with … to the width; the numbers and the word sta
   }
 })
 
+// a note row for a Claude account with no data (`usage note set --new`): plain-name alias, no hosts, no reason, a note
+const NOTE_ROW = () =>
+  fleet([
+    acct({ alias: 'acct-11111111', name: 'cookys', weekly: wk({ pct: 0.2 }) }),
+    acct({ alias: 'twgame', provider: 'claude', name: 'twgame', state: 'no_source', hosts: [], observed_at_ms: null, age_s: null, note: '週四重置' }),
+  ])
+
+test('a no-data note row parses and is drawn with its note', async ($, on) => {
+  const v = parseFleetQuota(JSON.stringify(NOTE_ROW()))
+  if (v.status !== 'ok') throw new Error('not ok')
+  expect(v.accounts.map(a => [a.name, a.state, a.hosts, a.sourceNote, a.note])).toEqual([
+    ['cookys', 'ok', ['gpu-a'], null, null],
+    ['twgame', 'no_source', [], null, '週四重置'],
+  ])
+  world(on, { fleet: JSON.stringify(NOTE_ROW()), zh: true })
+  const ui = await open($, 102)
+  await ui.press({ key: 'tab-fleet' })
+  const rows = rowsOf(await ui.drawn())
+  expect(rows.some(r => /^twgame +/.test(r) && r.includes('無來源') && r.endsWith('  週四重置'))).toBe(true)
+  await ui.unmount()
+})
+
 test('parseFleetQuota reads source_note and note; an old file without them still parses; bad ones are refused', () => {
   const v = parseFleetQuota(JSON.stringify(NOTED()))
   if (v.status !== 'ok') throw new Error('not ok')
@@ -350,4 +372,67 @@ test('parseFleetQuota reads source_note and note; an old file without them still
   ])
     expect(parseFleetQuota(JSON.stringify(fleet([bad]))).status).toBe('bad')
   expect(parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', note: 'x'.repeat(40) })]))).status).toBe('ok')
+})
+
+// the operator's weekly reset rule: `note_resets_at` + `note_reset_rule` (both or neither), drawn as a dim `◷ 2d3h` after the note
+const RULED = () =>
+  fleet([
+    acct({ alias: 'acct-11111111', name: 'cookys', weekly: wk({ pct: 0.2 }) }),
+    acct({ alias: 'kimi', provider: 'kimi', name: 'kimi', state: 'no_source', hosts: [], observed_at_ms: null, age_s: null, source_note: 'web_only', note: '本週已用完', note_resets_at: s() + 2 * 86400 + 3 * 3600 + 600, note_reset_rule: 'fri@17:00+08:00' }),
+    acct({ alias: 'twgame', provider: 'claude', name: 'twgame', state: 'no_source', hosts: [], observed_at_ms: null, age_s: null, note_resets_at: s() + 3600 + 1800, note_reset_rule: 'thu@00:00+08:00' }),
+  ])
+
+test('parseFleetQuota reads note_resets_at and note_reset_rule; old files parse; half or bad pairs are refused', () => {
+  const v = parseFleetQuota(JSON.stringify(RULED()))
+  if (v.status !== 'ok') throw new Error('not ok')
+  expect(v.accounts.map(a => [a.noteResetRule, a.noteResetsAt === null ? null : 'at'])).toEqual([
+    [null, null],
+    ['fri@17:00+08:00', 'at'],
+    ['thu@00:00+08:00', 'at'],
+  ])
+  const old = parseFleetQuota(JSON.stringify(NOTED()))
+  if (old.status !== 'ok') throw new Error('not ok')
+  expect(old.accounts.every(a => a.noteResetRule === null && a.noteResetsAt === null)).toBe(true)
+  const ok = { note_resets_at: 1793955600, note_reset_rule: 'fri@17:00+08:00' }
+  expect(parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', ...ok })]))).status).toBe('ok')
+  for (const bad of [
+    { note_resets_at: 1793955600 },
+    { note_reset_rule: 'fri@17:00+08:00' },
+    { ...ok, note_reset_rule: 'friday@17:00+08:00' },
+    { ...ok, note_reset_rule: 'fri@17:00' },
+    { ...ok, note_reset_rule: 'Fri@17:00+08:00' },
+    { ...ok, note_reset_rule: 'fri@24:00+08:00' },
+    { ...ok, note_resets_at: -1 },
+    { ...ok, note_resets_at: 1.5 },
+    { ...ok, note_resets_at: '1793955600' },
+    { ...ok, note_resets_at: null },
+  ])
+    expect(parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', ...bad })]))).status).toBe('bad')
+})
+
+test('the rule countdown is drawn dim after the note, and alone on a row without a note', async ($, on) => {
+  world(on, { fleet: JSON.stringify(RULED()), zh: true })
+  const wide = await open($, 102)
+  await wide.press({ key: 'tab-fleet' })
+  const rows = rowsOf(await wide.drawn())
+  expect(rows.some(r => /^kimi +/.test(r) && r.endsWith('  本週已用完 ◷ 2d3h'))).toBe(true)
+  expect(rows.some(r => /^twgame +/.test(r) && r.endsWith('  ◷ 1h29m'))).toBe(true) // a rule without a note
+  const dim = (await wide.findAll({ type: 'Text' })).filter(n => (n as Node).props?.dimColor === true).map(n => textOf(n as Node))
+  expect(dim.some(t => t.includes('本週已用完 ◷ 2d3h'))).toBe(true)
+  await wide.unmount()
+})
+
+test('a narrow pane cuts the rule row note with … and keeps the countdown', async ($, on) => {
+  const long = { ...RULED(), accounts: RULED().accounts.map(a => (a.alias === 'kimi' ? { ...a, note: '週'.repeat(20) } : a)) }
+  world(on, { fleet: JSON.stringify(long), zh: true })
+  for (const bodyColumns of [42, 52, 62]) {
+    const ui = await open($, bodyColumns)
+    await ui.press({ key: 'tab-fleet' })
+    const r = rowsOf(await ui.drawn())
+    for (const l of r) expect(displayWidth(l) <= bodyColumns - 2).toBe(true)
+    const kimi = r.find(l => l.startsWith('kimi')) as string
+    // the countdown is never the part that is cut
+    if (bodyColumns >= 62) expect(kimi.endsWith('… ◷ 2d3h')).toBe(true)
+    await ui.unmount()
+  }
 })

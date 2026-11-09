@@ -362,8 +362,21 @@ pub enum NoteAction {
         target: String,
         /// 備註（最寬 40 欄，不能有 @）
         text: String,
+        /// 為「沒有任何資料」的帳號記一筆備註：target 就是它的名字（不可是 email、acct-／codex- key，也不可是已有的帳號名或 provider）
+        #[arg(long)]
+        new: bool,
+        /// 每週重置規則（operator 提供，低可信度）：`<星期>@<HH:MM><±HH:MM>`，星期為 mon tue wed thu fri sat sun，例如 fri@17:00+08:00；`usage fleet` 會算出下一次重置
+        #[arg(long)]
+        reset_weekly: Option<String>,
     },
-    /// 清除備註
+    /// 只設每週重置規則（該 target 已有備註，或是已知的帳號／provider）：`reset <target> <規則>`
+    Reset {
+        /// provider 名、有備註的名字，或帳號的 email／顯示名
+        target: String,
+        /// `<星期>@<HH:MM><±HH:MM>`，例如 fri@17:00+08:00
+        rule: String,
+    },
+    /// 清除備註與重置規則
     Clear {
         /// provider 名，或帳號的 email／顯示名
         target: String,
@@ -590,7 +603,18 @@ pub fn run(cli: Cli) -> Result<()> {
                 AliasAction::Set { who, name } => usage::Action::AliasSet { who, name },
             },
             Some(UsageAction::Note { action }) => match action {
-                NoteAction::Set { target, text } => usage::Action::NoteSet { target, text },
+                NoteAction::Set {
+                    target,
+                    text,
+                    new,
+                    reset_weekly,
+                } => usage::Action::NoteSet {
+                    target,
+                    text,
+                    new,
+                    reset_weekly,
+                },
+                NoteAction::Reset { target, rule } => usage::Action::NoteReset { target, rule },
                 NoteAction::Clear { target } => usage::Action::NoteClear { target },
             },
             None => usage::Action::Show { days, by, json },

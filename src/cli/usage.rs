@@ -33,6 +33,12 @@ pub enum Action {
     NoteSet {
         target: String,
         text: String,
+        new: bool,
+        reset_weekly: Option<String>,
+    },
+    NoteReset {
+        target: String,
+        rule: String,
     },
     NoteClear {
         target: String,
@@ -148,6 +154,7 @@ fn write_fleet_quota(
         &crate::usage::names::load_default(),
     );
     fq::attach_notes(&mut f, &crate::usage::names::load_notes_default());
+    fq::attach_resets(&mut f, &crate::usage::names::load_resets_default(), now);
     let v = fq::to_json(&f, now);
     crate::live::write_live_json(out_dir, FLEET_FILE, &v)
         .map_err(|e| anyhow::anyhow!("無法寫入 {FLEET_FILE}（{:?}）", e.kind()))?;
@@ -214,8 +221,14 @@ pub fn run(action: Action) -> Result<()> {
         Action::Accounts { json } => accounts(json),
         Action::AliasList => alias_list(),
         Action::AliasSet { who, name } => alias_set(&who, &name),
-        Action::NoteSet { target, text } => note_set(&target, Some(&text)),
-        Action::NoteClear { target } => note_set(&target, None),
+        Action::NoteSet {
+            target,
+            text,
+            new,
+            reset_weekly,
+        } => note_set(&target, Some(&text), new, reset_weekly.as_deref()),
+        Action::NoteReset { target, rule } => note_reset(&target, &rule),
+        Action::NoteClear { target } => note_set(&target, None, false, None),
         Action::Fleet {
             dir,
             json,
@@ -361,6 +374,7 @@ fn fleet(
         &crate::usage::names::load_default(),
     );
     fq::attach_notes(&mut f, &crate::usage::names::load_notes_default());
+    fq::attach_resets(&mut f, &crate::usage::names::load_resets_default(), now);
     let v = fq::to_json(&f, now);
     if let Some(p) = out {
         fq::write_atomic(p, &v)?;
@@ -394,7 +408,11 @@ fn known_accounts() -> Vec<(String, Option<String>, Option<String>)> {
     {
         let s = |a: &serde_json::Value, k: &str| a[k].as_str().map(str::to_string);
         for a in v["accounts"].as_array().into_iter().flatten() {
-            if let Some(k) = s(a, "alias") {
+            // a no-data note row (`note set --new`) is a note, not an account
+            let note_row = a["provider"] == "claude"
+                && a["state"] == "no_source"
+                && a["hosts"].as_array().is_some_and(Vec::is_empty);
+            if let (Some(k), false) = (s(a, "alias"), note_row) {
                 out.push((k, s(a, "org"), s(a, "email")));
             }
         }
@@ -450,7 +468,8 @@ fn alias_list() -> Result<()> {
     let names = names::load_default();
     let known = known_accounts();
     let who = who_of(&known);
-    for ((k, org, email), n) in known.iter().zip(names::assign(&who, &names)) {
+    let shown = names::assign(&who, &names);
+    for ((k, org, email), n) in known.iter().zip(&shown) {
         let Some(n) = n else { continue };
         let set = if names.0.contains_key(k) {
             "（自訂）"
@@ -464,23 +483,29 @@ fn alias_list() -> Result<()> {
         );
     }
     let notes = names::load_notes_default();
-    if !notes.0.is_empty() {
+    // accounts with no data, only a note (`usage note set --new`)
+    for (k, _) in
+        crate::usage::fleet_quota::note_only(&notes, |k| shown.iter().flatten().any(|n| n == k))
+    {
+        println!("{k}（無資料）\t—\t—");
+    }
+    let resets = names::load_resets_default();
+    let keys: std::collections::BTreeSet<&String> = notes.0.keys().chain(resets.0.keys()).collect();
+    if !keys.is_empty() {
         // an account key is shown by its name, never itself; a provider label is shown as is
-        let shown = account_names(
-            notes
-                .0
-                .keys()
-                .map(String::as_str)
-                .filter(|k| !is_provider(k)),
-        );
+        let shown = account_names(keys.iter().map(|k| k.as_str()).filter(|k| !is_provider(k)));
         println!("備註：");
-        for (k, text) in &notes.0 {
+        for k in keys {
             let who = if is_provider(k) {
                 k.as_str()
             } else {
                 shown.get(k).map_or("未命名帳號", String::as_str)
             };
-            println!("  {who}\t{text}");
+            let text = notes.0.get(k).map_or("—", String::as_str);
+            match resets.0.get(k) {
+                Some(rule) => println!("  {who}\t{text}\t每週重置 {rule}"),
+                None => println!("  {who}\t{text}"),
+            }
         }
     }
     Ok(())
@@ -488,10 +513,7 @@ fn alias_list() -> Result<()> {
 
 /// A provider label a note may be keyed by: `claude` or a [`fleet_quota::PROVIDERS`] name.
 fn is_provider(s: &str) -> bool {
-    s == "claude"
-        || crate::usage::fleet_quota::PROVIDERS
-            .iter()
-            .any(|(p, _)| *p == s)
+    crate::usage::fleet_quota::is_provider_label(s)
 }
 
 /// The notes-table key `target` names: a provider label as is, else the one account whose email
@@ -500,15 +522,65 @@ fn note_key(
     target: &str,
     known: &[crate::usage::names::Who],
     names: &crate::usage::names::Names,
+    notes: &crate::usage::names::Notes,
 ) -> Result<String> {
-    if is_provider(target) {
+    // a provider label, or the key of a no-data account (`note set --new`), is its own key
+    if is_provider(target)
+        || (notes.0.contains_key(target) && crate::usage::names::valid_name(target))
+    {
         return Ok(target.to_string());
     }
     crate::usage::names::resolve(known, names, target)
 }
 
-/// `usage note set` (`Some(text)`) / `usage note clear` (`None`).
-fn note_set(target: &str, text: Option<&str>) -> Result<()> {
+/// `note set --new <name>`: the notes key for an account with no data. The name must be a valid
+/// display name nobody else has: not a provider label, not an existing note, not a known
+/// account's key or shown name.
+fn new_note_key(
+    name: &str,
+    known: &[crate::usage::names::Who],
+    names: &crate::usage::names::Names,
+    notes: &crate::usage::names::Notes,
+) -> Result<String> {
+    use crate::usage::names;
+    anyhow::ensure!(
+        names::valid_name(name),
+        "--new 的名字最寬 {} 欄，不能是 email 或 acct-／codex- key，不能有 @、換行或其他控制字元，前後不能有空白",
+        names::NAME_MAX
+    );
+    anyhow::ensure!(
+        !is_provider(name),
+        "「{name}」是 provider 名：去掉 --new，直接設定 provider 的備註"
+    );
+    anyhow::ensure!(
+        !notes.0.contains_key(name),
+        "「{name}」已經有備註：去掉 --new 就能改它"
+    );
+    let taken = known.iter().any(|w| w.key == name)
+        || names::assign(known, names)
+            .iter()
+            .flatten()
+            .any(|n| n == name);
+    anyhow::ensure!(
+        !taken,
+        "「{name}」已是一個有資料的帳號：去掉 --new，直接用它的名字設定備註"
+    );
+    Ok(name.to_string())
+}
+
+/// A rule the operator typed: valid, else an error with the form.
+fn check_rule(rule: &str) -> Result<()> {
+    anyhow::ensure!(
+        crate::usage::reset_rule::valid(rule),
+        "重置規則格式是 <星期>@<HH:MM><±HH:MM>，星期為 mon tue wed thu fri sat sun（小寫），時區要寫明，例如 {}（每週五 17:00，UTC+8）",
+        crate::usage::reset_rule::EXAMPLE
+    );
+    Ok(())
+}
+
+/// `usage note set` (`Some(text)`, with an optional weekly rule) / `usage note clear` (`None`:
+/// the note and the rule).
+fn note_set(target: &str, text: Option<&str>, new: bool, rule: Option<&str>) -> Result<()> {
     use crate::usage::names;
     if let Some(t) = text {
         anyhow::ensure!(
@@ -517,10 +589,19 @@ fn note_set(target: &str, text: Option<&str>) -> Result<()> {
             names::NOTE_MAX
         );
     }
+    if let Some(r) = rule {
+        check_rule(r)?;
+    }
     let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
     let set = names::load(&path);
     let known = known_accounts();
-    let key = note_key(target, &who_of(&known), &set)?;
+    let notes = names::load_notes(&path);
+    let who = who_of(&known);
+    let key = if new {
+        new_note_key(target, &who, &set, &notes)?
+    } else {
+        note_key(target, &who, &set, &notes)?
+    };
     let target = if target.contains('@') {
         "該 email"
     } else {
@@ -528,12 +609,37 @@ fn note_set(target: &str, text: Option<&str>) -> Result<()> {
     };
     match text {
         Some(t) => {
-            names::set_note(&path, &key, t)?;
+            names::set_note_and_reset(&path, &key, t, rule)?;
             println!("已設定備註：{target} → {t}");
+            if let Some(r) = rule {
+                println!("已設定每週重置：{target} → {r}");
+            }
         }
-        None if names::clear_note(&path, &key)? => println!("已清除備註：{target}"),
+        None if names::clear_note_and_reset(&path, &key)? => {
+            println!("已清除備註與重置規則：{target}")
+        }
         None => println!("{target} 沒有備註"),
     }
+    Ok(())
+}
+
+/// `usage note reset <target> <rule>`: only the rule, for a target that already has a note or is a
+/// known account or provider.
+fn note_reset(target: &str, rule: &str) -> Result<()> {
+    use crate::usage::names;
+    check_rule(rule)?;
+    let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
+    let set = names::load(&path);
+    let known = known_accounts();
+    let who = who_of(&known);
+    let key = note_key(target, &who, &set, &names::load_notes(&path))?;
+    names::set_reset(&path, &key, rule)?;
+    let target = if target.contains('@') {
+        "該 email"
+    } else {
+        target
+    };
+    println!("已設定每週重置：{target} → {rule}");
     Ok(())
 }
 
@@ -680,7 +786,7 @@ mod tests {
 
     #[test]
     fn a_note_target_is_a_provider_label_else_one_account() {
-        use crate::usage::names::{Names, Who};
+        use crate::usage::names::{Names, Notes, Who};
         let known = [
             Who {
                 key: "acct-11111111",
@@ -694,6 +800,8 @@ mod tests {
             },
         ];
         let n = Names::default();
+        let no = Notes::default();
+        let note_key = |t: &str, k: &[Who], n: &Names| note_key(t, k, n, &no);
         assert_eq!(note_key("kimi", &known, &n).unwrap(), "kimi");
         // `codex` is the provider label (every codex row), not the one account shown as codex
         assert_eq!(note_key("codex", &known, &n).unwrap(), "codex");
@@ -707,6 +815,60 @@ mod tests {
             note_key("MiniMax", &known, &n).is_err(),
             "labels are lowercase"
         );
+    }
+
+    #[test]
+    fn a_reset_rule_is_checked_with_a_chinese_error_that_shows_the_form() {
+        assert!(check_rule("fri@17:00+08:00").is_ok());
+        for bad in ["fri", "Fri@17:00+08:00", "fri@17:00", "fri@25:00+08:00", ""] {
+            let e = check_rule(bad).unwrap_err().to_string();
+            assert!(
+                e.contains("fri@17:00+08:00") && e.contains("重置規則"),
+                "{bad:?}: {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn note_set_new_takes_only_a_free_valid_name_and_clear_finds_it() {
+        use crate::usage::names::{Names, Notes, Who};
+        let known = [
+            Who {
+                key: "acct-11111111",
+                org: Some("Stranity"),
+                email: Some("me@example.com"),
+            },
+            Who {
+                key: "work",
+                org: None,
+                email: None,
+            },
+        ];
+        let n = Names::default();
+        let mut notes = Notes::default();
+        assert_eq!(
+            new_note_key("twgame", &known, &n, &notes).unwrap(),
+            "twgame"
+        );
+        for bad in [
+            "acct-22222222",
+            "codex-1a2b3c4d",
+            "a@b.com",
+            "kimi",
+            "claude",
+            "stranity",
+            "work",
+            "",
+            " x",
+        ] {
+            assert!(new_note_key(bad, &known, &n, &notes).is_err(), "{bad:?}");
+        }
+        notes.0.insert("twgame".into(), "週四重置".into());
+        let e = new_note_key("twgame", &known, &n, &notes).unwrap_err();
+        assert!(e.to_string().contains("去掉 --new"), "{e}");
+        // without --new the entry is found by its name (set again, or clear)
+        assert_eq!(note_key("twgame", &known, &n, &notes).unwrap(), "twgame");
+        assert!(note_key("other", &known, &n, &notes).is_err());
     }
 
     #[test]
