@@ -438,7 +438,9 @@ codeforge usage note clear <provider|name>      # clears the note and the rule
 - Cost is an **API-equivalent estimate** at list price (prices as of 2026-10-06); subscription plans are not
   billed this way, and models without a price row (all Codex models) show `—`.
 - `summary.json` (per-day × model totals and per-account quota, no projects or paths) is the only thing
-  `usage push` sends.
+  `usage push` sends. When Codex rollouts have token totals it also lists one optional `codex_sessions` entry per
+  rollout (`rollout_id`, `account`, `input`, `output`, `cache_read`, `cache_write` always `null`, `reasoning`; numbers
+  and ids only; the key is absent when there is none). Fields: [`doc/specs/codeforge-usage.md`](doc/specs/codeforge-usage.md).
 - In Claude Code, the forge-stats pane has a **用量 / Usage** tab (`/forge-stats usage` opens it): accounts with
   their 5h / 7d windows, today's (UTC) models with tokens and the API-equivalent cost, and the summary's age —
   past an hour it says to run `codeforge usage`. It only reads `summary.json`; it never runs codeforge.

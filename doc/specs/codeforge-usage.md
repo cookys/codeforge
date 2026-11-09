@@ -182,7 +182,21 @@ model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註
 `dropped_accounts`：`{"<原因>": <計數>}`，原因只能是 `written_at_ms_out_of_range`、
 `resets_at_out_of_range`、`pct_out_of_range`，計數是 uint；沒有丟任何東西時這個 key 不存在
 （形狀與舊版相同），絕不帶別名或自由文字。`codeforge usage collect` 非 quiet 時在 stderr 提示丟了幾份。
-forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接受並驗證這個欄位。
+forge-stats 的契約副本多了 `top_optional`／`drop_reasons`，解析時接受並驗證這個欄位（`codex_sessions` 同）。
+`codex_sessions`（頂層選用，U6）：每個有 `token_count` 累計值的 Codex rollout 一筆，依 `rollout_id` 遞增排序
+（最多 2000 筆，超過取最近有成長的）；只列最近 7 天（同 `days` 的視窗）內有成長的 rollout。
+沒有任何 rollout、或 rollout 沒有 `token_count` 時這個 key **不存在**（不是空陣列，形狀與舊版相同），絕不出現零列。
+```json
+"codex_sessions":[{"rollout_id":"0199aaaa-bbbb-7ccc-8ddd-eeeeffff0001","account":"codex-4cc1b5c8",
+  "input":240,"output":50,"cache_read":160,"cache_write":null,"reasoning":20}]
+```
+欄位對應（與 `days` 的 Codex 列同一套規則）：`rollout_id` = 檔名結尾的 uuid（小寫）；`account` = `root_alias` 的
+`codex-<sha8>`；數字是該 rollout 最後的累計值（`total_token_usage` 各欄取到過的最大值，不把每回合與累計相加）。
+`cache_read` = `cached_input_tokens`；`input` = `input_tokens − cached_input_tokens`（Codex 的 `input_tokens` 已含快取，
+下限 0）；`output` = `output_tokens`（Codex 的輸出已含推理，**不再加** `reasoning`）；`reasoning` =
+`reasoning_output_tokens`（`output` 的子集，單獨列出）；`cache_write` **永遠是 `null`**：Codex 沒有快取寫入計數，不捏造 0。
+欄位只有 id 與數字，不含 email、路徑、cwd、model 或任何 rollout 文字。舊讀取端（不認識此 key 的驗證器）會把整份當壞；
+forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長的 rollout 沒有帳號與推理計數，不列出，直到它再成長。
 `days` 是最近 7 天，專案已加總掉。`usage push` 讀回、驗證、把驗過的 bytes 以固定檔名
 `usage-summary.json` 交給 `fleet upload`，不送本機路徑。
 
