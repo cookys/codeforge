@@ -546,7 +546,9 @@ export function parseUsage(text: string | null, now: number): UsageView {
   const byModel = new Map<string, UsageModel>()
   for (const d of raw.days) {
     if (!exactKeys(d, C.day) || !isDay(d.day) || !inSet(d.source, C.sources) || !inSet(d.speed, C.speeds)) return bad
-    if (typeof d.account !== 'string' || !ALIAS_RE.test(d.account) || typeof d.model !== 'string' || !MODEL_RE.test(d.model)) return bad
+    // account null: a Claude root with no login (unattributed, the same rule as `summary::validate`)
+    const unattributed = d.account === null && d.source === 'claude'
+    if (!(unattributed || (typeof d.account === 'string' && ALIAS_RE.test(d.account))) || typeof d.model !== 'string' || !MODEL_RE.test(d.model)) return bad
     if (!C.counts.every(k => isUint(d[k]))) return bad
     const cost = d.cost_usd
     if (!(cost === null || (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0))) return bad

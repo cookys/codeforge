@@ -824,11 +824,16 @@ pub fn collect_file(
     Ok(true)
 }
 
+/// The bucket account of a Claude root with no login: no account (`null` in the summary).
+pub const UNATTRIBUTED: &str = "";
+
 /// A root's account: Codex roots are `codex-<sha8>`. A Claude root takes the alias of the
 /// newest quota snapshot naming its sha8 as `root` (stored, so attribution does not depend on
 /// which process runs collect), else the alias derived from the root's login file
-/// (`root.account`), else the stored one, else `acct-<sha8>`. Known limitation: transcripts
-/// written before a re-login are attributed to the account logged in now.
+/// (`root.account`), else the stored one, else [`UNATTRIBUTED`] — never `acct-<sha8>`, which
+/// named no account and showed as a ghost on every host (PM 01M7052H79). The root is recorded
+/// either way, so [`rows_since`] knows its old `acct-<sha8>` rows. Known limitation:
+/// transcripts written before a re-login are attributed to the account logged in now.
 /// `AUTOPILOT_ACCOUNT` is never read here.
 pub fn root_alias(
     conn: &Connection,
@@ -851,6 +856,10 @@ pub fn root_alias(
         )?;
         return Ok(alias.clone());
     }
+    conn.execute(
+        "INSERT OR IGNORE INTO roots VALUES (?1, ?2, ?3)",
+        params![root.hash, UNATTRIBUTED, now_ms],
+    )?;
     let stored: Option<String> = conn
         .query_row(
             "SELECT alias FROM roots WHERE root_hash = ?1",
@@ -858,7 +867,9 @@ pub fn root_alias(
             |r| r.get(0),
         )
         .optional()?;
-    Ok(stored.unwrap_or_else(|| format!("acct-{}", root.hash)))
+    Ok(stored
+        .filter(|a| !super::alias::is_dir_hash_alias(a, &root.hash))
+        .unwrap_or_else(|| UNATTRIBUTED.to_string()))
 }
 
 #[derive(Debug, Default)]
@@ -907,11 +918,16 @@ pub struct Row {
     pub requests: u64,
 }
 
-/// Bucket rows from `since_day` (YYYY-MM-DD) on, oldest first.
+/// Bucket rows from `since_day` (YYYY-MM-DD) on, oldest first. A row an old collector keyed
+/// `acct-<sha8>` of a known root has no account: it reads as [`UNATTRIBUTED`] (the caller sums
+/// rows by key, so it joins that root's newer unattributed rows).
 pub fn rows_since(conn: &Connection, since_day: &str) -> Result<Vec<Row>> {
     let mut st = conn.prepare(
-        "SELECT day, source, account, model, project, speed, input, output, cw5m, cw1h, read, requests
-         FROM buckets WHERE day >= ?1 ORDER BY day, source, account, model, project, speed",
+        "SELECT day, source,
+                CASE WHEN EXISTS (SELECT 1 FROM roots WHERE 'acct-' || root_hash = b.account)
+                     THEN '' ELSE account END AS acct,
+                model, project, speed, input, output, cw5m, cw1h, read, requests
+         FROM buckets b WHERE day >= ?1 ORDER BY day, source, acct, model, project, speed",
     )?;
     let u = |x: i64| x.max(0) as u64;
     let rows = st
