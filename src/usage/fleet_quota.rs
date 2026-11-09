@@ -550,7 +550,6 @@ fn warn_name(w: Option<Warn>) -> Value {
     }
 }
 
-/// `codeforge.fleet-quota/1`.
 /// A chosen window captured longer ago than this is marked `stale` (its `age_s` says by how much).
 pub const STALE_MS: i64 = 2 * 3600 * 1000;
 
@@ -562,6 +561,7 @@ fn age_keys(v: &mut Value, seen_ms: Option<i64>, now_ms: i64) {
     }
 }
 
+/// `codeforge.fleet-quota/1`.
 pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
     let accounts: Vec<Value> = f
         .rows
