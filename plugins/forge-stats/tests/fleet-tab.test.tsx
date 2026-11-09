@@ -236,6 +236,18 @@ test('parseFleetQuota reads old_hosts and reset, and refuses a bad one', () => {
     expect(parseFleetQuota(JSON.stringify(fleet([bad]))).status).toBe('bad')
 })
 
+test('parseFleetQuota reads a window with age_s and stale (codeforge 2-hour mark); without them it still parses; a half or bad pair is refused', () => {
+  const v = parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', weekly: wk({ age_s: 60, stale: false }), five_hour: { pct: 0.99, resets_at: 5, reset: true, age_s: 50100, stale: true } })])))
+  expect(v.status).toBe('ok')
+  for (const bad of [
+    acct({ alias: 'a', weekly: wk({ age_s: 60 }) }),
+    acct({ alias: 'a', weekly: wk({ stale: true }) }),
+    acct({ alias: 'a', weekly: wk({ age_s: -1, stale: false }) }),
+    acct({ alias: 'a', five_hour: { pct: 0.1, resets_at: 5, age_s: 60, stale: 'no' } }),
+  ])
+    expect(parseFleetQuota(JSON.stringify(fleet([bad]))).status).toBe('bad')
+})
+
 const BAD_CASES: [string, string, Record<string, unknown>][] = [
   ['invalid JSON', '{', {}],
   ['another schema', JSON.stringify({ ...fleet([]), schema: 'other/1' }), {}],

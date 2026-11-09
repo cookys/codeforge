@@ -13,9 +13,10 @@
 //! its own last API call, so an idle session holds an old value (measured 2026-11-06:
 //! four values alternating every second, 5h 2–16 %, 7d 48–52 %, same reset times).
 //! [`merge_snapshot`] therefore keeps a window's value only ever growing: within one
-//! window (same `resets_at`) the larger percentage wins, a later window replaces an
-//! earlier one, an earlier one is dropped. Each window records when and by which
-//! session its value was seen (`seen_at_ms`, `seen_by`).
+//! window (same `resets_at`) the larger percentage wins; between two different windows
+//! the newer reading wins, except that a window that is over never replaces a running one
+//! (a session logged in to another account before a switch must not hold the value).
+//! Each window records when and by which session its value was seen (`seen_at_ms`, `seen_by`).
 
 use serde_json::{json, Value};
 use std::io::Read;
@@ -121,24 +122,36 @@ fn window_from(v: &Value) -> Option<Window> {
     })
 }
 
-/// One window after `new` was observed on top of `old`: a later window replaces an
-/// earlier one, an earlier one is dropped, and within one window the larger percentage
-/// wins (a tie takes `new`, so its `seen` is the latest confirmation). A missing side
-/// keeps the other.
+/// One window after `new` was observed on top of `old`. Within one window (reset times less
+/// than [`SAME_WINDOW_S`] apart) the larger percentage wins (a tie takes `new`, so its `seen` is
+/// the latest confirmation): an idle session reports the lower value of its last API call.
+/// Two different windows: one whose reset has passed never replaces one still running;
+/// otherwise the newer reading wins (`seen`, falling back to the later reset when neither has
+/// one). A missing side keeps the other.
 pub fn merge_window(old: Option<&Window>, new: Option<&Window>) -> Option<Window> {
     match (old, new) {
         (None, n) => n.cloned(),
         (o, None) => o.cloned(),
         (Some(o), Some(n)) => {
-            if n.resets_at >= o.resets_at + SAME_WINDOW_S {
-                Some(n.clone())
-            } else if n.resets_at + SAME_WINDOW_S <= o.resets_at {
-                Some(o.clone())
-            } else if n.pct >= o.pct {
-                Some(n.clone())
+            let take_new = if (n.resets_at - o.resets_at).abs() < SAME_WINDOW_S {
+                n.pct >= o.pct
             } else {
-                Some(o.clone())
-            }
+                let at = |w: &Window| w.seen.as_ref().map(|s| s.at_ms);
+                match at(o).max(at(n)) {
+                    None => n.resets_at > o.resets_at,
+                    Some(now_ms) => {
+                        let live = |w: &Window| w.resets_at * 1000 > now_ms;
+                        match (live(o), live(n)) {
+                            (true, false) => false,
+                            (false, true) => true,
+                            (true, true) => at(n) >= at(o),
+                            // both over: the later one, so a session left in an old window renews nothing
+                            (false, false) => n.resets_at > o.resets_at,
+                        }
+                    }
+                }
+            };
+            Some(if take_new { n.clone() } else { o.clone() })
         }
     }
 }
@@ -600,6 +613,73 @@ mod tests {
                 .unwrap()
                 .written_at_ms,
             NOW_MS + 7_200_000
+        );
+    }
+
+    #[test]
+    fn a_newer_reading_of_another_running_window_replaces_an_older_one() {
+        // aimax395-team, 2026-11-09: at 06:13 TW a session wrote 7d 11% (week resetting Mon 11-16
+        // 04:00, the account it was logged in to before) under acct-337c98de; from 20:07 the real
+        // readings say 63% in the week resetting Thu 11-12 12:00. The newer reading must win.
+        const T0: i64 = 1_794_176_000_231;
+        const T1: i64 = 1_794_226_020_000;
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let mut team = snap(
+            "acct-a",
+            T0,
+            Some((0.99, 1_794_181_200)),
+            Some((0.11, 1_794_772_800)),
+        );
+        team.five_hour = seen(team.five_hour, T0, "s-team");
+        team.seven_day = seen(team.seven_day, T0, "s-team");
+        assert!(merge_snapshot(&dir, &team).unwrap().1);
+        let mut now = snap(
+            "acct-a",
+            T1,
+            Some((0.20, T1 / 1000 + 3 * 3600)),
+            Some((0.63, 1_794_456_000)),
+        );
+        now.five_hour = seen(now.five_hour, T1, "s-now");
+        now.seven_day = seen(now.seven_day, T1, "s-now");
+        let (merged, wrote) = merge_snapshot(&dir, &now).unwrap();
+        assert!(wrote);
+        assert_eq!(merged.seven_day.as_ref().map(|w| w.pct), Some(0.63));
+        assert_eq!(merged.five_hour.as_ref().map(|w| w.pct), Some(0.20));
+        assert_eq!(merged.written_at_ms, T1);
+        assert_eq!(on_disk(&dir), (Some(0.20), Some(0.63)));
+        // later, an idle session still in the 5h window that is over and lower in this week:
+        // neither replaces anything and the age is not renewed
+        let mut idle = snap(
+            "acct-a",
+            T1 + 60_000,
+            Some((0.99, 1_794_181_200)),
+            Some((0.40, 1_794_456_000)),
+        );
+        idle.five_hour = seen(idle.five_hour, T1 + 60_000, "s-idle");
+        idle.seven_day = seen(idle.seven_day, T1 + 60_000, "s-idle");
+        let (merged, wrote) = merge_snapshot(&dir, &idle).unwrap();
+        assert!(!wrote);
+        assert_eq!(merged.written_at_ms, T1);
+        assert_eq!(on_disk(&dir), (Some(0.20), Some(0.63)));
+    }
+
+    #[test]
+    fn of_two_windows_that_are_over_the_later_one_stays() {
+        let at = 1_000_000_000;
+        let w = |pct: f64, resets_at: i64, seen_ms: i64| Window {
+            pct,
+            resets_at,
+            seen: Some(Seen {
+                at_ms: seen_ms,
+                session: "s".into(),
+            }),
+        };
+        let newer_window = w(0.5, at / 1000 - 100, at);
+        let older_window = w(0.9, at / 1000 - 9000, at + 1000);
+        assert_eq!(
+            merge_window(Some(&newer_window), Some(&older_window)),
+            Some(newer_window)
         );
     }
 
