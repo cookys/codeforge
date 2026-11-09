@@ -37,6 +37,11 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 最多落後 30 秒。讀和寫不是同一個原子步驟：兩個 session 在同一瞬間寫入時，較小的值仍可能留下，
 下一次較大值的寫入會再改回來。`summary.json` 的契約不變（只輸出 `pct`、`resets_at`）。
 
+快照的 `written_at_ms` 是**最後一次有讀數被採用**的時間：這次帶來的窗在合併時全部落敗（較早的重置時間、
+或同一窗較小的值），檔案不重寫，`written_at_ms` 不更新。否則閒置 session 不斷送舊值時，檔案的時間會被刷新，
+舊值永遠不會因超過 6 小時（`MAX_AGE_MS`）而被 statusline 和 `summary.json` 濾掉（2026-11-09 實測：
+一個 12 小時前的 7d 11% 一直被當成目前值，其他主機同帳號已是 57%）。
+
 ## 帳號別名
 
 - 身分規則（statusline 與收集共用）：(1) `AUTOPILOT_ACCOUNT` 符合 `^[a-z0-9-]{1,24}$` 就用它（autopilot G37）；
