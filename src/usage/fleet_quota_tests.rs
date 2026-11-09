@@ -1410,11 +1410,65 @@ fn the_newest_reading_of_an_account_wins_whatever_os_account_or_host_and_each_wi
     let cf = a("acct-337c98de");
     assert_eq!(cf["weekly"]["age_s"], json!(60));
     assert_eq!(cf["weekly"]["stale"], json!(false));
-    // the 5h window came only from the team reading
-    assert_eq!(cf["five_hour"]["age_s"], json!(team_seen));
-    assert_eq!(cf["five_hour"]["stale"], json!(true));
+    // the 5h window came only from the team reading, and it reset before the newer weekly reading:
+    // the account was used since with no 5h reading, so no source, not the old 99 % (PM 01M70CZ6A0)
+    assert!(cf["five_hour"].is_null());
+    assert_eq!(cf["five_hour_state"], json!("no_source"));
     let old = a("acct-0000beef");
     assert_eq!(old["state"], json!("ok"));
     assert_eq!(old["weekly"]["age_s"], json!(3 * H));
     assert_eq!(old["weekly"]["stale"], json!(true));
+}
+
+/// PM 01M70CZ6A0: the account was used after its 5h window reset (a later weekly reading) but
+/// Claude Code passed no `five_hour` since: no source, never the old 99 %.
+#[test]
+fn used_after_the_5h_reset_with_no_5h_reading_is_no_source_not_the_old_pct() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![
+            acct_seen(
+                "used",
+                60,
+                Some((0.99, NOW_S - 15 * H, seen_ms(16 * H))),
+                Some((0.67, NOW_S + 3 * D, seen_ms(60))),
+            ),
+            // idle since before the reset: still only reset
+            acct_seen(
+                "idle",
+                60,
+                Some((0.99, NOW_S - H, seen_ms(2 * H))),
+                Some((0.67, NOW_S + 3 * D, seen_ms(3 * H))),
+            ),
+        ],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let u = row(&f, "used");
+    assert_eq!(u.state, State::Ok);
+    assert!(u.five_no_source && u.five_hour.is_none() && !u.five_reset);
+    let i = row(&f, "idle");
+    assert!(!i.five_no_source && i.five_reset && i.five_hour.is_some());
+    let js = to_json(&f, NOW_MS);
+    let get = |n: &str| {
+        js["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["alias"] == n)
+            .unwrap()
+            .clone()
+    };
+    let a = get("used");
+    assert!(a["five_hour"].is_null());
+    assert_eq!(a["five_hour_state"], json!("no_source"));
+    assert!(get("idle").get("five_hour_state").is_none());
+    let t = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(t.contains("5h 無來源"), "{t}");
+    let line = t
+        .lines()
+        .filter(|l| l.contains("used"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!line.contains("99%"), "{t}");
 }

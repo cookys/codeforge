@@ -286,7 +286,11 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
   每個窗的 `age_s` 是被選中那筆讀數的擷取時間到 `generated_at_ms` 的秒數，`stale` 在超過 2 小時（`STALE_MS`）時為 true
   （各窗分開算：週窗可能剛讀到，5h 窗只剩一台的舊讀數）；summary.json 不加這兩個鍵（沒升級的主機會拒收未知鍵），
   它的窗已有 `seen_at_ms`，年齡用 `generated_at_ms − seen_at_ms` 算。
-  forge-stats 解析器對 `old_hosts`、`reset`、成對的 `age_s`／`stale`、`source_note`、`note`、`note_resets_at`／`note_reset_rule`、`plan` 容忍缺席（`plan` 的無效值也當未知，不拒絕）（舊檔：空、false、無），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
+  `five_hour_state: "no_source"`（只在這種情況出現，且 `five_hour` 為 `null`）：5h 窗已重置，而週窗的讀數比那次重置還晚
+  （帳號重置後還在用），卻沒有新的 5h 讀數。Claude Code（2.1.319）只在最近一次 API 回應的 header 帶 5h 時才把
+  `rate_limits.five_hour` 交給 statusline，所以舊 pct 不再顯示，畫成「5h 無來源」（PM 01M70CZ6A0）；重置後沒再用的帳號仍是「已重置」。
+  讀取方先升級：舊版 forge-stats 不認得這個鍵，會把整份檔判成不合規格。
+  forge-stats 解析器對 `old_hosts`、`reset`、成對的 `age_s`／`stale`、`source_note`、`note`、`note_resets_at`／`note_reset_rule`、`plan`、`five_hour_state` 容忍缺席（`plan` 的無效值也當未知，不拒絕）（舊檔：空、false、無），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
   讀者（forge-stats 分頁、fleet.console/1 的配額區）直接讀，不重算。
 
 **寫檔（`usage collect` 順手維護）**：環境變數 `CODEFORGE_FLEET_USAGE_DIR` 有設且非空時，`codeforge usage collect`
