@@ -1235,4 +1235,7 @@ fn the_text_table_shows_a_dim_countdown_after_the_note_and_cuts_the_note_not_the
     }
     let wide = text(&f, 100, NOW_MS, &Tr("en".into()), false);
     assert!(wide.contains("本週已用完 ◷ 2d23h"), "{wide}");
+    // a cut note ends in `…`, as in forge-stats
+    let narrow = text(&f, 60, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(narrow.contains("… ◷ 2d23h"), "{narrow}");
 }

@@ -811,6 +811,16 @@ fn window_lines_of(r: &Row, e: &QEntry, cols: usize, now_f: f64, tr: &Tr) -> Vec
 /// A note shorter than this needs only its own width; a longer one is cut, but not below this.
 const NOTE_MIN_CELLS: usize = 8;
 
+/// `n` when it fits in `room` cells, else its longest prefix that fits in `room - 1` plus `…`
+/// (the same cut as forge-stats' `noteTail`).
+fn cut(n: &str, room: usize) -> String {
+    if UnicodeWidthStr::width(n) <= room {
+        n.to_string()
+    } else {
+        format!("{}…", super::names::clip(n, room.saturating_sub(1)))
+    }
+}
+
 /// The operator's tail for a row: the note, then `◷ 2d3h` to the next operator-rule reset. When
 /// both do not fit in `room` the note is cut, never the countdown; `None` when too little room.
 fn tail_text(r: &Row, now_s: i64, room: usize) -> Option<String> {
@@ -821,7 +831,7 @@ fn tail_text(r: &Row, now_s: i64, room: usize) -> Option<String> {
     match (&r.note, cd) {
         (None, None) => None,
         (None, Some(cd)) => (w(&cd) <= room).then_some(cd),
-        (Some(n), None) => (room >= NOTE_MIN_CELLS.min(w(n))).then(|| super::names::clip(n, room)),
+        (Some(n), None) => (room >= NOTE_MIN_CELLS.min(w(n))).then(|| cut(n, room)),
         (Some(n), Some(cd)) => {
             let full = format!("{n} {cd}");
             if w(&full) <= room {
@@ -829,7 +839,7 @@ fn tail_text(r: &Row, now_s: i64, room: usize) -> Option<String> {
             }
             let note_room = room.saturating_sub(w(&cd) + 1);
             if note_room >= NOTE_MIN_CELLS.min(w(n)) {
-                Some(format!("{} {cd}", super::names::clip(n, note_room)))
+                Some(format!("{} {cd}", cut(n, note_room)))
             } else {
                 (w(&cd) <= room).then_some(cd)
             }
