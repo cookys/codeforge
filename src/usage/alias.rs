@@ -1,7 +1,9 @@
 //! Account aliases (G36 plan §1). The alias is the only account identifier
 //! G36 ever writes: `AUTOPILOT_ACCOUNT` when it is a valid opaque alias (set by
 //! autopilot's account-pinned dispatch, G37), else a hash of the logged-in account
-//! (organizationUuid + emailAddress from the Claude config JSON), else a hash of the config dir.
+//! (organizationUuid + emailAddress from the Claude config JSON), else none: a session with no
+//! login is unattributed, never a hash of its config dir (PM 01M7052H79: such a key showed as a
+//! ghost account on every host). The config dir hash is kept only as the collector's root key.
 //! Never an email, account uuid, token or path. Of the login file only three fields are read
 //! (`oauthAccount.{organizationUuid, organizationName, emailAddress}`) and none is kept: the
 //! alias is a hash and the org is a short display name.
@@ -44,13 +46,10 @@ pub fn claude_config_dir(env_config_dir: Option<&str>, home: &Path) -> PathBuf {
     }
 }
 
-/// The account alias of a Claude session without a login file: the G37 alias when valid,
-/// else `acct-` + hash8(config dir).
-pub fn claude_alias(env_account: Option<&str>, config_dir: &Path) -> String {
-    match env_account {
-        Some(a) if valid_alias(a) => a.to_string(),
-        _ => format!("acct-{}", path_hash8(config_dir)),
-    }
+/// The alias an old writer gave a session without a login: `acct-` + its root's hash8. Such a
+/// key names no account, so readers treat it as unattributed.
+pub fn is_dir_hash_alias(alias: &str, root_hash: &str) -> bool {
+    alias.strip_prefix("acct-") == Some(root_hash)
 }
 
 /// Org display sentinel for a personal subscription.
@@ -273,27 +272,23 @@ pub fn login_identity(login: &Path, cache: &Path) -> Option<Identity> {
     login_identity_with(login, cache, &|p| read_small(p, LOGIN_MAX_BYTES))
 }
 
-/// A session's account: the G37 alias wins; else the login identity; else the config dir hash.
+/// A session's account: the G37 alias wins; else the login identity; else none (unattributed).
 /// The org and email come from the login whenever there is one (also under a pinned alias).
-pub fn account_from(
-    env_account: Option<&str>,
-    config_dir: &Path,
-    login: Option<Identity>,
-) -> Identity {
-    let org = login.as_ref().and_then(|i| i.org.clone());
-    let email = login.as_ref().and_then(|i| i.email.clone());
-    let alias = match (env_account, login) {
-        (Some(a), _) if valid_alias(a) => a.to_string(),
-        (_, Some(i)) => i.alias,
-        _ => claude_alias(None, config_dir),
-    };
-    Identity { alias, org, email }
+pub fn account_from(env_account: Option<&str>, login: Option<Identity>) -> Option<Identity> {
+    match (env_account, login) {
+        (Some(a), login) if valid_alias(a) => Some(Identity {
+            alias: a.to_string(),
+            org: login.as_ref().and_then(|i| i.org.clone()),
+            email: login.and_then(|i| i.email),
+        }),
+        (_, login) => login,
+    }
 }
 
 /// This process's config dir and account, read from the environment (the one place G36
 /// reads `AUTOPILOT_ACCOUNT`; the collector never does). Never fails: any login-file
-/// problem means the config dir hash.
-pub fn current_claude_account(live_base: &Path) -> (PathBuf, Identity) {
+/// problem means no account.
+pub fn current_claude_account(live_base: &Path) -> (PathBuf, Option<Identity>) {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let cfg = std::env::var("CLAUDE_CONFIG_DIR").ok();
     let acct = std::env::var(ACCOUNT_ENV).ok();
@@ -302,7 +297,7 @@ pub fn current_claude_account(live_base: &Path) -> (PathBuf, Identity) {
         &login_path(cfg.as_deref(), &home),
         &identity_cache_path(live_base, &dir),
     );
-    let id = account_from(acct.as_deref(), &dir, login);
+    let id = account_from(acct.as_deref(), login);
     (dir, id)
 }
 
@@ -331,27 +326,13 @@ mod tests {
     }
 
     #[test]
-    fn alias_takes_a_valid_env_and_falls_back_to_the_dir_hash() {
-        let dir = tempfile::tempdir().unwrap();
-        assert_eq!(claude_alias(Some("acct-b"), dir.path()), "acct-b");
-        let h = claude_alias(None, dir.path());
-        assert!(
-            h.starts_with("acct-") && h.len() == 13 && valid_alias(&h),
-            "{h}"
-        );
-        // an invalid value is never used, and never leaks into the alias
-        let bad = claude_alias(Some("me@example.com"), dir.path());
-        assert_eq!(bad, h);
-        assert_eq!(claude_alias(Some(""), dir.path()), h);
-        // two dirs, two aliases; a symlink to the same dir, the same alias
-        let other = tempfile::tempdir().unwrap();
-        assert_ne!(claude_alias(None, other.path()), h);
-        #[cfg(unix)]
-        {
-            let link = other.path().join("link");
-            std::os::unix::fs::symlink(dir.path(), &link).unwrap();
-            assert_eq!(claude_alias(None, &link), h);
-        }
+    fn a_dir_hash_alias_is_recognized_only_against_its_own_root() {
+        // /home/cookys/.claude hashes to ae88ee5d: the ghost account of PM 01M7052H79
+        assert_eq!(path_hash8(Path::new("/home/cookys/.claude")), "ae88ee5d");
+        assert!(is_dir_hash_alias("acct-ae88ee5d", "ae88ee5d"));
+        assert!(!is_dir_hash_alias("acct-337c98de", "ae88ee5d"));
+        assert!(!is_dir_hash_alias("ae88ee5d", "ae88ee5d"));
+        assert!(!is_dir_hash_alias("codex-ae88ee5d", "ae88ee5d"));
     }
 
     #[test]
@@ -401,17 +382,22 @@ mod tests {
     }
 
     #[test]
-    fn env_alias_wins_and_missing_or_garbage_falls_back_to_the_path_hash() {
+    fn env_alias_wins_and_no_login_is_no_account() {
         let dir = tempfile::tempdir().unwrap();
         let id = derive(login("o", "e@x.com", "Acme").as_bytes());
-        let won = account_from(Some("acct-pinned"), dir.path(), id.clone());
+        let won = account_from(Some("acct-pinned"), id.clone()).unwrap();
         assert_eq!(won.alias, "acct-pinned");
         assert_eq!(won.org.as_deref(), Some("Acme"));
-        let fb = account_from(None, dir.path(), None);
-        assert_eq!(fb.alias, claude_alias(None, dir.path()));
-        assert_eq!(fb.org, None);
+        // no login: no account, never a hash of the config dir
+        assert_eq!(account_from(None, None), None);
+        assert_eq!(account_from(Some("me@example.com"), None), None);
+        assert_eq!(account_from(Some(""), None), None);
         assert_eq!(
-            account_from(None, dir.path(), id.clone()).alias,
+            account_from(Some("acct-pinned"), None).map(|i| i.alias),
+            Some("acct-pinned".to_string())
+        );
+        assert_eq!(
+            account_from(None, id.clone()).unwrap().alias,
             id.unwrap().alias
         );
         // missing, garbage, no oauthAccount, missing fields
@@ -488,9 +474,9 @@ mod tests {
         // a pinned alias keeps the login's email and org
         let acct = account_from(
             Some("work-1"),
-            Path::new("/x"),
             derive(login("o", "me@example.com", "Acme").as_bytes()),
-        );
+        )
+        .unwrap();
         assert_eq!(
             (
                 acct.alias.as_str(),

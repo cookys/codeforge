@@ -440,11 +440,8 @@ fn a_root_takes_the_alias_of_the_snapshot_naming_it() {
         seven_day: None,
     };
     let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
-    // no snapshot names it: the hash alias
-    assert_eq!(
-        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
-        format!("acct-{hash}")
-    );
+    // no snapshot names it, no login: unattributed, never the hash
+    assert_eq!(root_alias(&conn, &rs[0], &[], NOW).unwrap(), UNATTRIBUTED);
     // the newest snapshot naming it wins; one for another root does not
     let snaps = [
         snap("acct-b", Some(&hash), 1),
@@ -688,10 +685,7 @@ fn a_root_without_a_snapshot_takes_its_login_alias_over_a_stored_one() {
     );
     let mut rs = roots(std::slice::from_ref(&e.cfg), None);
     let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
-    assert_eq!(
-        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
-        format!("acct-{}", rs[0].hash)
-    );
+    assert_eq!(root_alias(&conn, &rs[0], &[], NOW).unwrap(), UNATTRIBUTED);
     rs[0].account = Some("acct-1111aaaa".into());
     assert_eq!(
         root_alias(&conn, &rs[0], &[], NOW).unwrap(),
@@ -992,4 +986,52 @@ fn a_codex_session_row_from_before_the_columns_existed_is_migrated_and_unlisted(
     assert!(codex_sessions_since(&conn, "2000-01-01")
         .unwrap()
         .is_empty());
+}
+
+/// PM 01M7052H79: `acct-ae88ee5d` (the hash of `/home/cookys/.claude`) showed on every host as
+/// an account with no window. A root with no login is unattributed: new rows carry no account,
+/// an old collector's `acct-<sha8>` rows of that root read the same, and the summary lists them
+/// once with `account: null`, never as an account.
+#[test]
+fn a_root_without_a_login_is_unattributed_also_its_old_hash_keyed_rows() {
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &claude("req_1", 7, 1, json!({})),
+    );
+    let (conn, _) = run_at(&e, NOW);
+    let hash = roots(std::slice::from_ref(&e.cfg), None)[0].hash.clone();
+    let accts: Vec<String> = conn
+        .prepare("SELECT account FROM buckets")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(accts, [UNATTRIBUTED]);
+    // the same bucket as an old collector wrote it, keyed by the root's hash
+    conn.execute(
+        "INSERT INTO buckets SELECT day, source, 'acct-' || ?1, model, project, speed,
+                input, output, cw5m, cw1h, read, requests FROM buckets",
+        [&hash],
+    )
+    .unwrap();
+    let rows = rows_since(&conn, "2000-01-01").unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r.account == UNATTRIBUTED), "{rows:?}");
+    let v = crate::usage::summary::build(&rows, &[], "host-1a2b3c4d", NOW, &Default::default());
+    crate::usage::summary::validate(&v).unwrap();
+    let days = v["days"].as_array().unwrap();
+    assert_eq!(days.len(), 1, "one unattributed line, summed");
+    assert_eq!(days[0]["account"], Value::Null);
+    assert_eq!(days[0]["input"], 14);
+    assert!(!v.to_string().contains(&format!("acct-{hash}")));
+    // an account row of another root is left as is
+    conn.execute(
+        "UPDATE buckets SET account = 'acct-337c98de' WHERE account = 'acct-' || ?1",
+        [&hash],
+    )
+    .unwrap();
+    let rows = rows_since(&conn, "2000-01-01").unwrap();
+    assert!(rows.iter().any(|r| r.account == "acct-337c98de"));
 }
