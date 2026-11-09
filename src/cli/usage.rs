@@ -43,6 +43,13 @@ pub enum Action {
     NoteClear {
         target: String,
     },
+    PlanSet {
+        target: String,
+        plan: String,
+    },
+    PlanClear {
+        target: String,
+    },
 }
 
 fn now_ms() -> i64 {
@@ -158,6 +165,7 @@ fn write_fleet_quota(
     );
     fq::attach_notes(&mut f, &crate::usage::names::load_notes_default());
     fq::attach_resets(&mut f, &crate::usage::names::load_resets_default(), now);
+    fq::attach_plans(&mut f, &crate::usage::names::load_plans_default());
     let v = fq::to_json(&f, now);
     crate::live::write_live_json(out_dir, FLEET_FILE, &v)
         .map_err(|e| anyhow::anyhow!("無法寫入 {FLEET_FILE}（{:?}）", e.kind()))?;
@@ -237,6 +245,8 @@ pub fn run(action: Action) -> Result<()> {
         } => note_set(&target, Some(&text), new, reset_weekly.as_deref()),
         Action::NoteReset { target, rule } => note_reset(&target, &rule),
         Action::NoteClear { target } => note_set(&target, None, false, None),
+        Action::PlanSet { target, plan } => plan_set(&target, Some(&plan)),
+        Action::PlanClear { target } => plan_set(&target, None),
         Action::Fleet {
             dir,
             json,
@@ -383,6 +393,7 @@ fn fleet(
     );
     fq::attach_notes(&mut f, &crate::usage::names::load_notes_default());
     fq::attach_resets(&mut f, &crate::usage::names::load_resets_default(), now);
+    fq::attach_plans(&mut f, &crate::usage::names::load_plans_default());
     let v = fq::to_json(&f, now);
     if let Some(p) = out {
         fq::write_atomic(p, &v)?;
@@ -477,6 +488,7 @@ fn alias_list() -> Result<()> {
     let known = known_accounts();
     let who = who_of(&known);
     let shown = names::assign(&who, &names);
+    let plans = names::load_plans_default();
     for ((k, org, email), n) in known.iter().zip(&shown) {
         let Some(n) = n else { continue };
         let set = if names.0.contains_key(k) {
@@ -484,8 +496,15 @@ fn alias_list() -> Result<()> {
         } else {
             ""
         };
+        let tr = crate::usage::quota_view::Tr::current();
+        let plan = plans
+            .for_row(k, names::key_provider(k).unwrap_or("claude"))
+            .map_or_else(
+                || tr.t("quota.plan_unknown", &[]),
+                |id| names::plan_display(id).to_string(),
+            );
         println!(
-            "{n}{set}\t{}\t{}",
+            "{n}{set}\t{}\t{}\t{plan}",
             org.as_deref().unwrap_or("—"),
             email.as_deref().unwrap_or("—")
         );
@@ -627,6 +646,41 @@ fn note_set(target: &str, text: Option<&str>, new: bool, rule: Option<&str>) -> 
             println!("已清除備註與重置規則：{target}")
         }
         None => println!("{target} 沒有備註"),
+    }
+    Ok(())
+}
+
+/// `usage plan set <target> <plan>` (`Some`) / `usage plan clear <target>` (`None`). The target is
+/// resolved as `usage note set` resolves it, so a plan can sit on a provider label too.
+fn plan_set(target: &str, plan: Option<&str>) -> Result<()> {
+    use crate::usage::names;
+    let id = plan
+        .map(|p| {
+            names::parse_plan(p).with_context(|| {
+                format!(
+                    "不認得方案「{p}」；可用：{}（5x、20x 是 max5x、max20x 的簡寫）",
+                    names::PLANS.join("、")
+                )
+            })
+        })
+        .transpose()?;
+    let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
+    let set = names::load(&path);
+    let known = known_accounts();
+    let who = who_of(&known);
+    let key = note_key(target, &who, &set, &names::load_notes(&path))?;
+    let target = if target.contains('@') {
+        "該 email"
+    } else {
+        target
+    };
+    match id {
+        Some(id) => {
+            names::set_plan(&path, &key, id)?;
+            println!("已設定方案：{target} → {}", names::plan_display(id));
+        }
+        None if names::clear_plan(&path, &key)? => println!("已清除方案：{target}"),
+        None => println!("{target} 沒有方案"),
     }
     Ok(())
 }
