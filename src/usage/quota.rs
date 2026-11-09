@@ -6,7 +6,8 @@
 //! reads the other accounts' snapshots back with a bounded read.
 //!
 //! Staleness: a window whose `resets_at` has passed is unknown; a snapshot older
-//! than [`MAX_AGE_MS`] is dropped.
+//! than [`MAX_AGE_MS`] is dropped. `written_at_ms` is when a reading was last taken: a write
+//! whose windows all lose the merge leaves the file (and its age) as it is.
 //!
 //! Several sessions of one account write the same file, each with the `rate_limits` of
 //! its own last API call, so an idle session holds an old value (measured 2026-11-06:
@@ -278,17 +279,33 @@ pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot,
     let old = read_bounded(&path);
     let merged = match &old {
         None => snap.clone(),
-        Some(old) => Snapshot {
-            alias: snap.alias.clone(),
-            org: snap.org.clone(),
-            email: snap.email.clone(),
-            root: snap.root.clone().or_else(|| old.root.clone()),
-            written_at_ms: snap.written_at_ms,
-            five_hour: merge_window(old.five_hour.as_ref(), snap.five_hour.as_ref()),
-            seven_day: merge_window(old.seven_day.as_ref(), snap.seven_day.as_ref()),
-        },
+        Some(old) => {
+            let five_hour = merge_window(old.five_hour.as_ref(), snap.five_hour.as_ref());
+            let seven_day = merge_window(old.seven_day.as_ref(), snap.seven_day.as_ref());
+            // `written_at_ms` is when a reading was last taken: a snapshot whose windows all lost
+            // the merge (older or lower readings) keeps the old time, so a stale value still ages out
+            let took = |m: &Option<Window>, n: &Option<Window>| n.is_some() && m == n;
+            let taken = took(&five_hour, &snap.five_hour) || took(&seven_day, &snap.seven_day);
+            Snapshot {
+                alias: snap.alias.clone(),
+                org: snap.org.clone(),
+                email: snap.email.clone(),
+                root: snap.root.clone().or_else(|| old.root.clone()),
+                written_at_ms: if taken {
+                    snap.written_at_ms
+                } else {
+                    old.written_at_ms
+                },
+                five_hour,
+                seven_day,
+            }
+        }
     };
     if let Some(old) = old.as_ref().filter(|_| !wider_than_0600(&path)) {
+        if merged.written_at_ms == old.written_at_ms && old.written_at_ms != snap.written_at_ms {
+            // nothing taken: the file stays as it is
+            return Ok((merged, false));
+        }
         let age = snap.written_at_ms - old.written_at_ms;
         if same_value(&old.five_hour, &merged.five_hour)
             && same_value(&old.seven_day, &merged.seven_day)
@@ -539,6 +556,51 @@ mod tests {
         let bad = snap("Me@x", NOW_MS, Some((0.1, NOW_S + 60)), None);
         assert!(!merge_snapshot(&dir, &bad).unwrap().1);
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn readings_that_all_lose_the_merge_do_not_renew_the_age() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        // 11% seen at NOW, in the window resetting at NOW_S + 3 days
+        let s = snap(
+            "acct-a",
+            NOW_MS,
+            Some((0.99, NOW_S + 60)),
+            Some((0.11, NOW_S + 3 * 86_400)),
+        );
+        assert!(merge_snapshot(&dir, &s).unwrap().1);
+        // an hour on, a session reports an older 5h window and a lower 7d value
+        let stale = snap(
+            "acct-a",
+            NOW_MS + 3_600_000,
+            Some((0.40, NOW_S - 4 * 3600)),
+            Some((0.05, NOW_S + 3 * 86_400)),
+        );
+        let (merged, wrote) = merge_snapshot(&dir, &stale).unwrap();
+        assert!(!wrote);
+        assert_eq!(merged.seven_day.as_ref().map(|w| w.pct), Some(0.11));
+        let file = read_bounded(&dir.join("acct-a.json")).unwrap();
+        assert_eq!(file.written_at_ms, NOW_MS);
+        // so seven hours after the last taken reading it is no longer shown as current
+        assert!(read_others(&dir, "acct-b", NOW_MS + 7 * 3_600_000).is_empty());
+        // a reading that is taken renews it
+        let higher = snap(
+            "acct-a",
+            NOW_MS + 7_200_000,
+            None,
+            Some((0.57, NOW_S + 3 * 86_400)),
+        );
+        let (merged, wrote) = merge_snapshot(&dir, &higher).unwrap();
+        assert!(wrote);
+        assert_eq!(merged.written_at_ms, NOW_MS + 7_200_000);
+        assert_eq!(merged.five_hour.as_ref().map(|w| w.pct), Some(0.99));
+        assert_eq!(
+            read_bounded(&dir.join("acct-a.json"))
+                .unwrap()
+                .written_at_ms,
+            NOW_MS + 7_200_000
+        );
     }
 
     fn seen(w: Option<Window>, at_ms: i64, session: &str) -> Option<Window> {
