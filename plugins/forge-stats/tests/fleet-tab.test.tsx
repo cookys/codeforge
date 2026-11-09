@@ -395,7 +395,17 @@ test('parseFleetQuota reads note_resets_at and note_reset_rule; old files parse;
   expect(old.accounts.every(a => a.noteResetRule === null && a.noteResetsAt === null)).toBe(true)
   const ok = { note_resets_at: 1793955600, note_reset_rule: 'fri@17:00+08:00' }
   expect(parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', ...ok })]))).status).toBe('ok')
+  // monthly and one-shot rules, as codeforge writes them
+  for (const rule of ['17@00:00+08:00', '1@00:00-05:00', '31@23:59+00:00', '2026-11-21T00:00:00+08:00', '2026-11-20T16:00:00Z'])
+    expect(parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', ...ok, note_reset_rule: rule })]))).status).toBe('ok')
   for (const bad of [
+    { ...ok, note_reset_rule: '0@00:00+08:00' },
+    { ...ok, note_reset_rule: '01@00:00+08:00' },
+    { ...ok, note_reset_rule: '32@00:00+08:00' },
+    { ...ok, note_reset_rule: '2026-11-21T00:00+08:00' },
+    { ...ok, note_reset_rule: '2026-11-21t00:00:00+08:00' },
+    { ...ok, note_reset_rule: '2026-11-21T00:00:00.5Z' },
+    { ...ok, note_reset_rule: '2026-13-21T00:00:00Z' },
     { note_resets_at: 1793955600 },
     { note_reset_rule: 'fri@17:00+08:00' },
     { ...ok, note_reset_rule: 'friday@17:00+08:00' },
