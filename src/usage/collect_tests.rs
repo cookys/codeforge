@@ -884,3 +884,112 @@ fn a_codex_account_with_windows_validates_in_the_summary() {
     assert_eq!(a["seven_day"]["pct"], json!(0.175));
     assert!(a["five_hour"]["seen_at_ms"].is_u64());
 }
+
+fn codex_rollout(e: &Env, uuid: &str, events: &[(u64, u64, u64, u64)]) {
+    let f = e.codex.join(format!(
+        "sessions/2026/11/03/rollout-2026-11-03T10-00-00-{uuid}.jsonl"
+    ));
+    let mut s = json!({"timestamp": TS, "type": "turn_context", "payload": {"model": "gpt-6.1-sol", "cwd": "/MARKERCX/proj"}}).to_string() + "\n";
+    for (i, c, o, r) in events {
+        s += &(json!({"timestamp": TS, "type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": i, "cached_input_tokens": c, "output_tokens": o, "reasoning_output_tokens": r, "total_tokens": i + o}}}}).to_string() + "\n");
+    }
+    write(&f, &s);
+}
+
+#[test]
+fn a_codex_rollout_lists_its_final_cumulative_totals_by_id() {
+    let e = env();
+    let a = "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0002";
+    let b = "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0001";
+    codex_rollout(
+        &e,
+        a,
+        &[(100, 40, 10, 4), (250, 100, 30, 12), (400, 160, 50, 20)],
+    );
+    codex_rollout(&e, b, &[(10, 0, 5, 0)]);
+    let conn = run(&e, &[]);
+    let got = codex_sessions_since(&conn, "2026-11-01").unwrap();
+    let acct = got[0].account.clone();
+    assert!(acct.starts_with("codex-"));
+    // sorted by id; input = non-cached, output as reported, nothing summed twice
+    let want = |id: &str, input, output, cache_read, reasoning| CodexSession {
+        rollout_id: id.into(),
+        account: acct.clone(),
+        input,
+        output,
+        cache_read,
+        reasoning,
+    };
+    assert_eq!(got, vec![want(b, 10, 5, 0, 0), want(a, 240, 50, 160, 20)]);
+    // the summary carries them, nothing else of the rollout, and validates
+    let v = crate::usage::summary::with_codex_sessions(
+        crate::usage::summary::build(&[], &[], "host-1a2b3c4d", NOW, &Default::default()),
+        &got,
+    );
+    crate::usage::summary::validate(&v).unwrap();
+    assert_eq!(
+        v["codex_sessions"][1],
+        json!({"rollout_id": a, "account": acct, "input": 240, "output": 50, "cache_read": 160, "cache_write": null, "reasoning": 20})
+    );
+    assert!(!v.to_string().contains("MARKER"));
+    // re-collecting and growing keeps one entry per rollout with the new final totals
+    codex_rollout(&e, a, &[(400, 160, 50, 20), (500, 200, 70, 31)]);
+    let conn = run(&e, &[]);
+    let got = codex_sessions_since(&conn, "2026-11-01").unwrap();
+    assert_eq!(got.len(), 2);
+    assert_eq!(
+        (got[1].input, got[1].output, got[1].reasoning),
+        (300, 70, 31)
+    );
+    // outside the day window: no entry
+    assert!(codex_sessions_since(&conn, "2026-11-04")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn no_codex_rollout_means_no_codex_sessions_key() {
+    let e = env();
+    let conn = run(&e, &[]);
+    assert!(codex_sessions_since(&conn, "2000-01-01")
+        .unwrap()
+        .is_empty());
+    let v = crate::usage::summary::with_codex_sessions(
+        crate::usage::summary::build(&[], &[], "host-1a2b3c4d", NOW, &Default::default()),
+        &[],
+    );
+    assert!(v.get("codex_sessions").is_none());
+    crate::usage::summary::validate(&v).unwrap();
+}
+
+#[test]
+fn a_codex_rollout_without_token_count_has_no_entry() {
+    let e = env();
+    codex_rollout(&e, "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0003", &[]);
+    let conn = run(&e, &[]);
+    assert!(codex_sessions_since(&conn, "2000-01-01")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn a_codex_session_row_from_before_the_columns_existed_is_migrated_and_unlisted() {
+    let e = env();
+    let dir = store::usage_dir(&e.data);
+    std::fs::create_dir_all(&dir).unwrap();
+    {
+        let c = Connection::open(dir.join("usage.db")).unwrap();
+        c.execute_batch(
+            "CREATE TABLE codex_sessions (
+                 session_id TEXT PRIMARY KEY, input INTEGER NOT NULL, cached INTEGER NOT NULL,
+                 cache_write INTEGER NOT NULL, output INTEGER NOT NULL, seen_ms INTEGER NOT NULL,
+                 model TEXT NOT NULL DEFAULT 'unknown', project TEXT NOT NULL DEFAULT '');
+             INSERT INTO codex_sessions VALUES ('0199aaaa-bbbb-7ccc-8ddd-eeeeffff0009', 5, 1, 0, 2, 1, 'm', '');",
+        )
+        .unwrap();
+    }
+    let (conn, _) = store::open(&dir).unwrap();
+    assert!(codex_sessions_since(&conn, "2000-01-01")
+        .unwrap()
+        .is_empty());
+}

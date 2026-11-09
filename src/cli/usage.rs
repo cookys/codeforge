@@ -100,12 +100,15 @@ fn collect_and_summarize(
         .collect();
     // codex accounts carry the windows of their newest rollout `rate_limits` the same way
     fresh.extend(collect::codex_snapshots(&conn, now)?);
-    let v = summary::build(
-        &rows,
-        &fresh,
-        &summary::host_alias(&summary::hostname()),
-        now,
-        &crate::usage::names::load_default(),
+    let v = summary::with_codex_sessions(
+        summary::build(
+            &rows,
+            &fresh,
+            &summary::host_alias(&summary::hostname()),
+            now,
+            &crate::usage::names::load_default(),
+        ),
+        &collect::codex_sessions_since(&conn, &since)?,
     );
     summary::validate(&v)?;
     let sdir = summary::summary_dir(&live_base);

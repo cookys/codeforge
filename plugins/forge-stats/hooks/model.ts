@@ -422,7 +422,10 @@ export type UsageView = {
 export const USAGE_CONTRACT = {
   "schema": "codeforge.usage-summary/1",
   "top": ["schema", "generated_at_ms", "host", "prices_as_of", "accounts", "days"],
-  "top_optional": ["dropped_accounts"],
+  "top_optional": ["dropped_accounts", "codex_sessions"],
+  "codex_session": ["rollout_id", "account", "input", "output", "cache_read", "cache_write", "reasoning"],
+  "rollout": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+  "max_codex_sessions": 2000,
   "drop_reasons": ["written_at_ms_out_of_range", "resets_at_out_of_range", "pct_out_of_range"],
   "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
   "account_optional": ["org", "email", "name"],
@@ -505,9 +508,21 @@ export function parseUsage(text: string | null, now: number): UsageView {
   }
   if (!isObj(raw)) return bad
   // the optional drop record (codeforge dropped some bad local snapshots): reason -> count, closed reasons
-  const { dropped_accounts: droppedRaw, ...core } = raw
+  const { dropped_accounts: droppedRaw, codex_sessions: codexRaw, ...core } = raw
   if (droppedRaw !== undefined) {
     if (!isObj(droppedRaw) || !Object.entries(droppedRaw).every(([k, n]) => inSet(k, C.drop_reasons) && isUint(n))) return bad
+  }
+  // the optional per-rollout Codex totals (not drawn): the same rules as `summary::validate`, else the whole summary is bad
+  if (codexRaw !== undefined) {
+    const ROLLOUT_RE = new RegExp(C.rollout)
+    if (!Array.isArray(codexRaw) || codexRaw.length === 0 || codexRaw.length > C.max_codex_sessions) return bad
+    let prev = ''
+    for (const e of codexRaw) {
+      if (!exactKeys(e, C.codex_session) || typeof e.rollout_id !== 'string' || !ROLLOUT_RE.test(e.rollout_id) || e.rollout_id <= prev) return bad
+      prev = e.rollout_id
+      if (typeof e.account !== 'string' || !ALIAS_RE.test(e.account) || e.cache_write !== null) return bad
+      if (!isUint(e.input) || !isUint(e.output) || !isUint(e.cache_read) || !isUint(e.reasoning)) return bad
+    }
   }
   raw = core
   if (!exactKeys(raw, C.top) || raw.schema !== C.schema || !isUint(raw.generated_at_ms)) return bad
