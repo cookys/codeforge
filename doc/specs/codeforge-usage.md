@@ -107,11 +107,17 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   未知時不帶此鍵。文字表在名字與 email 後面顯示 `方案 Max 5x`／`plan Max 5x`，未知顯示 `方案 未知`／`plan unknown`；
   `usage alias list` 每個帳號列多一欄方案（未知同上）。
   **無效值的處理（Rust 與 forge-stats 一致）**：不在集合內的 `plan` 不是錯誤，一律當未知；forge-stats 解析器不因此把整份檔判為 bad，該列照畫並顯示「方案 未知」。
-- **operator 每週重置規則（`[resets]`，低可信度）**：同一個 `accounts.toml` 的選填 `[resets]` 表，鍵同 `[notes]`
-  （provider 標籤、帳號鍵或 `--new` 名字），值是規則 `<dow>@<HH:MM><±HH:MM>`：`dow` 為小寫 `mon tue wed thu fri sat sun`，
-  時間 24 小時制，**必須寫明 UTC 偏移**，例如 `fri@17:00+08:00` = 每週五 17:00（UTC+8）。不合規的條目載入時略過（同備註）。
+- **operator 重置規則（`[resets]`，低可信度）**：同一個 `accounts.toml` 的選填 `[resets]` 表，鍵同 `[notes]`
+  （provider 標籤、帳號鍵或 `--new` 名字），每個鍵一條規則，三種形式（時間 24 小時制，**必須寫明 UTC 偏移**）：
+  - 每週 `<dow>@<HH:MM><±HH:MM>`：`dow` 為小寫 `mon tue wed thu fri sat sun`，例如 `fri@17:00+08:00` = 每週五 17:00（UTC+8）；
+  - 每月 `<日>@<HH:MM><±HH:MM>`：日為 `1`..`31`（不補 0），例如 `17@00:00+08:00` = 每月 17 日 00:00（UTC+8）；
+    該月沒有這一天（例如 2 月的 30 日）就在該月最後一天重置；「哪一天」照規則的 UTC 偏移算；
+  - 一次性 RFC 3339 `YYYY-MM-DDTHH:MM:SS<±HH:MM|Z>`（大寫 `T`、不帶小數秒），例如 `2026-11-21T00:00:00+08:00`；
+    時間過了就沒有下一次（`note_resets_at` 與 `note_reset_rule` 都不帶），規則留在檔裡直到 operator 清掉。
+  不合規的條目載入時略過（同備註）。`usage note set` 用 `--reset-weekly`／`--reset-monthly`／`--reset-at`（三選一，各只收自己的形式）；
+  `usage note reset` 收任一形式。
   `usage fleet` 對符合規則的列（帳號鍵優先於 provider，同備註）加選填 `note_reset_rule`（規則字串）與 `note_resets_at`
-  （下一次發生時間，unix 秒，**嚴格晚於現在**；剛好在該時刻算下週）。兩個鍵同進同出。這是 operator 手填的事實，
+  （下一次發生時間，unix 秒，**嚴格晚於現在**；剛好在該時刻算下一期）。兩個鍵同進同出。這是 operator 手填的事實，
   **低可信度**：有真實配額視窗的列照舊用真實的 `resets_at`，規則只是額外資訊，排程端不該拿它蓋過真實視窗。
   文字表與 forge-stats 分頁在備註後面淡色加 `◷ 2d3h`（與其他倒數同格式）；寬度不夠時先截短備註（加 `…`），倒數保留；
   沒有備註時只畫倒數。`codeforge usage note set [--new] <target> <文字> [--reset-weekly <規則>]` 同時存兩者（一次原子寫入）；
@@ -257,7 +263,7 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
 - **JSON**（`--json` 印出；`--out <file>` 以暫存檔＋rename 原子寫入，0600，可與文字表並用）：
   `{"schema":"codeforge.fleet-quota/1","generated_at_ms":…,"use_target":0.85,"skipped":{},"accounts":[…]}`，每筆
   `{alias, name, org|null, email|null, provider("claude"|"codex"|"kimi"|…), hosts[], old_hosts[]（hosts 的子集，排序）, observed_at_ms|null, age_s|null, state, weekly, five_hour}`，
-  另有兩個選填鍵：`source_note`（只在 `no_source` 列，`"web_only"|"needs_token"|"no_window"`）、`note`（operator 備註，見上），以及成對的 `note_resets_at`／`note_reset_rule`（operator 每週重置規則，見上；低可信度）；另有選填 `plan`（`"pro"|"max5x"|"max20x"|"team"|"enterprise"|"api"`，operator 設定的訂閱方案，見上；未知時不帶）；
+  另有兩個選填鍵：`source_note`（只在 `no_source` 列，`"web_only"|"needs_token"|"no_window"`）、`note`（operator 備註，見上），以及成對的 `note_resets_at`／`note_reset_rule`（operator 重置規則：每週、每月或一次性，見上；低可信度）；另有選填 `plan`（`"pro"|"max5x"|"max20x"|"team"|"enterprise"|"api"`，operator 設定的訂閱方案，見上；未知時不帶）；
   `state`：`ok`（有視窗可畫）、`stale`（6 小時內有觀察但視窗全已重置）、`expired`（最後觀察超過 6 小時）、`no_source`；
   `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null, reset}`（`resets_at`、`exhaust_at`
   為 unix 秒；`reset` 為 true 時視窗已重置，`pct` 不是現值），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at, reset}|null`。
@@ -286,7 +292,9 @@ codeforge usage alias set <email或顯示名> <新名字>
 codeforge usage note set <provider|名字> <文字>   # 本機備註（最多 40 欄），顯示在全帳號表列尾
 codeforge usage note set --new <名字> <文字>      # 沒有任何資料的帳號：以名字當鍵，`usage fleet` 多一列 no_source
 codeforge usage note set <provider|名字> <文字> --reset-weekly fri@17:00+08:00  # 另存每週重置規則，`usage fleet` 算出 note_resets_at
-codeforge usage note reset <provider|名字> <規則>   # 只設規則
+codeforge usage note set <provider|名字> <文字> --reset-monthly 17@00:00+08:00  # 每月 17 日（沒有這天就月底）
+codeforge usage note set <provider|名字> <文字> --reset-at 2026-11-21T00:00:00+08:00  # 一次性，過了就不顯示倒數
+codeforge usage note reset <provider|名字> <規則>   # 只設規則（三種形式都收）
 codeforge usage note clear <provider|名字>          # 備註與規則一起清
 /forge-stats usage                  # Claude Code 裡：開 forge-stats pane 的用量分頁（/forge-stats pet 回寵物）
 ```

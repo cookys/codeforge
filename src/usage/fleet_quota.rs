@@ -131,7 +131,7 @@ pub struct Row {
     pub source_note: Option<SourceNote>,
     /// The operator's note ([`attach_notes`]); local only.
     pub note: Option<String>,
-    /// The operator's weekly reset rule ([`attach_resets`]) and its next occurrence (epoch s);
+    /// The operator's reset rule ([`attach_resets`]) and its next occurrence (epoch s);
     /// operator-provided, low confidence, and never a replacement for a real window's reset.
     pub note_reset_rule: Option<String>,
     pub note_resets_at: Option<i64>,
@@ -514,14 +514,15 @@ pub fn attach_notes(f: &mut Fleet, notes: &super::names::Notes) {
     f.rows.extend(extra);
 }
 
-/// Attach the operator's weekly reset rules: an account key's rule, else its provider's; the
-/// next occurrence strictly after `now_ms`. Call after [`attach_notes`] (it adds the no-data rows).
+/// Attach the operator's reset rules (weekly, monthly or one-shot): an account key's rule, else
+/// its provider's; the next occurrence strictly after `now_ms` (none once a one-shot has passed).
+/// Call after [`attach_notes`] (it adds the no-data rows).
 pub fn attach_resets(f: &mut Fleet, resets: &super::names::Resets, now_ms: i64) {
     for r in &mut f.rows {
         let rule = resets.for_row(&r.alias, &r.provider);
         r.note_resets_at = rule
             .and_then(super::reset_rule::parse)
-            .map(|x| x.next_after(now_ms.div_euclid(1000)));
+            .and_then(|x| x.next_after(now_ms.div_euclid(1000)));
         r.note_reset_rule = rule.map(str::to_string);
     }
 }

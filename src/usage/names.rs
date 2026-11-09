@@ -225,7 +225,7 @@ pub fn load_notes_default() -> Notes {
     default_path().map(|p| load_notes(&p)).unwrap_or_default()
 }
 
-/// Operator weekly reset rules: the same keys as [`Notes`] → a [`super::reset_rule`] string.
+/// Operator reset rules (weekly, monthly or one-shot): the same keys as [`Notes`] → a [`super::reset_rule`] string.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Resets(pub BTreeMap<String, String>);
 

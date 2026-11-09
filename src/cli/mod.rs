@@ -387,14 +387,20 @@ pub enum NoteAction {
         #[arg(long)]
         new: bool,
         /// 每週重置規則（operator 提供，低可信度）：`<星期>@<HH:MM><±HH:MM>`，星期為 mon tue wed thu fri sat sun，例如 fri@17:00+08:00；`usage fleet` 會算出下一次重置
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["reset_monthly", "reset_at"])]
         reset_weekly: Option<String>,
+        /// 每月重置規則：`<日>@<HH:MM><±HH:MM>`，日為 1 到 31（不補 0），例如 17@00:00+08:00；該月沒有這一天就在月底重置
+        #[arg(long, conflicts_with = "reset_at")]
+        reset_monthly: Option<String>,
+        /// 一次性重置時間（RFC 3339）：`YYYY-MM-DDTHH:MM:SS±HH:MM` 或結尾 Z，例如 2026-11-21T00:00:00+08:00；過了就不再顯示倒數
+        #[arg(long)]
+        reset_at: Option<String>,
     },
-    /// 只設每週重置規則（該 target 已有備註，或是已知的帳號／provider）：`reset <target> <規則>`
+    /// 只設重置規則（該 target 已有備註，或是已知的帳號／provider）：`reset <target> <規則>`
     Reset {
         /// provider 名、有備註的名字，或帳號的 email／顯示名
         target: String,
-        /// `<星期>@<HH:MM><±HH:MM>`，例如 fri@17:00+08:00
+        /// 每週 fri@17:00+08:00、每月 17@00:00+08:00，或一次性 2026-11-21T00:00:00+08:00
         rule: String,
     },
     /// 清除備註與重置規則
@@ -633,12 +639,21 @@ pub fn run(cli: Cli) -> Result<()> {
                     text,
                     new,
                     reset_weekly,
-                } => usage::Action::NoteSet {
-                    target,
-                    text,
-                    new,
-                    reset_weekly,
-                },
+                    reset_monthly,
+                    reset_at,
+                } => {
+                    use crate::usage::reset_rule::Kind;
+                    let reset = reset_weekly
+                        .map(|r| (Kind::Weekly, r))
+                        .or(reset_monthly.map(|r| (Kind::Monthly, r)))
+                        .or(reset_at.map(|r| (Kind::At, r)));
+                    usage::Action::NoteSet {
+                        target,
+                        text,
+                        new,
+                        reset,
+                    }
+                }
                 NoteAction::Reset { target, rule } => usage::Action::NoteReset { target, rule },
                 NoteAction::Clear { target } => usage::Action::NoteClear { target },
             },
