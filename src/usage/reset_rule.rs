@@ -62,7 +62,8 @@ fn time_off(rest: &str) -> Option<(i64, i64)> {
     Some((h * 3600 + m * 60, sign * (oh * 3600 + om * 60)))
 }
 
-/// `YYYY-MM-DDTHH:MM:SS<±HH:MM|Z>` (uppercase `T`, no fraction), a real calendar instant.
+/// `YYYY-MM-DDTHH:MM:SS<±HH:MM|Z>` (uppercase `T`, no fraction, seconds <= 59), a real calendar
+/// instant.
 fn instant(s: &str) -> Option<i64> {
     let b = s.as_bytes();
     let shape = s.len() >= 20
@@ -74,7 +75,9 @@ fn instant(s: &str) -> Option<i64> {
         && b[16] == b':'
         && [0..4, 5..7, 8..10, 11..13, 14..16, 17..19]
             .iter()
-            .all(|r| b[r.clone()].iter().all(u8::is_ascii_digit));
+            .all(|r| b[r.clone()].iter().all(u8::is_ascii_digit))
+        // no leap second: chrono takes `:60`, forge-stats (and the spec) do not
+        && b[17] <= b'5';
     if !shape {
         return None;
     }
@@ -343,6 +346,8 @@ mod tests {
             "2026-11-21T00:00:00+0800",
             "2026-02-30T00:00:00Z",
             "2026-11-21T24:00:00Z",
+            "2026-11-21T00:00:60Z",
+            "2026-12-31T23:59:60Z",
             "２026-11-21T00:00:00Z",
         ] {
             assert!(!valid(bad), "{bad:?}");

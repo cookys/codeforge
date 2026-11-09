@@ -406,6 +406,7 @@ test('parseFleetQuota reads note_resets_at and note_reset_rule; old files parse;
     { ...ok, note_reset_rule: '2026-11-21t00:00:00+08:00' },
     { ...ok, note_reset_rule: '2026-11-21T00:00:00.5Z' },
     { ...ok, note_reset_rule: '2026-13-21T00:00:00Z' },
+    { ...ok, note_reset_rule: '2026-12-31T23:59:60Z' }, // no leap second, as in codeforge
     { note_resets_at: 1793955600 },
     { note_reset_rule: 'fri@17:00+08:00' },
     { ...ok, note_reset_rule: 'friday@17:00+08:00' },
