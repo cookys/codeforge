@@ -40,6 +40,19 @@ const TOP_KEYS: [&str; 6] = [
 /// Present only when a local quota snapshot was dropped: reason -> count. The key is optional so
 /// an unchanged summary keeps the old exact shape; reasons are a closed set, never an alias.
 const DROPPED_KEY: &str = "dropped_accounts";
+/// Present only when a Codex rollout has token totals in the window: one entry per rollout,
+/// sorted by `rollout_id`. Absent (not empty) when there is none, so an unchanged summary keeps
+/// the old exact shape.
+const CODEX_KEY: &str = "codex_sessions";
+const CODEX_SESSION_KEYS: [&str; 7] = [
+    "rollout_id",
+    "account",
+    "input",
+    "output",
+    "cache_read",
+    "cache_write",
+    "reasoning",
+];
 const DROP_REASONS: [&str; 3] = [
     "written_at_ms_out_of_range",
     "resets_at_out_of_range",
@@ -85,6 +98,8 @@ pub const UINT_MAX: u64 = (1 << 53) - 1;
 #[cfg(test)]
 const ALIAS_RE: &str = "^[a-z0-9-]{1,24}$";
 #[cfg(test)]
+const ROLLOUT_RE: &str = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
+#[cfg(test)]
 const MODEL_RE: &str = "^[A-Za-z0-9._-]{1,64}$";
 #[cfg(test)]
 const ORG_RE: &str = "^[^@\\p{Cc}]{1,40}$";
@@ -99,7 +114,7 @@ const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 pub fn contract() -> Value {
     json!({
         "schema": SCHEMA,
-        "top": TOP_KEYS, "top_optional": [DROPPED_KEY], "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "email": EMAIL_RE, "name_max_cells": super::names::NAME_MAX, "window": WINDOW_KEYS, "window_optional": WINDOW_OPTIONAL, "day": DAY_KEYS,
+        "top": TOP_KEYS, "top_optional": [DROPPED_KEY, CODEX_KEY], "codex_session": CODEX_SESSION_KEYS, "rollout": ROLLOUT_RE, "max_codex_sessions": super::collect::MAX_CODEX_SESSIONS, "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "email": EMAIL_RE, "name_max_cells": super::names::NAME_MAX, "window": WINDOW_KEYS, "window_optional": WINDOW_OPTIONAL, "day": DAY_KEYS,
         "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
         "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE, "uint_max": UINT_MAX,
         "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
@@ -238,6 +253,26 @@ pub fn build(
     out
 }
 
+/// Add the optional `codex_sessions` array (nothing when `sessions` is empty). `cache_write` is
+/// always null: Codex reports no cache-write count, and a zero would be invented.
+pub fn with_codex_sessions(mut v: Value, sessions: &[super::collect::CodexSession]) -> Value {
+    if sessions.is_empty() {
+        return v;
+    }
+    let c = |n: u64| n.min(UINT_MAX);
+    v[CODEX_KEY] = sessions
+        .iter()
+        .map(|s| {
+            json!({
+                "rollout_id": s.rollout_id, "account": s.account, "input": c(s.input),
+                "output": c(s.output), "cache_read": c(s.cache_read), "cache_write": null,
+                "reasoning": c(s.reasoning),
+            })
+        })
+        .collect();
+    v
+}
+
 /// Why a snapshot cannot enter the summary (a `DROP_REASONS` entry), or `None`.
 fn bad_snapshot(s: &Snapshot) -> Option<&'static str> {
     if !(0..=UINT_MAX as i64).contains(&s.written_at_ms) {
@@ -302,6 +337,18 @@ fn is_day(s: &str) -> bool {
     s.len() == 10 && chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
 }
 
+/// A lowercase hyphenated uuid (`ROLLOUT_RE`).
+fn is_rollout(s: &str) -> bool {
+    s.len() == 36
+        && s.bytes().enumerate().all(|(i, b)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                b == b'-'
+            } else {
+                matches!(b, b'0'..=b'9' | b'a'..=b'f')
+            }
+        })
+}
+
 fn is_host(s: &str) -> bool {
     s.strip_prefix("host-").is_some_and(super::quota::is_hash8)
 }
@@ -342,6 +389,34 @@ pub fn validate(v: &Value) -> Result<()> {
                 bail!("summary.dropped_accounts: 有不允許的原因");
             }
             uint(n, "summary.dropped_accounts 的計數")?;
+        }
+    }
+    if let Some(c) = rest.as_object_mut().and_then(|m| m.remove(CODEX_KEY)) {
+        let list = c.as_array().context("summary.codex_sessions: 不是陣列")?;
+        if list.is_empty() || list.len() > super::collect::MAX_CODEX_SESSIONS {
+            bail!("summary.codex_sessions: 筆數不合規格");
+        }
+        let mut prev: Option<&str> = None;
+        for (i, e) in list.iter().enumerate() {
+            let at = format!("summary.codex_sessions[{i}]");
+            let m = obj(e, &CODEX_SESSION_KEYS, &at)?;
+            let id = m["rollout_id"].as_str().filter(|s| is_rollout(s));
+            let Some(id) = id else {
+                bail!("{at}.rollout_id: 不是 rollout uuid");
+            };
+            if prev.is_some_and(|p| p >= id) {
+                bail!("{at}.rollout_id: 沒有依 id 遞增排序");
+            }
+            prev = Some(id);
+            if !m["account"].as_str().is_some_and(valid_alias) {
+                bail!("{at}.account: 不是合法別名");
+            }
+            for k in ["input", "output", "cache_read", "reasoning"] {
+                uint(&m[k], &format!("{at}.{k}"))?;
+            }
+            if !m["cache_write"].is_null() {
+                bail!("{at}.cache_write: 必須是 null（Codex 沒有這個計數）");
+            }
         }
     }
     let top = obj(&rest, &TOP_KEYS, "summary")?;

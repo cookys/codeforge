@@ -83,6 +83,15 @@ test('parseUsage accepts the optional dropped_accounts record (closed reasons, u
   for (const d of bad) expect(parseUsage(JSON.stringify(summary({ dropped_accounts: d })), NOW).status).toBe('bad')
 })
 
+test('parseUsage accepts the optional codex_sessions array (sorted rollout ids, null cache_write) and refuses a malformed one', () => {
+  const e = (id: string, o: object = {}) => ({ rollout_id: id, account: 'codex-4cc1b5c8', input: 1, output: 2, cache_read: 3, cache_write: null, reasoning: 1, ...o })
+  const a = '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0001'
+  const b = '0199aaaa-bbbb-7ccc-8ddd-eeeeffff0002'
+  expect(parseUsage(JSON.stringify(summary({ codex_sessions: [e(a), e(b)] })), NOW).status).toBe('ok')
+  const bad: unknown[] = [[], [e(b), e(a)], [e(a), e(a)], [e('x')], [e(a, { cache_write: 0 })], [e(a, { input: -1 })], [e(a, { path: '/x' })], {}]
+  for (const d of bad) expect(parseUsage(JSON.stringify(summary({ codex_sessions: d })), NOW).status).toBe('bad')
+})
+
 test('countdown reads minutes, hours and days, and a dash once past', () => {
   expect(countdown(NOW + 45 * 60_000, NOW)).toBe('45m')
   expect(countdown(NOW + 130 * 60_000, NOW)).toBe('2h10m')

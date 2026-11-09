@@ -170,7 +170,9 @@ pub fn open(dir: &Path) -> Result<(Connection, Vec<String>)> {
          CREATE TABLE IF NOT EXISTS codex_sessions (
              session_id TEXT PRIMARY KEY, input INTEGER NOT NULL, cached INTEGER NOT NULL,
              cache_write INTEGER NOT NULL, output INTEGER NOT NULL, seen_ms INTEGER NOT NULL,
-             model TEXT NOT NULL DEFAULT 'unknown', project TEXT NOT NULL DEFAULT '');
+             model TEXT NOT NULL DEFAULT 'unknown', project TEXT NOT NULL DEFAULT '',
+             reasoning INTEGER NOT NULL DEFAULT 0, account TEXT NOT NULL DEFAULT '',
+             active_ms INTEGER NOT NULL DEFAULT 0);
          CREATE TABLE IF NOT EXISTS buckets (
              day TEXT NOT NULL, source TEXT NOT NULL, account TEXT NOT NULL, model TEXT NOT NULL,
              project TEXT NOT NULL, speed TEXT NOT NULL,
@@ -184,6 +186,23 @@ pub fn open(dir: &Path) -> Result<(Connection, Vec<String>)> {
              account TEXT PRIMARY KEY, observed_ms INTEGER NOT NULL,
              five_pct REAL, five_resets INTEGER, week_pct REAL, week_resets INTEGER);",
     )?;
+    // codex_sessions grew `reasoning`, `account`, `active_ms` (U6): add them to a db made before.
+    // A migrated row has account '' and stays out of the summary until its rollout grows again.
+    for (col, def) in [
+        ("reasoning", "INTEGER NOT NULL DEFAULT 0"),
+        ("account", "TEXT NOT NULL DEFAULT ''"),
+        ("active_ms", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
+        let have = conn
+            .prepare("SELECT 1 FROM pragma_table_info('codex_sessions') WHERE name = ?1")?
+            .exists([col])?;
+        if !have {
+            conn.execute(
+                &format!("ALTER TABLE codex_sessions ADD COLUMN {col} {def}"),
+                [],
+            )?;
+        }
+    }
     // No fd on usage.db, -wal or -shm is opened (or closed) from here on: closing any fd of a file
     // drops every POSIX lock this process holds on it, including the connection's DMS lock on
     // -shm. New -wal/-shm need no check: SQLite's unix VFS creates them with the db file's mode.
