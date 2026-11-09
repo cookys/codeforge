@@ -201,6 +201,8 @@ pub fn build(
             let cost = price::cost(&model, speed == "fast", &t);
             // saturated sums are capped at the contract's integer bound, so the summary validates
             let c = |n: u64| n.min(UINT_MAX);
+            // a root with no login is unattributed: null, one line apart from every account
+            let account = Some(account).filter(|a| a != super::collect::UNATTRIBUTED);
             json!({
                 "day": day, "source": source, "account": account, "model": model, "speed": speed,
                 "input": c(t.input), "output": c(t.output), "cache_write_5m": c(t.cache_write_5m),
@@ -476,8 +478,10 @@ pub fn validate(v: &Value) -> Result<()> {
         if !m["source"].as_str().is_some_and(|s| SOURCES.contains(&s)) {
             bail!("{at}.source: 不是 claude/codex");
         }
-        if !m["account"].as_str().is_some_and(valid_alias) {
-            bail!("{at}.account: 不是合法別名");
+        // null: a Claude root with no login (unattributed, PM 01M7052H79)
+        let unattributed = m["account"].is_null() && m["source"] == "claude";
+        if !unattributed && !m["account"].as_str().is_some_and(valid_alias) {
+            bail!("{at}.account: 不是合法別名，也不是 null（未歸屬）");
         }
         let model_ok = match m["model"].as_str() {
             Some(s) => super::collect::model_id(Some(s)) == s,
