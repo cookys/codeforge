@@ -610,7 +610,39 @@ fn statusline_is_plain_codeforge(v: &Value, sub: &str) -> bool {
     let [bin, arg] = words.as_slice() else {
         return false;
     };
-    let bin = bin.trim_matches(|c| c == '\'' || c == '"');
+    // The executable token must be a plain literal path: a matching quote pair around the whole
+    // token is allowed, any shell metacharacter is not (`a;/x/codeforge` runs `a`).
+    let bin = match (bin.chars().next(), bin.chars().last()) {
+        (Some(q @ ('\'' | '"')), Some(e)) if q == e && bin.len() >= 2 => &bin[1..bin.len() - 1],
+        _ => bin,
+    };
+    if bin.chars().any(|c| {
+        matches!(
+            c,
+            ';' | '|'
+                | '&'
+                | '$'
+                | '`'
+                | '('
+                | ')'
+                | '<'
+                | '>'
+                | '*'
+                | '?'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '~'
+                | '!'
+                | '#'
+                | '\\'
+                | '\''
+                | '"'
+        ) || c.is_control()
+    }) {
+        return false;
+    }
     let name = Path::new(bin).file_name().and_then(|n| n.to_str());
     *arg == sub && matches!(name, Some("codeforge") | Some("codeforge.exe"))
 }
@@ -1199,6 +1231,7 @@ mod tests {
             "codeforge statusline",
             "/home/u/.cargo/bin/codeforge statusline",
             "'/opt/cf/codeforge' statusline",
+            "\"/opt/cf/codeforge\" statusline",
         ] {
             let mut s = json!({"statusLine": {"type": "command", "command": cmd}, "theme": "dark"});
             assert_eq!(
@@ -1229,6 +1262,15 @@ mod tests {
             "/opt/notcodeforge statusline",
             "codeforge subagent-statusline",
             "/home/u/codeforge-wrapper.sh statusline",
+            "other-tool;/usr/bin/codeforge statusline",
+            "a|codeforge statusline",
+            "$(x)/codeforge statusline",
+            "`x`/codeforge statusline",
+            "a&codeforge statusline",
+            "~/codeforge statusline",
+            "/a/*/codeforge statusline",
+            "'/a/codeforge statusline",
+            "x\\y/codeforge statusline",
         ] {
             let mut s = json!({"statusLine": {"type": "command", "command": cmd}});
             assert!(
