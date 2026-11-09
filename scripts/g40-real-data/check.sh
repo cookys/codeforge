@@ -28,7 +28,7 @@ for a in "$@"; do
     -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) SRC_SHOWN="$a"
        # a relative live dir means relative to where the caller stood, not the repo root cd'd into above
-       SRC=$(cd "$CALLER_PWD" && { cd "$a" 2>/dev/null && pwd || echo "$CALLER_PWD/$a"; }) ;;
+       SRC=$(cd "$CALLER_PWD" && { CDPATH="" cd -- "$a" 2>/dev/null && pwd || echo "$CALLER_PWD/$a"; }) ;;
   esac
 done
 if [ "$NEGATIVE" = 1 ] && [ -n "$SRC" ]; then
