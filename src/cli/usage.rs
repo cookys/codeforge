@@ -1,5 +1,6 @@
 //! `codeforge usage` (G36 plan, phase 3): collect, write `summary.json`, print a table.
 
+use crate::usage::reset_rule::Kind;
 use crate::usage::{collect, price, quota, store, summary};
 use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
@@ -34,7 +35,8 @@ pub enum Action {
         target: String,
         text: String,
         new: bool,
-        reset_weekly: Option<String>,
+        /// at most one rule, of the kind its flag named
+        reset: Option<(crate::usage::reset_rule::Kind, String)>,
     },
     NoteReset {
         target: String,
@@ -241,8 +243,13 @@ pub fn run(action: Action) -> Result<()> {
             target,
             text,
             new,
-            reset_weekly,
-        } => note_set(&target, Some(&text), new, reset_weekly.as_deref()),
+            reset,
+        } => note_set(
+            &target,
+            Some(&text),
+            new,
+            reset.as_ref().map(|(k, r)| (*k, r.as_str())),
+        ),
         Action::NoteReset { target, rule } => note_reset(&target, &rule),
         Action::NoteClear { target } => note_set(&target, None, false, None),
         Action::PlanSet { target, plan } => plan_set(&target, Some(&plan)),
@@ -530,7 +537,7 @@ fn alias_list() -> Result<()> {
             };
             let text = notes.0.get(k).map_or("—", String::as_str);
             match resets.0.get(k) {
-                Some(rule) => println!("  {who}\t{text}\t每週重置 {rule}"),
+                Some(rule) => println!("  {who}\t{text}\t{} {rule}", rule_label(rule)),
                 None => println!("  {who}\t{text}"),
             }
         }
@@ -595,19 +602,39 @@ fn new_note_key(
     Ok(name.to_string())
 }
 
-/// A rule the operator typed: valid, else an error with the form.
-fn check_rule(rule: &str) -> Result<()> {
-    anyhow::ensure!(
-        crate::usage::reset_rule::valid(rule),
-        "重置規則格式是 <星期>@<HH:MM><±HH:MM>，星期為 mon tue wed thu fri sat sun（小寫），時區要寫明，例如 {}（每週五 17:00，UTC+8）",
-        crate::usage::reset_rule::EXAMPLE
-    );
+/// A rule the operator typed: valid (of `kind` when a flag named one), else an error with the form.
+fn check_rule(rule: &str, kind: Option<Kind>) -> Result<()> {
+    use crate::usage::reset_rule::{valid, valid_kind, EXAMPLE, EXAMPLE_AT, EXAMPLE_MONTHLY};
+    let weekly = format!("每週 <星期>@<HH:MM><±HH:MM>，星期為 mon tue wed thu fri sat sun（小寫），例如 {EXAMPLE}（每週五 17:00，UTC+8）");
+    let monthly = format!("每月 <日>@<HH:MM><±HH:MM>，日為 1 到 31（不補 0），例如 {EXAMPLE_MONTHLY}（每月 17 日 00:00，UTC+8）");
+    let at = format!("一次性 YYYY-MM-DDTHH:MM:SS±HH:MM（或結尾 Z），例如 {EXAMPLE_AT}");
+    let (ok, form) = match kind {
+        Some(k) => (
+            valid_kind(rule, k),
+            match k {
+                Kind::Weekly => weekly,
+                Kind::Monthly => monthly,
+                Kind::At => at,
+            },
+        ),
+        None => (valid(rule), format!("{weekly}；{monthly}；或{at}")),
+    };
+    anyhow::ensure!(ok, "重置規則格式是{form}；時區要寫明");
     Ok(())
+}
+
+/// The label for a stored rule.
+fn rule_label(rule: &str) -> &'static str {
+    match crate::usage::reset_rule::parse(rule).map(|r| r.kind()) {
+        Some(Kind::Monthly) => "每月重置",
+        Some(Kind::At) => "一次重置",
+        _ => "每週重置",
+    }
 }
 
 /// `usage note set` (`Some(text)`, with an optional weekly rule) / `usage note clear` (`None`:
 /// the note and the rule).
-fn note_set(target: &str, text: Option<&str>, new: bool, rule: Option<&str>) -> Result<()> {
+fn note_set(target: &str, text: Option<&str>, new: bool, rule: Option<(Kind, &str)>) -> Result<()> {
     use crate::usage::names;
     if let Some(t) = text {
         anyhow::ensure!(
@@ -616,9 +643,10 @@ fn note_set(target: &str, text: Option<&str>, new: bool, rule: Option<&str>) -> 
             names::NOTE_MAX
         );
     }
-    if let Some(r) = rule {
-        check_rule(r)?;
+    if let Some((k, r)) = rule {
+        check_rule(r, Some(k))?;
     }
+    let rule = rule.map(|(_, r)| r);
     let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
     let set = names::load(&path);
     let known = known_accounts();
@@ -639,7 +667,7 @@ fn note_set(target: &str, text: Option<&str>, new: bool, rule: Option<&str>) -> 
             names::set_note_and_reset(&path, &key, t, rule)?;
             println!("已設定備註：{target} → {t}");
             if let Some(r) = rule {
-                println!("已設定每週重置：{target} → {r}");
+                println!("已設定{}：{target} → {r}", rule_label(r));
             }
         }
         None if names::clear_note_and_reset(&path, &key)? => {
@@ -689,7 +717,7 @@ fn plan_set(target: &str, plan: Option<&str>) -> Result<()> {
 /// known account or provider.
 fn note_reset(target: &str, rule: &str) -> Result<()> {
     use crate::usage::names;
-    check_rule(rule)?;
+    check_rule(rule, None)?;
     let path = names::default_path().context("找不到設定資料夾（HOME 沒有設）")?;
     let set = names::load(&path);
     let known = known_accounts();
@@ -701,7 +729,7 @@ fn note_reset(target: &str, rule: &str) -> Result<()> {
     } else {
         target
     };
-    println!("已設定每週重置：{target} → {rule}");
+    println!("已設定{}：{target} → {rule}", rule_label(rule));
     Ok(())
 }
 
@@ -889,14 +917,39 @@ mod tests {
 
     #[test]
     fn a_reset_rule_is_checked_with_a_chinese_error_that_shows_the_form() {
-        assert!(check_rule("fri@17:00+08:00").is_ok());
+        assert!(check_rule("fri@17:00+08:00", Some(Kind::Weekly)).is_ok());
+        assert!(check_rule("17@00:00+08:00", Some(Kind::Monthly)).is_ok());
+        assert!(check_rule("2026-11-21T00:00:00+08:00", Some(Kind::At)).is_ok());
+        for any in ["fri@17:00+08:00", "17@00:00+08:00", "2026-11-21T00:00:00Z"] {
+            assert!(check_rule(any, None).is_ok(), "{any}");
+        }
         for bad in ["fri", "Fri@17:00+08:00", "fri@17:00", "fri@25:00+08:00", ""] {
-            let e = check_rule(bad).unwrap_err().to_string();
+            let e = check_rule(bad, Some(Kind::Weekly)).unwrap_err().to_string();
             assert!(
                 e.contains("fri@17:00+08:00") && e.contains("重置規則"),
                 "{bad:?}: {e}"
             );
         }
+        // a flag takes only its own form, and the error shows that form
+        let e = check_rule("fri@17:00+08:00", Some(Kind::Monthly))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("17@00:00+08:00") && !e.contains("fri@"), "{e}");
+        let e = check_rule("17@00:00+08:00", Some(Kind::At))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("2026-11-21T00:00:00+08:00"), "{e}");
+        // `note reset` takes any form and shows all three
+        let e = check_rule("17@00", None).unwrap_err().to_string();
+        assert!(
+            e.contains("fri@17:00+08:00")
+                && e.contains("17@00:00+08:00")
+                && e.contains("T00:00:00"),
+            "{e}"
+        );
+        assert_eq!(rule_label("fri@17:00+08:00"), "每週重置");
+        assert_eq!(rule_label("17@00:00+08:00"), "每月重置");
+        assert_eq!(rule_label("2026-11-21T00:00:00Z"), "一次重置");
     }
 
     #[test]
