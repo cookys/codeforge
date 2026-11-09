@@ -122,6 +122,9 @@ pub struct Row {
     pub old_hosts: Vec<String>,
     /// Capture time of the newest chosen window (written_at_ms when no window).
     pub observed_at_ms: Option<i64>,
+    /// Capture time of each chosen window; a window older than [`STALE_MS`] is marked stale.
+    pub weekly_seen_ms: Option<i64>,
+    pub five_seen_ms: Option<i64>,
     pub state: State,
     pub weekly: Option<Weekly>,
     pub five_hour: Option<Win>,
@@ -374,6 +377,8 @@ pub fn merge(
                 hosts: acc.hosts.into_iter().collect(),
                 old_hosts: old_hosts.into_iter().collect(),
                 observed_at_ms: at,
+                weekly_seen_ms: seven.as_ref().map(|c| c.2),
+                five_seen_ms: five.as_ref().map(|c| c.2),
                 state: State::NoSource,
                 weekly: None,
                 five_hour: None,
@@ -500,6 +505,8 @@ pub fn attach_notes(f: &mut Fleet, notes: &super::names::Notes) {
         hosts: Vec::new(),
         old_hosts: Vec::new(),
         observed_at_ms: None,
+        weekly_seen_ms: None,
+        five_seen_ms: None,
         state: State::NoSource,
         weekly: None,
         five_hour: None,
@@ -544,6 +551,17 @@ fn warn_name(w: Option<Warn>) -> Value {
 }
 
 /// `codeforge.fleet-quota/1`.
+/// A chosen window captured longer ago than this is marked `stale` (its `age_s` says by how much).
+pub const STALE_MS: i64 = 2 * 3600 * 1000;
+
+/// `age_s` and `stale` of a window captured at `seen_ms`.
+fn age_keys(v: &mut Value, seen_ms: Option<i64>, now_ms: i64) {
+    if let Some(t) = seen_ms {
+        v["age_s"] = json!(((now_ms - t) / 1000).max(0));
+        v["stale"] = json!(now_ms - t > STALE_MS);
+    }
+}
+
 pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
     let accounts: Vec<Value> = f
         .rows
@@ -570,6 +588,12 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
                 })),
                 "five_hour": r.five_hour.map(|w| json!({"pct": w.pct, "resets_at": w.resets_at, "reset": r.five_reset})),
             });
+            if !a["weekly"].is_null() {
+                age_keys(&mut a["weekly"], r.weekly_seen_ms, now_ms);
+            }
+            if !a["five_hour"].is_null() {
+                age_keys(&mut a["five_hour"], r.five_seen_ms, now_ms);
+            }
             // optional keys, present only when set (an older reader's file shape is unchanged)
             if let Some(n) = r.source_note {
                 a["source_note"] = json!(n.name());
