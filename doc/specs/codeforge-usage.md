@@ -98,6 +98,15 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   `no_source`、無視窗、無 `source_note`、`hosts` 空、`note` 為備註文字；別的帳號已顯示同名時帳號優先、這列丟棄。
   文字表與分頁照一般 no_source 列畫（附備註）；`usage alias list` 以「（無資料）」列出。這列不算帳號：
   `alias`／`note` 解析名字時不把它當已知帳號。
+- **訂閱方案（`[plans]`）**：同一個 `accounts.toml` 的選填 `[plans]` 表，鍵同 `[notes]`（provider 標籤、帳號鍵或 `--new` 名字；
+  帳號鍵優先於 provider），值是封閉集合的 id：`pro`、`max5x`、`max20x`、`team`、`enterprise`、`api`；顯示為
+  Pro、Max 5x、Max 20x、Team、Enterprise、API。`codeforge usage plan set <target> <方案>` 寫入（target 的解析同 `usage note set`；
+  輸入別名 `5x`→`max5x`、`20x`→`max20x`，大小寫不拘，存的一律是 id）、`usage plan clear <target>` 清除；寫入時不在集合內報繁體中文錯誤並列出可用值，
+  檔案不動。載入時不在集合內的條目（或非字串）略過，視為未知。檔案其餘內容原樣保留，0600、原子寫入。
+  **只存在本機**：方案不進 `summary.json`、不進 `usage push`（同備註）。`usage fleet` 對有方案的列加選填鍵 `plan`（id 字串）；
+  未知時不帶此鍵。文字表在名字與 email 後面顯示 `方案 Max 5x`／`plan Max 5x`，未知顯示 `方案 未知`／`plan unknown`；
+  `usage alias list` 每個帳號列多一欄方案（未知同上）。
+  **無效值的處理（Rust 與 forge-stats 一致）**：不在集合內的 `plan` 不是錯誤，一律當未知；forge-stats 解析器不因此把整份檔判為 bad，該列照畫並顯示「方案 未知」。
 - **operator 每週重置規則（`[resets]`，低可信度）**：同一個 `accounts.toml` 的選填 `[resets]` 表，鍵同 `[notes]`
   （provider 標籤、帳號鍵或 `--new` 名字），值是規則 `<dow>@<HH:MM><±HH:MM>`：`dow` 為小寫 `mon tue wed thu fri sat sun`，
   時間 24 小時制，**必須寫明 UTC 偏移**，例如 `fri@17:00+08:00` = 每週五 17:00（UTC+8）。不合規的條目載入時略過（同備註）。
@@ -248,11 +257,11 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
 - **JSON**（`--json` 印出；`--out <file>` 以暫存檔＋rename 原子寫入，0600，可與文字表並用）：
   `{"schema":"codeforge.fleet-quota/1","generated_at_ms":…,"use_target":0.85,"skipped":{},"accounts":[…]}`，每筆
   `{alias, name, org|null, email|null, provider("claude"|"codex"|"kimi"|…), hosts[], old_hosts[]（hosts 的子集，排序）, observed_at_ms|null, age_s|null, state, weekly, five_hour}`，
-  另有兩個選填鍵：`source_note`（只在 `no_source` 列，`"web_only"|"needs_token"|"no_window"`）、`note`（operator 備註，見上），以及成對的 `note_resets_at`／`note_reset_rule`（operator 每週重置規則，見上；低可信度）；
+  另有兩個選填鍵：`source_note`（只在 `no_source` 列，`"web_only"|"needs_token"|"no_window"`）、`note`（operator 備註，見上），以及成對的 `note_resets_at`／`note_reset_rule`（operator 每週重置規則，見上；低可信度）；另有選填 `plan`（`"pro"|"max5x"|"max20x"|"team"|"enterprise"|"api"`，operator 設定的訂閱方案，見上；未知時不帶）；
   `state`：`ok`（有視窗可畫）、`stale`（6 小時內有觀察但視窗全已重置）、`expired`（最後觀察超過 6 小時）、`no_source`；
   `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null, reset}`（`resets_at`、`exhaust_at`
   為 unix 秒；`reset` 為 true 時視窗已重置，`pct` 不是現值），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at, reset}|null`。
-  forge-stats 解析器對 `old_hosts`、`reset`、`source_note`、`note`、`note_resets_at`／`note_reset_rule` 容忍缺席（舊檔：空、false、無），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
+  forge-stats 解析器對 `old_hosts`、`reset`、`source_note`、`note`、`note_resets_at`／`note_reset_rule`、`plan` 容忍缺席（`plan` 的無效值也當未知，不拒絕）（舊檔：空、false、無），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
   讀者（forge-stats 分頁、fleet.console/1 的配額區）直接讀，不重算。
 
 **寫檔（`usage collect` 順手維護）**：環境變數 `CODEFORGE_FLEET_USAGE_DIR` 有設且非空時，`codeforge usage collect`

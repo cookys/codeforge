@@ -285,6 +285,85 @@ pub fn clear_note_and_reset(path: &Path, key: &str) -> Result<bool> {
     Ok(had.contains(&true))
 }
 
+/// The closed set of subscription plan ids (fleet-quota/1 `plan`), in display order.
+pub const PLANS: [&str; 6] = ["pro", "max5x", "max20x", "team", "enterprise", "api"];
+
+/// The canonical plan id for `s` (case-insensitive; `5x`/`20x` are input aliases), else `None`.
+pub fn parse_plan(s: &str) -> Option<&'static str> {
+    let l = s.to_ascii_lowercase();
+    let l = match l.as_str() {
+        "5x" => "max5x",
+        "20x" => "max20x",
+        o => o,
+    };
+    PLANS.iter().find(|p| **p == l).copied()
+}
+
+/// The name a plan id is shown by: `Pro`, `Max 5x`, `Max 20x`, `Team`, `Enterprise`, `API`.
+pub fn plan_display(id: &str) -> &'static str {
+    match id {
+        "pro" => "Pro",
+        "max5x" => "Max 5x",
+        "max20x" => "Max 20x",
+        "team" => "Team",
+        "enterprise" => "Enterprise",
+        _ => "API",
+    }
+}
+
+/// Operator-set subscription plans: the same keys as [`Notes`] → a canonical plan id. Local
+/// only: they go into `fleet-quota.json` and the screens, never into a summary or `usage push`.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Plans(pub BTreeMap<String, String>);
+
+impl Plans {
+    /// The plan for an account: its key's plan wins over its provider's.
+    pub fn for_row(&self, key: &str, provider: &str) -> Option<&'static str> {
+        self.0
+            .get(key)
+            .or_else(|| self.0.get(provider))
+            .and_then(|p| parse_plan(p))
+    }
+}
+
+/// The `[plans]` of `path`, for drawing: any error is no plans and an entry that is not a plan
+/// id is skipped (so is a value that is not a string).
+pub fn load_plans(path: &Path) -> Plans {
+    let Ok(Some(t)) = read_table(path) else {
+        return Plans::default();
+    };
+    let mut out = BTreeMap::new();
+    if let Some(toml::Value::Table(plans)) = t.get("plans") {
+        for (k, v) in plans {
+            if let Some(id) = v.as_str().and_then(parse_plan) {
+                if !k.is_empty() {
+                    out.insert(k.clone(), id.to_string());
+                }
+            }
+        }
+    }
+    Plans(out)
+}
+
+/// The plans from [`default_path`] (none when there is no path).
+pub fn load_plans_default() -> Plans {
+    default_path().map(|p| load_plans(&p)).unwrap_or_default()
+}
+
+/// Set `key`'s plan (`plan` is a name [`parse_plan`] accepts; stored as the canonical id).
+pub fn set_plan(path: &Path, key: &str, plan: &str) -> Result<()> {
+    let id = parse_plan(plan).with_context(|| format!("不認得方案「{plan}」"))?;
+    edit(path, "plans", key, Some(id)).map(|_| ())
+}
+
+/// Remove `key`'s plan; whether it was there. A missing file has none.
+pub fn clear_plan(path: &Path, key: &str) -> Result<bool> {
+    if read_table(path)?.is_none() {
+        return Ok(false);
+    }
+    edit(path, "plans", key, None)
+}
+
 /// The provider of a `<provider>-<8 hex>` key (`codex` for `codex-4cc1b5c8`), else `None`.
 pub fn key_provider(key: &str) -> Option<&str> {
     if key.starts_with("acct-") || !key_like(key) {
@@ -850,6 +929,68 @@ mod tests {
         ] {
             assert!(!valid_note(bad), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn plan_ids_aliases_and_display_forms() {
+        assert_eq!(parse_plan("pro"), Some("pro"));
+        assert_eq!(parse_plan("Max5x"), Some("max5x"));
+        assert_eq!(parse_plan("5x"), Some("max5x"));
+        assert_eq!(parse_plan("20x"), Some("max20x"));
+        for bad in ["", "free", "max", "max 5x", "10x", "pro "] {
+            assert_eq!(parse_plan(bad), None, "{bad:?}");
+        }
+        let shown: Vec<&str> = PLANS.iter().map(|p| plan_display(p)).collect();
+        assert_eq!(
+            shown,
+            ["Pro", "Max 5x", "Max 20x", "Team", "Enterprise", "API"]
+        );
+    }
+
+    #[test]
+    fn plans_set_clear_and_load_keep_the_rest_and_skip_invalid_entries() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("accounts.toml");
+        assert_eq!(load_plans(&p), Plans::default());
+        assert!(!clear_plan(&p, "kimi").unwrap());
+        std::fs::write(
+            &p,
+            "[plans]\ncodex = \"team\"\nbad = \"gold\"\nnum = 5\n[notes]\nkimi = \"x\"\n[other]\nk = 1\n",
+        )
+        .unwrap();
+        assert_eq!(
+            load_plans(&p),
+            Plans(BTreeMap::from([("codex".into(), "team".into())]))
+        );
+        set_plan(&p, "acct-11111111", "max5x").unwrap();
+        let t: toml::Table = std::fs::read_to_string(&p).unwrap().parse().unwrap();
+        assert_eq!(
+            t["plans"]["bad"].as_str(),
+            Some("gold"),
+            "skipped entry kept"
+        );
+        assert_eq!(t["notes"]["kimi"].as_str(), Some("x"));
+        assert_eq!(t["other"]["k"].as_integer(), Some(1));
+        assert_eq!(load_plans(&p).0.len(), 2);
+        assert!(clear_plan(&p, "acct-11111111").unwrap());
+        assert!(!clear_plan(&p, "acct-11111111").unwrap());
+        assert_eq!(load_plans(&p).0.len(), 1);
+        assert_eq!(load_notes(&p).0.len(), 1);
+        let pl = Plans(BTreeMap::from([
+            ("acct-1".into(), "pro".into()),
+            ("codex".into(), "team".into()),
+        ]));
+        assert_eq!(pl.for_row("acct-1", "codex"), Some("pro"));
+        assert_eq!(pl.for_row("codex-2", "codex"), Some("team"));
+        assert_eq!(pl.for_row("acct-2", "claude"), None);
+    }
+
+    #[test]
+    fn an_invalid_plan_is_refused_on_set_and_leaves_the_file_alone() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("accounts.toml");
+        assert!(set_plan(&p, "acct-1", "gold").is_err());
+        assert!(!p.exists());
     }
 
     #[test]

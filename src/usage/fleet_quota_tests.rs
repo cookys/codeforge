@@ -1239,3 +1239,66 @@ fn the_text_table_shows_a_dim_countdown_after_the_note_and_cuts_the_note_not_the
     let narrow = text(&f, 60, NOW_MS, &Tr("zh-TW".into()), false);
     assert!(narrow.contains("… ◷ 2d23h"), "{narrow}");
 }
+
+fn plans(v: &[(&str, &str)]) -> super::names::Plans {
+    super::names::Plans(
+        v.iter()
+            .map(|(k, n)| (k.to_string(), n.to_string()))
+            .collect(),
+    )
+}
+
+#[test]
+fn a_row_carries_plan_in_json_only_when_set_and_the_text_says_unknown_otherwise() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![
+            acct(
+                "work",
+                60,
+                Some((0.3, NOW_S + 2 * H)),
+                Some((0.4, NOW_S + 3 * D)),
+            ),
+            acct(
+                "other",
+                60,
+                Some((0.3, NOW_S + 2 * H)),
+                Some((0.4, NOW_S + 3 * D)),
+            ),
+        ],
+        vec![],
+    );
+    let mut f = run(&[("a.json", &s)]);
+    attach_plans(&mut f, &plans(&[("work", "max5x"), ("kimi", "api")]));
+    assert_eq!(row(&f, "work").plan, Some("max5x"));
+    assert_eq!(row(&f, "other").plan, None);
+    let v = to_json(&f, NOW_MS);
+    let by = |a: &str| {
+        v["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["alias"] == a)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(by("work")["plan"], "max5x");
+    assert!(by("other").get("plan").is_none());
+    assert_eq!(
+        by("kimi")["plan"],
+        "api",
+        "a provider key applies to its rows"
+    );
+    for cols in [100, 80, 60, 40, 20] {
+        let zh = text(&f, cols, NOW_MS, &Tr("zh-TW".into()), false);
+        let en = text(&f, cols, NOW_MS, &Tr("en".into()), false);
+        for l in zh.lines().chain(en.lines()) {
+            assert!(UnicodeWidthStr::width(l) <= cols, "{cols}: {l:?}");
+        }
+        if cols >= 80 {
+            assert!(zh.contains("Max 5x"), "{cols}: {zh}");
+            assert!(zh.contains("未知"), "{cols}: {zh}");
+            assert!(en.contains("unknown"), "{cols}: {en}");
+        }
+    }
+}

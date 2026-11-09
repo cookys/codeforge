@@ -419,6 +419,8 @@ codeforge usage alias set <email|name> <new>  # name an account (~/.config/codef
 codeforge usage note set <provider|name> <text>  # a local note (≤ 40 cells) shown dim at the end of the row in `usage fleet`
 codeforge usage note set --new <name> <text>   # an account with no data at all: its own no_source row in `usage fleet`
 codeforge usage note set <provider|name> <text> --reset-weekly fri@17:00+08:00  # also a weekly reset rule (operator-provided): `usage fleet` adds note_resets_at and a ◷ countdown
+codeforge usage plan set <provider|name> <plan>  # subscription plan (pro, max5x, max20x, team, enterprise, api; 5x/20x accepted): shown in `usage fleet`, `usage alias list` and the pane, `plan` in fleet-quota/1; local only, never pushed
+codeforge usage plan clear <provider|name>
 codeforge usage note reset <provider|name> <rule>  # the rule only
 codeforge usage note clear <provider|name>      # clears the note and the rule
 ```

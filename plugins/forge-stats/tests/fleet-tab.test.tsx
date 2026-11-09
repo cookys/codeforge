@@ -83,11 +83,11 @@ test('with the file the strip gains the tab, and it draws warnings first, then o
   expect(rows[1]).toMatch(/^will waste · waste · week 50% · resets ◷ 1d6h · target 85%$/)
   expect(rows[2]).toMatch(/^will fall short \(est\.\) · short · week 60% · est\. out in 2d5h · resets ◷ 2d23h$/)
   const body = rows.slice(3)
-  expect(body.find(r => r.startsWith('waste'))).toMatch(/^waste +week 50% ◷ 1d6h {2}5h 20% {2}gpu-a$/)
-  expect(body.find(r => r.startsWith('short'))).toMatch(/^short +week 60% ◷ 2d23h {2}5h 91% tight {2}gpu-a$/)
-  expect(body.find(r => r.startsWith('tight'))).toMatch(/^tight +week 91% tight ◷ 4d5h {2}5h 10% {2}gpu-a,pm {2}45m ago$/)
-  expect(body.find(r => r.startsWith('codeforge') || r.startsWith('codex'))).toMatch(/^codex +no source {2}gpu-a$/)
-  expect(body.find(r => r.startsWith('old-acct'))).toMatch(/^old-acct +expired {2}gpu-a {2}8h0m ago$/)
+  expect(body.find(r => r.startsWith('waste'))).toMatch(/^waste +week 50% ◷ 1d6h {2}5h 20% {2}plan unknown {2}gpu-a$/)
+  expect(body.find(r => r.startsWith('short'))).toMatch(/^short +week 60% ◷ 2d23h {2}5h 91% tight {2}plan unknown {2}gpu-a$/)
+  expect(body.find(r => r.startsWith('tight'))).toMatch(/^tight +week 91% tight ◷ 4d5h {2}5h 10% {2}plan unknown {2}gpu-a,pm {2}45m ago$/)
+  expect(body.find(r => r.startsWith('codeforge') || r.startsWith('codex'))).toMatch(/^codex +no source {2}plan unknown {2}gpu-a$/)
+  expect(body.find(r => r.startsWith('old-acct'))).toMatch(/^old-acct +expired {2}plan unknown {2}gpu-a {2}8h0m ago$/)
   await ui.unmount()
 })
 
@@ -436,3 +436,35 @@ test('a narrow pane cuts the rule row note with … and keeps the countdown', as
     await ui.unmount()
   }
 })
+
+// the operator's subscription plan (`usage plan set`): an optional closed-set key; an invalid value is unknown, never `bad`
+test('parseFleetQuota reads a valid plan, and treats an invalid or absent one as unknown (not bad)', () => {
+  const accounts = [
+    acct({ alias: 'a', plan: 'max5x' }),
+    acct({ alias: 'b', plan: 'api' }),
+    acct({ alias: 'c' }),
+    acct({ alias: 'd', plan: 'gold' }),
+    acct({ alias: 'e', plan: 'Pro' }),
+    acct({ alias: 'f', plan: 5 }),
+    acct({ alias: 'g', plan: null }),
+  ]
+  const v = parseFleetQuota(JSON.stringify(fleet(accounts)))
+  if (v.status !== 'ok') throw new Error('not ok')
+  expect(v.accounts.map(a => [a.alias, a.plan])).toEqual([['a', 'max5x'], ['b', 'api'], ['c', null], ['d', null], ['e', null], ['f', null], ['g', null]])
+})
+
+for (const [zh, plan, unknown, max] of [
+  [true, '方案', '未知', 'Max 5x'],
+  [false, 'plan', 'unknown', 'Max 5x'],
+] as const) {
+  test(`the all-accounts pane shows the plan, and ${unknown} when absent (${zh ? 'zh-TW' : 'en'})`, async ($, on) => {
+    const f = fleet([acct({ alias: 'a', name: 'alpha', weekly: wk({ pct: 0.2 }), plan: 'max5x' }), acct({ alias: 'b', name: 'beta', weekly: wk({ pct: 0.3 }) })])
+    world(on, { fleet: JSON.stringify(f), zh })
+    const ui = await open($, 102)
+    await ui.press({ key: 'tab-fleet' })
+    const rows = rowsOf(await ui.drawn())
+    expect(rows.some(r => /^alpha /.test(r) && r.includes(`${plan} ${max}`))).toBe(true)
+    expect(rows.some(r => /^beta /.test(r) && r.includes(`${plan} ${unknown}`))).toBe(true)
+    await ui.unmount()
+  })
+}
