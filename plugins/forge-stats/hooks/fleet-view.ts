@@ -20,6 +20,12 @@ export type FleetWeekly = FleetWin & { warn: 'waste' | 'short' | null; exhaustAt
 export type FleetState = 'ok' | 'stale' | 'expired' | 'no_source'
 /** Why a `no_source` row has no data (a closed set). */
 export type FleetSourceNote = 'web_only' | 'needs_token' | 'no_window'
+/** The operator's subscription plan (a closed set, the same ids as codeforge's `PLANS`). */
+export type FleetPlan = 'pro' | 'max5x' | 'max20x' | 'team' | 'enterprise' | 'api'
+const PLAN_IDS: readonly string[] = ['pro', 'max5x', 'max20x', 'team', 'enterprise', 'api']
+// an invalid or non-string `plan` is not a refusal: the row's plan is unknown (codeforge's loader skips such an entry the same way)
+const asPlan = (v: unknown): FleetPlan | null => (typeof v === 'string' && PLAN_IDS.includes(v) ? (v as FleetPlan) : null)
+const PLAN_NAME: Record<FleetPlan, string> = { pro: 'Pro', max5x: 'Max 5x', max20x: 'Max 20x', team: 'Team', enterprise: 'Enterprise', api: 'API' }
 export type FleetAccount = {
   /** Internal key only: never drawn. */
   alias: string
@@ -43,6 +49,8 @@ export type FleetAccount = {
   /** The operator's weekly reset rule (`fri@17:00+08:00`) and its next occurrence (epoch s): operator-provided, low confidence, extra to any real window. Both or neither. */
   noteResetRule: string | null
   noteResetsAt: number | null
+  /** The operator's subscription plan; null when unknown (absent, or not one of the closed set). */
+  plan: FleetPlan | null
 }
 export type FleetQuotaView =
   | { status: 'ok'; generatedAt: number; useTarget: number; skipped: number; accounts: FleetAccount[] }
@@ -102,7 +110,7 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
   if (!Array.isArray(raw.accounts) || raw.accounts.length > FLEET_MAX_ACCOUNTS) return BAD
   const accounts: FleetAccount[] = []
   for (const a of raw.accounts as unknown[]) {
-    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name', 'source_note', 'note', 'note_resets_at', 'note_reset_rule'])) return BAD
+    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name', 'source_note', 'note', 'note_resets_at', 'note_reset_rule', 'plan'])) return BAD
     if (a.source_note !== undefined && (a.state !== 'no_source' || !isSourceNote(a.source_note))) return BAD
     if (a.note !== undefined && !isNote(a.note)) return BAD
     if ((a.note_resets_at === undefined) !== (a.note_reset_rule === undefined) || (a.note_resets_at !== undefined && (!isInt(a.note_resets_at) || !isRule(a.note_reset_rule)))) return BAD
@@ -125,7 +133,7 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
       : typeof a.org === 'string' ? a.org
       : keyDefault(a.alias)
     if (name === null) continue
-    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f, sourceNote: isSourceNote(a.source_note) ? a.source_note : null, note: isNote(a.note) ? a.note : null, noteResetRule: isRule(a.note_reset_rule) ? a.note_reset_rule : null, noteResetsAt: isInt(a.note_resets_at) ? a.note_resets_at : null })
+    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f, sourceNote: isSourceNote(a.source_note) ? a.source_note : null, note: isNote(a.note) ? a.note : null, noteResetRule: isRule(a.note_reset_rule) ? a.note_reset_rule : null, noteResetsAt: isInt(a.note_resets_at) ? a.note_resets_at : null, plan: asPlan(a.plan) })
   }
   return {
     status: 'ok',
@@ -212,13 +220,14 @@ function accountBody(a: FleetAccount, aliasW: number, cols: number, tr: T, now: 
   // the chosen hosts first, then the old ones with the marker
   const shown = [...a.hosts.filter(h => !a.oldHosts.includes(h)), ...a.hosts.filter(h => a.oldHosts.includes(h)).map(h => tr('fleetOld', { h }))]
   const hosts: QLine = shown.length > 0 ? [seg('  ' + shown.join(','), 'dim')] : []
+  const plan: QLine = [seg('  ' + tr('fleetPlan', { p: a.plan === null ? tr('fleetPlanUnknown') : PLAN_NAME[a.plan] }), 'dim')]
   const tight = (p: number): QLine => (isTight(p) ? [seg(' ' + tr('quotaTight'), 'bold', 'warning')] : [])
   const word = (id: 'fleetNoSource' | 'fleetExpired' | 'fleetStale'): QLine => [seg(tr(id), 'idle')]
   if (a.state !== 'ok') {
     const w = word(a.state === 'no_source' ? 'fleetNoSource' : a.state === 'expired' ? 'fleetExpired' : 'fleetStale')
     // the reason a row has no source, dim after the word; dropped before the word itself
     const why: QLine = a.sourceNote === null ? [] : [seg(SEP + tr(SOURCE_TEXT[a.sourceNote]), 'dim')]
-    return fit([[name, ...w, ...why, ...hosts, ...age], [name, ...w, ...why, ...age], [name, ...w, ...why], [name, ...w]], cols)
+    return fit([[name, ...w, ...why, ...plan, ...hosts, ...age], [name, ...w, ...why, ...plan, ...age], [name, ...w, ...why, ...age], [name, ...w, ...why], [name, ...w]], cols)
   }
   const wk = a.weekly
   const five = a.fiveHour
@@ -229,7 +238,8 @@ function accountBody(a: FleetAccount, aliasW: number, cols: number, tr: T, now: 
   // the widest form first; a field is dropped whole: hosts, the age, the 5h window, then the countdown
   return fit(
     [
-      [name, ...W, ...R, ...F, ...hosts, ...age],
+      [name, ...W, ...R, ...F, ...plan, ...hosts, ...age],
+      [name, ...W, ...R, ...F, ...plan, ...age],
       [name, ...W, ...R, ...F, ...age],
       [name, ...W, ...R, ...F],
       [name, ...W, ...R],
