@@ -491,3 +491,30 @@ for (const [zh, plan, unknown, max] of [
     await ui.unmount()
   })
 }
+
+// PM 01M70CZ6A0: used after the 5h reset but no 5h reading came: `five_hour_state: "no_source"`, never the old pct
+for (const [zh, word] of [
+  [true, '5h 無來源'],
+  [false, '5h no source'],
+] as const) {
+  test(`five_hour_state no_source (${zh ? 'zh-TW' : 'en'}): the 5h slot says no source, never the old 99%`, async ($, on) => {
+    world(on, { fleet: JSON.stringify(fleet([acct({ alias: 'max', weekly: wk({ pct: 0.67 }), five_hour_state: 'no_source' })])), zh })
+    const ui = await open($, 82)
+    await ui.press({ key: 'tab-fleet' })
+    const line = rowsOf(await ui.drawn()).find(r => r.startsWith('max'))
+    expect(line).toContain(word)
+    expect(line?.includes('99%')).toBe(false)
+    await ui.unmount()
+  })
+}
+
+test('parseFleetQuota reads five_hour_state no_source only with a null five_hour', () => {
+  const v = parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', weekly: wk({}), five_hour_state: 'no_source' }), acct({ alias: 'b', weekly: wk({}) })])))
+  if (v.status !== 'ok') throw new Error('not ok')
+  expect(v.accounts.map(a => a.fiveNoSource)).toEqual([true, false])
+  for (const bad of [
+    acct({ alias: 'a', five_hour_state: 'gone' }),
+    acct({ alias: 'a', five_hour_state: 'no_source', five_hour: { pct: 0.99, resets_at: 5, reset: true } }),
+  ])
+    expect(parseFleetQuota(JSON.stringify(fleet([bad]))).status).toBe('bad')
+})
