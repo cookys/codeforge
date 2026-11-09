@@ -9,9 +9,11 @@
 #
 # The live dir is copied into a scratch sandbox first; HOME and codeforge's data dirs point into the sandbox, so
 # nothing is written to the real live dir or the real home. Captures go to target/g40-real-data/ (gitignored).
+# G40_STOP_AFTER_COPY=1 exits right after the live dir is copied (used by check.test.sh).
 # Needs: cargo, python3, claude.
 set -euo pipefail
 
+CALLER_PWD=$(pwd)
 cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
 HERE="$ROOT/scripts/g40-real-data"
@@ -19,11 +21,14 @@ WIDTHS=(80 120 160 200 240)
 
 NEGATIVE=0
 SRC=""
+SRC_SHOWN=""
 for a in "$@"; do
   case "$a" in
     --negative) NEGATIVE=1 ;;
     -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
-    *) SRC="$a" ;;
+    *) SRC_SHOWN="$a"
+       # a relative live dir means relative to where the caller stood, not the repo root cd'd into above
+       SRC=$(cd "$CALLER_PWD" && { cd "$a" 2>/dev/null && pwd || echo "$CALLER_PWD/$a"; }) ;;
   esac
 done
 if [ "$NEGATIVE" = 1 ] && [ -n "$SRC" ]; then
@@ -40,7 +45,7 @@ mkdir -p "$OUT" "$T/home" "$T/data" "$T/proj"
 # ---- the live dir, copied into the sandbox ----
 if [ -n "$SRC" ]; then
   if [ ! -d "$SRC/quota" ]; then
-    echo "g40-real-data: $SRC has no quota/ directory" >&2
+    echo "g40-real-data: $SRC_SHOWN has no quota/ directory" >&2
     exit 2
   fi
   mkdir -p "$T/live/codeforge/usage"
@@ -48,6 +53,7 @@ if [ -n "$SRC" ]; then
   [ -f "$SRC/codeforge/usage/summary.json" ] && cp -a "$SRC/codeforge/usage/summary.json" "$T/live/codeforge/usage/"
   [ -f "$SRC/codeforge/pet.json" ] && cp -a "$SRC/codeforge/pet.json" "$T/live/codeforge/"
   echo "g40-real-data: live dir $SRC (copied into a sandbox)"
+  [ "${G40_STOP_AFTER_COPY:-}" = 1 ] && exit 0
 else
   if [ "$NEGATIVE" = 1 ]; then
     python3 "$HERE/make-fixture.py" "$T/live" --negative
