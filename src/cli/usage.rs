@@ -166,6 +166,11 @@ fn compact(n: u64) -> String {
     }
 }
 
+/// The requests cell: compacted like the token cells so a big count is not clipped by its 6-wide column.
+fn request_cell(n: u64) -> String {
+    compact(n)
+}
+
 fn money(c: Option<f64>) -> String {
     c.map_or_else(|| "—".to_string(), |c| format!("${c:.2}"))
 }
@@ -313,7 +318,7 @@ pub fn run(action: Action) -> Result<()> {
                         &compact(t.output),
                         &compact(t.cache_write_5m + t.cache_write_1h),
                         &compact(t.cache_read),
-                        &req.to_string(),
+                        &request_cell(*req),
                         &cost_s,
                     ])
                 );
@@ -589,6 +594,14 @@ fn accounts(json: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn request_cell_is_compacted_to_fit_its_column() {
+        assert_eq!(compact(1_000_000), "1.0M");
+        assert!(compact(1_000_000).chars().count() <= COLS[6]);
+        assert_eq!(request_cell(1_234_567), "1.2M");
+        assert_eq!(request_cell(42), "42");
+    }
 
     #[test]
     fn table_rows_have_one_display_width_with_cjk_cells() {
