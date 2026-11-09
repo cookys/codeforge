@@ -352,6 +352,27 @@ pub enum UsageAction {
         #[command(subcommand)]
         action: NoteAction,
     },
+    /// 訂閱方案（pro、max5x、max20x、team、enterprise、api）：顯示在全帳號表與全部帳號分頁（只存在本機 ~/.config/codeforge/accounts.toml，不上傳）
+    Plan {
+        #[command(subcommand)]
+        action: PlanAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PlanAction {
+    /// 設定方案：`set <provider 或帳號> <方案>`（provider 套用到該 provider 的每一列；帳號的方案優先）
+    Set {
+        /// provider 名（小寫，如 codex），或帳號的 email／`alias list` 顯示的名字
+        target: String,
+        /// pro、max5x、max20x、team、enterprise、api（5x、20x 是 max5x、max20x 的簡寫）
+        plan: String,
+    },
+    /// 清除方案
+    Clear {
+        /// provider 名，或帳號的 email／顯示名
+        target: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -601,6 +622,10 @@ pub fn run(cli: Cli) -> Result<()> {
             Some(UsageAction::Alias { action }) => match action {
                 AliasAction::List => usage::Action::AliasList,
                 AliasAction::Set { who, name } => usage::Action::AliasSet { who, name },
+            },
+            Some(UsageAction::Plan { action }) => match action {
+                PlanAction::Set { target, plan } => usage::Action::PlanSet { target, plan },
+                PlanAction::Clear { target } => usage::Action::PlanClear { target },
             },
             Some(UsageAction::Note { action }) => match action {
                 NoteAction::Set {

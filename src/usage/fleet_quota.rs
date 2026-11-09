@@ -135,6 +135,8 @@ pub struct Row {
     /// operator-provided, low confidence, and never a replacement for a real window's reset.
     pub note_reset_rule: Option<String>,
     pub note_resets_at: Option<i64>,
+    /// The operator's subscription plan id ([`attach_plans`], a [`super::names::PLANS`] member); local only.
+    pub plan: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -380,6 +382,7 @@ pub fn merge(
                 note: None,
                 note_reset_rule: None,
                 note_resets_at: None,
+                plan: None,
             };
             if let Some(at) = at {
                 if now_ms - at >= MAX_AGE_MS {
@@ -505,6 +508,7 @@ pub fn attach_notes(f: &mut Fleet, notes: &super::names::Notes) {
         note: Some(text.to_string()),
         note_reset_rule: None,
         note_resets_at: None,
+        plan: None,
     })
     .collect();
     f.rows.extend(extra);
@@ -519,6 +523,14 @@ pub fn attach_resets(f: &mut Fleet, resets: &super::names::Resets, now_ms: i64) 
             .and_then(super::reset_rule::parse)
             .map(|x| x.next_after(now_ms.div_euclid(1000)));
         r.note_reset_rule = rule.map(str::to_string);
+    }
+}
+
+/// Attach the operator's plans: an account key's plan, else its provider's. Call after
+/// [`attach_notes`] (it adds the no-data rows).
+pub fn attach_plans(f: &mut Fleet, plans: &super::names::Plans) {
+    for r in &mut f.rows {
+        r.plan = plans.for_row(&r.alias, &r.provider);
     }
 }
 
@@ -560,6 +572,9 @@ pub fn to_json(f: &Fleet, now_ms: i64) -> Value {
             // optional keys, present only when set (an older reader's file shape is unchanged)
             if let Some(n) = r.source_note {
                 a["source_note"] = json!(n.name());
+            }
+            if let Some(p) = r.plan {
+                a["plan"] = json!(p);
             }
             if let Some(n) = &r.note {
                 a["note"] = json!(n);
@@ -759,10 +774,25 @@ fn name_cells(cols: usize, compact: bool) -> usize {
     }
 }
 
-fn add_email(line: &mut Line, r: &Row, sep: &str) {
-    if let Some(shown) = email_shown(r, EMAIL_CELLS) {
-        line.insert(1, p(format!("{sep}{shown}"), Style::Dim));
+/// `方案 Max 5x` / `方案 未知`.
+fn plan_shown(r: &Row, tr: &Tr) -> String {
+    let p = match r.plan {
+        Some(id) => super::names::plan_display(id).to_string(),
+        None => tr.t("quota.plan_unknown", &[]),
+    };
+    tr.t("quota.plan", &[("p", &p)])
+}
+
+/// What follows the name on a header or compact line: the email when known, then the plan.
+fn who_shown(r: &Row, tr: &Tr) -> String {
+    match email_shown(r, EMAIL_CELLS) {
+        Some(e) => format!("{e} · {}", plan_shown(r, tr)),
+        None => plan_shown(r, tr),
     }
+}
+
+fn add_email(line: &mut Line, r: &Row, sep: &str, tr: &Tr) {
+    line.insert(1, p(format!("{sep}{}", who_shown(r, tr)), Style::Dim));
 }
 
 /// `週 已重置` for the reset windows of a row (compact line); `None` when none has reset.
@@ -918,7 +948,7 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
             }
             // the email only when the line still fits with it; the numbers come first
             let mut with = line.clone();
-            add_email(&mut with, r, " ");
+            add_email(&mut with, r, " ", tr);
             if qv::width(&with) <= cols {
                 line = with;
             }
@@ -933,7 +963,7 @@ pub fn text(f: &Fleet, cols: usize, now_ms: i64, tr: &Tr, color: bool) -> String
             fact,
             cols,
             tr,
-            email_shown(r, EMAIL_CELLS).as_deref(),
+            Some(who_shown(r, tr).as_str()),
         ));
         match r.state {
             State::Ok => {
