@@ -28,8 +28,11 @@ session 手上是舊值（2026-11-06 實測：同一組重置時間下，四組�
 7d 48–52 %）。所以寫入時先和檔案裡的值合併（`quota::merge_snapshot`），每個窗各自判斷：
 
 - 重置時間相同（相差不到 600 秒）：取百分比較大的；
-- 較晚的重置時間：新的窗，直接取代；
-- 較早的重置時間：舊的窗，丟掉；
+- 重置時間不同（兩個不同的窗）：重置時間已過的窗不取代還在跑的窗；其他情況取擷取時間（`seen_at_ms`）較新的
+  那份（都沒有擷取時間時取重置時間較晚的；兩個都已重置時取重置時間較晚的，所以停在舊窗的閒置 session 不會刷新檔案）。
+  以前是「較晚的窗取代、較早的丟掉」：2026-11-09 aimax395-team 的一個 session 在 06:13 TW 換登入前，把前一個帳號
+  的週窗（週一 04:00 重置，7d 11%）記到了 acct-337c98de 下，之後這個帳號真正的讀數（週四 12:00 重置，63%）都因為
+  「較早的窗」被丟掉，畫面一直停在 11%；
 - 這次沒帶這個窗：保留檔案裡的。
 
 本 session 自己的 5h／7d 長條顯示合併後的值。每個窗另記 `seen_at_ms`、`seen_by`（這個值是哪個
@@ -37,7 +40,7 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 最多落後 30 秒。讀和寫不是同一個原子步驟：兩個 session 在同一瞬間寫入時，較小的值仍可能留下，
 下一次較大值的寫入會再改回來。`summary.json` 的契約不變（只輸出 `pct`、`resets_at`）。
 
-快照的 `written_at_ms` 是**最後一次有讀數被採用**的時間：這次帶來的窗在合併時全部落敗（較早的重置時間、
+快照的 `written_at_ms` 是**最後一次有讀數被採用**的時間：這次帶來的窗在合併時全部落敗（已重置的窗、較舊的讀數、
 或同一窗較小的值），檔案不重寫，`written_at_ms` 不更新。否則閒置 session 不斷送舊值時，檔案的時間會被刷新，
 舊值永遠不會因超過 6 小時（`MAX_AGE_MS`）而被 statusline 和 `summary.json` 濾掉（2026-11-09 實測：
 一個 12 小時前的 7d 11% 一直被當成目前值，其他主機同帳號已是 57%）。
@@ -270,9 +273,12 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
   `{alias, name, org|null, email|null, provider("claude"|"codex"|"kimi"|…), hosts[], old_hosts[]（hosts 的子集，排序）, observed_at_ms|null, age_s|null, state, weekly, five_hour}`，
   另有兩個選填鍵：`source_note`（只在 `no_source` 列，`"web_only"|"needs_token"|"no_window"`）、`note`（operator 備註，見上），以及成對的 `note_resets_at`／`note_reset_rule`（operator 重置規則：每週、每月或一次性，見上；低可信度）；另有選填 `plan`（`"pro"|"max5x"|"max20x"|"team"|"enterprise"|"api"`，operator 設定的訂閱方案，見上；未知時不帶）；
   `state`：`ok`（有視窗可畫）、`stale`（6 小時內有觀察但視窗全已重置）、`expired`（最後觀察超過 6 小時）、`no_source`；
-  `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null, reset}`（`resets_at`、`exhaust_at`
-  為 unix 秒；`reset` 為 true 時視窗已重置，`pct` 不是現值），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at, reset}|null`。
-  forge-stats 解析器對 `old_hosts`、`reset`、`source_note`、`note`、`note_resets_at`／`note_reset_rule`、`plan` 容忍缺席（`plan` 的無效值也當未知，不拒絕）（舊檔：空、false、無），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
+  `weekly` = `{pct, resets_at, projected|null, warn("waste"|"short"|null), exhaust_at|null, reset, age_s, stale}`（`resets_at`、`exhaust_at`
+  為 unix 秒；`reset` 為 true 時視窗已重置，`pct` 不是現值），沒有可畫的週視窗時為 `null`；`five_hour` = `{pct, resets_at, reset, age_s, stale}|null`。
+  每個窗的 `age_s` 是被選中那筆讀數的擷取時間到 `generated_at_ms` 的秒數，`stale` 在超過 2 小時（`STALE_MS`）時為 true
+  （各窗分開算：週窗可能剛讀到，5h 窗只剩一台的舊讀數）；summary.json 不加這兩個鍵（沒升級的主機會拒收未知鍵），
+  它的窗已有 `seen_at_ms`，年齡用 `generated_at_ms − seen_at_ms` 算。
+  forge-stats 解析器對 `old_hosts`、`reset`、成對的 `age_s`／`stale`、`source_note`、`note`、`note_resets_at`／`note_reset_rule`、`plan` 容忍缺席（`plan` 的無效值也當未知，不拒絕）（舊檔：空、false、無），其餘鍵仍嚴格。`pct` 是小數（1.0 = 100%）。
   讀者（forge-stats 分頁、fleet.console/1 的配額區）直接讀，不重算。
 
 **寫檔（`usage collect` 順手維護）**：環境變數 `CODEFORGE_FLEET_USAGE_DIR` 有設且非空時，`codeforge usage collect`

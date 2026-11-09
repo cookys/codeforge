@@ -82,15 +82,17 @@ const isNote = (v: unknown): v is string =>
 
 function win(v: unknown): FleetWin | null | undefined {
   if (v === null) return null
-  if (!isObj(v) || !onlyKeys(v, ['pct', 'resets_at', 'reset']) || !isPct(v.pct) || !isInt(v.resets_at)) return undefined
+  if (!isObj(v) || !onlyKeys(v, ['pct', 'resets_at', 'reset', 'age_s', 'stale']) || !isPct(v.pct) || !isInt(v.resets_at)) return undefined
   if (v.reset !== undefined && typeof v.reset !== 'boolean') return undefined
+  // the reading's age, from a writer that has it: both or neither
+  if ((v.age_s === undefined) !== (v.stale === undefined) || (v.age_s !== undefined && (!isInt(v.age_s) || typeof v.stale !== 'boolean'))) return undefined
   return { pct: v.pct, resetsAt: v.resets_at, reset: v.reset === true }
 }
 
 function weekly(v: unknown): FleetWeekly | null | undefined {
   if (v === null) return null
-  if (!isObj(v) || !onlyKeys(v, ['pct', 'resets_at', 'projected', 'warn', 'exhaust_at', 'reset'])) return undefined
-  const w = win({ pct: v.pct, resets_at: v.resets_at, reset: v.reset })
+  if (!isObj(v) || !onlyKeys(v, ['pct', 'resets_at', 'projected', 'warn', 'exhaust_at', 'reset', 'age_s', 'stale'])) return undefined
+  const w = win({ pct: v.pct, resets_at: v.resets_at, reset: v.reset, age_s: v.age_s, stale: v.stale })
   if (!w) return undefined
   if (v.projected !== null && !(typeof v.projected === 'number' && Number.isFinite(v.projected) && v.projected >= 0)) return undefined
   if (v.warn !== null && v.warn !== 'waste' && v.warn !== 'short') return undefined

@@ -1348,3 +1348,73 @@ fn monthly_and_one_shot_rules_count_down_and_a_passed_one_shot_drops_out() {
     assert!(txt.contains("◷ 17d6h") || txt.contains("◷ 17d"), "{txt}");
     assert!(txt.contains("◷ 13d"), "{txt}");
 }
+
+#[test]
+fn the_newest_reading_of_an_account_wins_whatever_os_account_or_host_and_each_window_has_its_age() {
+    // 2026-11-09: aimax395-team (the team OS account) last saw acct-337c98de at 06:13 TW, 7d 11% in
+    // a week resetting Mon 11-16 04:00; aimax395 (the cookys OS account) saw 63% at 20:07 in the week
+    // resetting Thu 11-12 12:00. NOW = 20:08.
+    let team_seen = 13 * H + 55 * 60;
+    let team = summary(
+        "host-aaaaaaaa",
+        vec![with_org(
+            acct_seen(
+                "acct-337c98de",
+                H + 24 * 60,
+                Some((0.99, NOW_S - 12 * H - 28 * 60, seen_ms(team_seen))),
+                Some((0.11, NOW_S + 6 * D + 8 * H, seen_ms(team_seen))),
+            ),
+            "personal",
+        )],
+        vec![],
+    );
+    let cookys = summary(
+        "host-bbbbbbbb",
+        vec![
+            with_org(
+                acct_seen(
+                    "acct-337c98de",
+                    60,
+                    None,
+                    Some((0.63, NOW_S + 2 * D + 16 * H, seen_ms(60))),
+                ),
+                "personal",
+            ),
+            // the only reading of this account is three hours old: still shown, marked stale
+            with_org(
+                acct_seen(
+                    "acct-0000beef",
+                    3 * H,
+                    None,
+                    Some((0.30, NOW_S + 4 * D, seen_ms(3 * H))),
+                ),
+                "org-b",
+            ),
+        ],
+        vec![],
+    );
+    let f = run(&[("aimax395-team.json", &team), ("aimax395.json", &cookys)]);
+    let r = row(&f, "acct-337c98de");
+    assert_eq!(r.weekly.as_ref().unwrap().win.pct, 0.63);
+    assert_eq!(r.old_hosts, vec!["aimax395-team"]);
+    let v = to_json(&f, NOW_MS);
+    let a = |k: &str| {
+        v["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["alias"] == k)
+            .unwrap()
+            .clone()
+    };
+    let cf = a("acct-337c98de");
+    assert_eq!(cf["weekly"]["age_s"], json!(60));
+    assert_eq!(cf["weekly"]["stale"], json!(false));
+    // the 5h window came only from the team reading
+    assert_eq!(cf["five_hour"]["age_s"], json!(team_seen));
+    assert_eq!(cf["five_hour"]["stale"], json!(true));
+    let old = a("acct-0000beef");
+    assert_eq!(old["state"], json!("ok"));
+    assert_eq!(old["weekly"]["age_s"], json!(3 * H));
+    assert_eq!(old["weekly"]["stale"], json!(true));
+}
