@@ -58,6 +58,9 @@ test('parseUsage takes today, sums per model, priced first, and refuses each con
     { ...summary(), days: [row({ source: 'gemini' })] },
     { ...summary(), days: [row({ speed: 'turbo' })] },
     { ...summary(), days: [row({ account: '/home/me' })] },
+    // null (no login) only on a Claude row; a codex row always names its account
+    { ...summary(), days: [row({ source: 'codex', account: null })] },
+    { ...summary(), days: [row({ account: '' })] },
     // numbers past the contract's bound (G36 r2 a46d57ea): an integer to JS, not to the writer
     { ...summary(), days: [row({ input: 1e100 })] },
     { ...summary(), days: [row({ requests: 2 ** 53 })] },
@@ -68,6 +71,12 @@ test('parseUsage takes today, sums per model, priced first, and refuses each con
   for (const b of breaks) expect(parseUsage(JSON.stringify(b), NOW).status).toBe('bad')
   expect(parseUsage('{', NOW).status).toBe('bad')
   expect(parseUsage(' '.repeat(USAGE_MAX_BYTES + 1), NOW).status).toBe('bad')
+})
+
+test('parseUsage takes a Claude day row with no account (no login, unattributed) into today\'s models', () => {
+  const v = parseUsage(JSON.stringify(summary({ days: [row({ day: DAY, account: null, input: 5 })] })), NOW)
+  expect(v.status).toBe('ok')
+  expect(v.models.length).toBe(1)
 })
 
 test('parseUsage accepts the optional dropped_accounts record (closed reasons, uint counts) and refuses a malformed one', () => {

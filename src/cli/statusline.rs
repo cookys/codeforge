@@ -32,7 +32,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         let others = record_quota(
             &mut data,
             &crate::usage::quota::quota_dir(&live_base),
-            &acct,
+            acct.as_ref(),
             &crate::usage::alias::path_hash8(&config_dir),
             &crate::live::sanitize_session_id(raw_sid),
             now_ms,
@@ -327,7 +327,7 @@ struct StatusInput {
 fn record_quota(
     data: &mut StatusInput,
     dir: &std::path::Path,
-    acct: &crate::usage::alias::Identity,
+    acct: Option<&crate::usage::alias::Identity>,
     root: &str,
     session: &str,
     now_ms: i64,
@@ -343,6 +343,10 @@ fn record_quota(
             }),
         }),
         _ => None,
+    };
+    // no login: unattributed, nothing written (PM 01M7052H79); the others are still read
+    let Some(acct) = acct else {
+        return read_others(dir, "", now_ms);
     };
     let snap = Snapshot {
         alias: acct.alias.clone(),
@@ -2808,7 +2812,7 @@ mod tests {
         let got = record_quota(
             &mut none,
             &dir,
-            &ident("acct-a", None),
+            Some(&ident("acct-a", None)),
             "1a2b3c4d",
             "sess-1",
             now_ms,
@@ -2827,7 +2831,7 @@ mod tests {
         let got = record_quota(
             &mut data,
             &dir,
-            &ident("acct-a", None),
+            Some(&ident("acct-a", None)),
             "1a2b3c4d",
             "sess-1",
             now_ms,
@@ -2850,7 +2854,7 @@ mod tests {
         record_quota(
             &mut idle,
             &dir,
-            &ident("acct-a", None),
+            Some(&ident("acct-a", None)),
             "1a2b3c4d",
             "sess-2",
             now_ms + 1000,
@@ -2870,7 +2874,7 @@ mod tests {
         record_quota(
             &mut mail,
             &dir,
-            &ident("acct-a", Some("me@example.com")),
+            Some(&ident("acct-a", Some("me@example.com"))),
             "1a2b3c4d",
             "sess-1",
             now_ms + 120_000,
@@ -2879,11 +2883,38 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(dir.join("acct-a.json")).unwrap())
                 .unwrap();
         assert_eq!(v["email"], "me@example.com");
+        // no login (no account): rate_limits are not written under any key, not even a hash
+        // of the config dir, and the others are still read
+        let mut anon = StatusInput {
+            seven_day_pct: Some(0.9),
+            seven_day_resets_at: Some(Q_NOW + 86400),
+            ..Default::default()
+        };
+        let before: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        let got = record_quota(
+            &mut anon,
+            &dir,
+            None,
+            "ae88ee5d",
+            "sess-3",
+            now_ms + 130_000,
+        );
+        let after: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(before.len(), after.len());
+        assert!(!dir.join("acct-ae88ee5d.json").exists());
+        assert_eq!(anon.seven_day_pct, Some(0.9));
+        assert!(got.iter().any(|s| s.alias == "acct-b"));
         // a missing dir is no error
         assert!(record_quota(
             &mut none,
             &base.path().join("nope"),
-            &ident("acct-a", None),
+            Some(&ident("acct-a", None)),
             "1a2b3c4d",
             "sess-1",
             now_ms

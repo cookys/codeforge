@@ -303,6 +303,8 @@ pub fn run(action: Action) -> Result<()> {
                     .iter()
                     .map(|((day, key), (t, req, costs))| {
                         let (cost, unpriced) = price::total(costs.iter().copied());
+                        // no login: no account, null (one line apart, PM 01M7052H79)
+                        let key = Some(key).filter(|k| by != "account" || !k.is_empty());
                         serde_json::json!({
                             "day": day, "key": key, "input": t.input, "output": t.output,
                             "cache_write_5m": t.cache_write_5m, "cache_write_1h": t.cache_write_1h,
@@ -335,7 +337,11 @@ pub fn run(action: Action) -> Result<()> {
             };
             let mut all = Vec::new();
             for ((day, key), (t, req, costs)) in &agg {
-                let key = shown.get(key).map_or(key.as_str(), String::as_str);
+                let key = if by == "account" && key == collect::UNATTRIBUTED {
+                    UNATTRIBUTED_SHOWN
+                } else {
+                    shown.get(key).map_or(key.as_str(), String::as_str)
+                };
                 let (cost, unpriced) = price::total(costs.iter().copied());
                 let cost_s = match (cost, unpriced) {
                     (Some(_), n) if n > 0 => format!("≥{}", money(cost)),
@@ -461,12 +467,15 @@ fn known_accounts() -> Vec<(String, Option<String>, Option<String>)> {
     merged
 }
 
+/// How `usage --by account` shows the rows of sessions with no login (no account).
+const UNATTRIBUTED_SHOWN: &str = "未歸屬（未登入）";
+
 /// Each of `keys` → the name it is shown by: the accounts this host knows, plus any other key
 /// (a codex account shows as itself); an `acct-` key nobody can name shows as 未命名帳號.
 fn account_names<'a>(keys: impl Iterator<Item = &'a str>) -> BTreeMap<String, String> {
     use crate::usage::names;
     let mut known = known_accounts();
-    for k in keys {
+    for k in keys.filter(|k| *k != crate::usage::collect::UNATTRIBUTED) {
         if !known.iter().any(|(kk, _, _)| kk == k) {
             known.push((k.to_string(), None, None));
         }

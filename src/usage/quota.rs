@@ -356,7 +356,8 @@ pub fn read_others(dir: &Path, own_alias: &str, now_ms: i64) -> Vec<Snapshot> {
 
 /// Every valid snapshot in `dir`, any age: name-sorted, the first MAX_FILES `*.json`, read
 /// bounded; a file whose stem is not the alias in its body is skipped (a stray or
-/// hand-edited file cannot inject another identifier).
+/// hand-edited file cannot inject another identifier), and so is one an old writer keyed by its
+/// own root's hash (no login: it names no account, PM 01M7052H79).
 pub fn read_all(dir: &Path) -> Vec<Snapshot> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -378,7 +379,11 @@ pub fn read_all(dir: &Path) -> Vec<Snapshot> {
         .filter_map(|p| {
             let s = read_bounded(p)?;
             let stem = p.file_stem().and_then(|n| n.to_str())?;
-            (stem == s.alias).then_some(s)
+            let ghost = s
+                .root
+                .as_deref()
+                .is_some_and(|r| super::alias::is_dir_hash_alias(&s.alias, r));
+            (stem == s.alias && !ghost).then_some(s)
         })
         .collect()
 }
@@ -431,6 +436,15 @@ mod tests {
         let all = read_all(&dir);
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].root.as_deref(), Some("1a2b3c4d"));
+        // an old writer's no-login snapshot, keyed by its own root's hash: no account, skipped
+        let mut ghost = snap("acct-ae88ee5d", NOW_MS, Some((0.4, NOW_S + 60)), None);
+        ghost.root = Some("ae88ee5d".into());
+        crate::live::write_live_json(&dir, "acct-ae88ee5d.json", &ghost.to_json()).unwrap();
+        let all = read_all(&dir);
+        assert_eq!(
+            all.iter().map(|s| s.alias.as_str()).collect::<Vec<_>>(),
+            ["acct-b"]
+        );
         // a malformed root refuses the snapshot
         let mut v = s.to_json();
         v["root"] = json!("/home/x/.claude");

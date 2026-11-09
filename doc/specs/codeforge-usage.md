@@ -49,7 +49,12 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 
 - 身分規則（statusline 與收集共用）：(1) `AUTOPILOT_ACCOUNT` 符合 `^[a-z0-9-]{1,24}$` 就用它（autopilot G37）；
   (2) 否則由登入檔取身分：`acct-` + sha256(`organizationUuid` + "\n" + `emailAddress`) 前 8 碼；
-  (3) 登入檔不存在、讀不了、超過 32 MiB 或沒有這兩個欄位，退回 `acct-` + sha256(canonical config dir) 前 8 碼。
+  (3) 登入檔不存在、讀不了、超過 32 MiB 或沒有這兩個欄位：**沒有帳號（未歸屬）**。statusline 不寫配額快照；
+  收集到的用量列 `account` 存空字串，`summary.json` 的 `days[].account` 寫 `null`，自成一行，不併進任何帳號；
+  `usage --by account` 印「未歸屬（未登入）」，`--json` 的 `key` 是 `null`。fleet 的 rollup 用同一條規則（PM 01M7052H79）。
+  以前退回 `acct-` + sha256(canonical config dir) 前 8 碼，2026-11-09 實測：`acct-ae88ee5d`（`/home/cookys/.claude`）
+  在每台主機都出現、卻沒有任何窗，`acct-81916b7b`（`/home/team/.claude`）被當成 team 的舊帳號。讀舊資料時一樣當未歸屬：
+  `acct-<自己 root 的 hash>` 的配額快照不讀；db 裡 `acct-<任一已知 root 的 hash>` 的用量列讀成未歸屬。
   為什麼不用路徑：每台主機的 config dir 都是 `/home/cookys/.claude`，路徑 hash 讓 7 台不同配額的主機撞同一個別名，
   而且換帳號（同 email、個人訂閱 vs 組織訂閱）別名不會變。
 - 登入檔：`$CLAUDE_CONFIG_DIR/.claude.json`（有設且非空），否則 `$HOME/.claude.json`（在 `~/.claude/` 之外）。
@@ -141,7 +146,8 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   （預設名可能是 email 前段）。`codeforge usage --by account` 的文字表也印顯示名（無法命名的 `acct-` 印「未命名帳號」），`--json` 仍是鍵。
 - 收集：不讀 `AUTOPILOT_ACCOUNT`。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」，其次是該 root 自己的
   登入檔身分（預設 root `~/.claude` 對應 `~/.claude.json`，其他 root 對應 `<root>/.claude.json`），
-  再其次是 db 裡存的，最後 `acct-<hash>`。Codex root 是 `codex-<hash>`。
+  再其次是 db 裡存的，最後未歸屬（不再是 `acct-<hash>`；root 一律記進 db，讓它的舊 `acct-<hash>` 列認得出來）。
+  Codex root 是 `codex-<hash>`。
 - 已知限制：重新登入之前寫下的轉錄檔，會歸給目前登入的帳號。
 - 限制：轉錄檔不記錄是哪個 OAuth token。同一個 config dir 跑多個帳號時，轉錄用量歸給那個 dir
   的別名（配額快照仍準確）。G37 採「每個帳號一個 config dir」，解除這個限制。
@@ -198,6 +204,8 @@ model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註
 ```
 
 每一層的 key、型別、值都驗證（別名格式、`host-` + 8 hex、model id 格式、日期、列舉、非負數）。
+`days[].account` 是別名，或 `null`（只限 `source` 為 `claude`：沒有登入的 root，未歸屬）。讀這份檔的舊版程式
+（codeforge 與 forge-stats）不收 `null`，所以讀的一方要先升級。
 所有整數（計數、時間、`resets_at`）都必須在 0..=2^53−1（`UINT_MAX`，JS number 能精確表示的
 範圍）；飽和後的加總寫出時壓在這個上限。
 某份本機配額快照的值超出契約（`written_at_ms`／`resets_at` 不在 0..=2^53−1、`pct` 不在 0..=1.5）時，
