@@ -40,6 +40,9 @@ export type FleetAccount = {
   sourceNote: FleetSourceNote | null
   /** The operator's local note for the row; null when none. */
   note: string | null
+  /** The operator's weekly reset rule (`fri@17:00+08:00`) and its next occurrence (epoch s): operator-provided, low confidence, extra to any real window. Both or neither. */
+  noteResetRule: string | null
+  noteResetsAt: number | null
 }
 export type FleetQuotaView =
   | { status: 'ok'; generatedAt: number; useTarget: number; skipped: number; accounts: FleetAccount[] }
@@ -57,6 +60,8 @@ const isEmail = (v: unknown): v is string => typeof v === 'string' && /^(?=.{3,2
 const isLabel = (v: unknown): v is string => typeof v === 'string' && /^[^\u0000-\u001f\u007f]{1,64}$/.test(v)
 const SOURCE_NOTES: readonly string[] = ['web_only', 'needs_token', 'no_window']
 const isSourceNote = (v: unknown): v is FleetSourceNote => typeof v === 'string' && SOURCE_NOTES.includes(v)
+// the operator's weekly reset rule, the same form as codeforge's `reset_rule`: `<dow>@<HH:MM><±HH:MM>`
+const isRule = (v: unknown): v is string => typeof v === 'string' && /^(mon|tue|wed|thu|fri|sat|sun)@([01]\d|2[0-3]):[0-5]\d[+-]([01]\d|2[0-3]):[0-5]\d$/.test(v)
 /** The widest an operator note may be, the same rule as codeforge's `valid_note`. */
 export const NOTE_MAX = 40
 // non-empty, trimmed, at most NOTE_MAX cells, no control char, no `@`, no BOM, no whitespace but the space
@@ -97,9 +102,10 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
   if (!Array.isArray(raw.accounts) || raw.accounts.length > FLEET_MAX_ACCOUNTS) return BAD
   const accounts: FleetAccount[] = []
   for (const a of raw.accounts as unknown[]) {
-    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name', 'source_note', 'note'])) return BAD
+    if (!isObj(a) || !onlyKeys(a, ['alias', 'provider', 'hosts', 'observed_at_ms', 'age_s', 'state', 'weekly', 'five_hour', 'org', 'email', 'old_hosts', 'name', 'source_note', 'note', 'note_resets_at', 'note_reset_rule'])) return BAD
     if (a.source_note !== undefined && (a.state !== 'no_source' || !isSourceNote(a.source_note))) return BAD
     if (a.note !== undefined && !isNote(a.note)) return BAD
+    if ((a.note_resets_at === undefined) !== (a.note_reset_rule === undefined) || (a.note_resets_at !== undefined && (!isInt(a.note_resets_at) || !isRule(a.note_reset_rule)))) return BAD
     if (a.name !== undefined && !isLabel(a.name)) return BAD
     if (a.org !== undefined && a.org !== null && !isLabel(a.org)) return BAD
     if (a.email !== undefined && a.email !== null && !isEmail(a.email)) return BAD
@@ -119,7 +125,7 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
       : typeof a.org === 'string' ? a.org
       : keyDefault(a.alias)
     if (name === null) continue
-    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f, sourceNote: isSourceNote(a.source_note) ? a.source_note : null, note: isNote(a.note) ? a.note : null })
+    accounts.push({ alias: a.alias, name, org: typeof a.org === 'string' ? a.org : null, email: typeof a.email === 'string' ? a.email : null, hosts: a.hosts as string[], oldHosts: (a.old_hosts ?? []) as string[], observedAtMs: a.observed_at_ms, state: a.state, weekly: w, fiveHour: f, sourceNote: isSourceNote(a.source_note) ? a.source_note : null, note: isNote(a.note) ? a.note : null, noteResetRule: isRule(a.note_reset_rule) ? a.note_reset_rule : null, noteResetsAt: isInt(a.note_resets_at) ? a.note_resets_at : null })
   }
   return {
     status: 'ok',
@@ -173,17 +179,28 @@ const SOURCE_TEXT = { web_only: 'fleetSrcWebOnly', needs_token: 'fleetSrcNeedsTo
 /** A note is shown only with at least this many cells (or all of it, when shorter). */
 const NOTE_MIN_CELLS = 8
 
-/** `line` with the operator's note dim at its end, cut with `…` to the room left; `line` alone when too little is left. */
-function withNote(line: QLine, note: string | null, cols: number): QLine {
-  if (note === null) return line
-  const room = cols - width(line) - 2
+/** The row's operator tail: the note, then `◷ 2d3h` to the next rule reset; the note is cut with `…` before the countdown is. `null` when too little room. */
+function noteTail(a: FleetAccount, room: number, now: number): string | null {
+  const cd = a.noteResetsAt === null ? null : '◷ ' + countdown(a.noteResetsAt * 1000, now)
+  const note = a.note
+  const cut = (n: string, r: number) => (displayWidth(n) <= r ? n : clipCells(n, r - 1) + '…')
+  if (note === null) return cd !== null && displayWidth(cd) <= room ? cd : null
   const w = displayWidth(note)
-  if (room < Math.min(NOTE_MIN_CELLS, w)) return line
-  return [...line, seg('  ' + (w <= room ? note : clipCells(note, room - 1) + '…'), 'dim')]
+  if (cd === null) return room >= Math.min(NOTE_MIN_CELLS, w) ? cut(note, room) : null
+  if (w + 1 + displayWidth(cd) <= room) return `${note} ${cd}`
+  const noteRoom = room - displayWidth(cd) - 1
+  if (noteRoom >= Math.min(NOTE_MIN_CELLS, w)) return `${cut(note, noteRoom)} ${cd}`
+  return displayWidth(cd) <= room ? cd : null
+}
+
+/** `line` with the operator's tail dim at its end; `line` alone when too little is left. */
+function withNote(line: QLine, a: FleetAccount, cols: number, now: number): QLine {
+  const tail = noteTail(a, cols - width(line) - 2, now)
+  return tail === null ? line : [...line, seg('  ' + tail, 'dim')]
 }
 
 function accountLine(a: FleetAccount, aliasW: number, cols: number, tr: T, now: number): QLine {
-  return withNote(accountBody(a, aliasW, cols, tr, now), a.note, cols)
+  return withNote(accountBody(a, aliasW, cols, tr, now), a, cols, now)
 }
 
 function accountBody(a: FleetAccount, aliasW: number, cols: number, tr: T, now: number): QLine {
