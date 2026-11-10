@@ -300,6 +300,20 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
 合併失敗（資料夾讀不了等）不讓 collect 失敗；`--quiet` 靜默，否則在 stderr 報一行。`codeforge usage fleet` 省略 `--dir`
 時也用這個環境變數（兩者都沒有就報錯）。讀者是 forge-stats 的「全部帳號」分頁（`codeforge-mod-ui.md`），只在這個檔存在時才出現。
 
+## usage.v1 配額池（`usage pools`）
+
+`codeforge usage pools [--json]` 讀 fleet 的唯讀端點 `GET /v1/usage`（schema `usage.v1`），預設關：
+環境變數 `CODEFORGE_USAGE_V1` 未設就只印「關」的說明。值就是來源：檔案路徑或 `http(s)://` URL；
+URL 時 bearer token 從 `CODEFORGE_USAGE_V1_TOKEN_FILE` 指的檔案讀（token 不進 argv、不印出）。
+
+- 信任邊界只驗 `schema`、`pools` 是陣列、輸入大小（≤ 256 KiB）、逾時 5 秒；某個 window 缺欄位或型別錯，
+  只有那個 window 是「未知」，其餘照畫；多出來的未知鍵接受。
+- `reset_passed`、`stale` 在讀取時用注入的 `now_ms` 重新套用，hub 已設的旗標絕不清掉。
+  已過重置時間的 window 不畫 pct（畫「已重置，等新讀數」）；超過 2 小時的讀數或 stale 旗標畫「舊讀數，N 前」，
+  絕不畫得像新的。來源本身的年齡另印一行。
+- `pct` 暫當 0..1 的已用比例（契約沒寫尺度，待 fleet 確認）。
+- 程式：`src/usage/usage_v1.rs`；測試 `src/usage/usage_v1_tests.rs`，fixture 在 `tests/fixtures/usage-v1/`。
+
 ## 指令
 
 ```bash
@@ -309,6 +323,7 @@ codeforge usage --json
 codeforge usage collect --quiet     # hook 用
 codeforge usage push                # 印出 blob sha
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
+codeforge usage pools [--json]      # usage.v1 配額池（CODEFORGE_USAGE_V1 未設 = 關）
 codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）
 codeforge usage alias list          # 帳號與顯示名（本機）
 codeforge usage alias set <email或顯示名> <新名字>

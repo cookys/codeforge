@@ -17,6 +17,9 @@ pub enum Action {
         quiet: bool,
     },
     Push,
+    Pools {
+        json: bool,
+    },
     Accounts {
         json: bool,
     },
@@ -270,6 +273,7 @@ pub fn run(action: Action) -> Result<()> {
                 .context("請用 --dir 指定資料夾，或設環境變數 CODEFORGE_FLEET_USAGE_DIR")?;
             fleet(&dir, json, out.as_deref(), use_target)
         }
+        Action::Pools { json } => crate::usage::usage_v1::run(json, now_ms()),
         Action::Push => {
             let (_conn, path) = collected(true)?;
             let dir = path.parent().map(PathBuf::from).unwrap_or_default();
