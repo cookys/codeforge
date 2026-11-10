@@ -326,6 +326,12 @@ pub enum UsageAction {
         #[arg(long)]
         json: bool,
     },
+    /// usage.v1 配額池（fleet 唯讀端點；環境變數 CODEFORGE_USAGE_V1 未設就是關）
+    Pools {
+        /// 印解讀後的 JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// 全帳號配額表：合併資料夾裡各主機的 usage-summary，標出會浪費／會不夠（估）
     Fleet {
         /// 資料夾：每台主機一個 `*.json`（codeforge.usage-summary/1），檔名（不含副檔名）就是主機標籤
@@ -614,6 +620,7 @@ pub fn run(cli: Cli) -> Result<()> {
             Some(UsageAction::Collect { quiet }) => usage::Action::Collect { quiet },
             Some(UsageAction::Push) => usage::Action::Push,
             Some(UsageAction::Accounts { json }) => usage::Action::Accounts { json },
+            Some(UsageAction::Pools { json }) => usage::Action::Pools { json },
             Some(UsageAction::Fleet {
                 dir,
                 json,
