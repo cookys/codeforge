@@ -16,8 +16,11 @@ pub mod quota_view;
 pub mod reset_rule;
 pub mod store;
 pub mod summary;
+pub mod usage_v1;
 
 #[cfg(test)]
 mod fleet_quota_tests;
 #[cfg(test)]
 mod quota_view_tests;
+#[cfg(test)]
+mod usage_v1_tests;

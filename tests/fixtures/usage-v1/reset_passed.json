@@ -1,0 +1,81 @@
+{
+  "schema": "usage.v1",
+  "generated_at_ms": 1793700000000,
+  "sources": [
+    {
+      "name": "hangar.claude-usage-digest/1",
+      "seen_at_ms": 1793699700000,
+      "age_ms": 300000,
+      "stale": false
+    }
+  ],
+  "pools": [
+    {
+      "provider": "claude",
+      "id": "cookys",
+      "pool": "cookys",
+      "accounts": [
+        "acct-0a1b2c3d",
+        "acct-4e5f6a7b"
+      ],
+      "plan": "max20x",
+      "multiplier": 20,
+      "five_hour": {
+        "pct": 0.88,
+        "resets_at_ms": 1793699400000,
+        "seen_at_ms": 1793682000000,
+        "age_ms": 18000000,
+        "stale": false,
+        "reset_passed": true,
+        "account": "acct-0a1b2c3d"
+      },
+      "seven_day": {
+        "pct": 0.64,
+        "resets_at_ms": 1793699999000,
+        "seen_at_ms": 1793699700000,
+        "age_ms": 300000,
+        "stale": false,
+        "reset_passed": false,
+        "account": "acct-0a1b2c3d"
+      },
+      "available": {
+        "value": 120.5,
+        "unit": "pct_points_7d"
+      },
+      "burn_rate": {
+        "lo": 2.0,
+        "hi": 4.5,
+        "unit": "pct_points_7d_per_h"
+      },
+      "sustainable_rate": {
+        "value": 3.1,
+        "unit": "pct_points_7d_per_h"
+      },
+      "no_source": {}
+    },
+    {
+      "provider": "codex",
+      "id": "acct:acct-c0dec0de",
+      "pool": null,
+      "accounts": [
+        "acct-c0dec0de"
+      ],
+      "plan": null,
+      "multiplier": null,
+      "five_hour": null,
+      "seven_day": null,
+      "available": null,
+      "burn_rate": null,
+      "sustainable_rate": null,
+      "no_source": {
+        "plan": "no reader for codex yet",
+        "multiplier": "no reader for codex yet",
+        "five_hour": "no reader for codex yet",
+        "seven_day": "no reader for codex yet",
+        "available": "no reader for codex yet",
+        "burn_rate": "no reader for codex yet",
+        "sustainable_rate": "no reader for codex yet"
+      }
+    }
+  ]
+}
