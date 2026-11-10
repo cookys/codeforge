@@ -311,7 +311,7 @@ URL 時 bearer token 從 `CODEFORGE_USAGE_V1_TOKEN_FILE` 指的檔案讀（token
 - `reset_passed`、`stale` 在讀取時用注入的 `now_ms` 重新套用，hub 已設的旗標絕不清掉。
   已過重置時間的 window 不畫 pct（畫「已重置，等新讀數」）；超過 2 小時的讀數或 stale 旗標畫「舊讀數，N 前」，
   絕不畫得像新的。來源本身的年齡另印一行。
-- `pct` 暫當 0..1 的已用比例（契約沒寫尺度，待 fleet 確認）。
+- `pct` 是 0..1 的已用比例（fleet 01M73XAJAM 確認，hub 照 digest 原樣轉出）。capacity 的 `available` 等欄位是 0..100 的 pct_points_7d，單位不同，client 目前不讀也不顯示。
 - 程式：`src/usage/usage_v1.rs`；測試 `src/usage/usage_v1_tests.rs`，fixture 在 `tests/fixtures/usage-v1/`。
 
 ## 指令

@@ -3,8 +3,8 @@
 //! The flag value is the source: a file path or an `http(s)://` URL. Parsing validates only the trust
 //! boundary (`schema`, `pools` array, input size); a window missing a field or with a wrong type is
 //! unknown for that window alone. `reset_passed` / `stale` are re-applied at read time with an
-//! injected `now_ms`, and never cleared when the hub set them. `pct` is taken as a 0..1 used fraction
-//! (open question for the fleet lane; the contract does not state the scale).
+//! injected `now_ms`, and never cleared when the hub set them. `pct` is a 0..1 used fraction
+//! (confirmed by the fleet lane: the hub passes the digest value through). capacity fields are 0..100 points and are not read.
 
 use super::quota_view::{countdown, Tr};
 use anyhow::{bail, Context as _, Result};
