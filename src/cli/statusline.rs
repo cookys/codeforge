@@ -359,11 +359,13 @@ fn record_quota(
     };
     if snap.five_hour.is_some() || snap.seven_day.is_some() {
         if let Ok((merged, _)) = merge_snapshot(dir, &snap) {
-            if let Some(w) = merged.five_hour {
+            // a window past its reset is unknown (quota.rs), on this account's own row too
+            let live = |w: Option<Window>| w.filter(|w| w.resets_at * 1000 > now_ms);
+            if let Some(w) = live(merged.five_hour) {
                 data.five_hour_pct = Some(w.pct);
                 data.five_hour_resets_at = Some(w.resets_at);
             }
-            if let Some(w) = merged.seven_day {
+            if let Some(w) = live(merged.seven_day) {
                 data.seven_day_pct = Some(w.pct);
                 data.seven_day_resets_at = Some(w.resets_at);
             }
@@ -2794,6 +2796,40 @@ mod tests {
             org: None,
             email: email.map(str::to_string),
         }
+    }
+
+    #[test]
+    fn own_row_never_shows_a_window_past_its_reset() {
+        // the file holds a 5h window that reset 30h ago; CC now sends only 7d
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let now_ms = Q_NOW * 1000;
+        let mut old = quota_snap("acct-a", 0.7, Q_NOW + 86400);
+        old.five_hour = Some(crate::usage::quota::Window {
+            pct: 0.99,
+            resets_at: Q_NOW - 30 * 3600,
+            seen: Some(crate::usage::quota::Seen {
+                at_ms: now_ms - 31 * 3600 * 1000,
+                session: "sess-0".into(),
+            }),
+        });
+        crate::live::write_live_json(&dir, "acct-a.json", &old.to_json()).unwrap();
+        let mut data = StatusInput {
+            seven_day_pct: Some(0.77),
+            seven_day_resets_at: Some(Q_NOW + 86400),
+            ..Default::default()
+        };
+        record_quota(
+            &mut data,
+            &dir,
+            Some(&ident("acct-a", None)),
+            "1a2b3c4d",
+            "sess-1",
+            now_ms,
+        );
+        assert_eq!(data.five_hour_pct, None);
+        assert_eq!(data.five_hour_resets_at, None);
+        assert_eq!(data.seven_day_pct, Some(0.77));
     }
 
     #[test]
