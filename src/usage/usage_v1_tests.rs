@@ -35,7 +35,7 @@ fn stale_never_renders_like_fresh() {
 #[test]
 fn stale_zh_has_old_marker() {
     let l = render_lines(&parse(&fx("stale.json")).unwrap(), NOW, &Tr("zh-TW".into()));
-    assert!(pool_line(&l, "cookys").contains("5h 42% (舊讀數，3h 前)"));
+    assert!(pool_line(&l, "cookys").contains("5h 42%（舊讀數，3h 前）"));
 }
 
 #[test]
