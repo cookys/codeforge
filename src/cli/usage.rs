@@ -136,9 +136,10 @@ fn collect_and_summarize(
         )
         .map(|i| i.alias);
     }
+    let usage_dir = summary::summary_dir(&live_base);
     let snaps = quota::read_all(&quota::quota_dir(&live_base));
     let now = now_ms();
-    let rep = collect::collect(&mut conn, &roots, &snaps, now)?;
+    let rep = collect::collect_with_logins(&mut conn, &roots, &snaps, now, Some(&usage_dir))?;
     let since = (chrono::Utc::now() - chrono::Duration::days(6))
         .format("%Y-%m-%d")
         .to_string();

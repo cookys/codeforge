@@ -319,11 +319,33 @@ struct StatusInput {
 
 // ─── G36 per-account quota (doc/plans/2026-11-03-usage-collector.md §2–3) ─────
 
+/// Show this account's on-disk snapshot in place of the stdin `rate_limits`. A window the
+/// file does not have (or a missing file) is cleared, so a pre-switch reading is not drawn
+/// as the new account's. A read problem leaves the bars empty rather than failing the render.
+fn apply_disk_quota(data: &mut StatusInput, dir: &std::path::Path, alias: &str, now_ms: i64) {
+    use crate::usage::quota::{read_own, Window};
+    let snap = read_own(dir, alias);
+    let live = |w: Option<Window>| w.filter(|w| w.resets_at * 1000 > now_ms);
+    let (five, seven) = match snap {
+        Some(s) => (live(s.five_hour), live(s.seven_day)),
+        None => (None, None),
+    };
+    data.five_hour_pct = five.as_ref().map(|w| w.pct);
+    data.five_hour_resets_at = five.as_ref().map(|w| w.resets_at);
+    data.seven_day_pct = seven.as_ref().map(|w| w.pct);
+    data.seven_day_resets_at = seven.as_ref().map(|w| w.resets_at);
+}
+
 /// Merge this account's quota into its snapshot when Claude Code reported `rate_limits`
 /// (throttled, 0600; a window's value only grows, see `quota::merge_snapshot`) and show
 /// the merged value on this session's own bars, so an idle session no longer shows the
 /// lower value of its last API call. Then read the other accounts' snapshots back.
 /// Never fails the statusline: a write or read error only means fewer accounts shown.
+///
+/// A session that already filed this exact `rate_limits` fingerprint under another alias
+/// is still showing the pre-switch response. That reading is not merged; the bars show
+/// the current account's snapshot on disk instead. Any new read or write error skips the
+/// gate and merges as before, with nothing on stderr.
 fn record_quota(
     data: &mut StatusInput,
     dir: &std::path::Path,
@@ -332,6 +354,7 @@ fn record_quota(
     session: &str,
     now_ms: i64,
 ) -> Vec<crate::usage::quota::Snapshot> {
+    use crate::usage::logins::{self, SessionGate};
     use crate::usage::quota::{merge_snapshot, read_others, Seen, Snapshot, Window};
     let window = |pct: Option<f64>, at: Option<i64>| match (pct, at) {
         (Some(pct), Some(resets_at)) => Some(Window {
@@ -348,6 +371,12 @@ fn record_quota(
     let Some(acct) = acct else {
         return read_others(dir, "", now_ms);
     };
+    // every render that knows the root and the current alias records the login timeline
+    if let Some(parent) = dir.parent() {
+        if crate::usage::quota::is_hash8(root) && crate::usage::alias::valid_alias(&acct.alias) {
+            let _ = logins::observe(parent, root, &acct.alias, now_ms);
+        }
+    }
     let snap = Snapshot {
         alias: acct.alias.clone(),
         org: acct.org.clone(),
@@ -357,7 +386,25 @@ fn record_quota(
         five_hour: window(data.five_hour_pct, data.five_hour_resets_at),
         seven_day: window(data.seven_day_pct, data.seven_day_resets_at),
     };
-    if snap.five_hour.is_some() || snap.seven_day.is_some() {
+    let has_limits = snap.five_hour.is_some() || snap.seven_day.is_some();
+    // fingerprint the stdin values before a merge or a disk render replaces them
+    let carried = has_limits
+        && dir.parent().is_some_and(|parent| {
+            let fp = logins::rate_fingerprint(
+                data.five_hour_pct,
+                data.five_hour_resets_at,
+                data.seven_day_pct,
+                data.seven_day_resets_at,
+            );
+            match logins::session_gate(parent, root, session, &acct.alias, &fp, now_ms) {
+                Ok(SessionGate::Carry) => true,
+                // a gate error, or Merge: file the reading as before
+                _ => false,
+            }
+        });
+    if carried {
+        apply_disk_quota(data, dir, &acct.alias, now_ms);
+    } else if has_limits {
         if let Ok((merged, _)) = merge_snapshot(dir, &snap) {
             // a window past its reset is unknown (quota.rs), on this account's own row too
             let live = |w: Option<Window>| w.filter(|w| w.resets_at * 1000 > now_ms);
@@ -2956,6 +3003,158 @@ mod tests {
             now_ms
         )
         .is_empty());
+    }
+
+    /// cuda, re-login at 17:12: session S was on A and still holds A's window (96%, reset
+    /// tomorrow). Filing that window under B showed B at 96% while every other host had B at 6%.
+    #[test]
+    fn a_session_from_before_a_relogin_never_files_its_window_under_the_new_account() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let now_ms = Q_NOW * 1000;
+        let tomorrow = Q_NOW + 14 * 3600;
+        let week = Q_NOW + 7 * 86400;
+        let root = "1a2b3c4d";
+        let limits = |seven: f64, seven_at: i64| StatusInput {
+            five_hour_pct: Some(0.5),
+            five_hour_resets_at: Some(Q_NOW + 5 * 3600),
+            seven_day_pct: Some(seven),
+            seven_day_resets_at: Some(seven_at),
+            ..Default::default()
+        };
+        // S writes A's window under A.
+        record_quota(
+            &mut limits(0.96, tomorrow),
+            &dir,
+            Some(&ident("acct-aaaaaaaa", None)),
+            root,
+            "sess-s",
+            now_ms,
+        );
+        let acct_a = std::fs::read(dir.join("acct-aaaaaaaa.json")).unwrap();
+        let a_json: serde_json::Value = serde_json::from_slice(&acct_a).unwrap();
+        assert_eq!(a_json["seven_day"]["pct"], 0.96);
+        // login switches to B; S renders again with the SAME rate_limits. B's file must not appear.
+        let mut carried = limits(0.96, tomorrow);
+        record_quota(
+            &mut carried,
+            &dir,
+            Some(&ident("acct-bbbbbbbb", None)),
+            root,
+            "sess-s",
+            now_ms + 1_000,
+        );
+        assert!(
+            !dir.join("acct-bbbbbbbb.json").exists(),
+            "a pre-switch window was filed under the new account"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("acct-aaaaaaaa.json")).unwrap(),
+            acct_a
+        );
+        // B already has its real 6% window (what every other host shows). The same render must
+        // leave that file untouched and draw it, not A's 96%.
+        let mut on_disk = quota_snap("acct-bbbbbbbb", 0.06, week);
+        on_disk.written_at_ms = now_ms - 5_000;
+        on_disk.root = Some(root.into());
+        crate::live::write_live_json(&dir, "acct-bbbbbbbb.json", &on_disk.to_json()).unwrap();
+        let before_b = std::fs::read(dir.join("acct-bbbbbbbb.json")).unwrap();
+        let mut still = limits(0.96, tomorrow);
+        record_quota(
+            &mut still,
+            &dir,
+            Some(&ident("acct-bbbbbbbb", None)),
+            root,
+            "sess-s",
+            now_ms + 2_000,
+        );
+        assert_eq!(
+            std::fs::read(dir.join("acct-bbbbbbbb.json")).unwrap(),
+            before_b
+        );
+        assert_eq!(still.seven_day_pct, Some(0.06));
+        assert_eq!(still.five_hour_pct, None);
+        // S makes a new API call after the switch: that reading is B's and is filed under B.
+        record_quota(
+            &mut limits(0.07, week),
+            &dir,
+            Some(&ident("acct-bbbbbbbb", None)),
+            root,
+            "sess-s",
+            now_ms + 60_000,
+        );
+        let b_json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("acct-bbbbbbbb.json")).unwrap())
+                .unwrap();
+        assert_eq!(b_json["alias"], "acct-bbbbbbbb");
+        assert_eq!(b_json["seven_day"]["pct"], 0.07);
+        assert_eq!(b_json["seven_day"]["seen_by"], "sess-s");
+        // session T, first seen after the switch, files under B.
+        record_quota(
+            &mut limits(0.08, week),
+            &dir,
+            Some(&ident("acct-bbbbbbbb", None)),
+            root,
+            "sess-t",
+            now_ms + 120_000,
+        );
+        let b_json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("acct-bbbbbbbb.json")).unwrap())
+                .unwrap();
+        assert_eq!(b_json["seven_day"]["pct"], 0.08);
+        assert_eq!(b_json["seven_day"]["seen_by"], "sess-t");
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        let usage = dir.parent().unwrap();
+        for name in ["logins-1a2b3c4d.json", "sessions-1a2b3c4d.json"] {
+            let body = std::fs::read_to_string(usage.join(name)).unwrap();
+            assert!(!body.contains('@'), "{name}: {body}");
+            assert!(
+                !body.contains("email") && !body.contains("org"),
+                "{name}: {body}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_session_is_not_gated_on_relogin() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let now_ms = Q_NOW * 1000;
+        let tomorrow = Q_NOW + 14 * 3600;
+        let mut data = StatusInput {
+            seven_day_pct: Some(0.96),
+            seven_day_resets_at: Some(tomorrow),
+            ..Default::default()
+        };
+        record_quota(
+            &mut data,
+            &dir,
+            Some(&ident("acct-aaaaaaaa", None)),
+            "1a2b3c4d",
+            "sess-s",
+            now_ms,
+        );
+        let mut switched = StatusInput {
+            seven_day_pct: Some(0.96),
+            seven_day_resets_at: Some(tomorrow),
+            ..Default::default()
+        };
+        record_quota(
+            &mut switched,
+            &dir,
+            Some(&ident("acct-bbbbbbbb", None)),
+            "1a2b3c4d",
+            "",
+            now_ms + 1_000,
+        );
+        let b: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("acct-bbbbbbbb.json")).unwrap())
+                .unwrap();
+        assert_eq!(b["seven_day"]["pct"], 0.96);
     }
 
     #[test]
