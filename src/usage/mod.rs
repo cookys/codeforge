@@ -3,6 +3,7 @@
 //! Phase 1: account aliases and per-account quota snapshots written by the
 //! statusline, read back for the usage row.
 
+pub mod agy;
 pub mod alias;
 pub mod autocollect;
 pub mod collect;

@@ -55,8 +55,9 @@ pub fn valid_name(s: &str) -> bool {
         && !key_like(s)
 }
 
-/// Providers whose account keys are `<provider>-<sha8>` (`collect::root_alias`).
-pub const KEY_PROVIDERS: [&str; 1] = ["codex"];
+/// Providers whose account keys are `<provider>-<sha8>` (codex from `collect::root_alias`,
+/// agy/agyclaude from `super::agy` — the sha8 of the host's home dir).
+pub const KEY_PROVIDERS: [&str; 3] = ["agy", "agyclaude", "codex"];
 
 /// An internal account key, never a name: `acct-…`, or a [`KEY_PROVIDERS`] key such as
 /// `codex-4cc1b5c8` (8 lowercase hex). A chosen `ci-20261105` is a name, not a key.
@@ -1030,8 +1031,13 @@ mod tests {
     #[test]
     fn key_provider_names_the_provider_of_a_provider_key_only() {
         assert_eq!(key_provider("codex-1a2b3c4d"), Some("codex"));
+        assert_eq!(key_provider("agy-1a2b3c4d"), Some("agy"));
+        assert_eq!(key_provider("agyclaude-1a2b3c4d"), Some("agyclaude"));
         assert_eq!(key_provider("acct-1a2b3c4d"), None);
         assert_eq!(key_provider("ci-20261105"), None);
         assert_eq!(key_provider("codex-XYZ"), None);
+        // the agy pool keys are internal keys like the codex ones: never a display name
+        assert!(!valid_name("agy-1a2b3c4d"));
+        assert!(!valid_name("agyclaude-1a2b3c4d"));
     }
 }

@@ -281,6 +281,26 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
 - 只有 token 狀態、從沒有過 window 的記錄（契約 §21.6 shape c）畫「沒有用量資料」，不是「過期或已重置，等新觀察」（後者只給有過 window 但全被丟掉的）；`--json` 的 `state` 為 `no_usage`。
 - `--json` 輸出解讀後的清單（已套用丟棄規則），schema `codeforge.usage-accounts/1`。
 
+## agy 配額（`agy -p /usage` 的本機帳號）
+
+`codeforge usage collect` 同時收這台主機的 `agy`（Antigravity CLI）帳號配額，進 `summary.json`、
+隨之進 `usage fleet`：一個 pool 一個帳號，共兩個——Gemini pool 的鍵是 `agy-<hash8>`、
+Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
+
+- **來源命令**：`agy -p /usage`（無 model call，約 3 秒回四行 tab 分隔：pool／窗口標籤／**剩餘** %／
+  窗口重置的 RFC3339 時間）。這是別的程序輸出（信任邊界）：不是恰好四個欄位、pool 或窗口標籤不認識、
+  % 不是 0..=100 的整數後面跟 `%`、或時間解析不出的行都略過；沒有有效視窗的 pool 不產生快照。
+- **換算**：輸出是**剩餘**比例，`quota::Window.pct`（**已用**比例 0.0–1.0）= `1 − 剩餘/100`；
+  `resets_at` = 重置時間的 unix 秒。
+- **快取**：原始輸出存 `<live_base>/codeforge/usage/agy-usage.json`（`{"observed_ms", "text"}`、
+  0600、原子寫入），至多每 10 分鐘重跑一次（期間不 spawn `agy`）；跑失敗時改用不超過 6 小時
+  （同配額快照的 `MAX_AGE_MS`）的快取，再沒有就本次不收集。
+- **逾時／關斷**：`agy` 與 headless CLI 同一個包裝跑（`platform::low_priority_command`：Unix
+  `nice -n 19 timeout 20`、Windows 殺 pid 的看門狗），20 秒後被殺；exit 0 的 stdout 才算輸出。
+  環境變數 `CODEFORGE_USAGE_AGY=0` 完全不 spawn `agy`。
+- **鍵**：`hash8` = 這台 `$HOME`（canonicalized）的 `alias::path_hash8`；同一個 Google 帳號在兩台
+  主機上是兩列，operator 用 `usage alias set` 設了顯示名之前不會合併。
+
 ## 全帳號配額表（`usage fleet`）
 
 `codeforge usage fleet --dir <D>`：把許多主機的 `codeforge.usage-summary/1` 合併成一張全帳號配額表，
@@ -299,9 +319,10 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
   （任一視窗輸了就算）：JSON `old_hosts`、文字與分頁在標籤後加「舊」／old。列的 `observed_at_ms` 與 6 小時過期
   都看被選中視窗的擷取時間。被選中的視窗 `resets_at` ≤ now 就是「已重置」：JSON `reset: true`，畫成「週 已重置」／
   `week reset`（不顯示舊的 pct），不估算、不警示（`projected`、`warn`、`exhaust_at` 皆 `null`）。
-  帳號的 provider 由鍵的形式推得（`codex-<8 碼 hex>` → `codex`，其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
+  帳號的 provider 由鍵的形式推得（`codex-<8 碼 hex>` → `codex`，`agy-<8 碼 hex>`／`agyclaude-<8 碼 hex>` →
+  `agy`／`agyclaude`（見「agy 配額」），其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
   只出現在 `days`（source codex）的別名是「無來源」列。provider 列（`PROVIDERS`，小寫標籤）在沒有任何該 provider 的列時補一列
-  「無來源」，並帶原因 `source_note`：kimi、qoder、qodercn、agy、grok、cursor、opencode → `web_only`（只有網頁）；
+  「無來源」，並帶原因 `source_note`：kimi、qoder、qodercn、grok、cursor、opencode → `web_only`（只有網頁）；
   glm、minimax → `needs_token`（要 token，待 autopilot 鏡像）；codex → `no_window`（帳號沒有窗口資料，有窗口時就不是無來源）。
   文字表與分頁在「無來源」後淡色接「 · 原因」（i18n：`quota.fleet_src_*`、forge-stats `fleetSrc*`）。
 - **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗

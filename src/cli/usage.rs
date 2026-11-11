@@ -1,7 +1,7 @@
 //! `codeforge usage` (G36 plan, phase 3): collect, write `summary.json`, print a table.
 
 use crate::usage::reset_rule::Kind;
-use crate::usage::{collect, price, quota, store, summary};
+use crate::usage::{agy, collect, price, quota, store, summary};
 use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -147,6 +147,14 @@ fn collect_and_summarize(
         .collect();
     // codex accounts carry the windows of their newest rollout `rate_limits` the same way
     fresh.extend(collect::codex_snapshots(&conn, now)?);
+    // the host's agy account: the two pools of `agy -p /usage` (10-min cache, 20 s timeout,
+    // CODEFORGE_USAGE_AGY=0 to never spawn)
+    fresh.extend(agy::snapshots(
+        &summary::summary_dir(&live_base),
+        &home,
+        now,
+        agy::run_agy,
+    ));
     let v = summary::with_codex_sessions(
         summary::build(
             &rows,
