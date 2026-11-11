@@ -18,6 +18,7 @@ pub enum Action {
         claude_dirs: Vec<PathBuf>,
     },
     Push,
+    Export,
     Pools {
         json: bool,
     },
@@ -313,6 +314,15 @@ pub fn run(action: Action) -> Result<()> {
             let dir = path.parent().map(PathBuf::from).unwrap_or_default();
             let sha = summary::push(&dir, "fleet")?;
             println!("{sha}");
+            Ok(())
+        }
+        Action::Export => {
+            let (_conn, path) = collected(true)?;
+            let dir = path.parent().map(PathBuf::from).unwrap_or_default();
+            let bytes = summary::export_bytes(&dir)?;
+            use std::io::Write;
+            std::io::stdout().lock().write_all(&bytes)?;
+            println!();
             Ok(())
         }
         Action::Show { days, by, json } => {

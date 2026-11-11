@@ -15,6 +15,7 @@
 | 收集 | `codeforge usage`、`usage collect`、statusline 背景觸發（每 15 分鐘至多一次）、SessionEnd hook | `<data_dir>/usage/usage.db` |
 | 摘要 | 每次收集之後 | `<live_base>/codeforge/usage/summary.json` |
 | 推送 | `codeforge usage push` | `fleet upload`，印出 blob sha |
+| 匯出 | `codeforge usage export` | 印出驗證過、拿掉 email 和 name 的 summary（同 push 上傳的內容），給 hangar 用 ssh 收 |
 | 面板分頁 | forge-stats pane 的「用量」分頁（`/forge-stats usage` 直接開到這頁） | 只讀 `summary.json`：帳號 5h／7d 與倒數、今天（UTC）各 model 的 token 與 API 等值；摘要超過 1 小時就提示執行 `codeforge usage`，不自己呼叫 codeforge |
 
 `<data_dir>` = `CODEFORGE_DATA_DIR`，預設 `~/.local/share/codeforge`；`<live_base>` 見
@@ -289,6 +290,8 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
   `gpu-a.json`）；summary 裡的 `host` hash 與任何路徑都不顯示。每個檔都過 `summary::validate`，不合格的略過並計數
   （文字顯示「N 份略過」，JSON 的 `skipped` 為 `{原因: 數量}`，原因：`invalid`、`not_json`、`unreadable`、
   `too_large`（> 4 MiB）、`too_many`（> 256 份）、`bad_name`；沒有顯示名的帳號列記為 `no_identity`），不會中斷整張表。
+資料夾由 hangar 每 15 分鐘對每台主機跑 `ssh <host> codeforge usage export > <dir>/<label>.json` 收集填入
+（PM 01M74XA6Y5）：匯出的 bytes 就是 `usage push` 會上傳的那份（驗證過、拿掉 email 與 name），email 從不離開主機。
 - **合併**：每個別名一列；`hosts` 是有這個別名的所有檔名。**5h 與 7d 視窗各自取「擷取時間最新」的那筆觀察**
   （擷取時間 = 視窗的 `seen_at_ms`，沒有就用該帳號的 `written_at_ms`；平手取 `written_at_ms` 較新者，再取標籤較小者），
   **不是取最大 pct**，也不是整個帳號只看 `written_at_ms`：一台主機的 statusline 久未刷新、檔案卻剛寫出，
@@ -354,6 +357,7 @@ codeforge usage --json
 codeforge usage collect --quiet     # hook 用
 codeforge usage collect --claude-dir /srv/claude/seat-a --claude-dir /srv/claude/seat-b  # 本次掃描並記住（絕對路徑）
 codeforge usage push                # 印出 blob sha
+codeforge usage export              # 印出 push 會上傳的 bytes（驗證後拿掉 email 與 name，不連線、不寫檔），給 hangar 用 ssh 收
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
 codeforge usage pools [--json]      # usage.v1 配額池（CODEFORGE_USAGE_V1 未設 = 關）
 codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）
