@@ -312,6 +312,42 @@ fn a_codex_account_with_windows_is_merged_like_a_claude_one() {
     assert!(txt.contains("會不夠 估 · codex · 週 72%"), "{txt}");
 }
 
+#[test]
+fn agy_pool_keys_are_two_rows_with_their_pool_providers() {
+    // the collector records the host's agy account as `agy-<hex8>` (Gemini pool) and
+    // `agyclaude-<hex8>` (Claude/GPT pool): two accounts, one key per pool
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![
+            acct(
+                "agy-1a2b3c4d",
+                60,
+                Some((0.02, NOW_S + 2 * H)),
+                Some((0.4, NOW_S + 3 * D)),
+            ),
+            acct(
+                "agyclaude-1a2b3c4d",
+                60,
+                Some((0.0, NOW_S + 2 * H)),
+                Some((0.16, NOW_S + 3 * D)),
+            ),
+        ],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let g = row(&f, "agy-1a2b3c4d");
+    assert_eq!(g.provider, "agy");
+    assert_eq!(g.name, "agy");
+    assert_eq!(g.state, State::Ok);
+    let c = row(&f, "agyclaude-1a2b3c4d");
+    assert_eq!(c.provider, "agyclaude");
+    assert_eq!(c.name, "agyclaude");
+    assert_eq!(c.state, State::Ok);
+    // a host with no agy account has no agy row at all: no placeholder
+    assert!(f.rows.iter().all(|r| r.alias != "agy"));
+    assert!(f.rows.iter().all(|r| r.alias != "agyclaude"));
+}
+
 fn notes(v: &[(&str, &str)]) -> super::names::Notes {
     super::names::Notes(
         v.iter()

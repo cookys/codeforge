@@ -18,16 +18,17 @@ use unicode_width::UnicodeWidthStr;
 
 pub const SCHEMA: &str = "codeforge.fleet-quota/1";
 pub const DEFAULT_USE_TARGET: f64 = 0.85;
-/// Every non-Claude provider, each listed even with no account: without quota data its row is
-/// `no_source` with the reason. codex has windows when its rollouts carried `rate_limits`.
-pub const PROVIDERS: [(&str, SourceNote); 10] = [
+/// Every non-Claude provider that has no local source, each listed even with no account: without
+/// quota data its row is `no_source` with the reason. codex has windows when its rollouts carried
+/// `rate_limits`; agy has a real source (`super::agy`) and so never appears here — a host
+/// without agy simply has no agy row.
+pub const PROVIDERS: [(&str, SourceNote); 9] = [
     ("kimi", SourceNote::WebOnly),
     ("glm", SourceNote::NeedsToken),
     ("qoder", SourceNote::WebOnly),
     ("qodercn", SourceNote::WebOnly),
     ("minimax", SourceNote::NeedsToken),
     ("codex", SourceNote::NoWindow),
-    ("agy", SourceNote::WebOnly),
     ("grok", SourceNote::WebOnly),
     ("cursor", SourceNote::WebOnly),
     ("opencode", SourceNote::WebOnly),
@@ -483,9 +484,12 @@ pub fn merge(
     }
 }
 
-/// `claude` or a [`PROVIDERS`] name: a notes key that labels a provider, never an account.
+/// `claude`, a [`PROVIDERS`] name, or a [`super::names::KEY_PROVIDERS`] name (`agy`,
+/// `agyclaude`, `codex`): a notes key that labels a provider, never an account.
 pub fn is_provider_label(s: &str) -> bool {
-    s == "claude" || PROVIDERS.iter().any(|(p, _)| *p == s)
+    s == "claude"
+        || PROVIDERS.iter().any(|(p, _)| *p == s)
+        || super::names::KEY_PROVIDERS.contains(&s)
 }
 
 /// The notes of accounts that have no data (`usage note set --new`): a key that is a valid
