@@ -850,7 +850,7 @@ fn an_uncommitted_collect_leaves_no_trace() {
     {
         let tx = conn.transaction().unwrap();
         let v: Value = serde_json::from_str(&claude("req_x", 10, 10, json!({}))).unwrap();
-        claude_line(&tx, &v, "acct-a", NOW).unwrap();
+        claude_line(&tx, &v, "acct-a", None, NOW).unwrap();
         // dropped without commit: an interrupted collect
     }
     assert_eq!(totals(&conn).1, 0);
@@ -1659,4 +1659,172 @@ fn a_root_without_a_login_is_unattributed_also_its_old_hash_keyed_rows() {
     .unwrap();
     let rows = rows_since(&conn, "2000-01-01").unwrap();
     assert!(rows.iter().any(|r| r.account == "acct-337c98de"));
+}
+
+fn request_accounts(conn: &Connection) -> Vec<(String, String)> {
+    let mut st = conn
+        .prepare("SELECT request_id, account FROM requests ORDER BY request_id")
+        .unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+fn bucket_accounts(conn: &Connection) -> Vec<(String, i64, i64)> {
+    let mut st = conn
+        .prepare("SELECT account, input, requests FROM buckets ORDER BY account")
+        .unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+/// Timeline says A until t1, then B. A request an hour before t1 stays on A; one an hour
+/// after lands on B. The day bucket uses that same account. With no timeline both stay on
+/// the account logged in at collect time, and a row already stored keeps its account.
+#[test]
+fn requests_follow_the_login_timeline_across_a_relogin() {
+    let hour = 3_600_000;
+    let t1 = NOW - 2 * hour;
+    let before = t1 - hour;
+    let after = t1 + hour;
+    let lines = format!(
+        "{}{}",
+        claude("req_before", 10, 1, json!({"timestamp": iso(before)})),
+        claude("req_after", 20, 1, json!({"timestamp": iso(after)})),
+    );
+
+    // no timeline: both rows take the account logged in now (the old rule)
+    let e = env();
+    write(&e.cfg.join("projects/p/s.jsonl"), &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-bbbbbbbb".into());
+    collect(&mut conn, &rs, &[], NOW).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_after".into(), "acct-bbbbbbbb".into()),
+            ("req_before".into(), "acct-bbbbbbbb".into()),
+        ]
+    );
+
+    // timeline: A until t1, then B
+    let e = env();
+    let path = e.cfg.join("projects/p/s.jsonl");
+    write(&path, &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-bbbbbbbb".into());
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-bbbbbbbb", t1).unwrap();
+    let logins =
+        std::fs::read_to_string(usage.join(format!("logins-{}.json", rs[0].hash))).unwrap();
+    assert!(!logins.contains('@'), "{logins}");
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_after".into(), "acct-bbbbbbbb".into()),
+            ("req_before".into(), "acct-aaaaaaaa".into()),
+        ]
+    );
+    assert_eq!(
+        bucket_accounts(&conn),
+        vec![
+            ("acct-aaaaaaaa".into(), 10, 1),
+            ("acct-bbbbbbbb".into(), 20, 1),
+        ]
+    );
+
+    // already stored: a reread, under a timeline that would now call both A, keeps each row's
+    // account. The grown tokens land on that same bucket (proves the file was read again).
+    std::fs::remove_file(usage.join(format!("logins-{}.json", rs[0].hash))).unwrap();
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    let rewritten = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("\"input_tokens\":10", "\"input_tokens\":15");
+    std::fs::write(&path, rewritten).unwrap();
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_after".into(), "acct-bbbbbbbb".into()),
+            ("req_before".into(), "acct-aaaaaaaa".into()),
+        ]
+    );
+    assert_eq!(
+        bucket_accounts(&conn),
+        vec![
+            ("acct-aaaaaaaa".into(), 15, 1),
+            ("acct-bbbbbbbb".into(), 20, 1),
+        ]
+    );
+}
+
+/// Review g1 s0: right after a re-login A -> B, A's snapshot naming the root is still fresh and
+/// wins `root_alias`. collect must observe the login (B), not that alias: no A entry is
+/// appended after B, and a request made after the switch stays B's. Logged out: the stored
+/// timeline is still applied.
+#[test]
+fn collect_observes_the_login_not_a_fresh_snapshot_of_the_previous_account() {
+    let hour = 3_600_000;
+    let t1 = NOW - 2 * hour;
+    let lines = claude("req_after", 20, 1, json!({"timestamp": iso(t1 + hour)}));
+    let e = env();
+    write(&e.cfg.join("projects/p/s.jsonl"), &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-bbbbbbbb".into());
+    let hash = rs[0].hash.clone();
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    crate::usage::logins::observe(&usage, &hash, "acct-bbbbbbbb", t1).unwrap();
+    let a_snap = Snapshot {
+        alias: "acct-aaaaaaaa".into(),
+        org: None,
+        email: None,
+        root: Some(hash.clone()),
+        written_at_ms: NOW - 60_000,
+        five_hour: None,
+        seven_day: None,
+    };
+    collect_with_logins(
+        &mut conn,
+        &rs,
+        std::slice::from_ref(&a_snap),
+        NOW,
+        Some(&usage),
+    )
+    .unwrap();
+    let t = crate::usage::logins::read(&usage, &hash).unwrap();
+    assert_eq!(t.alias_at(NOW), Some("acct-bbbbbbbb"));
+    assert_eq!(
+        request_accounts(&conn),
+        vec![("req_after".into(), "acct-bbbbbbbb".into())]
+    );
+
+    // logged out now: the stored timeline still attributes, nothing is appended
+    let e = env();
+    write(&e.cfg.join("projects/p/s.jsonl"), &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = None;
+    let hash = rs[0].hash.clone();
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    crate::usage::logins::observe(&usage, &hash, "acct-bbbbbbbb", t1).unwrap();
+    let before = std::fs::read(usage.join(format!("logins-{hash}.json"))).unwrap();
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        std::fs::read(usage.join(format!("logins-{hash}.json"))).unwrap(),
+        before
+    );
+    assert_eq!(
+        request_accounts(&conn),
+        vec![("req_after".into(), "acct-bbbbbbbb".into())]
+    );
 }

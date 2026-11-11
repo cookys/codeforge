@@ -12,6 +12,7 @@ pub mod fleet_quota;
 pub mod grok;
 pub mod hourly;
 pub mod kimi;
+pub mod logins;
 pub mod names;
 pub mod price;
 pub mod quota;
