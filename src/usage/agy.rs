@@ -208,7 +208,11 @@ pub fn run_agy() -> Option<String> {
     if std::env::var(ENV_DISABLE).is_ok_and(|v| v == "0") {
         return None;
     }
-    let child = crate::platform::low_priority_command(&[BIN, "-p", "/usage"], TIMEOUT_S)
+    // resolved to an absolute path first: no agy, no spawn (not even the nice/timeout wrapper),
+    // and the temp-dir cwd can never supply the binary
+    let bin = find_on_path(BIN, &std::env::var_os("PATH")?)?;
+    let bin = bin.to_str()?;
+    let child = crate::platform::low_priority_command(&[bin, "-p", "/usage"], TIMEOUT_S)
         .current_dir(std::env::temp_dir())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -222,6 +226,33 @@ pub fn run_agy() -> Option<String> {
     out.status
         .success()
         .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// The first executable `name` in an absolute directory of `path` (empty and relative entries
+/// are skipped). On Windows the `.exe`, `.cmd` and `.bat` forms are tried.
+fn find_on_path(name: &str, path: &std::ffi::OsStr) -> Option<std::path::PathBuf> {
+    #[cfg(windows)]
+    let names: Vec<String> = ["exe", "cmd", "bat"]
+        .iter()
+        .map(|e| format!("{name}.{e}"))
+        .collect();
+    #[cfg(not(windows))]
+    let names: Vec<String> = vec![name.to_string()];
+    std::env::split_paths(path)
+        .filter(|d| d.is_absolute())
+        .flat_map(|d| names.iter().map(move |n| d.join(n)))
+        .find(|p| is_executable(p))
+}
+
+#[cfg(unix)]
+fn is_executable(p: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(p: &Path) -> bool {
+    p.is_file()
 }
 
 #[cfg(test)]
@@ -414,5 +445,30 @@ mod tests {
         std::env::set_var(ENV_DISABLE, "0");
         assert_eq!(run_agy(), None);
         std::env::remove_var(ENV_DISABLE);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn find_on_path_takes_only_an_executable_in_an_absolute_dir() {
+        use std::os::unix::fs::PermissionsExt;
+        let none = tempfile::tempdir().unwrap();
+        let plain = tempfile::tempdir().unwrap();
+        let exec = tempfile::tempdir().unwrap();
+        std::fs::write(plain.path().join("agy"), "").unwrap();
+        let bin = exec.path().join("agy");
+        std::fs::write(&bin, "").unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path = |dirs: &[&Path]| std::env::join_paths(dirs).unwrap();
+        // missing, then not executable, then a hit
+        assert_eq!(
+            find_on_path("agy", &path(&[none.path(), plain.path(), exec.path()])),
+            Some(bin.clone())
+        );
+        assert_eq!(
+            find_on_path("agy", &path(&[none.path(), plain.path()])),
+            None
+        );
+        // a relative entry (as an empty PATH entry or `.`) is never searched
+        assert_eq!(find_on_path("agy", std::ffi::OsStr::new(".:")), None);
     }
 }
