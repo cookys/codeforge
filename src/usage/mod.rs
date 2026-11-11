@@ -8,6 +8,7 @@ pub mod alias;
 pub mod autocollect;
 pub mod collect;
 pub mod fleet_quota;
+pub mod grok;
 pub mod names;
 pub mod price;
 pub mod quota;

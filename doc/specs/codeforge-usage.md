@@ -301,6 +301,33 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
 - **鍵**：`hash8` = 這台 `$HOME`（canonicalized）的 `alias::path_hash8`；同一個 Google 帳號在兩台
   主機上是兩列，operator 用 `usage alias set` 設了顯示名之前不會合併。
 
+## grok 配額（本機 `grok` CLI 的週配額）
+
+`codeforge usage collect` 同時收這台主機的 `grok` CLI 帳號週配額，寫進 `summary.json`，再進
+`usage fleet`（`codeforge.fleet-quota/1`）：一個帳號，鍵是 `grok-<hash8>`，只有週視窗
+（`five_hour` 為 null）。還沒設顯示名時，畫面顯示 `grok-cli`。實作 `src/usage/grok.rs`。
+
+- **端點**：`GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`。標頭
+  `Authorization: Bearer <key>`、`User-Agent: grok/<version>`。`<version>` 取自 `grok --version`
+  （印出例如 `grok 1.0.70 (f50904eaee6c)`，用 `1.0.70`）。逾時 10 秒。`grok` 不在 PATH 上，或讀不到
+  版號，就不讀登入檔、不送請求。
+- **憑證（操作員卡 d-8bbff214）**：只在這台主機、這個帳號、發出請求的當下讀 `~/.grok/auth.json`。
+  金鑰只放在記憶體裡的區域變數，隨請求送出；不複製到任何檔案，不寫進日誌、stderr、錯誤訊息、快取、
+  summary 或測試快照；除了這個 billing 端點，不送到別的地方。`auth.json` 是頂層恰好一個欄位的 JSON
+  物件：忽略欄位名，取那個值。那個值只用 `"key"`（字串，Bearer）與 `"expires_at"`（字串，ISO 8601
+  UTC、帶奈秒與 `Z`，例如 `2026-11-11T15:27:38.257878022Z`）。其餘欄位（`refresh_token`、`email`、
+  `user_id` 等）不讀。`expires_at` 已經到期（≤ now），或 HTTP 401／403：停止，不重新登入、不換發
+  token，本次沒有新資料，改用下面的快取（快取自己逾齡後變成過期）。
+- **換算**：`config.creditUsagePercent`（數字，接受 0..=150，否則整筆不要）除以 100 得到
+  `seven_day.pct`；`config.currentPeriod.end`（RFC3339）換成 unix 秒，寫進 `seven_day.resets_at`。
+  `five_hour` 為 null。回應不可信：缺欄位或型別不對就沒有快照。
+- **快取**：`<live_base>/codeforge/usage/grok-usage.json` 只存 `{"observed_ms","pct","resets_at"}`
+  （0600、原子寫入，同其他 usage 快取）。未滿 10 分鐘就用快取、不打端點。否則打端點：解析成功就覆寫
+  快取並回傳；Denied、失敗或解析失敗時，若快取未超過 6 小時（`quota::MAX_AGE_MS`）就用快取，否則這次
+  不收集。
+- **關斷**：環境變數 `CODEFORGE_USAGE_GROK=0` 時什麼都不讀、不打端點。
+- **鍵**：`hash8` 是這台 `$HOME`（canonicalized）的 `alias::path_hash8`。
+
 ## 全帳號配額表（`usage fleet`）
 
 `codeforge usage fleet --dir <D>`：把許多主機的 `codeforge.usage-summary/1` 合併成一張全帳號配額表，
@@ -320,10 +347,12 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
   都看被選中視窗的擷取時間。被選中的視窗 `resets_at` ≤ now 就是「已重置」：JSON `reset: true`，畫成「週 已重置」／
   `week reset`（不顯示舊的 pct），不估算、不警示（`projected`、`warn`、`exhaust_at` 皆 `null`）。
   帳號的 provider 由鍵的形式推得（`codex-<8 碼 hex>` → `codex`，`agy-<8 碼 hex>`／`agyclaude-<8 碼 hex>` →
-  `agy`／`agyclaude`（見「agy 配額」），其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
+  `agy`／`agyclaude`（見「agy 配額」），`grok-<8 碼 hex>` → `grok`（見「grok 配額」，只有週視窗；預設顯示名
+  `grok-cli`），其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
   只出現在 `days`（source codex）的別名是「無來源」列。provider 列（`PROVIDERS`，小寫標籤）在沒有任何該 provider 的列時補一列
-  「無來源」，並帶原因 `source_note`：kimi、qoder、qodercn、grok、cursor、opencode → `web_only`（只有網頁）；
+  「無來源」，並帶原因 `source_note`：kimi、qoder、qodercn、cursor、opencode → `web_only`（只有網頁）；
   glm、minimax → `needs_token`（要 token，待 autopilot 鏡像）；codex → `no_window`（帳號沒有窗口資料，有窗口時就不是無來源）。
+  agy 與 grok 有本機來源，不在 `PROVIDERS` 裡：沒有資料就沒有那一列，不會補一列「只有網頁」。
   文字表與分頁在「無來源」後淡色接「 · 原因」（i18n：`quota.fleet_src_*`、forge-stats `fleetSrc*`）。
 - **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗
   畫成「已重置」而不是 pct（兩個都過就是「已重置，等新觀察」，`state` 為 `stale`）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
