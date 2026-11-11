@@ -361,8 +361,10 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
 ## grok 配額（本機 `grok` CLI 的週配額）
 
 `codeforge usage collect` 同時收這台主機的 `grok` CLI 帳號週配額，寫進 `summary.json`，再進
-`usage fleet`（`codeforge.fleet-quota/1`）：一個帳號，鍵是 `grok-<hash8>`，只有週視窗
+`usage fleet`（`codeforge.fleet-quota/1`）：grok 帳號的鍵是 `grok-<hash8>`，只有週視窗
 （`five_hour` 為 null）。還沒設顯示名時，畫面顯示 `grok-cli`。實作 `src/usage/grok.rs`。
+
+同一份 billing 回應的 `config.productUsage` 若有一列，其 `product` 轉成小寫並去掉每個非字母、非數字的字元後等於 `grokbot`（`GrokBot`、`Grok Bot`、`grok-bot` 都算），且 `usagePercent` 是 0..=150 的數字，就多一筆快照：鍵 `grokbot-<同一個 hash8>`，週視窗的 `pct` 是該百分比除以 100，`resets_at` 與 grok 列同一個 `currentPeriod.end`。百分比缺欄、不是數字或不在範圍內就略過該列，grok 快照不變。帳號的 billing 沒有這一列就沒有 grokbot 快照；trinity 若在另一個 xAI 帳號，這裡不會出現。還沒設顯示名時這一列顯示 `trinity`。
 
 - **端點**：`GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`。標頭
   `Authorization: Bearer <key>`、`User-Agent: grok/<version>`。`<version>` 取自 `grok --version`
@@ -378,11 +380,12 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
 - **換算**：`config.creditUsagePercent`（數字，接受 0..=150，否則整筆不要）除以 100 得到
   `seven_day.pct`；`config.currentPeriod.end`（RFC3339）換成 unix 秒，寫進 `seven_day.resets_at`。
   `five_hour` 為 null。回應不可信：缺欄位或型別不對就沒有快照。
-- **快取**：`<live_base>/codeforge/usage/grok-usage.json` 只存 `{"observed_ms","pct","resets_at"}`
-  （0600、原子寫入，同其他 usage 快取）。未滿 10 分鐘就用快取、不打端點。否則打端點：解析成功就覆寫
-  快取並回傳；Denied、失敗或解析失敗時，若快取未超過 6 小時（`quota::MAX_AGE_MS`）就用快取，否則這次
-  不收集。
-- **關斷**：環境變數 `CODEFORGE_USAGE_GROK=0` 時什麼都不讀（包括快取，不輸出 grok 列）、不打端點。
+- **快取**：`<live_base>/codeforge/usage/grok-usage.json` 只存 `{"observed_ms","pct","resets_at"}`，
+  有 Grok Bot 列時多一個數字 `bot_pct`（已除以 100；不含產品名稱或其他欄位）。舊快取沒有 `bot_pct`
+  仍只回 grok 快照。0600、原子寫入，同其他 usage 快取。未滿 10 分鐘就用快取、不打端點（有 `bot_pct`
+  時一併回 grokbot 快照）。否則打端點：解析成功就覆寫快取並回傳；Denied、失敗或解析失敗時，若快取未超過
+  6 小時（`quota::MAX_AGE_MS`）就用快取，否則這次不收集。
+- **關斷**：環境變數 `CODEFORGE_USAGE_GROK=0` 時什麼都不讀（包括快取，不輸出 grok 或 grokbot 列）、不打端點。
 - **鍵**：`hash8` 是這台 `$HOME`（canonicalized）的 `alias::path_hash8`。
 
 ## kimi 配額（本機 `kimi` Code CLI 的 5 小時與週配額）
@@ -436,12 +439,13 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
   `week reset`（不顯示舊的 pct），不估算、不警示（`projected`、`warn`、`exhaust_at` 皆 `null`）。
   帳號的 provider 由鍵的形式推得（`codex-<8 碼 hex>` → `codex`，`agy-<8 碼 hex>`／`agyclaude-<8 碼 hex>` →
   `agy`／`agyclaude`（見「agy 配額」），`grok-<8 碼 hex>` → `grok`（見「grok 配額」，只有週視窗；預設顯示名
-  `grok-cli`），`kimi-<8 碼 hex>` → `kimi`（見「kimi 配額」，5 小時與週視窗；預設顯示名 `kimi-code`），
+  `grok-cli`），`grokbot-<8 碼 hex>` → `grokbot`（見「grok 配額」，只有週視窗；預設顯示名 `trinity`），
+  `kimi-<8 碼 hex>` → `kimi`（見「kimi 配額」，5 小時與週視窗；預設顯示名 `kimi-code`），
   其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
   只出現在 `days`（source codex）的別名是「無來源」列。provider 列（`PROVIDERS`，小寫標籤）在沒有任何該 provider 的列時補一列
   「無來源」，並帶原因 `source_note`：qoder、qodercn、cursor、opencode → `web_only`（只有網頁）；
   glm、minimax → `needs_token`（要 token，待 autopilot 鏡像）；codex → `no_window`（帳號沒有窗口資料，有窗口時就不是無來源）。
-  agy、grok 與 kimi 有本機來源，不在 `PROVIDERS` 裡：沒有資料就沒有那一列，不會補一列「只有網頁」。
+  agy、grok、grokbot 與 kimi 有本機來源，不在 `PROVIDERS` 裡：沒有資料就沒有那一列，不會補一列「只有網頁」。
   文字表與分頁在「無來源」後淡色接「 · 原因」（i18n：`quota.fleet_src_*`、forge-stats `fleetSrc*`）。
 - **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗
   畫成「已重置」而不是 pct（兩個都過就是「已重置，等新觀察」，`state` 為 `stale`）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
