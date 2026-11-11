@@ -3,8 +3,9 @@
 //! Reads only the numeric usage fields of Claude Code and Codex transcripts, incrementally,
 //! into `usage.db` buckets. Containment: the walk never follows a symlink, each file is opened
 //! `O_NOFOLLOW | O_NONBLOCK`, must be a regular file and lie under its canonical root. Nothing
-//! textual is persisted: a source is known by sha256(canonical path), a project by the last
-//! component of its cwd (local only), a model id only when it matches the id grammar.
+//! from transcript content is persisted: a source is known by sha256(canonical path), a project
+//! by the last component of its cwd (local only), a model id only when it matches the id grammar.
+//! Claude config directory paths are kept locally so later collects can rediscover them.
 
 use super::{alias, quota};
 use anyhow::Result;
@@ -56,7 +57,9 @@ pub fn roots(claude_dirs: &[PathBuf], codex_dir: Option<&Path>) -> Vec<Root> {
         }
     };
     for d in claude_dirs {
-        add(Kind::Claude, d);
+        if real_dir_chain(d) {
+            add(Kind::Claude, d);
+        }
     }
     if let Some(d) = codex_dir {
         add(Kind::Codex, d);
@@ -64,8 +67,26 @@ pub fn roots(claude_dirs: &[PathBuf], codex_dir: Option<&Path>) -> Vec<Root> {
     out
 }
 
+/// Previously scanned Claude config directories, including paths currently absent on disk.
+pub fn remembered_claude_dirs(conn: &Connection) -> Result<Vec<PathBuf>> {
+    let mut st = conn.prepare("SELECT path FROM claude_dirs ORDER BY path")?;
+    let dirs = st
+        .query_map([], |r| Ok(PathBuf::from(r.get::<_, String>(0)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(dirs)
+}
+
 fn real_dir(p: &Path) -> bool {
     std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_dir())
+}
+
+/// Check before canonicalizing: neither a trailing slash nor `..` may hide a symlink.
+fn real_dir_chain(p: &Path) -> bool {
+    let mut prefix = PathBuf::new();
+    p.components().all(|part| {
+        prefix.push(part);
+        real_dir(&prefix)
+    })
 }
 
 fn real_file(p: &Path) -> bool {
@@ -90,7 +111,11 @@ pub fn sources(root: &Root) -> Vec<PathBuf> {
     let mut out = Vec::new();
     match root.kind {
         Kind::Claude => {
-            for proj in entries(&root.dir.join("projects")) {
+            let projects = root.dir.join("projects");
+            if !real_dir(&projects) {
+                return out;
+            }
+            for proj in entries(&projects) {
                 if !real_dir(&proj) {
                     continue;
                 }
@@ -888,6 +913,13 @@ pub fn collect(
 ) -> Result<Report> {
     let mut rep = Report::default();
     for root in roots {
+        if root.kind == Kind::Claude {
+            conn.execute(
+                "INSERT INTO claude_dirs (path, first_seen_ms, last_seen_ms) VALUES (?1, ?2, ?2)
+                 ON CONFLICT (path) DO UPDATE SET last_seen_ms = excluded.last_seen_ms",
+                params![root.dir.to_string_lossy(), now_ms],
+            )?;
+        }
         let account = root_alias(conn, root, snapshots, now_ms)?;
         for path in sources(root) {
             match collect_file(conn, &path, root, &account, now_ms) {

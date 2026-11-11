@@ -182,6 +182,8 @@ pub fn open(dir: &Path) -> Result<(Connection, Vec<String>)> {
              PRIMARY KEY (day, source, account, model, project, speed));
          CREATE TABLE IF NOT EXISTS roots (
              root_hash TEXT PRIMARY KEY, alias TEXT NOT NULL, seen_ms INTEGER NOT NULL);
+         CREATE TABLE IF NOT EXISTS claude_dirs (
+             path TEXT PRIMARY KEY, first_seen_ms INTEGER NOT NULL, last_seen_ms INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS codex_limits (
              account TEXT PRIMARY KEY, observed_ms INTEGER NOT NULL,
              five_pct REAL, five_resets INTEGER, week_pct REAL, week_resets INTEGER);",
