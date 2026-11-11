@@ -193,7 +193,7 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: operator 對 pm 計畫拍板、fleet 通知 codeforge 寫遷移計畫；計畫寫好後開決策卡給 owner，不先動 code。
 **Not done**: 遷移計畫、schema 增欄、寫入與 recall 路徑改動，全部未開始。
 
-## B34 — 上層 plugin 吃掉 band 時，statusline 仍縮成精簡版、寵物哪裡都不顯示
+## B34 — 上層 plugin 吃掉 band 時，statusline 仍縮成精簡版、寵物哪裡都不顯示 ✅ 2026-11-07（心跳加 `band_seen`，見 `codeforge-mod-ui.md` band 版面；觸發條件成立：autopilot O4 外殼不呼叫 `next(e)`）
 
 **Area**: `.claude/skills/forge-stats/hooks/register.tsx`（心跳每 2 秒無條件寫）、`src/cli/statusline.rs` `read_mod_heartbeat`
 **Premise**: statusline 只看心跳的 `layout: band` 就縮（owner 2026-10-31 定案，拿掉 `pet_shown`）。心跳由計時器寫，不知道 AbovePrompt 的 render hook 有沒有輪到 forge-stats：若鏈上有 plugin 自己畫 band、不呼叫 `next(e)`，forge-stats 的 band 不出現，statusline 卻照樣縮，寵物兩邊都看不到。現在 autopilot 的分頁列用 `await next(e)` 疊在上面（BL-0352），不會發生。
@@ -217,13 +217,16 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
 **Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
 
-## B43 — release tarball 可重現（同一 commit 產出同一 sha）
+## B45 — G40 配額顯示（forge-stats）的後續
 
-**Area**: `scripts/package.sh`
-**Effort**: S
-**Premise**: 同一份程式碼兩次 `release-local.sh` 建出的 tarball sha256 不同（例：0.0.9 aarch64 4b5ab357… 與 3a3c6f26…），因為 tar 帶入 staging 檔案的 mtime、owner/uid 和讀目錄的順序，gzip header 也帶時間戳。PM（2026-11-03，G38 驗收）要求同一 commit 產出同一 sha，讓任何人都能在本機重建並比對已發布的 release。
-做法：`SOURCE_DATE_EPOCH` 取自 `git log -1 --format=%ct`；`tar --sort=name --mtime=@$SOURCE_DATE_EPOCH --owner=0 --group=0 --numeric-owner --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime`；`gzip -n`（`tar … | gzip -n`）。binary 本身是否逐 byte 相同要另外確認（`--remap-path-prefix`、cross 映像版本固定），驗收條件是同一 commit 連跑兩次 `release-local.sh` 得到相同的 `.sha256`。
-**Trigger**: 下一次 release 之前。
+**Area**: `plugins/forge-stats/hooks/{quota,quota-view,register}.ts(x)`、`src/usage/quota_mirror*.rs`、`src/usage/quota_view.rs`
+**Effort**: M
+**Premise**: G40 顯示端已完成 forge-stats（band 晶片＋用量分頁）與 Rust 端（statusline、`codeforge usage accounts`，TS↔Rust `QUOTA_CONTRACT` 同步測試），都用測試資料開發（develop，2026-11-04）。留下：
+- `scripts/lib/quota-contract.json`（autopilot P3）出現後，`QUOTA_CONTRACT` 的 30／7 天、6 h、300 s 改成跟它同步測試（契約 §21.4、N35）。
+- 契約 N37 的 `<live_dir>` 對照向量目前只有名稱沒有值；有具體值後移植成測試。mod 無法判斷 `/tmp` 是否在 RAM、目錄擁有者與權限，現在一律不採 `/tmp`、以「存在」代替 autopilot 的檢查。
+- forge-stats 的 `$.fs.read` 沒有 no-follow、限大小選項：讀後重驗大小與 stat，殘餘競態已註明；API 有了再改（Rust 端已用 `openat` 相對目錄描述元開檔，沒有這個問題）。
+- 真實 mirror 樣本與 Claude 的 `starts_window` 等操作員帳號卡 d-2a19fdb5；拿到後跑 `scripts/g40-real-data/check.sh <live_dir>`（statusline 與 panel/1 五級寬度、`acct-`、`$`；2026-11-07 備好，合成 fixture 綠、負控制紅），再看一次畫面。
+**Trigger**: autopilot 宣布 P3／N37 落地或 plan amendment 回覆；或拿到真實 mirror 樣本；或下次動配額顯示。
 **Not done**: 只記錄。
 
 ## B42 — G38 本機 release 流程 review 列為後續的項目
@@ -255,12 +258,29 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 下次動 `codeforge usage` 的收集器，或在非 unix 平台建置測試；8f1b90b2 在第一次看到 `usage collect` 因配額快照驗證失敗時。
 **Not done**: 只記錄；詳情見 autopilot lane/g36rest 第 2、3 輪的 finding。
 
-## B40 — 一次無法重現的 cargo test 失敗（疑似 flaky）
+## B46 — 其他會改行程環境變數的測試（B40 的同類）
 
-**Area**: 測試套件（名稱未知）
-**Premise**: 2026-11-03 commit 1fdd922 前跑全套，986 條中 1 條失敗；當時輸出只過濾留下 `test result` 摘要行，沒有保存完整 log，失敗的測試名稱無法回收（session 紀錄也查不到）。之後連跑 18 次全綠。嫌疑：`live::tests::missing_findmnt_falls_back_to_proc_mounts`（同日稍早也單獨失敗過一次、未重現），以及會改行程層級環境變數的測試（cargo test 平行執行時互相競爭）。PM 判定：在證明不是之前，當作 flaky 追蹤。
-**Trigger**: `target/flaky-tests.log` 出現 FLAKY 紀錄（`scripts/test-flake-guard.sh` 寫入，`check-all.sh` 的 test 步驟會經過它），或任何一次失敗後重跑通過。
-**Not done**: 已加 flake guard（失敗重跑一次、紀錄保留、不隱藏）；根因待第一筆紀錄出現後再查。
+**Area**: `src/cli/statusline.rs`（NO_COLOR）、`src/cli/subagent_statusline.rs`（AUTOPILOT_LIVE_DIR）、`src/llm.rs`（CODEFORGE_AGY_MODEL、CODEFORGE_LLM_MAX_LOAD_PER_CORE）、`src/mnemos/health.rs`（XDG_RUNTIME_DIR）、`src/commentary/budget.rs`
+**Effort**: S
+**Premise**: B40 的根因是 `src/live.rs` 測試把整個行程的 PATH 換掉，平行跑的測試用名字 spawn 指令就 ENOENT；已改成把環境當參數傳入（fix/b40，紅 46/60 → 綠 0/60）。上列測試仍用 `set_var`／`remove_var`，各自只有模組內的鎖，跟其他讀同一變數的測試仍可能互撞。
+**Trigger**: `target/flaky-tests.log` 再出現 FLAKY 紀錄且測試名落在上列模組，或下次動這些測試。
+**Not done**: 只記錄。
+
+## B47 — forge-stats 的 `claude plugin validate` 提醒（上架外觀）
+
+**Area**: `plugins/forge-stats/.claude-plugin/plugin.json`、`plugins/forge-stats/README.md`
+**Effort**: XS
+**Premise**: 2026-11-05 升 0.0.9 時 `claude plugin validate plugins/forge-stats` 通過，但有 3 個提醒：plugin.json 沒有 `author`；沒有 icon（ICON_MISSING，要 512–2048 px 的方形 PNG）；README 有個連結 `http://127.0.0.1:8845/v1/ingest/ledger` 被當成 documentationUrl，因為不是 https:// 被丟掉（LISTING_URL_SCHEME）。都不影響載入，`claude plugin test` 146/146。PM 說不擋任何事。
+**Trigger**: 下次動 forge-stats 的 manifest 或 README，或要把 mod 上架到 plugin 目錄。
+**Not done**: 只記錄。
+
+## B48 — MUD TUI 的戰鬥紀錄改成聊天室式（tui-guideline §13）
+
+**Area**: `src/tui/panels/combat_log.rs`、`src/tui/layout.rs`
+**Effort**: S
+**Premise**: 2026-11-05 forge-stats pane 照 §13 改成操作區在底、內容往上長；PM 決定 MUD TUI 這次不改（MUD 在 Goal 的「目前不做」）。`codeforge tui` 的戰鬥紀錄是最新的排最上面（`merge_newest_first`），也沒有操作區，跟 §13 相反。
+**Trigger**: 下次動 MUD TUI（Goal 把 MUD 後段放回目前目標時）。
+**Not done**: 只記錄。
 
 ## B39 — G36 第 1 階段 review 的後續（statusline 配額列）
 

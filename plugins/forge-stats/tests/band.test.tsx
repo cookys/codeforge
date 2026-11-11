@@ -41,11 +41,11 @@ const band = (bodyColumns: number, over: Record<string, unknown> = {}) =>
     props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns, scroll: { offset: 0, bodyRows: 19 }, view: {}, ...over },
   }) as const
 
-type World = { writes: { path: string; text: string }[]; blits: { requestId: string; key: string; cells: string }[]; store: Record<string, unknown>; opened: number; deny: boolean }
+type World = { writes: { path: string; text: string }[]; blits: { requestId: string; key: string; cells: string }[]; store: Record<string, unknown>; opened: number; deny: boolean; invalidates: number; session?: unknown }
 
 // The engine beneath: HOME, the live pointer, pet.json, the session view, the store, writes and blits.
 function world(on: Parameters<TestBody>[1], layout?: string): World {
-  const w: World = { writes: [], blits: [], store: layout === undefined ? {} : { layout }, opened: 0, deny: false }
+  const w: World = { writes: [], blits: [], store: layout === undefined ? {} : { layout }, opened: 0, deny: false, invalidates: 0 }
   on('command.register', () => ({ value: { command: 'forge-stats' } }))
   on('ui.open', () => {
     w.opened += 1
@@ -57,7 +57,7 @@ function world(on: Parameters<TestBody>[1], layout?: string): World {
   on('fs.read', (_, e) => {
     if (e.path === '/home/t/.autopilot/live-pointer.json') return { value: JSON.stringify({ live_base: LIVE }) }
     if (e.path === LIVE + '/codeforge/pet.json') return { value: JSON.stringify(SNAP) }
-    if (e.path === SESSION_FILE) return { value: JSON.stringify(SESSION) }
+    if (e.path === SESSION_FILE) return { value: JSON.stringify(w.session ?? SESSION) }
     throw new Error('ENOENT ' + e.path)
   })
   on('fs.write', (_, e) => {
@@ -69,7 +69,10 @@ function world(on: Parameters<TestBody>[1], layout?: string): World {
     w.store[e.key] = e.value
     return { value: undefined }
   })
-  on('ui.invalidate', () => ({ value: undefined }))
+  on('ui.invalidate', () => {
+    w.invalidates += 1
+    return { value: undefined }
+  })
   // what draws beneath when the band passes: nothing
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -125,10 +128,42 @@ test('the heartbeat is written at session start, before any tick, and every 2 s'
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const first = lastBeat(w)
-  expect(first).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_000_000, layout: 'band', summary_row: true })
+  expect(first).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_000_000, layout: 'band', summary_row: true, band_seen: false })
   expect(w.writes.filter(x => x.path === HB)[0]!.text.length < 512).toBe(true)
   await clock.advance(2000)
   expect(lastBeat(w)?.written_at_ms).toBe(1_002_000)
+})
+
+// B34: the statusline compacts only for a band that drew lately. A plugin above forge-stats on the AbovePrompt chain that draws its own band and never
+// calls `next(e)` (autopilot's O4 shell) means forge-stats' band hook is never called: the band is not mounted for it.
+
+test('band_seen: true while the band is on screen and drawing; false within 32 s once its hook stops being called (B34)', async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(lastBeat(w)?.band_seen).toBe(false)
+  const ui = await $.ui.mount(band(120))
+  for (let i = 0; i < 20; i++) {
+    await clock.advance(2000)
+    expect(lastBeat(w)).toMatchObject({ layout: 'band', band_seen: true })
+  }
+  // a shell opened over it: the hook is not called any more
+  await ui.unmount()
+  await clock.advance(32_000)
+  expect(lastBeat(w)).toMatchObject({ layout: 'band', summary_row: true, band_seen: false })
+})
+
+test('a band hook never called (a plugin above draws its own band: autopilot\'s O4 shell) never says band_seen; layout stays band (B34)', async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  for (let i = 0; i < 20; i++) {
+    await clock.advance(2000)
+    expect(lastBeat(w)).toMatchObject({ layout: 'band', summary_row: true, band_seen: false })
+  }
+  // and it keeps asking for a render, so a band that does come back is seen within one beat
+  expect(w.invalidates >= 20).toBe(true)
 })
 
 test('the band layout is the default and does not open the pane', async ($, on) => {
@@ -213,7 +248,7 @@ test('/forge-stats layout switches, persists, and the beat follows', async ($, o
   expect(w.store.layout).toBe('pane')
   expect(w.opened).toBe(1)
   await clock.advance(2000)
-  expect(lastBeat(w)).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_002_000, layout: 'pane', summary_row: true })
+  expect(lastBeat(w)).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_002_000, layout: 'pane', summary_row: true, band_seen: false })
   const bad = await $.command.run(cmd('layout sideways'))
   expect(bad.text?.includes('band|pane')).toBe(true)
   expect(w.store.layout).toBe('pane')
@@ -460,4 +495,48 @@ test('after a model step the band and the summary show no speed (B32)', async ($
     expect(await ui.find({ type: 'Text', text: /tok\/s|ϟ/ })).toBe(undefined)
     await ui.unmount()
   }
+})
+
+// ---- the prompt hint tail (PM, after the prompt-slot probe): the lights after the engine's own hint, never a rewrite of it ----
+const HINT = { plugin: 'forge-stats', component: 'PromptHint', requestId: 'hint', surface: 'terminal', props: { isDraft: false, isWorking: false, hint: '? for shortcuts' } } as const
+// beneath: the engine draws the hint; record what reached it
+const hintBeneath = (on: Parameters<TestBody>[1], seen: { hint?: string; tail?: string }[]) =>
+  on('ui.render', { component: 'PromptHint' }, ($, e) => {
+    seen.push({ hint: e.props.hint, tail: e.props.tail })
+    const { Text } = $.ui.resolve(e)
+    return <Text key="hint">{e.props.hint}</Text>
+  })
+
+test('the prompt hint keeps the engine\'s text and gets the memory and brain lights as its tail', async ($, on) => {
+  world(on)
+  const seen: { hint?: string; tail?: string }[] = []
+  hintBeneath(on, seen)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount(HINT)
+  await ui.unmount()
+  expect(seen.at(-1)).toEqual({ hint: '? for shortcuts', tail: 'memory 12 entries · brain connected' })
+})
+
+test('hidden lights are left out of the tail; with both hidden the hint passes unchanged', async ($, on) => {
+  const w = world(on)
+  w.session = { ...SESSION, memory: { light: 'hidden', active: 0 }, brain: { light: 'hidden' } }
+  const seen: { hint?: string; tail?: string }[] = []
+  hintBeneath(on, seen)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount(HINT)
+  await ui.unmount()
+  expect(seen.at(-1)).toEqual({ hint: '? for shortcuts', tail: undefined })
+})
+
+test('a tail a plugin above already set stays, forge-stats\' lights follow it', async ($, on) => {
+  world(on)
+  const seen: { hint?: string; tail?: string }[] = []
+  hintBeneath(on, seen)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...HINT, props: { ...HINT.props, tail: 'other plugin' } })
+  await ui.unmount()
+  expect(seen.at(-1)).toEqual({ hint: '? for shortcuts', tail: 'other plugin · memory 12 entries · brain connected' })
 })

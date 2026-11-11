@@ -339,6 +339,7 @@ fn http_probe(url: &str) -> (Option<u16>, Option<u32>) {
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(PROBE_CONNECT_TIMEOUT))
             .timeout(Duration::from_secs(PROBE_TOTAL_TIMEOUT))
+            .default_headers(super::transport::mnemos_headers())
             .build()
             .unwrap_or_default();
         let t0 = std::time::Instant::now();
@@ -502,6 +503,19 @@ mod tests {
 
     // 序列化 env 操作，避免並行測試競態
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// The liveness probe uses its own client; it must carry the header too.
+    #[test]
+    fn http_probe_sends_the_mnemos_client_header() {
+        let (url, server) = crate::mnemos::transport::one_shot_server();
+        let (status, _) = http_probe(&url);
+        let head = server.join().unwrap();
+        assert!(
+            head.contains("\r\nx-mnemos-client: codeforge\r\n"),
+            "request head: {head}"
+        );
+        assert_eq!(status, Some(200));
+    }
 
     #[test]
     fn runtime_dir_prefers_xdg() {

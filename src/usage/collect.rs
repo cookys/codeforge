@@ -3,8 +3,9 @@
 //! Reads only the numeric usage fields of Claude Code and Codex transcripts, incrementally,
 //! into `usage.db` buckets. Containment: the walk never follows a symlink, each file is opened
 //! `O_NOFOLLOW | O_NONBLOCK`, must be a regular file and lie under its canonical root. Nothing
-//! textual is persisted: a source is known by sha256(canonical path), a project by the last
-//! component of its cwd (local only), a model id only when it matches the id grammar.
+//! from transcript content is persisted: a source is known by sha256(canonical path), a project
+//! by the last component of its cwd (local only), a model id only when it matches the id grammar.
+//! Claude config directory paths are kept locally so later collects can rediscover them.
 
 use super::{alias, quota};
 use anyhow::Result;
@@ -34,6 +35,9 @@ pub struct Root {
     pub kind: Kind,
     pub dir: PathBuf,
     pub hash: String,
+    /// The alias derived from this root's login file (set by the caller; `None` for Codex
+    /// roots and Claude roots without a usable login).
+    pub account: Option<String>,
 }
 
 /// Canonicalize and deduplicate the roots that exist.
@@ -43,7 +47,12 @@ pub fn roots(claude_dirs: &[PathBuf], codex_dir: Option<&Path>) -> Vec<Root> {
         if let Ok(dir) = std::fs::canonicalize(d) {
             if dir.is_dir() && !out.iter().any(|r| r.dir == dir) {
                 let hash = alias::path_hash8(&dir);
-                out.push(Root { kind, dir, hash });
+                out.push(Root {
+                    kind,
+                    dir,
+                    hash,
+                    account: None,
+                });
             }
         }
     };
@@ -56,8 +65,29 @@ pub fn roots(claude_dirs: &[PathBuf], codex_dir: Option<&Path>) -> Vec<Root> {
     out
 }
 
+/// Previously scanned Claude config directories, including paths currently absent on disk.
+pub fn remembered_claude_dirs(conn: &Connection) -> Result<Vec<PathBuf>> {
+    let mut st = conn.prepare("SELECT path FROM claude_dirs ORDER BY path")?;
+    let dirs = st
+        .query_map([], |r| Ok(PathBuf::from(r.get::<_, String>(0)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(dirs)
+}
+
 fn real_dir(p: &Path) -> bool {
     std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_dir())
+}
+
+/// For the added Claude dirs (accounts.toml, remembered, `--claude-dir`), checked before
+/// canonicalizing: no component may be a symlink, so neither a trailing slash nor `..` can hide
+/// one. `$CLAUDE_CONFIG_DIR` and `~/.claude` are not held to this: a home under a symlinked
+/// parent (`/home -> /usr/home`) must keep collecting.
+pub fn real_dir_chain(p: &Path) -> bool {
+    let mut prefix = PathBuf::new();
+    p.components().all(|part| {
+        prefix.push(part);
+        real_dir(&prefix)
+    })
 }
 
 fn real_file(p: &Path) -> bool {
@@ -82,7 +112,11 @@ pub fn sources(root: &Root) -> Vec<PathBuf> {
     let mut out = Vec::new();
     match root.kind {
         Kind::Claude => {
-            for proj in entries(&root.dir.join("projects")) {
+            let projects = root.dir.join("projects");
+            if !real_dir(&projects) {
+                return out;
+            }
+            for proj in entries(&projects) {
                 if !real_dir(&proj) {
                     continue;
                 }
@@ -407,51 +441,187 @@ fn codex_session(path: &Path) -> Option<String> {
         .then(|| id.to_ascii_lowercase())
 }
 
+/// Codex `rate_limits.primary`/`secondary` minutes of the windows kept; any other is ignored.
+const FIVE_HOUR_MIN: u64 = 300;
+const WEEK_MIN: u64 = 10_080;
+
+/// One rate-limit window: (fraction used, resets_at unix seconds).
+pub type Limit = (f64, i64);
+
+/// The 5h and weekly windows of a `rate_limits` object: only `used_percent` (kept as a fraction,
+/// in the summary's range), `window_minutes` and `resets_at` are read; credits, plan and the rest never are.
+/// A null or malformed window, or one of another length, is no window. `None` when `rl` is not
+/// an object (no observation).
+fn rate_limits(rl: &Value) -> Option<(Option<Limit>, Option<Limit>)> {
+    rl.as_object()?;
+    let (mut five, mut week) = (None, None);
+    for w in [&rl["primary"], &rl["secondary"]] {
+        let pct = w["used_percent"]
+            .as_f64()
+            .map(|p| p / 100.0)
+            .filter(|p| p.is_finite() && (0.0..=super::summary::PCT_MAX).contains(p));
+        let resets = w["resets_at"]
+            .as_u64()
+            .filter(|r| *r <= super::summary::UINT_MAX);
+        let (Some(pct), Some(resets)) = (pct, resets) else {
+            continue;
+        };
+        let lim = Some((pct, resets as i64));
+        match w["window_minutes"].as_u64() {
+            Some(FIVE_HOUR_MIN) => five = lim,
+            Some(WEEK_MIN) => week = lim,
+            _ => {}
+        }
+    }
+    Some((five, week))
+}
+
+/// Keep the observation when it is at least as new as the stored one for `account` (a reread of
+/// the same line writes the same values).
+fn store_limits(
+    tx: &Transaction,
+    account: &str,
+    at_ms: i64,
+    (five, week): (Option<Limit>, Option<Limit>),
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO codex_limits VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT (account) DO UPDATE SET observed_ms = excluded.observed_ms,
+             five_pct = excluded.five_pct, five_resets = excluded.five_resets,
+             week_pct = excluded.week_pct, week_resets = excluded.week_resets
+         WHERE excluded.observed_ms >= codex_limits.observed_ms",
+        params![
+            account,
+            at_ms,
+            five.map(|w| w.0),
+            five.map(|w| w.1),
+            week.map(|w| w.0),
+            week.map(|w| w.1)
+        ],
+    )?;
+    Ok(())
+}
+
+/// The newest rate-limit observation of every codex account, as quota snapshots for the summary
+/// (`seen_at_ms` = the observation time). An observation with no window, or whose windows have
+/// all reset by `now_ms`, says nothing current and is left out: that account is `no_window`.
+pub fn codex_snapshots(conn: &Connection, now_ms: i64) -> Result<Vec<quota::Snapshot>> {
+    let mut st = conn.prepare(
+        "SELECT account, observed_ms, five_pct, five_resets, week_pct, week_resets
+         FROM codex_limits ORDER BY account",
+    )?;
+    let now_s = now_ms.div_euclid(1000);
+    let rows = st.query_map([], |r| {
+        let at: i64 = r.get(1)?;
+        let win = |p: Option<f64>, s: Option<i64>| {
+            p.zip(s).map(|(pct, resets_at)| quota::Window {
+                pct,
+                resets_at,
+                seen: Some(quota::Seen {
+                    at_ms: at,
+                    session: String::new(),
+                }),
+            })
+        };
+        Ok(quota::Snapshot {
+            alias: r.get(0)?,
+            org: None,
+            email: None,
+            root: None,
+            written_at_ms: at,
+            five_hour: win(r.get(2)?, r.get(3)?),
+            seven_day: win(r.get(4)?, r.get(5)?),
+        })
+    })?;
+    let mut out = Vec::new();
+    for s in rows {
+        let s = s?;
+        if [&s.five_hour, &s.seven_day]
+            .into_iter()
+            .flatten()
+            .any(|w| w.resets_at > now_s)
+        {
+            out.push(s);
+        }
+    }
+    Ok(out)
+}
+
 /// One Codex line. `turn_context` sets the session's model and project; a `token_count`
 /// event adds only what its cumulative totals exceed the highest already counted for the
-/// session (copies, replacements and decreasing totals add nothing).
+/// session (copies, replacements and decreasing totals add nothing), and its `rate_limits` are
+/// kept when newer than the account's stored observation (at the line's timestamp, else
+/// `mtime_ms`, the file's).
 fn codex_line(
     tx: &Transaction,
     v: &Value,
     session: &str,
     account: &str,
     now_ms: i64,
+    mtime_ms: Option<i64>,
 ) -> Result<()> {
     let p = &v["payload"];
+    // [input, cached, cache_write, output, reasoning]: the highest cumulative seen per field
     let stored = tx
         .query_row(
-            "SELECT input, cached, cache_write, output, model, project FROM codex_sessions
-             WHERE session_id = ?1",
+            "SELECT input, cached, cache_write, output, reasoning, model, project, active_ms
+             FROM codex_sessions WHERE session_id = ?1",
             [session],
             |r| {
                 Ok((
-                    [r.get::<_, i64>(0)?, r.get(1)?, r.get(2)?, r.get(3)?],
-                    r.get::<_, String>(4)?,
+                    [
+                        r.get::<_, i64>(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                    ],
                     r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, i64>(7)?,
                 ))
             },
         )
         .optional()?;
-    let (old, mut model, mut project) =
-        stored.unwrap_or(([0; 4], "unknown".to_string(), String::new()));
-    let seen = |tx: &Transaction, totals: [i64; 4], model: &str, project: &str, ms: i64| {
+    let (old, mut model, mut project, active) =
+        stored.unwrap_or(([0; 5], "unknown".to_string(), String::new(), 0));
+    // `active` = the newest in-horizon growth (0 = none yet); it alone decides the summary window
+    let seen = |tx: &Transaction,
+                totals: [i64; 5],
+                model: &str,
+                project: &str,
+                ms: i64,
+                active: i64| {
         tx.execute(
-            "INSERT INTO codex_sessions VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "INSERT INTO codex_sessions
+                 (session_id, input, cached, cache_write, output, reasoning, seen_ms, model, project,
+                  account, active_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT (session_id) DO UPDATE SET input = excluded.input,
                  cached = excluded.cached, cache_write = excluded.cache_write,
-                 output = excluded.output, seen_ms = max(seen_ms, excluded.seen_ms),
-                 model = excluded.model, project = excluded.project",
-            params![session, totals[0], totals[1], totals[2], totals[3], ms, model, project],
+                 output = excluded.output, reasoning = excluded.reasoning,
+                 seen_ms = max(seen_ms, excluded.seen_ms),
+                 model = excluded.model, project = excluded.project, account = excluded.account,
+                 active_ms = max(active_ms, excluded.active_ms)",
+            params![
+                session, totals[0], totals[1], totals[2], totals[3], totals[4], ms, model, project,
+                account, active
+            ],
         )
     };
     if v["type"] == "turn_context" {
         model = model_id(p["model"].as_str());
         project = project_of(p["cwd"].as_str());
-        seen(tx, old, &model, &project, 0)?;
+        seen(tx, old, &model, &project, 0, active)?;
         return Ok(());
     }
     if p["type"] != "token_count" {
         return Ok(());
+    }
+    if let Some(lim) = rate_limits(&p["rate_limits"]) {
+        if let Some(at) = stamp(v).map(|(ms, _)| ms).or(mtime_ms) {
+            store_limits(tx, account, at, lim)?;
+        }
     }
     let t = &p["info"]["total_token_usage"];
     if !t.is_object() {
@@ -460,32 +630,38 @@ fn codex_line(
     let Some((ms, day)) = stamp(v) else {
         return Ok(());
     };
-    let (Some(i), Some(c), Some(w), Some(o)) = (
+    let (Some(i), Some(c), Some(w), Some(o), Some(rs)) = (
         n(&t["input_tokens"]),
         n(&t["cached_input_tokens"]),
         n(&t["cache_write_input_tokens"]),
         n(&t["output_tokens"]),
+        n(&t["reasoning_output_tokens"]),
     ) else {
         return Ok(());
     };
     let new = [i, c, w, o];
     let d: Vec<i64> = new.iter().zip(old).map(|(a, b)| (a - b).max(0)).collect();
-    if d.iter().all(|x| *x == 0) {
-        return Ok(());
-    }
     let top = [
         new[0].max(old[0]),
         new[1].max(old[1]),
         new[2].max(old[2]),
         new[3].max(old[3]),
+        rs.max(old[4]),
     ];
+    if d.iter().all(|x| *x == 0) {
+        if top[4] != old[4] && within(ms, now_ms) {
+            // only the reasoning count grew: no bucket change, the session total still follows
+            seen(tx, top, &model, &project, ms, ms)?;
+        }
+        return Ok(());
+    }
     if !within(ms, now_ms) {
         // past the horizon: not counted, but it is the base the next cumulative is measured from
         // (stamped now, so the dedup prune keeps it while the file is still being read)
-        seen(tx, top, &model, &project, now_ms)?;
+        seen(tx, top, &model, &project, now_ms, 0)?;
         return Ok(());
     }
-    seen(tx, top, &model, &project, ms)?;
+    seen(tx, top, &model, &project, ms, ms)?;
     let c = Counts {
         // Codex input_tokens include the cached ones; they are priced as reads
         input: (d[0] - d[1]).max(0),
@@ -592,8 +768,8 @@ pub fn collect_file(
         .modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map_or(i64::MAX, |d| d.as_millis() as i64);
-    if now_ms - mtime_ms > HORIZON_DAYS * DAY_MS {
+        .map(|d| d.as_millis() as i64);
+    if mtime_ms.is_some_and(|m| now_ms - m > HORIZON_DAYS * DAY_MS) {
         return Ok(true);
     }
     let (ino, size) = (inode(&meta), meta.len());
@@ -652,7 +828,7 @@ pub fn collect_file(
         };
         match &session {
             None => claude_line(&tx, &v, account, now_ms)?,
-            Some(s) => codex_line(&tx, &v, s, account, now_ms)?,
+            Some(s) => codex_line(&tx, &v, s, account, now_ms, mtime_ms)?,
         }
     }
     let head_len = consumed.min(HEAD_MAX);
@@ -674,9 +850,16 @@ pub fn collect_file(
     Ok(true)
 }
 
+/// The bucket account of a Claude root with no login: no account (`null` in the summary).
+pub const UNATTRIBUTED: &str = "";
+
 /// A root's account: Codex roots are `codex-<sha8>`. A Claude root takes the alias of the
 /// newest quota snapshot naming its sha8 as `root` (stored, so attribution does not depend on
-/// which process runs collect), else the stored one, else `acct-<sha8>`.
+/// which process runs collect), else the alias derived from the root's login file
+/// (`root.account`), else the stored one, else [`UNATTRIBUTED`] — never `acct-<sha8>`, which
+/// named no account and showed as a ghost on every host (PM 01M7052H79). The root is recorded
+/// either way, so [`rows_since`] knows its old `acct-<sha8>` rows. Known limitation:
+/// transcripts written before a re-login are attributed to the account logged in now.
 /// `AUTOPILOT_ACCOUNT` is never read here.
 pub fn root_alias(
     conn: &Connection,
@@ -691,14 +874,18 @@ pub fn root_alias(
         .iter()
         .filter(|s| s.root.as_deref() == Some(root.hash.as_str()))
         .max_by_key(|s| s.written_at_ms);
-    if let Some(s) = newest {
+    if let Some(alias) = newest.map(|s| &s.alias).or(root.account.as_ref()) {
         conn.execute(
             "INSERT INTO roots VALUES (?1, ?2, ?3)
              ON CONFLICT (root_hash) DO UPDATE SET alias = excluded.alias, seen_ms = excluded.seen_ms",
-            params![root.hash, s.alias, now_ms],
+            params![root.hash, alias, now_ms],
         )?;
-        return Ok(s.alias.clone());
+        return Ok(alias.clone());
     }
+    conn.execute(
+        "INSERT OR IGNORE INTO roots VALUES (?1, ?2, ?3)",
+        params![root.hash, UNATTRIBUTED, now_ms],
+    )?;
     let stored: Option<String> = conn
         .query_row(
             "SELECT alias FROM roots WHERE root_hash = ?1",
@@ -706,7 +893,9 @@ pub fn root_alias(
             |r| r.get(0),
         )
         .optional()?;
-    Ok(stored.unwrap_or_else(|| format!("acct-{}", root.hash)))
+    Ok(stored
+        .filter(|a| !super::alias::is_dir_hash_alias(a, &root.hash))
+        .unwrap_or_else(|| UNATTRIBUTED.to_string()))
 }
 
 #[derive(Debug, Default)]
@@ -725,6 +914,13 @@ pub fn collect(
 ) -> Result<Report> {
     let mut rep = Report::default();
     for root in roots {
+        if root.kind == Kind::Claude {
+            conn.execute(
+                "INSERT INTO claude_dirs (path, first_seen_ms, last_seen_ms) VALUES (?1, ?2, ?2)
+                 ON CONFLICT (path) DO UPDATE SET last_seen_ms = excluded.last_seen_ms",
+                params![root.dir.to_string_lossy(), now_ms],
+            )?;
+        }
         let account = root_alias(conn, root, snapshots, now_ms)?;
         for path in sources(root) {
             match collect_file(conn, &path, root, &account, now_ms) {
@@ -755,11 +951,16 @@ pub struct Row {
     pub requests: u64,
 }
 
-/// Bucket rows from `since_day` (YYYY-MM-DD) on, oldest first.
+/// Bucket rows from `since_day` (YYYY-MM-DD) on, oldest first. A row an old collector keyed
+/// `acct-<sha8>` of a known root has no account: it reads as [`UNATTRIBUTED`] (the caller sums
+/// rows by key, so it joins that root's newer unattributed rows).
 pub fn rows_since(conn: &Connection, since_day: &str) -> Result<Vec<Row>> {
     let mut st = conn.prepare(
-        "SELECT day, source, account, model, project, speed, input, output, cw5m, cw1h, read, requests
-         FROM buckets WHERE day >= ?1 ORDER BY day, source, account, model, project, speed",
+        "SELECT day, source,
+                CASE WHEN EXISTS (SELECT 1 FROM roots WHERE 'acct-' || root_hash = b.account)
+                     THEN '' ELSE account END AS acct,
+                model, project, speed, input, output, cw5m, cw1h, read, requests
+         FROM buckets b WHERE day >= ?1 ORDER BY day, source, acct, model, project, speed",
     )?;
     let u = |x: i64| x.max(0) as u64;
     let rows = st
@@ -783,6 +984,52 @@ pub fn rows_since(conn: &Connection, since_day: &str) -> Result<Vec<Row>> {
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// The most Codex rollouts one summary lists (the newest by last growth when there are more).
+pub const MAX_CODEX_SESSIONS: usize = 2000;
+
+/// One Codex rollout's final cumulative totals (ids and numbers only). Codex `input_tokens`
+/// include the cached ones, so `input` is the non-cached part; `output` includes the reasoning
+/// part, `reasoning` is that part on its own; Codex reports no cache-write count (none here).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CodexSession {
+    pub rollout_id: String,
+    pub account: String,
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub reasoning: u64,
+}
+
+/// The rollouts that grew (in the horizon) on or after `since_day` (YYYY-MM-DD, UTC), sorted by
+/// rollout id. A rollout with no `token_count` totals, or one carried over from before the
+/// account was recorded and not grown since, has no entry.
+pub fn codex_sessions_since(conn: &Connection, since_day: &str) -> Result<Vec<CodexSession>> {
+    let since_ms = chrono::NaiveDate::parse_from_str(since_day, "%Y-%m-%d")?
+        .and_hms_opt(0, 0, 0)
+        .map_or(0, |d| d.and_utc().timestamp_millis());
+    let mut st = conn.prepare(
+        "SELECT session_id, account, input, cached, output, reasoning FROM codex_sessions
+         WHERE account <> '' AND active_ms > 0 AND active_ms >= ?1
+         ORDER BY active_ms DESC, session_id LIMIT ?2",
+    )?;
+    let u = |x: i64| x.max(0) as u64;
+    let mut out = st
+        .query_map(params![since_ms, MAX_CODEX_SESSIONS as i64], |r| {
+            let (input, cached) = (r.get::<_, i64>(2)?, r.get::<_, i64>(3)?);
+            Ok(CodexSession {
+                rollout_id: r.get(0)?,
+                account: r.get(1)?,
+                input: u(input - cached),
+                output: u(r.get(4)?),
+                cache_read: u(cached),
+                reasoning: u(r.get(5)?),
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    out.sort_by(|a, b| a.rollout_id.cmp(&b.rollout_id));
+    Ok(out)
 }
 
 #[cfg(test)]

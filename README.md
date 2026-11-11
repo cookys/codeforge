@@ -413,21 +413,43 @@ statusLine install, i.e. without `--hooks`/`--project-hooks`, or with `--all`) i
 codeforge usage                         # collect, then the last 7 days by model
 codeforge usage --days 3 --by project   # --by model | project | account; --json
 codeforge usage push                    # validate summary.json and `fleet upload` it; prints the blob sha
+codeforge usage accounts                # per-account quota from autopilot's mirror (read-only; --json)
+codeforge usage alias list              # accounts and their display names (local only)
+codeforge usage alias set <email|name> <new>  # name an account (~/.config/codeforge/accounts.toml, 0600)
+codeforge usage note set <provider|name> <text>  # a local note (≤ 40 cells) shown dim at the end of the row in `usage fleet`
+codeforge usage note set --new <name> <text>   # an account with no data at all: its own no_source row in `usage fleet`
+codeforge usage note set <provider|name> <text> --reset-weekly fri@17:00+08:00  # also a weekly reset rule (operator-provided): `usage fleet` adds note_resets_at and a ◷ countdown
+codeforge usage note set <provider|name> <text> --reset-monthly 17@00:00+08:00  # monthly instead (the last day when a month is shorter)
+codeforge usage note set <provider|name> <text> --reset-at 2026-11-21T00:00:00+08:00  # one-shot instead (no countdown once passed)
+codeforge usage plan set <provider|name> <plan>  # subscription plan (pro, max5x, max20x, team, enterprise, api; 5x/20x accepted): shown in `usage fleet`, `usage alias list` and the pane, `plan` in fleet-quota/1; local only, never pushed
+codeforge usage plan clear <provider|name>
+codeforge usage note reset <provider|name> <rule>  # the rule only
+codeforge usage note clear <provider|name>      # clears the note and the rule
 ```
 
-- The statusline usage row shows this session's 5h / 7d / ctx bars, then every other account seen in the
-  last 6 h as `alias NN% countdown`. Each statusline run writes its account's quota snapshot; the alias is
-  `AUTOPILOT_ACCOUNT` when set (autopilot's account-pinned dispatch), else a hash of the config dir.
+- The statusline usage row shows this session's 5h / 7d / ctx bars. Another account appears only when its
+  week will fall short (or is at 95 % or more) or will waste, by display name: `⚠ stranity week 97% resets in 3d1h`.
+  The display name is the one set with `usage alias set`, else the org's short form, else the email's local part;
+  the internal `acct-…` key is never shown, and an account with none of these is not shown at all.
+- `codeforge usage accounts`, the statusline and forge-stats read autopilot's per-account quota mirror
+  (`<live_dir>/quota/`) when it exists; until then they show exactly what they show today.
 - Collection needs no hook: the statusline starts a background `codeforge usage collect --quiet` at most
   every 15 minutes (`CODEFORGE_USAGE_AUTOCOLLECT=0` turns that off); the SessionEnd hook, when installed,
   also runs it.
-- The collector reads only the numeric usage fields of `~/.claude/projects/**` (and `CLAUDE_CONFIG_DIR`) and
-  Codex `~/.codex/sessions/**` transcripts, incrementally, into `<data_dir>/usage/usage.db` (0600). No
-  prompt, path or email is stored; a project is its directory's last name.
+- The collector reads numeric usage fields from Claude config directories (`~/.claude`, `CLAUDE_CONFIG_DIR`,
+  `[collect] claude_dirs` in accounts.toml, previously scanned directories, and repeatable
+  `codeforge usage collect --claude-dir /absolute/path` flags) and Codex `~/.codex/sessions/**` transcripts
+  (`CODEX_HOME` overrides the Codex root), incrementally, into `<data_dir>/usage/usage.db` (0600).
+  Claude directories are remembered locally by canonical path and scanned once per run; missing or symlinked
+  added directories are skipped (`$CLAUDE_CONFIG_DIR` and `~/.claude` are taken as before). Newly added directories automatically backfill up to 35 days. Config/flag entries
+  must be absolute paths. No prompt, transcript path or email is stored; a project is its directory's last name.
+  Remembered config-directory paths stay in usage.db and never enter the summary or upload.
 - Cost is an **API-equivalent estimate** at list price (prices as of 2026-10-06); subscription plans are not
   billed this way, and models without a price row (all Codex models) show `—`.
 - `summary.json` (per-day × model totals and per-account quota, no projects or paths) is the only thing
-  `usage push` sends.
+  `usage push` sends. When Codex rollouts have token totals it also lists one optional `codex_sessions` entry per
+  rollout (`rollout_id`, `account`, `input`, `output`, `cache_read`, `cache_write` always `null`, `reasoning`; numbers
+  and ids only; the key is absent when there is none). Fields: [`doc/specs/codeforge-usage.md`](doc/specs/codeforge-usage.md).
 - In Claude Code, the forge-stats pane has a **用量 / Usage** tab (`/forge-stats usage` opens it): accounts with
   their 5h / 7d windows, today's (UTC) models with tokens and the API-equivalent cost, and the summary's age —
   past an hour it says to run `codeforge usage`. It only reads `summary.json`; it never runs codeforge.

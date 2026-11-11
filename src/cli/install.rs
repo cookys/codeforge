@@ -392,6 +392,48 @@ fn write_settings_atomic(path: &Path, settings: &Value) -> Result<()> {
     let tmp = target.with_file_name(format!("{file_name}.tmp.{}", std::process::id()));
     let pretty = serde_json::to_string_pretty(settings)? + "\n";
 
+    // A change keeps the previous text in `<path>.bak` (operator card d-f6e451d2), a plain file beside the
+    // path install was given: never inside a symlink's target dir, which may be a git-tracked dotfiles repo.
+    // A no-op re-write leaves an earlier backup alone.
+    if let Ok(before) = fs::read_to_string(&target) {
+        if before != pretty {
+            let bak_name = format!(
+                "{}.bak",
+                path.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "settings.json".to_string())
+            );
+            let bak = path.with_file_name(bak_name);
+            // Any old .bak (a file, a read-only one, or a link) is removed first and the new one is created
+            // fresh: never written through a link, never blocked by a read-only copy. On unix it is created
+            // with the settings file's own mode, so the old text (env tokens) is never readable wider than
+            // the file it copies, not even between create and chmod.
+            match fs::remove_file(&bak) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(e).with_context(|| format!("備份 {} 失敗", bak.display()));
+                }
+            }
+            let mut opts = fs::OpenOptions::new();
+            opts.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+                let mode = fs::metadata(&target)
+                    .with_context(|| format!("備份 {} 失敗", bak.display()))?
+                    .permissions()
+                    .mode();
+                opts.mode(mode & 0o777);
+            }
+            let mut f = opts
+                .open(&bak)
+                .with_context(|| format!("備份 {} 失敗", bak.display()))?;
+            f.write_all(before.as_bytes())
+                .with_context(|| format!("備份 {} 失敗", bak.display()))?;
+        }
+    }
+
     let result = (|| -> Result<()> {
         let mut f = fs::File::create(&tmp)
             .with_context(|| format!("寫入 {} 失敗（目錄不可寫？）", target.display()))?;
@@ -552,20 +594,93 @@ fn statusline_is_codeforge(v: &Value) -> bool {
         .is_some_and(|s| s.starts_with(MARKER_PREFIX))
 }
 
+/// An unmarked block install may still take as its own: one written by hand or by an install from
+/// before the marker, whose command is exactly `<codeforge binary> <sub>` (two words; the first one's
+/// file name is `codeforge`, bare or as a path, optionally quoted). Anything else (a wrapper script,
+/// `bash -c …`, extra arguments, another tool) is not ours and is never touched without
+/// --replace-statusline. Install then writes the marker. (PM 2026-11-08: 10 accounts had such blocks.)
+fn statusline_is_plain_codeforge(v: &Value, sub: &str) -> bool {
+    if v.get("type").and_then(|t| t.as_str()) != Some("command") {
+        return false;
+    }
+    let Some(cmd) = v.get("command").and_then(|c| c.as_str()) else {
+        return false;
+    };
+    let words: Vec<&str> = cmd.split_whitespace().collect();
+    let [bin, arg] = words.as_slice() else {
+        return false;
+    };
+    // The executable token must be a plain literal path: a matching quote pair around the whole
+    // token is allowed, any shell metacharacter is not (`a;/x/codeforge` runs `a`).
+    let bin = match (bin.chars().next(), bin.chars().last()) {
+        (Some(q @ ('\'' | '"')), Some(e)) if q == e && bin.len() >= 2 => &bin[1..bin.len() - 1],
+        _ => bin,
+    };
+    if bin.chars().any(|c| {
+        matches!(
+            c,
+            ';' | '|'
+                | '&'
+                | '$'
+                | '`'
+                | '('
+                | ')'
+                | '<'
+                | '>'
+                | '*'
+                | '?'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '~'
+                | '!'
+                | '#'
+                | '\\'
+                | '\''
+                | '"'
+        ) || c.is_control()
+    }) {
+        return false;
+    }
+    let name = Path::new(bin).file_name().and_then(|n| n.to_str());
+    *arg == sub && matches!(name, Some("codeforge") | Some("codeforge.exe"))
+}
+
+/// install's ownership test: our marker, or an unmarked plain codeforge command for `sub`.
+fn statusline_owned(v: &Value, sub: &str) -> bool {
+    statusline_is_codeforge(v) || statusline_is_plain_codeforge(v, sub)
+}
+
+/// Seconds between idle re-runs of the statusLine command. Claude Code re-runs it only on events
+/// (a new assistant message, /compact, a mode change…) unless `refreshInterval` is set
+/// (code.claude.com/docs/en/statusline, "When the status line updates"). Without it an idle
+/// session keeps the first render: forge-stats' heartbeat (`band_seen`, B34) can change and the
+/// statusline never compacts or expands. 10 matches the heartbeat's 10 s freshness window.
+/// Operator card d-f6e451d2.
+const STATUSLINE_REFRESH_S: u64 = 10;
+
 fn patch_statusline(settings: &mut Value, cmd: &str, force: bool) -> Result<&'static str> {
     require_object_root(settings)?;
-    let new_block = json!({
-        "type": "command",
-        "command": cmd,
-        MARKER_KEY: GLOBAL_MARKER,
-    });
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("statusLine").cloned();
     if let Some(p) = &prior {
-        if !statusline_is_codeforge(p) && !force {
+        if !statusline_owned(p, "statusline") && !force {
             bail!("settings.json.statusLine 已被其他程式設定（不是 codeforge）；使用 --replace-statusline 覆蓋（只換這個欄位，hooks 不動）");
         }
     }
+    // a refreshInterval already there (ours, or one the user set) is kept as it is
+    let refresh = prior
+        .as_ref()
+        .and_then(|p| p.get("refreshInterval"))
+        .cloned()
+        .unwrap_or_else(|| json!(STATUSLINE_REFRESH_S));
+    let new_block = json!({
+        "type": "command",
+        "command": cmd,
+        "refreshInterval": refresh,
+        MARKER_KEY: GLOBAL_MARKER,
+    });
     obj.insert("statusLine".to_string(), new_block.clone());
     Ok(match prior {
         None => "新增",
@@ -589,7 +704,7 @@ fn patch_subagent_statusline(settings: &mut Value, cmd: &str, force: bool) -> Re
     let obj = settings.as_object_mut().expect("checked");
     let prior = obj.get("subagentStatusLine").cloned();
     if let Some(p) = &prior {
-        if !statusline_is_codeforge(p) && !force {
+        if !statusline_owned(p, "subagent-statusline") && !force {
             bail!("settings.json.subagentStatusLine 已被其他程式設定（不是 codeforge）；使用 --replace-statusline 覆蓋（只換這個欄位，hooks 不動）");
         }
     }
@@ -1079,6 +1194,98 @@ mod tests {
         let action = patch_statusline(&mut s, "/new codeforge statusline", false).unwrap();
         assert_eq!(action, "更新");
         assert_eq!(statusline_cmd(&s), "/new codeforge statusline");
+    }
+
+    #[test]
+    fn statusline_sets_refresh_interval_and_keeps_one_already_there() {
+        // a fresh install: 10 s
+        let mut s = json!({});
+        patch_statusline(&mut s, "/x statusline", false).unwrap();
+        assert_eq!(s["statusLine"]["refreshInterval"], 10);
+        // an install from before the field: re-install adds it (an update, not "no change")
+        let mut old = json!({"statusLine": {"type": "command", "command": "/x statusline", MARKER_KEY: GLOBAL_MARKER}});
+        assert_eq!(
+            patch_statusline(&mut old, "/x statusline", false).unwrap(),
+            "更新"
+        );
+        assert_eq!(old["statusLine"]["refreshInterval"], 10);
+        // the user changed ours to 3: kept, and re-install is a no-op
+        let mut own = json!({});
+        patch_statusline(&mut own, "/x statusline", false).unwrap();
+        own["statusLine"]["refreshInterval"] = json!(3);
+        assert_eq!(
+            patch_statusline(&mut own, "/x statusline", false).unwrap(),
+            "已是最新（無變動）"
+        );
+        assert_eq!(own["statusLine"]["refreshInterval"], 3);
+        // --replace-statusline over the user's own block keeps the user's interval
+        let mut user = json!({"statusLine": {"type": "command", "command": "/user/script", "refreshInterval": 30}});
+        patch_statusline(&mut user, "/x statusline", true).unwrap();
+        assert_eq!(user["statusLine"]["command"], "/x statusline");
+        assert_eq!(user["statusLine"]["refreshInterval"], 30);
+    }
+
+    #[test]
+    fn statusline_adopts_an_unmarked_plain_codeforge_command() {
+        for cmd in [
+            "codeforge statusline",
+            "/home/u/.cargo/bin/codeforge statusline",
+            "'/opt/cf/codeforge' statusline",
+            "\"/opt/cf/codeforge\" statusline",
+        ] {
+            let mut s = json!({"statusLine": {"type": "command", "command": cmd}, "theme": "dark"});
+            assert_eq!(
+                patch_statusline(&mut s, "/x/codeforge statusline", false).unwrap(),
+                "更新",
+                "{cmd}"
+            );
+            assert!(
+                statusline_is_codeforge(&s["statusLine"]),
+                "{cmd}: the marker is written"
+            );
+            assert_eq!(s["statusLine"]["refreshInterval"], 10);
+            assert_eq!(s["theme"], "dark");
+        }
+        // the subagent one by its own subcommand
+        let mut s = json!({"subagentStatusLine": {"type": "command", "command": "codeforge subagent-statusline"}});
+        patch_subagent_statusline(&mut s, "codeforge subagent-statusline", false).unwrap();
+        assert!(statusline_is_codeforge(&s["subagentStatusLine"]));
+    }
+
+    #[test]
+    fn statusline_never_adopts_another_tools_command() {
+        for cmd in [
+            "/user/script",
+            "npx ccusage statusline",
+            "bash -c 'codeforge statusline'",
+            "codeforge statusline --extra",
+            "/opt/notcodeforge statusline",
+            "codeforge subagent-statusline",
+            "/home/u/codeforge-wrapper.sh statusline",
+            "other-tool;/usr/bin/codeforge statusline",
+            "a|codeforge statusline",
+            "$(x)/codeforge statusline",
+            "`x`/codeforge statusline",
+            "a&codeforge statusline",
+            "~/codeforge statusline",
+            "/a/*/codeforge statusline",
+            "'/a/codeforge statusline",
+            "x\\y/codeforge statusline",
+        ] {
+            let mut s = json!({"statusLine": {"type": "command", "command": cmd}});
+            assert!(
+                patch_statusline(&mut s, "/x/codeforge statusline", false).is_err(),
+                "{cmd}"
+            );
+            assert_eq!(
+                s["statusLine"],
+                json!({"type": "command", "command": cmd}),
+                "{cmd}: untouched"
+            );
+        }
+        // a codeforge command under another type is not ours either
+        let mut s = json!({"statusLine": {"type": "static", "command": "codeforge statusline"}});
+        assert!(patch_statusline(&mut s, "/x/codeforge statusline", false).is_err());
     }
 
     #[test]
@@ -1759,6 +1966,134 @@ mod tests {
             .file_type()
             .is_symlink());
         assert_eq!(fs::read_to_string(&path).unwrap(), "{\n  \"c\": 3\n}\n");
+    }
+
+    /// The d-f6e451d2 rollout: re-running install over an older codeforge install adds
+    /// `statusLine.refreshInterval` and changes nothing else; the old text is in `.bak`.
+    #[test]
+    fn reinstall_over_an_older_install_adds_only_refresh_interval() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        let opts = || InstallOpts {
+            hooks: false,
+            all: true,
+            subagent_statusline: false,
+            project_hooks: false,
+            dry_run: false,
+            force: false,
+            replace_statusline: false,
+            yes: true,
+            settings_path: Some(path.clone()),
+            quiet: true,
+            cleanup_period_days: None,
+        };
+        run(opts()).unwrap();
+        // an install from before the field, with the user's own settings around it
+        let mut older: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        older["statusLine"]
+            .as_object_mut()
+            .unwrap()
+            .remove("refreshInterval");
+        older["theme"] = json!("dark");
+        older["env"] = json!({"X": "1"});
+        let older_text = serde_json::to_string_pretty(&older).unwrap() + "\n";
+        fs::write(&path, &older_text).unwrap();
+
+        run(opts()).unwrap();
+        let after: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        let mut want = older.clone();
+        want["statusLine"]["refreshInterval"] = json!(STATUSLINE_REFRESH_S);
+        assert_eq!(after, want, "only statusLine.refreshInterval may change");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("settings.json.bak")).unwrap(),
+            older_text
+        );
+    }
+
+    #[test]
+    fn write_backs_up_a_changed_file_to_bak() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        let bak = tmp.path().join("settings.json.bak");
+        // no file before: nothing to back up
+        write_settings_atomic(&path, &json!({"a": 1})).unwrap();
+        assert!(!bak.exists());
+        // a change: the previous text is kept in .bak
+        write_settings_atomic(&path, &json!({"a": 2})).unwrap();
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{\n  \"a\": 1\n}\n");
+        // a no-op re-write leaves the earlier backup as it was
+        write_settings_atomic(&path, &json!({"a": 2})).unwrap();
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{\n  \"a\": 1\n}\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_backup_keeps_the_settings_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        write_settings_atomic(&path, &json!({"env": {"TOKEN": "x"}})).unwrap();
+        // the old text may hold secrets too: the backup is never wider than the file it copies
+        let mode = fs::metadata(tmp.path().join("settings.json.bak"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_backup_of_a_read_only_settings_does_not_block_the_next_change() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o444)).unwrap();
+        write_settings_atomic(&path, &json!({"e": 1})).unwrap();
+        // the .bak is 0444 now; a second change must still replace it
+        write_settings_atomic(&path, &json!({"e": 2})).unwrap();
+        let bak = tmp.path().join("settings.json.bak");
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{\n  \"e\": 1\n}\n");
+        assert_eq!(
+            fs::metadata(&bak).unwrap().permissions().mode() & 0o777,
+            0o444
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_backup_replaces_a_linked_bak_instead_of_writing_through_it() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let path = tmp.path().join("settings.json");
+        fs::write(&path, "{}\n").unwrap();
+        let elsewhere = tmp.path().join("elsewhere");
+        fs::write(&elsewhere, "keep").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, tmp.path().join("settings.json.bak")).unwrap();
+        write_settings_atomic(&path, &json!({"d": 1})).unwrap();
+        assert_eq!(fs::read_to_string(&elsewhere).unwrap(), "keep");
+        let bak = tmp.path().join("settings.json.bak");
+        assert!(!fs::symlink_metadata(&bak).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{}\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_backs_up_a_linked_settings_next_to_the_link() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dots = tmp.path().join("dotfiles");
+        fs::create_dir(&dots).unwrap();
+        fs::write(dots.join("settings.json"), "{}\n").unwrap();
+        let link = tmp.path().join("settings.json");
+        std::os::unix::fs::symlink(dots.join("settings.json"), &link).unwrap();
+        write_settings_atomic(&link, &json!({"b": 1})).unwrap();
+        // the backup is a plain file beside the link, never inside the (possibly git-tracked) target dir
+        let bak = tmp.path().join("settings.json.bak");
+        assert!(!fs::symlink_metadata(&bak).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "{}\n");
+        assert!(!dots.join("settings.json.bak").exists());
     }
 
     #[cfg(unix)]

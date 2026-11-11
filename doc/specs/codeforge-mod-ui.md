@@ -100,11 +100,22 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   驗證：`claude plugin test plugins/forge-stats`。
 - **band 版面（statusline-band，2026-10-31）**：`/forge-stats layout band|pane`（存 `$.store`，預設 band）。band 畫在
   prompt 正上方（AbovePrompt），分級與排欄見下面兩條；記憶與大腦讀 `codeforge/session/<sid>.json`。mod 每 2 秒寫
-  `codeforge/mod-alive/<sid>.json` 心跳（`schema`、`session_id`、`written_at_ms`、`layout`）；statusline 讀到自己
-  session、未滿 10 秒、`layout: band` 的心跳就縮成 2 行：寵物歸 band（autopilot 的 forge 分頁），statusline 只留不必即時
-  更新的資料（owner 2026-10-31 定案；原本另看 blit 是否成功的 `pet_shown`，已拿掉）。**依賴**：AbovePrompt 一次只有一個
-  實例，鏈上排在上面的 plugin 不呼叫 `next(e)` 就輪不到 forge-stats；心跳看不到這件事，那種情況下 statusline 仍會縮、寵物
-  哪裡都不顯示（BACKLOG B34）。autopilot 的分頁列用 `await next(e)` 疊在 forge-stats 之上（BL-0352），不受影響。
+  `codeforge/mod-alive/<sid>.json` 心跳（`schema`、`session_id`、`written_at_ms`、`layout`、`summary_row`、`band_seen`）；
+  statusline 讀到自己 session、未滿 10 秒、`layout: band`、而且 `band_seen` 不是 `false` 的心跳就縮成 2 行：寵物歸 band
+  （autopilot 的 forge 分頁），statusline 只留不必即時更新的資料（owner 2026-10-31 定案；原本另看 blit 是否成功的
+  `pet_shown`，已拿掉）。**`band_seen`（B34，2026-11-07）**：forge-stats 的 band 在最近 30 秒內真的畫過（摘要列或欄位）才是
+  `true`。AbovePrompt 一次只有一個實例，鏈上排在上面的 plugin 不呼叫 `next(e)`（例如 autopilot 的 O4 外殼）就輪不到
+  forge-stats，這時 `band_seen` 會變成 `false`，statusline 恢復完整版、把寵物留著。`layout` 照舊寫使用者選的版面，
+  因為 autopilot 靠它決定要不要把一列交給 forge-stats；如果 `layout` 跟著畫面變，forge-stats 就永遠拿不回那一列。
+  閒置時沒有重畫：超過半個視窗（15 秒）沒畫，心跳就請一次重畫，band 還在螢幕上的話會在下一拍更新。
+  舊版 forge-stats 沒有 `band_seen` 欄位，statusline 照舊縮。
+  Claude Code 只在事件時重跑 statusLine（新的 assistant 訊息、/compact、模式切換…），閒置時不會重跑，心跳變了畫面也不跟著變
+  （2026-11-07 rig 實測：110 秒只跑了一次）。所以 `codeforge install` 會寫 `statusLine.refreshInterval: 10`（秒，和心跳 10 秒
+  的新鮮度一致）；設定裡原本就有的值（使用者自己設的）不覆蓋。操作員卡 d-f6e451d2。install 每次真的改動 settings.json 前，先把原檔存成
+  `settings.json.bak`（放在 install 拿到的路徑旁邊，不放進 symlink 指向的 dotfiles 目錄；內容沒變就不覆蓋舊的 .bak）。
+  沒有 `_installed_by` 標記的 statusLine，只有 command 剛好是「codeforge 執行檔＋`statusline`」兩個詞（執行檔檔名就是
+  `codeforge`，路徑或裸名都可）才認定是自己的，install 會補上標記；包一層 script、`bash -c`、多帶參數、別的工具一律不碰
+  （要接手得加 `--replace-statusline`）。PM 2026-11-08：10 個帳號有這種舊設定。
 - **分頁版 band（forge-tabs，2026-10-31）**：owner 定案 band 一列＝autopilot indicator＋分頁（現況／待決／派工／審查／forge），
   autopilot 以 `maxRows`/`bodyColumns` 分配空間給下層。forge-stats 依 `maxRows` 分級：1 列＝不畫、原樣 `next(e)`（分頁標籤歸 autopilot；
   原本回以 key 標角色的 `Box` 標籤，B32 移除）、2–5 列或不到 26 欄＝一列摘要（只有寵物名與等級）、6–11 列＝16×6 迷你 Ferris
@@ -116,6 +127,34 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   原本的速度 34 與最近請求 ≥46 兩欄連同 `turn.step` 量測整包移給 autopilot 的 live mod（B32，owner 卡 d-7b0f7a4a；量法見
   autopilot BL-0359，正確口徑出自 codeforge `405b214` 的 `stepRate`）。沒有 autopilot 時 forge-stats 也不顯示速度。
   `doc/plans/2026-10-31-forge-columns.md` §2.5 的速度與最近請求兩欄已失效。
+- **整合面板（panel state，2026-11-05，操作員 d-fb45042e，autopilot × codeforge 設計 v2）**：autopilot 的 `/live`
+  面板有一條分頁列（待決｜圓桌｜用量｜寵物｜更多 ›），殼和分頁列歸 autopilot，用量和寵物的內容歸 forge-stats。
+  forge-stats 寫 `$.state` key `panel`（`codeforge.panel/1`，型別見 `plugins/forge-stats/types/index.d.ts` 的 `PanelState`）：
+  `{schema, updated_at_ms, usage:{tiers}, pet:{title, sprite, tiers}}`。`tiers` 依寬度 40／60／80／100／120 各放一份排好的列，
+  就是 pane 自己的 `usageLines`／`petLines`（寵物不含 ASCII 圖）。每列是 `[{text, tone?}]`，tone 只有 subtle、inactive、
+  dim、bold、mono、success 六種。讀的一方選不超過自己欄寬的最大一份（不到 40 用 40），每列裁到 cols−1，不重算內容。
+  `sprite` 是 pet.json 的 `village.sprite` 經 forge-stats 驗證後的 `SpriteData`（調色盤 0xRRGGBB），第一版是靜態的：
+  blit 只能打到 forge-stats 自己的 Raster。寫入時機：session 開始寫一次，之後每 15 秒檢查，內容有變才寫，沒變也至少
+  30 秒寫一次（讀的一方超過 60 秒沒更新就標「資料 N 分鐘前」）；`ui.render` 裡不能寫。autopilot 的面板開著時會寫
+  `autopilot.panel_open_at_ms`，forge-stats 讀到最近一分鐘內的值，就照常更新配額鏡像，不需要自己的 band 或 pane 畫過。
+  forge-stats 自己的 pane 等操作員看過整合面板的預覽、點頭後才退場。
+  O4 寬度分級（2026-11-06）另加選填的 `side`（右側摘要欄的用量、各模型比例、記憶），分工、欄寬和各級用法見
+  [`panel-band-contract.md`](panel-band-contract.md)。
+- **prompt 提示行的尾巴（PromptHint tail，2026-11-05，PM 採用 slot 調查的建議）**：forge-stats 只設 `PromptHint` 的
+  `tail`，不改寫 `hint`（改寫會蓋掉引擎的提示與 pills）。內容是這個 session 的燈號：「記憶 N 條 · 大腦 已連線」，記憶在前；
+  hidden 的燈不寫，兩個都 hidden 就不加 tail。引擎把 tail 灰色接在提示行尾，行尾放不下時切掉並補「…」，剩不到 4 欄就整段
+  不畫（實測 120 欄完整、62–64 欄被切、60 欄消失）。prompt 周圍的位置由上往下：band（AbovePrompt）→ 輸入行 →
+  `$.ui.status`（引擎加「⚠ plugin:」前綴，只放真的警告）→ statusline → 提示行（含 tail）→ SessionMode 標籤。
+- **「全部帳號」分頁（forge-stats pane 的第三個分頁，2026-11-09）**：pane 分頁列原本是 寵物｜用量；**只有** `<base>/codeforge/usage/fleet-quota.json`
+  存在時才多一個「全部帳號」（`<base>` 的掃描順序同用量分頁：liveBase 先，再 `liveBases()`）。沒有這個檔時分頁列和每一個畫面都和
+  之前逐位元組相同（測試 `tests/fleet-tab.test.tsx` 比對）。檔由 `codeforge usage collect` 在環境變數 `CODEFORGE_FLEET_USAGE_DIR`
+  有設時寫（見 `codeforge-usage.md`）。存在與否只在 render 外 `stat`（session 開始、指令、畫過後每 15 秒），檔案只在這個分頁的 render 裡讀，
+  界線同用量摘要：stat 先、一般檔案、不是連結、≤ 512 KiB，不 spawn codeforge。依 `codeforge.fleet-quota/1` 嚴格解析，
+  不合就畫一行 dim「全部帳號資料無法讀取」，不 throw。內容：標題列帶檔案年齡（「合併於 N 分鐘前」）；先是警示列（與 CLI 同序、
+  同字：`會浪費 · 名字 · email · 週 N% · 重置 ◷ … · 目標 85%`、`會不夠 估 · 名字 · email · 週 N% · 估 … 後用完 · 重置 ◷ …`），再每帳號一列
+  `名字 · email  週 N% ◷ 2d5h  5h N%  主機…  年齡`（`緊` ≥ 90%、年齡超過 30 分鐘才顯示、`無來源`／`過期`／`已重置，等新觀察`）。
+  警示、projected、exhaust_at 全取自 JSON，TS 不重算；過期的檔照原樣畫並標年齡。寬度不夠時整欄丟（主機、年齡、5h、倒數），
+  最後才用 `…` 截。名字取 JSON 的 `name`（`acct-` 鍵永不顯示；舊檔沒有 `name` 的退回規則見 `codeforge-usage.md`「顯示名」）。實作 `plugins/forge-stats/hooks/fleet-view.ts`。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、縮圖；tok/s 歸 autopilot）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 

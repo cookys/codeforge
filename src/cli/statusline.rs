@@ -28,14 +28,19 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         // G36: this account's quota snapshot out, the other accounts' back in.
-        let (config_dir, alias) = crate::usage::alias::current_claude_account();
-        data.others = record_quota(
-            &data,
+        let (config_dir, acct) = crate::usage::alias::current_claude_account(&live_base);
+        let others = record_quota(
+            &mut data,
             &crate::usage::quota::quota_dir(&live_base),
-            &alias,
+            acct.as_ref(),
             &crate::usage::alias::path_hash8(&config_dir),
+            &crate::live::sanitize_session_id(raw_sid),
             now_ms,
         );
+        data.others = others;
+        data.names = crate::usage::names::load_default();
+        // G40: once `<live_dir>/quota/` exists the mirror is the only source on this row (design 7 rule 7).
+        data.mirror = crate::usage::quota_mirror_read::load_for_statusline(now_ms / 1000);
         // G36: a background `usage collect` at most every 15 min (no SessionEnd hook needed).
         // Never from a test build: current_exe() would be the test harness.
         #[cfg(not(test))]
@@ -52,10 +57,10 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let conn = ctx.open_db()?;
     let has_pet = LiveState::exists(&conn).unwrap_or(false);
 
-    let width: usize = std::env::var("CODEFORGE_WIDTH")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(100);
+    let width = statusline_width(
+        std::env::var("CODEFORGE_WIDTH").ok().as_deref(),
+        std::env::var("COLUMNS").ok().as_deref(),
+    );
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -263,10 +268,27 @@ fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> boo
         && v["session_id"] == raw_sid
         && age.is_some_and(|a| (0..MOD_ALIVE_FRESH_MS).contains(&a))
         && v["layout"] == "band"
+        // B34: a forge-stats whose band was not drawn lately (a plugin above it drew its own band) says
+        // `band_seen: false`; an older one never writes the field and keeps compacting as before.
+        && v["band_seen"] != false
+}
+
+/// The width to draw at: `CODEFORGE_WIDTH` when set, else the terminal's `COLUMNS` (set by
+/// Claude Code when it starts the statusline, following a resize) minus 4 (Claude Code indents
+/// the statusline 2 columns and keeps 2 free on the right: measured at 120 and 160 columns),
+/// else 100.
+fn statusline_width(codeforge_width: Option<&str>, columns: Option<&str>) -> usize {
+    let parse = |v: Option<&str>| v.and_then(|v| v.trim().parse::<usize>().ok());
+    parse(codeforge_width)
+        .or_else(|| parse(columns).map(|c| c.saturating_sub(4)))
+        .unwrap_or(100)
 }
 
 /// The compact form drawn while the forge-stats band layout runs: the no-pet
 /// identity + usage strip (2 lines, no frame, no pet rows), without the adopt hint.
+/// When the identity, the version and the whole usage part fit on one line with 2
+/// columns between them, it is one line: identity left, usage then version right (the
+/// version rightmost on either form).
 fn render_compact<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
     render_strip(out, data, width, false)
 }
@@ -289,86 +311,199 @@ struct StatusInput {
     seven_day_resets_at: Option<i64>,
     /// G36: the other accounts' fresh quota snapshots, most constrained first.
     others: Vec<crate::usage::quota::Snapshot>,
+    /// The operator's account names (`codeforge usage alias set`); see `usage::names`.
+    names: crate::usage::names::Names,
+    /// G40: the quota mirror's merged entries; `None` while `<live_dir>/quota/` does not exist (then `others` is drawn, as before).
+    mirror: Option<Vec<crate::usage::quota_mirror_read::QEntry>>,
 }
 
 // ─── G36 per-account quota (doc/plans/2026-11-03-usage-collector.md §2–3) ─────
 
-/// Write this account's quota snapshot when Claude Code reported `rate_limits`
-/// (throttled, 0600), then read the other accounts' snapshots back. Never fails
-/// the statusline: a write or read error only means fewer accounts shown.
+/// Merge this account's quota into its snapshot when Claude Code reported `rate_limits`
+/// (throttled, 0600; a window's value only grows, see `quota::merge_snapshot`) and show
+/// the merged value on this session's own bars, so an idle session no longer shows the
+/// lower value of its last API call. Then read the other accounts' snapshots back.
+/// Never fails the statusline: a write or read error only means fewer accounts shown.
 fn record_quota(
-    data: &StatusInput,
+    data: &mut StatusInput,
     dir: &std::path::Path,
-    alias: &str,
+    acct: Option<&crate::usage::alias::Identity>,
     root: &str,
+    session: &str,
     now_ms: i64,
 ) -> Vec<crate::usage::quota::Snapshot> {
-    use crate::usage::quota::{read_others, write_snapshot, Snapshot, Window};
+    use crate::usage::quota::{merge_snapshot, read_others, Seen, Snapshot, Window};
     let window = |pct: Option<f64>, at: Option<i64>| match (pct, at) {
-        (Some(pct), Some(resets_at)) => Some(Window { pct, resets_at }),
+        (Some(pct), Some(resets_at)) => Some(Window {
+            pct,
+            resets_at,
+            seen: Some(Seen {
+                at_ms: now_ms,
+                session: session.to_string(),
+            }),
+        }),
         _ => None,
     };
+    // no login: unattributed, nothing written (PM 01M7052H79); the others are still read
+    let Some(acct) = acct else {
+        return read_others(dir, "", now_ms);
+    };
     let snap = Snapshot {
-        alias: alias.to_string(),
+        alias: acct.alias.clone(),
+        org: acct.org.clone(),
+        email: acct.email.clone(),
         root: crate::usage::quota::is_hash8(root).then(|| root.to_string()),
         written_at_ms: now_ms,
         five_hour: window(data.five_hour_pct, data.five_hour_resets_at),
         seven_day: window(data.seven_day_pct, data.seven_day_resets_at),
     };
     if snap.five_hour.is_some() || snap.seven_day.is_some() {
-        let _ = write_snapshot(dir, &snap);
+        if let Ok((merged, _)) = merge_snapshot(dir, &snap) {
+            // a window past its reset is unknown (quota.rs), on this account's own row too
+            let live = |w: Option<Window>| w.filter(|w| w.resets_at * 1000 > now_ms);
+            if let Some(w) = live(merged.five_hour) {
+                data.five_hour_pct = Some(w.pct);
+                data.five_hour_resets_at = Some(w.resets_at);
+            }
+            if let Some(w) = live(merged.seven_day) {
+                data.seven_day_pct = Some(w.pct);
+                data.seven_day_resets_at = Some(w.resets_at);
+            }
+        }
     }
-    read_others(dir, alias, now_ms)
+    read_others(dir, &acct.alias, now_ms)
 }
 
-/// The other accounts on the usage row: ` · alias NN% countdown` per account, most
-/// constrained first, as many as fit in `avail` visible cells (an account that does
-/// not fit with its countdown is tried without it; the first that does not fit ends
-/// the list). Red at 95 %, yellow at 80 % for the first such account only (TUI
-/// guideline: one yellow per row), the rest bold. `yellow_taken`: the row already
-/// shows a yellow (this session's own bars, see [`own_bars_yellow`]).
+/// The quota part of the usage row: the mirror's chips when the mirror exists (G40), else the G36
+/// snapshot chips exactly as before. The statusline never draws both.
+fn quota_segment(data: &StatusInput, now_s: i64, avail: usize, yellow_taken: bool) -> String {
+    match &data.mirror {
+        None => others_segment(&data.others, &data.names, now_s, avail, yellow_taken),
+        Some(entries) => mirror_segment(entries, now_s, avail),
+    }
+}
+
+/// G40 chips: ` · ` then the widest form of the quota group that fits `avail` (design 6.1 drop order);
+/// nothing when no form fits or there is nothing to draw (never an empty ` · `).
+fn mirror_segment(
+    entries: &[crate::usage::quota_mirror_read::QEntry],
+    now_s: i64,
+    avail: usize,
+) -> String {
+    use crate::usage::quota_view as qv;
+    let tr = qv::Tr::current();
+    let band = qv::quota_band(entries, now_s, &tr);
+    let sep_w = 3;
+    for form in qv::band_forms(&band) {
+        if sep_w + qv::width(&form) > avail {
+            continue;
+        }
+        let mut out = tc(" · ", DELIM);
+        for part in &form {
+            out.push_str(&match part.style {
+                qv::Style::Warn => tc(&part.text, BAR_MID),
+                qv::Style::Idle => tc(&part.text, REMAIN),
+                qv::Style::Dim => tc(&part.text, DELIM),
+                qv::Style::Bold => tc_bold(&part.text, BAR_LBL),
+                qv::Style::Plain => tc(&part.text, BAR_LBL),
+            });
+        }
+        return out;
+    }
+    String::new()
+}
+
+/// The other accounts on the usage row, only those with a weekly warning: ` · ⚠ name 週 97% 3d1h
+/// 後重置` when the week will run short (or is at 95 %+), ` · name 週 12% 20h 後重置 會浪費` when
+/// it will be wasted; nothing else. The name comes from `usage::names` (the set name, else the
+/// org short form): the `acct-` key is never drawn, and an account with no name (an identity
+/// from before the login-derived alias) is skipped. Most constrained first, as many as fit in
+/// `avail` cells (an account that does not fit with its countdown is tried without it; the first
+/// that does not fit ends the list). Red at 95 %, else yellow for the first short account only
+/// (one yellow per row), the rest bold. `yellow_taken`: the row already shows a yellow (this
+/// session's own bars, see [`own_bars_yellow`]).
 fn others_segment(
     others: &[crate::usage::quota::Snapshot],
+    names: &crate::usage::names::Names,
     now_s: i64,
     avail: usize,
     yellow_taken: bool,
 ) -> String {
+    use crate::usage::fleet_quota as fq;
+    use crate::usage::names::{assign, Who};
+    let who: Vec<Who> = others
+        .iter()
+        .map(|s| Who {
+            key: &s.alias,
+            org: s.org.as_deref(),
+            email: s.email.as_deref(),
+        })
+        .collect();
+    let tr = crate::usage::quota_view::Tr::current();
     let mut out = String::new();
     let mut used = 0usize;
     let mut yellow_used = yellow_taken;
-    for s in others {
-        let Some((_label, w)) = s.constrained(now_s) else {
+    for (s, name) in others.iter().zip(assign(&who, names)) {
+        // no name: an identity from before the login-derived alias, never drawn
+        let Some(name) = name else {
             continue;
         };
+        let Some(w) = s.seven_day.as_ref().filter(|w| w.resets_at > now_s) else {
+            continue;
+        };
+        let wk = fq::weekly(
+            fq::Win {
+                pct: w.pct,
+                resets_at: w.resets_at,
+            },
+            now_s,
+            fq::DEFAULT_USE_TARGET,
+        );
+        let short = w.pct >= 0.95 || wk.warn == Some(fq::Warn::Short);
+        let waste = !short && wk.warn == Some(fq::Warn::Waste);
+        if !short && !waste {
+            continue;
+        }
         let pct = format!("{:.0}%", w.pct * 100.0);
-        let remain = fmt_remaining_at(w.resets_at, now_s);
-        let pct_c = if w.pct >= 0.95 {
-            tc(&pct, BAR_HIGH)
-        } else if w.pct >= 0.80 && !yellow_used {
-            yellow_used = true;
-            tc(&pct, BAR_MID)
-        } else if w.pct >= 0.80 {
-            tc_bold(&pct, BAR_LBL)
+        let head = if short {
+            format!("⚠ {name} {} {pct}", tr.t("quota.w_weekly", &[]))
         } else {
-            tc(&pct, BAR_LBL)
+            format!("{name} {} {pct}", tr.t("quota.w_weekly", &[]))
+        };
+        let mut tail = tr.t(
+            "quota.sl_resets_in",
+            &[("t", &fmt_remaining_at(w.resets_at, now_s))],
+        );
+        if waste {
+            tail = format!("{tail} {}", tr.t("quota.fleet_waste", &[]));
+        }
+        let color = |t: &str| {
+            if !short {
+                tc(t, REMAIN)
+            } else if w.pct >= 0.95 {
+                tc(t, BAR_HIGH)
+            } else if !yellow_used {
+                tc(t, BAR_MID)
+            } else {
+                tc_bold(t, BAR_LBL)
+            }
         };
         let sep = tc(" · ", DELIM);
-        let head_w = 3 + vis(&s.alias) + 1 + vis(&pct);
-        let full_w = head_w + 1 + vis(&remain);
+        let head_w = 3 + vis(&head);
+        let full_w = head_w + 1 + vis(&tail);
         let (piece, w_piece) = if used + full_w <= avail {
             (
-                format!(
-                    "{sep}{} {pct_c} {}",
-                    tc(&s.alias, BAR_LBL),
-                    tc(&remain, REMAIN)
-                ),
+                format!("{sep}{} {}", color(&head), tc(&tail, REMAIN)),
                 full_w,
             )
         } else if used + head_w <= avail {
-            (format!("{sep}{} {pct_c}", tc(&s.alias, BAR_LBL)), head_w)
+            (format!("{sep}{}", color(&head)), head_w)
         } else {
             break;
         };
+        if short && w.pct < 0.95 {
+            yellow_used = true;
+        }
         out.push_str(&piece);
         used += w_piece;
     }
@@ -431,6 +566,8 @@ fn read_status_input() -> (StatusInput, serde_json::Value) {
                 seven_day_pct,
                 seven_day_resets_at,
                 others: Vec::new(),
+                names: Default::default(),
+                mirror: None,
             };
             return (input, v);
         }
@@ -1046,7 +1183,7 @@ fn render_strip<W: Write>(
         let now_s = chrono::Utc::now().timestamp();
         format!(
             "{usage_left}{}",
-            others_segment(&data.others, now_s, room, own_bars_yellow(data))
+            quota_segment(data, now_s, room, own_bars_yellow(data))
         )
     };
     let usage_left_vis = ansi_vis(&usage_left);
@@ -1064,6 +1201,32 @@ fn render_strip<W: Write>(
     } else {
         None
     };
+    // One line (compact form only): " " identity, at least 2 spaces, usage "   " version
+    // (the version stays rightmost, as on the two-line form's first row).
+    // The usage part is the one the two-line form would draw, so nothing is dropped.
+    if !adopt_hint {
+        let left = format!(
+            " {}{}{}{} {}",
+            model_text,
+            tc(" ── ", delim_c),
+            tc(&cwd_display, CWD_C),
+            ab_part,
+            tc(&branch_display, BRANCH_C),
+        );
+        let left_vis = 1 + model_vis + 4 + cwd_vis + ab_vis + 1 + branch_vis;
+        let sep = if ver_vis == 0 { "" } else { "   " };
+        let right = format!("{usage_left}{sep}{ver_str}");
+        let right_vis = usage_left_vis + sep.len() + ver_vis;
+        if left_vis + 2 + right_vis <= width {
+            let pad = width - left_vis - right_vis;
+            let rows = [Row {
+                art: None,
+                info: format!("{left}{}{right}", " ".repeat(pad)),
+            }];
+            return render_rows(out, &rows, 0);
+        }
+    }
+
     let row1 = match hint_render {
         Some((h, hv)) => {
             let pad = width.saturating_sub(1 + usage_left_vis + hv + 1);
@@ -1265,12 +1428,7 @@ fn render_full<W: Write>(
         let mut content = parts.join("  ");
         let room = panel_w.saturating_sub(vis("│ ") + ansi_vis(&content) + vis("│") + 1);
         let now_s = chrono::Utc::now().timestamp();
-        content.push_str(&others_segment(
-            &data.others,
-            now_s,
-            room,
-            own_bars_yellow(data),
-        ));
+        content.push_str(&quota_segment(data, now_s, room, own_bars_yellow(data)));
         box_mid(&content, "│ ", "│")
     };
 
@@ -1961,6 +2119,24 @@ mod tests {
     }
 
     #[test]
+    fn heartbeat_band_not_seen_keeps_the_full_statusline() {
+        let dir = tempfile::tempdir().unwrap();
+        let with = |seen: serde_json::Value| {
+            let mut v: serde_json::Value =
+                serde_json::from_str(&heartbeat(HB_SID, HB_NOW - 1_500, true)).unwrap();
+            v["band_seen"] = seen;
+            v.to_string()
+        };
+        // B34: the band layout chosen, but the band not drawn lately (autopilot's O4 shell above it)
+        write_heartbeat(dir.path(), HB_SID, &with(serde_json::json!(false)));
+        assert!(!read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
+        // drawn lately
+        write_heartbeat(dir.path(), HB_SID, &with(serde_json::json!(true)));
+        assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
+        // an older forge-stats writes no band_seen: it compacts as before (the fresh-band test above)
+    }
+
+    #[test]
     fn heartbeat_rejects_every_other_case() {
         let dir = tempfile::tempdir().unwrap();
         let base = dir.path();
@@ -2029,8 +2205,83 @@ mod tests {
             !text.contains('╭') && !text.contains('│'),
             "no box frame: {text}"
         );
-        assert!(!text.contains("adopt"), "no adopt hint: {text}");
+        // the hint itself, not the word: the line also shows the git branch, which may contain "adopt"
+        assert!(
+            !text.contains("→ adopt") && !text.contains("→ codeforge adopt"),
+            "no adopt hint: {text}"
+        );
         assert!(text.contains("ctx"), "usage row kept: {text}");
+    }
+
+    #[test]
+    fn width_is_codeforge_width_else_columns_minus_4_else_100() {
+        assert_eq!(statusline_width(Some("90"), Some("160")), 90);
+        assert_eq!(statusline_width(None, Some("160")), 156);
+        assert_eq!(statusline_width(None, Some("120")), 116);
+        assert_eq!(statusline_width(Some("x"), Some("130")), 126);
+        assert_eq!(statusline_width(None, Some("4")), 0);
+        assert_eq!(statusline_width(None, Some("30")), 26);
+        assert_eq!(statusline_width(None, Some("wide")), 100);
+        assert_eq!(statusline_width(None, None), 100);
+    }
+
+    fn compact_lines(data: &StatusInput, width: usize) -> Vec<String> {
+        let mut buf = Vec::new();
+        render_compact(&mut buf, data, width).unwrap();
+        strip_ansi(&String::from_utf8(buf).unwrap())
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn compact_form_is_one_line_exactly_when_everything_fits() {
+        let data = StatusInput {
+            model: Some("Opus 5.5".into()),
+            cwd: Some("/tmp/範例專案".into()),
+            version: Some("2.1.318".into()),
+            context_pct: Some(0.31),
+            five_hour_pct: Some(0.08),
+            five_hour_resets_at: Some(chrono::Utc::now().timestamp() + 1800),
+            seven_day_pct: Some(0.46),
+            seven_day_resets_at: Some(chrono::Utc::now().timestamp() + 5 * 86400),
+            ..Default::default()
+        };
+        // wide: one line, exactly `width` columns, identity left and usage right
+        let wide = compact_lines(&data, 300);
+        assert_eq!(wide.len(), 1, "{wide:?}");
+        let line = &wide[0];
+        assert_eq!(vis(line), 300, "{line:?}");
+        for part in ["Opus 5.5", "範例專案", "5h", "7d", "ctx"] {
+            assert!(line.contains(part), "{part} missing: {line:?}");
+        }
+        assert!(line.find("範例專案") < line.find("5h"));
+        // the version is the last field, flush right; the two-line form's first row too
+        assert!(line.ends_with("v2.1.318"), "{line:?}");
+        assert!(line.find("ctx") < line.find("v2.1.318"));
+        assert!(compact_lines(&data, 80)[0].ends_with("v2.1.318"));
+        // the threshold is the content: identity + 2 spaces + version and usage
+        let pad = {
+            let mut best = 0;
+            let mut run = 0;
+            for c in line.chars() {
+                run = if c == ' ' { run + 1 } else { 0 };
+                best = best.max(run);
+            }
+            best
+        };
+        let need = 300 - pad + 2;
+        let at = compact_lines(&data, need);
+        assert_eq!(at.len(), 1, "at the threshold {need}: {at:?}");
+        assert!(vis(&at[0]) <= need);
+        let below = compact_lines(&data, need - 1);
+        assert_eq!(below.len(), 2, "one column short of {need}: {below:?}");
+        for l in &below {
+            assert!(vis(l) < need, "{l:?}");
+        }
+        // narrow: the two-line form as before; a tiny terminal still draws
+        assert_eq!(compact_lines(&data, 80).len(), 2);
+        assert_eq!(compact_lines(&data, 0).len(), 2);
     }
 
     /// (g) statusline fixture from p0/statusline.json ⇒ main file matches
@@ -2349,43 +2600,170 @@ mod tests {
 
     // ── G36 per-account quota ───────────────────────────────────────────────
 
+    /// A snapshot whose org is the alias without `acct-` (so its default name is that).
     fn quota_snap(alias: &str, pct: f64, resets_at: i64) -> crate::usage::quota::Snapshot {
         crate::usage::quota::Snapshot {
             alias: alias.into(),
+            org: Some(alias.trim_start_matches("acct-").to_string()),
+            email: None,
             root: None,
             written_at_ms: 0,
             five_hour: None,
-            seven_day: Some(crate::usage::quota::Window { pct, resets_at }),
+            seven_day: Some(crate::usage::quota::Window {
+                pct,
+                resets_at,
+                seen: None,
+            }),
         }
     }
 
     const Q_NOW: i64 = 1_793_600_000;
 
     #[test]
-    fn others_segment_fits_its_room_and_drops_from_the_end() {
+    fn others_segment_shows_only_warned_weeks_by_name_and_fits_its_room() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let mut old = quota_snap("acct-ae88ee5d", 0.98, Q_NOW + 3 * 86400 + 3600);
+        old.org = None; // an identity from before the login-derived alias
         let others = [
+            // 97 % with 3d1h left: short
+            quota_snap("acct-Stranity", 0.97, Q_NOW + 3 * 86400 + 3600),
+            old,
+            // 10 % with 20h left: waste
+            quota_snap("acct-work", 0.10, Q_NOW + 20 * 3600),
+            // 30 % mid-week: no warning, not shown
+            quota_snap("acct-calm", 0.30, Q_NOW + 4 * 86400),
+        ];
+        let tr = crate::usage::quota_view::Tr::current();
+        let wk = tr.t("quota.w_weekly", &[]);
+        let r1 = tr.t("quota.sl_resets_in", &[("t", "3d1h")]);
+        let r2 = tr.t("quota.sl_resets_in", &[("t", "20h0m")]);
+        let waste = tr.t("quota.fleet_waste", &[]);
+        let full = strip_ansi(&others_segment(
+            &others,
+            &Default::default(),
+            Q_NOW,
+            200,
+            false,
+        ));
+        assert_eq!(
+            full,
+            format!(" · ⚠ stranity {wk} 97% {r1} · work {wk} 10% {r2} {waste}")
+        );
+        assert!(!full.contains("acct-") && !full.contains("calm"), "{full}");
+        // every room: never wider than given
+        for room in 0..80 {
+            let got = strip_ansi(&others_segment(
+                &others,
+                &Default::default(),
+                Q_NOW,
+                room,
+                false,
+            ));
+            assert!(vis(&got) <= room, "room {room}: {got:?}");
+        }
+        // no countdown when only the head fits; nothing when not even that
+        let head = format!(" · ⚠ stranity {wk} 97%");
+        assert_eq!(
+            strip_ansi(&others_segment(
+                &others,
+                &Default::default(),
+                Q_NOW,
+                vis(&head),
+                false
+            )),
+            head
+        );
+        assert_eq!(
+            others_segment(&others, &Default::default(), Q_NOW, vis(&head) - 1, false),
+            ""
+        );
+        // a name the operator set wins over the org
+        let names = crate::usage::names::Names(std::collections::BTreeMap::from([(
+            "acct-Stranity".to_string(),
+            "公司".to_string(),
+        )]));
+        let got = strip_ansi(&others_segment(&others, &names, Q_NOW, 200, false));
+        assert!(got.starts_with(&format!(" · ⚠ 公司 {wk} 97%")), "{got}");
+    }
+
+    fn mirror_entries(now: i64) -> Vec<crate::usage::quota_mirror_read::QEntry> {
+        let t = tempfile::tempdir().unwrap();
+        let d = t.path().join("quota/claude");
+        std::fs::create_dir_all(&d).unwrap();
+        let rec = serde_json::json!({"schema": "fleet.quota/1", "provider": "claude", "alias": "work",
+            "visibility": "L3", "host_role": "agent", "refusal": null, "token_state": "unknown",
+            "token_state_at": null, "token_issued_at": null, "token_expires_at": null,
+            "windows": [{"kind": "rolling_5h", "utilization": 0.62, "used": null, "limit": null, "unit": null,
+                "resets_at": now + 7500, "source": "passive", "observed_at": now - 60}]});
+        let row = serde_json::json!({"writer_courier": "local", "host_role": "agent",
+            "observed_at_hub": null, "skewed": false, "record": rec});
+        let view = serde_json::json!({"schema": "fleet.quota-view/1", "namespace": null,
+            "hub_offset": 0, "rows": [row]});
+        std::fs::write(d.join("work.json"), view.to_string()).unwrap();
+        crate::usage::quota_mirror_read::load_from(t.path(), now).expect("quota dir exists")
+    }
+
+    /// G40 transition (design 7 rule 7): with no mirror the quota segment IS the G36 segment, byte for byte.
+    #[test]
+    fn quota_segment_without_mirror_is_byte_identical_to_the_g36_segment() {
+        // both sides read NO_COLOR, which other tests toggle under ENV_LOCK
+        let _g = ENV_LOCK.lock().unwrap();
+        let others = vec![
             quota_snap("acct-b", 0.81, Q_NOW + 3 * 86400 + 7200),
             quota_snap("acct-c", 0.12, Q_NOW + 4 * 3600),
         ];
-        let full = strip_ansi(&others_segment(&others, Q_NOW, 200, false));
-        assert_eq!(full, " · acct-b 81% 3d2h · acct-c 12% 4h0m");
-        // every room: never wider than given
-        for room in 0..60 {
-            let got = strip_ansi(&others_segment(&others, Q_NOW, room, false));
-            assert!(vis(&got) <= room, "room {room}: {got:?}");
+        let data = StatusInput {
+            others: others.clone(),
+            mirror: None,
+            ..Default::default()
+        };
+        for avail in [0usize, 12, 14, 31, 40, 80, 200] {
+            for yellow in [false, true] {
+                assert_eq!(
+                    quota_segment(&data, Q_NOW, avail, yellow),
+                    others_segment(&others, &Default::default(), Q_NOW, avail, yellow),
+                    "avail {avail}"
+                );
+            }
         }
-        // room for the first with its countdown and the second without
-        assert_eq!(
-            strip_ansi(&others_segment(&others, Q_NOW, 31, false)),
-            " · acct-b 81% 3d2h · acct-c 12%"
+        // and nothing under a missing quota dir ever turns into `Some`
+        let t = tempfile::tempdir().unwrap();
+        assert!(crate::usage::quota_mirror_read::load_from(t.path(), Q_NOW).is_none());
+    }
+
+    #[test]
+    fn quota_segment_with_mirror_draws_mirror_chips_instead_of_snapshots() {
+        let data = StatusInput {
+            others: vec![quota_snap("acct-b", 0.81, Q_NOW + 7200)],
+            mirror: Some(mirror_entries(Q_NOW)),
+            ..Default::default()
+        };
+        let seg = strip_ansi(&quota_segment(&data, Q_NOW, 200, false));
+        assert!(seg.starts_with(" · "), "{seg:?}");
+        assert!(
+            seg.contains("claude:work") && seg.contains("62%") && seg.contains("◷ 2h5m"),
+            "{seg:?}"
         );
-        // the first without its countdown only
-        assert_eq!(
-            strip_ansi(&others_segment(&others, Q_NOW, 14, false)),
-            " · acct-b 81%"
-        );
-        // no room at all
-        assert_eq!(others_segment(&others, Q_NOW, 12, false), "");
+        assert!(!seg.contains("acct-b"), "{seg:?}");
+        // fits its room at every width, never panics, never a bare separator
+        for avail in 0..120 {
+            let s = strip_ansi(&quota_segment(&data, Q_NOW, avail, false));
+            assert!(s.is_empty() || vis(&s) <= avail, "avail {avail}: {s:?}");
+            assert_ne!(s.trim(), "·", "avail {avail}");
+        }
+        // narrowest form: alias and value only
+        let tight = strip_ansi(&quota_segment(&data, Q_NOW, 3 + vis("work 62%"), false));
+        assert_eq!(tight, " · work 62%");
+    }
+
+    #[test]
+    fn quota_segment_with_an_empty_mirror_draws_nothing() {
+        let data = StatusInput {
+            others: vec![quota_snap("acct-b", 0.81, Q_NOW + 7200)],
+            mirror: Some(vec![]),
+            ..Default::default()
+        };
+        assert_eq!(quota_segment(&data, Q_NOW, 200, false), "");
     }
 
     #[test]
@@ -2396,18 +2774,62 @@ mod tests {
             return; // NO_COLOR set for this test run: nothing coloured to check
         }
         let esc = |(r, g, b): Rgb| format!("\x1b[38;2;{r};{g};{b}m");
+        // 2 days into the week: 88 % and 84 % both project past 100 % (short)
+        let left = 5 * 86400;
         let others = [
-            quota_snap("acct-r", 0.97, Q_NOW + 60),
-            quota_snap("acct-y", 0.88, Q_NOW + 60),
-            quota_snap("acct-z", 0.84, Q_NOW + 60),
+            quota_snap("acct-r", 0.97, Q_NOW + left),
+            quota_snap("acct-y", 0.88, Q_NOW + left),
+            quota_snap("acct-z", 0.84, Q_NOW + left),
         ];
-        let seg = others_segment(&others, Q_NOW, 200, false);
+        let seg = others_segment(&others, &Default::default(), Q_NOW, 200, false);
         assert_eq!(seg.matches(&esc(BAR_MID)).count(), 1, "{seg:?}");
         assert_eq!(seg.matches(&esc(BAR_HIGH)).count(), 1, "{seg:?}");
         assert!(
             seg.contains("\x1b[1m"),
-            "the second 80 % account is bold: {seg:?}"
+            "the second short account is bold: {seg:?}"
         );
+    }
+
+    fn ident(alias: &str, email: Option<&str>) -> crate::usage::alias::Identity {
+        crate::usage::alias::Identity {
+            alias: alias.into(),
+            org: None,
+            email: email.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn own_row_never_shows_a_window_past_its_reset() {
+        // the file holds a 5h window that reset 30h ago; CC now sends only 7d
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let now_ms = Q_NOW * 1000;
+        let mut old = quota_snap("acct-a", 0.7, Q_NOW + 86400);
+        old.five_hour = Some(crate::usage::quota::Window {
+            pct: 0.99,
+            resets_at: Q_NOW - 30 * 3600,
+            seen: Some(crate::usage::quota::Seen {
+                at_ms: now_ms - 31 * 3600 * 1000,
+                session: "sess-0".into(),
+            }),
+        });
+        crate::live::write_live_json(&dir, "acct-a.json", &old.to_json()).unwrap();
+        let mut data = StatusInput {
+            seven_day_pct: Some(0.77),
+            seven_day_resets_at: Some(Q_NOW + 86400),
+            ..Default::default()
+        };
+        record_quota(
+            &mut data,
+            &dir,
+            Some(&ident("acct-a", None)),
+            "1a2b3c4d",
+            "sess-1",
+            now_ms,
+        );
+        assert_eq!(data.five_hour_pct, None);
+        assert_eq!(data.five_hour_resets_at, None);
+        assert_eq!(data.seven_day_pct, Some(0.77));
     }
 
     #[test]
@@ -2422,32 +2844,115 @@ mod tests {
         };
         crate::live::write_live_json(&dir, "acct-b.json", &other.to_json()).unwrap();
         // no rate_limits: nothing written, the others still read
-        let none = StatusInput::default();
-        let got = record_quota(&none, &dir, "acct-a", "1a2b3c4d", now_ms);
+        let mut none = StatusInput::default();
+        let got = record_quota(
+            &mut none,
+            &dir,
+            Some(&ident("acct-a", None)),
+            "1a2b3c4d",
+            "sess-1",
+            now_ms,
+        );
         assert_eq!(
             got.iter().map(|s| s.alias.as_str()).collect::<Vec<_>>(),
             ["acct-b"]
         );
         assert!(!dir.join("acct-a.json").exists());
         // rate_limits: this account's snapshot written, not shown among the others
-        let data = StatusInput {
+        let mut data = StatusInput {
             seven_day_pct: Some(0.75),
             seven_day_resets_at: Some(Q_NOW + 86400),
             ..Default::default()
         };
-        let got = record_quota(&data, &dir, "acct-a", "1a2b3c4d", now_ms);
+        let got = record_quota(
+            &mut data,
+            &dir,
+            Some(&ident("acct-a", None)),
+            "1a2b3c4d",
+            "sess-1",
+            now_ms,
+        );
         assert_eq!(got.len(), 1);
         let v: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("acct-a.json")).unwrap())
                 .unwrap();
         assert_eq!(v["seven_day"]["pct"], 0.75);
+        assert_eq!(v["seven_day"]["seen_by"], "sess-1");
+        assert_eq!(v["seven_day"]["seen_at_ms"], now_ms);
         assert_eq!(v["five_hour"], serde_json::Value::Null);
+        // an idle session of the same account, still holding a lower value of the same
+        // window: the file keeps 0.75 and this session's own bar shows 0.75 too
+        let mut idle = StatusInput {
+            seven_day_pct: Some(0.48),
+            seven_day_resets_at: Some(Q_NOW + 86400),
+            ..Default::default()
+        };
+        record_quota(
+            &mut idle,
+            &dir,
+            Some(&ident("acct-a", None)),
+            "1a2b3c4d",
+            "sess-2",
+            now_ms + 1000,
+        );
+        assert_eq!(idle.seven_day_pct, Some(0.75));
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("acct-a.json")).unwrap())
+                .unwrap();
+        assert_eq!(v["seven_day"]["pct"], 0.75);
+        assert_eq!(v["seven_day"]["seen_by"], "sess-1");
+        // the login email travels in the snapshot (0600 file), and a newer one replaces it
+        let mut mail = StatusInput {
+            seven_day_pct: Some(0.8),
+            seven_day_resets_at: Some(Q_NOW + 86400),
+            ..Default::default()
+        };
+        record_quota(
+            &mut mail,
+            &dir,
+            Some(&ident("acct-a", Some("me@example.com"))),
+            "1a2b3c4d",
+            "sess-1",
+            now_ms + 120_000,
+        );
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("acct-a.json")).unwrap())
+                .unwrap();
+        assert_eq!(v["email"], "me@example.com");
+        // no login (no account): rate_limits are not written under any key, not even a hash
+        // of the config dir, and the others are still read
+        let mut anon = StatusInput {
+            seven_day_pct: Some(0.9),
+            seven_day_resets_at: Some(Q_NOW + 86400),
+            ..Default::default()
+        };
+        let before: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        let got = record_quota(
+            &mut anon,
+            &dir,
+            None,
+            "ae88ee5d",
+            "sess-3",
+            now_ms + 130_000,
+        );
+        let after: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(before.len(), after.len());
+        assert!(!dir.join("acct-ae88ee5d.json").exists());
+        assert_eq!(anon.seven_day_pct, Some(0.9));
+        assert!(got.iter().any(|s| s.alias == "acct-b"));
         // a missing dir is no error
         assert!(record_quota(
-            &none,
+            &mut none,
             &base.path().join("nope"),
-            "acct-a",
+            Some(&ident("acct-a", None)),
             "1a2b3c4d",
+            "sess-1",
             now_ms
         )
         .is_empty());
@@ -2461,15 +2966,16 @@ mod tests {
             seven_day_resets_at: Some(chrono::Utc::now().timestamp() + 86400),
             others: vec![quota_snap(
                 "acct-b",
-                0.81,
-                chrono::Utc::now().timestamp() + 7200,
+                0.97,
+                chrono::Utc::now().timestamp() + 3 * 86400,
             )],
             ..Default::default()
         };
         let mut buf = Vec::new();
         render_compact(&mut buf, &data, 100).unwrap();
         let text = strip_ansi(&String::from_utf8(buf).unwrap());
-        assert!(text.contains("· acct-b 81%"), "{text}");
+        assert!(text.contains("· ⚠ b ") && text.contains(" 97%"), "{text}");
+        assert!(!text.contains("acct-"), "{text}");
         for line in text.lines() {
             assert!(vis(line) <= 100, "{line:?}");
         }
@@ -2489,22 +2995,27 @@ mod tests {
                 model: Some("Opus 5.5".into()),
                 seven_day_pct: Some(own),
                 seven_day_resets_at: Some(now + 86400),
-                others: vec![quota_snap("acct-b", 0.85, now + 7200)],
+                // 2 days in at 85 %: short, below red
+                others: vec![quota_snap("acct-b", 0.85, now + 5 * 86400)],
                 ..Default::default()
             };
             let mut buf = Vec::new();
             render_compact(&mut buf, &data, 100).unwrap();
             let text = String::from_utf8(buf).unwrap();
             text.lines()
-                .find(|l| l.contains("acct-b"))
+                .find(|l| l.contains("⚠ b"))
                 .unwrap_or_default()
                 .to_string()
         };
-        let other_part = |r: &str| r[r.find("acct-b").unwrap()..].to_string();
+        // from the separator before the other account (its colour escape precedes the ⚠)
+        let other_part = |r: &str| {
+            let at = r.find("⚠ b").unwrap();
+            r[r[..at].rfind('·').unwrap()..].to_string()
+        };
         // own 7d in the yellow band (50-80 %): the 85 % account is bold, not a second yellow
         let r = row1(0.6);
         assert!(
-            r[..r.find("acct-b").unwrap()].contains(&esc),
+            r[..r.find('·').unwrap()].contains(&esc),
             "own bar is yellow: {r:?}"
         );
         assert!(!other_part(&r).contains(&esc), "{r:?}");

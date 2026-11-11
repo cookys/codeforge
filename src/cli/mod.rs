@@ -317,9 +317,119 @@ pub enum UsageAction {
         /// 不印 stdout
         #[arg(long)]
         quiet: bool,
+        /// 額外收集的 Claude 設定目錄（絕對路徑，可重複；之後自動重掃）
+        #[arg(long = "claude-dir", value_name = "PATH")]
+        claude_dirs: Vec<std::path::PathBuf>,
     },
     /// 收集、寫 summary.json，驗證後以 `fleet upload` 上傳，印出 blob sha
     Push,
+    /// 配額檢視：讀 autopilot 的配額 mirror 並畫出每個帳號（只讀，不探測、不連網）
+    Accounts {
+        /// 輸出解讀後的清單（JSON）
+        #[arg(long)]
+        json: bool,
+    },
+    /// usage.v1 配額池（fleet 唯讀端點；環境變數 CODEFORGE_USAGE_V1 未設就是關）
+    Pools {
+        /// 印解讀後的 JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// 全帳號配額表：合併資料夾裡各主機的 usage-summary，標出會浪費／會不夠（估）
+    Fleet {
+        /// 資料夾：每台主機一個 `*.json`（codeforge.usage-summary/1），檔名（不含副檔名）就是主機標籤
+        /// 省略時用環境變數 CODEFORGE_FLEET_USAGE_DIR
+        #[arg(long)]
+        dir: Option<std::path::PathBuf>,
+        /// 印 JSON（codeforge.fleet-quota/1）而不是表
+        #[arg(long)]
+        json: bool,
+        /// 同時把 JSON 寫到這個檔（暫存檔＋rename，原子替換）
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+        /// 週視窗用量目標：重置前不到這個比例就算會浪費
+        #[arg(long, default_value_t = crate::usage::fleet_quota::DEFAULT_USE_TARGET)]
+        use_target: f64,
+    },
+    /// 帳號顯示名：statusline、全帳號表、全部帳號分頁都用這個名字（存在 ~/.config/codeforge/accounts.toml）
+    Alias {
+        #[command(subcommand)]
+        action: AliasAction,
+    },
+    /// 備註：在全帳號表與全部帳號分頁的列尾顯示（只存在本機 ~/.config/codeforge/accounts.toml，不上傳）
+    Note {
+        #[command(subcommand)]
+        action: NoteAction,
+    },
+    /// 訂閱方案（pro、max5x、max20x、team、enterprise、api）：顯示在全帳號表與全部帳號分頁（只存在本機 ~/.config/codeforge/accounts.toml，不上傳）
+    Plan {
+        #[command(subcommand)]
+        action: PlanAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PlanAction {
+    /// 設定方案：`set <provider 或帳號> <方案>`（provider 套用到該 provider 的每一列；帳號的方案優先）
+    Set {
+        /// provider 名（小寫，如 codex），或帳號的 email／`alias list` 顯示的名字
+        target: String,
+        /// pro、max5x、max20x、team、enterprise、api（5x、20x 是 max5x、max20x 的簡寫）
+        plan: String,
+    },
+    /// 清除方案
+    Clear {
+        /// provider 名，或帳號的 email／顯示名
+        target: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum NoteAction {
+    /// 設定備註：`set <provider 或帳號> <文字>`（provider 如 kimi，套用到該 provider 的每一列；帳號的備註優先）
+    Set {
+        /// provider 名（小寫，如 kimi、codex），或帳號的 email／`alias list` 顯示的名字
+        target: String,
+        /// 備註（最寬 40 欄，不能有 @）
+        text: String,
+        /// 為「沒有任何資料」的帳號記一筆備註：target 就是它的名字（不可是 email、acct-／codex- key，也不可是已有的帳號名或 provider）
+        #[arg(long)]
+        new: bool,
+        /// 每週重置規則（operator 提供，低可信度）：`<星期>@<HH:MM><±HH:MM>`，星期為 mon tue wed thu fri sat sun，例如 fri@17:00+08:00；`usage fleet` 會算出下一次重置
+        #[arg(long, conflicts_with_all = ["reset_monthly", "reset_at"])]
+        reset_weekly: Option<String>,
+        /// 每月重置規則：`<日>@<HH:MM><±HH:MM>`，日為 1 到 31（不補 0），例如 17@00:00+08:00；該月沒有這一天就在月底重置
+        #[arg(long, conflicts_with = "reset_at")]
+        reset_monthly: Option<String>,
+        /// 一次性重置時間（RFC 3339）：`YYYY-MM-DDTHH:MM:SS±HH:MM` 或結尾 Z，例如 2026-11-21T00:00:00+08:00；過了就不再顯示倒數
+        #[arg(long)]
+        reset_at: Option<String>,
+    },
+    /// 只設重置規則（該 target 已有備註，或是已知的帳號／provider）：`reset <target> <規則>`
+    Reset {
+        /// provider 名、有備註的名字，或帳號的 email／顯示名
+        target: String,
+        /// 每週 fri@17:00+08:00、每月 17@00:00+08:00，或一次性 2026-11-21T00:00:00+08:00
+        rule: String,
+    },
+    /// 清除備註與重置規則
+    Clear {
+        /// provider 名，或帳號的 email／顯示名
+        target: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum AliasAction {
+    /// 列出每個帳號的顯示名、org、email
+    List,
+    /// 設定顯示名：`set <email 或現在的顯示名> <新名字>`
+    Set {
+        /// 帳號的 email，或 `alias list` 顯示的名字
+        who: String,
+        /// 新名字（1 到 24 個字，不能有 @）
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -510,8 +620,55 @@ pub fn run(cli: Cli) -> Result<()> {
             by,
             json,
         } => usage::run(match action {
-            Some(UsageAction::Collect { quiet }) => usage::Action::Collect { quiet },
+            Some(UsageAction::Collect { quiet, claude_dirs }) => {
+                usage::Action::Collect { quiet, claude_dirs }
+            }
             Some(UsageAction::Push) => usage::Action::Push,
+            Some(UsageAction::Accounts { json }) => usage::Action::Accounts { json },
+            Some(UsageAction::Pools { json }) => usage::Action::Pools { json },
+            Some(UsageAction::Fleet {
+                dir,
+                json,
+                out,
+                use_target,
+            }) => usage::Action::Fleet {
+                dir,
+                json,
+                out,
+                use_target,
+            },
+            Some(UsageAction::Alias { action }) => match action {
+                AliasAction::List => usage::Action::AliasList,
+                AliasAction::Set { who, name } => usage::Action::AliasSet { who, name },
+            },
+            Some(UsageAction::Plan { action }) => match action {
+                PlanAction::Set { target, plan } => usage::Action::PlanSet { target, plan },
+                PlanAction::Clear { target } => usage::Action::PlanClear { target },
+            },
+            Some(UsageAction::Note { action }) => match action {
+                NoteAction::Set {
+                    target,
+                    text,
+                    new,
+                    reset_weekly,
+                    reset_monthly,
+                    reset_at,
+                } => {
+                    use crate::usage::reset_rule::Kind;
+                    let reset = reset_weekly
+                        .map(|r| (Kind::Weekly, r))
+                        .or(reset_monthly.map(|r| (Kind::Monthly, r)))
+                        .or(reset_at.map(|r| (Kind::At, r)));
+                    usage::Action::NoteSet {
+                        target,
+                        text,
+                        new,
+                        reset,
+                    }
+                }
+                NoteAction::Reset { target, rule } => usage::Action::NoteReset { target, rule },
+                NoteAction::Clear { target } => usage::Action::NoteClear { target },
+            },
             None => usage::Action::Show { days, by, json },
         }),
         Commands::MnemosCli { action } => mnemos_cli::run(
