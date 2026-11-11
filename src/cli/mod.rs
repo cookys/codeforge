@@ -317,6 +317,9 @@ pub enum UsageAction {
         /// 不印 stdout
         #[arg(long)]
         quiet: bool,
+        /// 額外收集的 Claude 設定目錄（絕對路徑，可重複；之後自動重掃）
+        #[arg(long = "claude-dir", value_name = "PATH")]
+        claude_dirs: Vec<std::path::PathBuf>,
     },
     /// 收集、寫 summary.json，驗證後以 `fleet upload` 上傳，印出 blob sha
     Push,
@@ -611,7 +614,9 @@ pub fn run(cli: Cli) -> Result<()> {
             by,
             json,
         } => usage::run(match action {
-            Some(UsageAction::Collect { quiet }) => usage::Action::Collect { quiet },
+            Some(UsageAction::Collect { quiet, claude_dirs }) => {
+                usage::Action::Collect { quiet, claude_dirs }
+            }
             Some(UsageAction::Push) => usage::Action::Push,
             Some(UsageAction::Accounts { json }) => usage::Action::Accounts { json },
             Some(UsageAction::Fleet {
