@@ -404,6 +404,49 @@ fn collect_dirs_symlink_roots_and_projects_are_skipped() {
     assert!(sources(&rs[0]).is_empty());
 }
 
+#[cfg(unix)]
+#[test]
+fn collect_dirs_skipped_flag_dir_is_warned() {
+    use std::os::unix::fs::symlink;
+    let e = env();
+    let real = e._tmp.path().join("real");
+    write(
+        &real.join("cfg/projects/p/s.jsonl"),
+        &recent_claude("req_skipwarn", 40, 4),
+    );
+    let link = e._tmp.path().join("link");
+    symlink(&real, &link).unwrap();
+    let via_link = link.join("cfg");
+    let stderr = assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", via_link.to_str().unwrap()],
+        None,
+    ));
+    assert!(stderr.contains("略過 Claude 目錄"), "{stderr}");
+    assert!(stderr.contains(via_link.to_str().unwrap()), "{stderr}");
+    // The dir behind the symlink is not scanned.
+    assert!(stderr.contains("讀了 0 個轉錄檔"), "{stderr}");
+}
+
+#[test]
+fn collect_dirs_skipped_remembered_dir_is_silent() {
+    let e = env();
+    let other = e._tmp.path().join("other");
+    write(
+        &other.join("projects/p/s.jsonl"),
+        &recent_claude("req_remembered", 30, 3),
+    );
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", other.to_str().unwrap()],
+        None,
+    ));
+    std::fs::remove_dir_all(&other).unwrap();
+    let stderr = assert_collect_ok(collect_cli(&e, &[], None));
+    assert!(!stderr.contains("略過 Claude 目錄"), "{stderr}");
+    assert!(stderr.contains("讀了 0 個轉錄檔"), "{stderr}");
+}
+
 #[test]
 fn collect_dirs_env_dir_under_a_symlinked_parent_is_still_collected() {
     use std::os::unix::fs::symlink;
