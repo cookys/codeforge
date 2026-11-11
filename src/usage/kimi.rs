@@ -63,7 +63,9 @@ impl Token {
 #[derive(Deserialize)]
 struct Cred {
     access_token: Token,
-    expires_at: i64,
+    /// Unix seconds; a JSON number, possibly fractional (a writer may store `now + expires_in`
+    /// as a float), so it is read as `f64` (review g1).
+    expires_at: f64,
 }
 
 enum TokenState {
@@ -80,7 +82,10 @@ fn read_token(bytes: &[u8], now: i64) -> TokenState {
     let Ok(cred) = serde_json::from_slice::<Cred>(bytes) else {
         return TokenState::Unusable;
     };
-    if cred.access_token.as_str().is_empty() || cred.expires_at <= now {
+    if !cred.expires_at.is_finite() {
+        return TokenState::Unusable;
+    }
+    if cred.access_token.as_str().is_empty() || cred.expires_at <= now as f64 {
         return TokenState::Expired;
     }
     // A bearer is one header value. Reject it here so the request never builds an error that
@@ -283,11 +288,14 @@ fn usages_base(env_value: Option<&str>) -> String {
     let Some(raw) = env_value.filter(|s| s.starts_with("https://")) else {
         return DEFAULT_BASE.to_string();
     };
-    let trimmed = raw.trim_end_matches('/');
-    if !trimmed.starts_with("https://") || trimmed.len() == "https://".len() {
+    // A host is required, and a query or fragment would put `/usages` inside it (review g1).
+    let usable = reqwest::Url::parse(raw).is_ok_and(|u| {
+        u.host_str().is_some_and(|h| !h.is_empty()) && u.query().is_none() && u.fragment().is_none()
+    });
+    if !usable {
         return DEFAULT_BASE.to_string();
     }
-    trimmed.to_string()
+    raw.trim_end_matches('/').to_string()
 }
 
 fn usages_url(base: &str) -> String {
@@ -619,6 +627,18 @@ mod tests {
             read_token(&cred(ACCESS, NOW_S - 1), NOW_S),
             TokenState::Expired
         ));
+        // a fractional expiry (a float writer) is read, not Unusable (review g1)
+        let frac = |exp: f64| {
+            serde_json::to_vec(&json!({"access_token": ACCESS, "expires_at": exp})).unwrap()
+        };
+        assert!(matches!(
+            read_token(&frac(NOW_S as f64 + 3600.5), NOW_S),
+            TokenState::Ok(_)
+        ));
+        assert!(matches!(
+            read_token(&frac(NOW_S as f64 - 0.5), NOW_S),
+            TokenState::Expired
+        ));
         // an empty token is kimi's revoked tombstone, even with a future expiry
         assert!(matches!(
             read_token(&cred("", FUTURE), NOW_S),
@@ -796,6 +816,13 @@ mod tests {
             DEFAULT_BASE
         );
         assert_eq!(usages_base(Some("https://")), DEFAULT_BASE);
+        for bad in [
+            "https://:443",
+            "https://example.test/v1?x=1",
+            "https://example.test/v1#f",
+        ] {
+            assert_eq!(usages_base(Some(bad)), DEFAULT_BASE, "{bad}");
+        }
         assert_eq!(
             usages_base(Some("https://example.test/coding/v1/")),
             "https://example.test/coding/v1"
