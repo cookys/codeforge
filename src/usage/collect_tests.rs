@@ -393,13 +393,29 @@ fn collect_dirs_symlink_roots_and_projects_are_skipped() {
     assert_eq!(remembered_claude_dirs(&conn).unwrap(), vec![e.cfg.clone()]);
     let slash = PathBuf::from(format!("{}/", e.cfg.display()));
     let via_parent = e.cfg.join("../other");
-    assert!(roots(&[e.cfg.clone(), slash, via_parent], None).is_empty());
+    assert!(![e.cfg.clone(), slash, via_parent]
+        .iter()
+        .any(|d| real_dir_chain(d)));
 
     // Even a projects link pointing inside its real root must not be followed.
     std::fs::rename(other.join("projects"), other.join("actual")).unwrap();
     symlink(other.join("actual"), other.join("projects")).unwrap();
     let rs = roots(&[other], None);
     assert!(sources(&rs[0]).is_empty());
+}
+
+#[test]
+fn collect_dirs_env_dir_under_a_symlinked_parent_is_still_collected() {
+    use std::os::unix::fs::symlink;
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &recent_claude("req_parent", 70, 7),
+    );
+    let linked = e._tmp.path().join("linkhome");
+    symlink(e._tmp.path(), &linked).unwrap();
+    let stderr = assert_collect_ok(collect_cli(&e, &[], Some(&linked.join("cfg"))));
+    assert!(stderr.contains("讀了 1 個轉錄檔"), "{stderr}");
 }
 
 #[test]

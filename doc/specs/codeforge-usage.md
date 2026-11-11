@@ -156,7 +156,9 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 
 每次收集的 Claude config dirs 是以下來源的聯集：非空的 `$CLAUDE_CONFIG_DIR`、`~/.claude`、
 `accounts.toml` 的 `[collect] claude_dirs`、usage.db 記住的目錄，以及本次所有 `--claude-dir`。
-以 canonical path 去重，同一目錄用尾斜線或 `..` 等不同寫法只掃一次；不接受 symlink 目錄（含路徑中間的 symlink）。
+以 canonical path 去重，同一目錄用尾斜線或 `..` 等不同寫法只掃一次；`[collect] claude_dirs`、記住的目錄與 `--claude-dir`
+不接受 symlink 目錄（含路徑中間的 symlink）；`$CLAUDE_CONFIG_DIR` 與 `~/.claude` 照舊，家目錄在 symlink 底下（如
+`/home -> /usr/home`）仍會收集。
 Codex 仍只用 `$CODEX_HOME`（非空時），否則 `~/.codex`，不記入 Claude 目錄表。
 
 **額外來源設定**：沿用名字、`[plans]` 的同一份 `accounts.toml` 與 TOML parser；路徑選擇同上

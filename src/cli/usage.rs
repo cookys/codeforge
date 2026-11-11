@@ -93,9 +93,13 @@ fn collect_and_summarize(
         }
     }
     claude_dirs.push(home.join(".claude"));
-    claude_dirs.extend(configured_dirs);
-    claude_dirs.extend(collect::remembered_claude_dirs(&conn)?);
-    claude_dirs.extend_from_slice(extra_claude_dirs);
+    claude_dirs.extend(
+        configured_dirs
+            .into_iter()
+            .chain(collect::remembered_claude_dirs(&conn)?)
+            .chain(extra_claude_dirs.iter().cloned())
+            .filter(|d| collect::real_dir_chain(d)),
+    );
     let codex = std::env::var("CODEX_HOME")
         .ok()
         .filter(|d| !d.is_empty())
