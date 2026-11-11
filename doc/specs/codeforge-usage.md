@@ -150,9 +150,27 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   登入檔身分（預設 root `~/.claude` 對應 `~/.claude.json`，其他 root 對應 `<root>/.claude.json`），
   再其次是 db 裡存的，最後未歸屬（不再是 `acct-<hash>`；root 一律記進 db，讓它的舊 `acct-<hash>` 列認得出來）。
   Codex root 是 `codex-<hash>`。
-- 已知限制：重新登入之前寫下的轉錄檔，會歸給目前登入的帳號。
+- 重新登入後的配額與請求歸屬見「重新登入的歸屬」。
 - 限制：轉錄檔不記錄是哪個 OAuth token。同一個 config dir 跑多個帳號時，轉錄用量歸給那個 dir
   的別名（配額快照仍準確）。G37 採「每個帳號一個 config dir」，解除這個限制。
+
+## 重新登入的歸屬（Re-login attribution）
+
+同一個 Claude config dir 換帳號（帳號 A 登出、帳號 B 登入）之後，配額與請求都依**這一個**來源歸屬：該 root 的登入時間軸。
+
+時間軸檔是 `<quota 目錄的上一層>/logins-<root 的 hash8>.json`（也就是 `<live_base>/codeforge/usage/`），內容為
+`{"entries":[{"since_ms":<毫秒>,"alias":"acct-xxxxxxxx"}]}`，新的在最後，最多 64 筆（丟掉最舊的）。
+statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Claude root，都呼叫 `observe`：只有最後一筆的別名不同（或檔案是空的）才追加 `(現在, 目前別名)`。只存合法別名（`valid_alias`），不存 email、不存 org。寫入同其他 live JSON：暫存檔加 rename、0600。讀取不跟隨最後一層的 symlink。壞掉或外來的檔案（含任何 `@`）當成空的重寫。`alias_at(t)` 取 `since_ms <= t` 裡最大的那筆；`t` 早於第一筆則沒有。
+
+配額閘門的檔是同一層的 `sessions-<root 的 hash8>.json`，內容為
+`{"sessions":{"<session>":{"alias":"<別名>","fp":"<四個 rate_limits 原值接成的字串>","at_ms":<毫秒>}}}`。
+`fp` 是這次 stdin 的 5h 百分比、5h `resets_at`、7d 百分比、7d `resets_at`。session 已有紀錄、別名不是目前帳號、而且 `fp` 相同：這是換帳號前的回應還留在畫面上，**不合併、不寫入**快照，長條改畫磁碟上目前帳號的快照（沒有這份檔就當成這次沒有 `rate_limits`）。該筆紀錄不改。
+沒有紀錄、別名相同、或 `fp` 變了（換帳號之後的新回應）：照舊合併，並把紀錄設成目前別名、新的 `fp`、現在。別名與 `fp` 都沒變就不寫檔。
+寫檔時刪掉 `at_ms` 早於 `quota::MAX_AGE_MS` 的紀錄，最多留 512 筆（丟掉 `at_ms` 最舊的）。session 是空字串就不設閘門，照舊合併。讀寫失敗就退回今天的合併，statusline 不因此失敗、也不印 stderr。
+
+請求：`collect` 插入**新的** `requests` 列時，帳號取 `timeline.alias_at(該列的 seen_ms)`，沒有才用 `root_alias` 的結果。已經在庫裡的列不改帳號；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`，因此不必另外改。
+
+已知限制：換帳號要到下一次 statusline 渲染或 collect 才被看見；這段空檔裡的請求歸給前一個別名。時間軸出現之前就收集的轉錄檔，仍用舊規則（歸給收集當下的帳號）。
 
 ## 讀什麼、存什麼
 

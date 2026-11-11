@@ -9,6 +9,7 @@ pub mod autocollect;
 pub mod collect;
 pub mod fleet_quota;
 pub mod hourly;
+pub mod logins;
 pub mod names;
 pub mod price;
 pub mod quota;
