@@ -441,7 +441,7 @@ codeforge usage note clear <provider|name>      # clears the note and the rule
   `codeforge usage collect --claude-dir /absolute/path` flags) and Codex `~/.codex/sessions/**` transcripts
   (`CODEX_HOME` overrides the Codex root), incrementally, into `<data_dir>/usage/usage.db` (0600).
   Claude directories are remembered locally by canonical path and scanned once per run; missing or symlinked
-  directories are skipped. Newly added directories automatically backfill up to 35 days. Config/flag entries
+  added directories are skipped (`$CLAUDE_CONFIG_DIR` and `~/.claude` are taken as before). Newly added directories automatically backfill up to 35 days. Config/flag entries
   must be absolute paths. No prompt, transcript path or email is stored; a project is its directory's last name.
   Remembered config-directory paths stay in usage.db and never enter the summary or upload.
 - Cost is an **API-equivalent estimate** at list price (prices as of 2026-10-06); subscription plans are not

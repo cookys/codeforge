@@ -57,9 +57,7 @@ pub fn roots(claude_dirs: &[PathBuf], codex_dir: Option<&Path>) -> Vec<Root> {
         }
     };
     for d in claude_dirs {
-        if real_dir_chain(d) {
-            add(Kind::Claude, d);
-        }
+        add(Kind::Claude, d);
     }
     if let Some(d) = codex_dir {
         add(Kind::Codex, d);
@@ -80,8 +78,11 @@ fn real_dir(p: &Path) -> bool {
     std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_dir())
 }
 
-/// Check before canonicalizing: neither a trailing slash nor `..` may hide a symlink.
-fn real_dir_chain(p: &Path) -> bool {
+/// For the added Claude dirs (accounts.toml, remembered, `--claude-dir`), checked before
+/// canonicalizing: no component may be a symlink, so neither a trailing slash nor `..` can hide
+/// one. `$CLAUDE_CONFIG_DIR` and `~/.claude` are not held to this: a home under a symlinked
+/// parent (`/home -> /usr/home`) must keep collecting.
+pub fn real_dir_chain(p: &Path) -> bool {
     let mut prefix = PathBuf::new();
     p.components().all(|part| {
         prefix.push(part);
