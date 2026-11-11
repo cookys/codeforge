@@ -15,6 +15,7 @@ pub enum Action {
     },
     Collect {
         quiet: bool,
+        claude_dirs: Vec<PathBuf>,
     },
     Push,
     Accounts {
@@ -64,7 +65,17 @@ fn now_ms() -> i64 {
 fn collect_and_summarize(
     quiet: bool,
     wait: bool,
+    extra_claude_dirs: &[PathBuf],
 ) -> Result<Option<(rusqlite::Connection, PathBuf)>> {
+    for dir in extra_claude_dirs {
+        if !dir.is_absolute() {
+            anyhow::bail!("--claude-dir 必須是絕對路徑：「{}」", dir.display());
+        }
+    }
+    let configured_dirs = crate::usage::names::default_path()
+        .map(|p| crate::usage::names::load_claude_dirs(&p))
+        .transpose()?
+        .unwrap_or_default();
     let data = store::data_dir(std::env::var("CODEFORGE_DATA_DIR").ok().as_deref());
     let dir = store::usage_dir(&data);
     let (mut conn, notes) = store::open(&dir)?;
@@ -82,6 +93,9 @@ fn collect_and_summarize(
         }
     }
     claude_dirs.push(home.join(".claude"));
+    claude_dirs.extend(configured_dirs);
+    claude_dirs.extend(collect::remembered_claude_dirs(&conn)?);
+    claude_dirs.extend_from_slice(extra_claude_dirs);
     let codex = std::env::var("CODEX_HOME")
         .ok()
         .filter(|d| !d.is_empty())
@@ -175,7 +189,7 @@ fn write_fleet_quota(
 }
 
 fn collected(quiet: bool) -> Result<(rusqlite::Connection, PathBuf)> {
-    collect_and_summarize(quiet, true)?.context("collect 沒有結果")
+    collect_and_summarize(quiet, true, &[])?.context("collect 沒有結果")
 }
 
 fn compact(n: u64) -> String {
@@ -232,8 +246,8 @@ fn table_line(cells: &[&str; 8]) -> String {
 
 pub fn run(action: Action) -> Result<()> {
     match action {
-        Action::Collect { quiet } => {
-            collect_and_summarize(quiet, !quiet)?;
+        Action::Collect { quiet, claude_dirs } => {
+            collect_and_summarize(quiet, !quiet, &claude_dirs)?;
             Ok(())
         }
         Action::Accounts { json } => accounts(json),
