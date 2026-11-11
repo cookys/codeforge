@@ -1,7 +1,7 @@
 //! `codeforge usage` (G36 plan, phase 3): collect, write `summary.json`, print a table.
 
 use crate::usage::reset_rule::Kind;
-use crate::usage::{agy, collect, hourly, price, quota, store, summary};
+use crate::usage::{agy, collect, grok, hourly, price, quota, store, summary};
 use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -158,6 +158,16 @@ fn collect_and_summarize(
         now,
         agy::run_agy,
     ));
+    // the host's grok CLI account: weekly quota from the billing API (10-min cache, 10 s
+    // timeout, CODEFORGE_USAGE_GROK=0 to read nothing at all, cache included)
+    if !grok::disabled() {
+        fresh.extend(grok::snapshots(
+            &summary::summary_dir(&live_base),
+            &home,
+            now,
+            || grok::fetch_live(&home),
+        ));
+    }
     let v = summary::with_codex_sessions(
         summary::build(
             &rows,
