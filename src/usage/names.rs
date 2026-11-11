@@ -56,8 +56,9 @@ pub fn valid_name(s: &str) -> bool {
 }
 
 /// Providers whose account keys are `<provider>-<sha8>` (codex from `collect::root_alias`,
-/// agy/agyclaude from `super::agy`, grok from `super::grok` — the sha8 of the host's home dir).
-pub const KEY_PROVIDERS: [&str; 4] = ["agy", "agyclaude", "codex", "grok"];
+/// agy/agyclaude from `super::agy`, grok from `super::grok`, kimi from `super::kimi` — the sha8
+/// of the host's home dir).
+pub const KEY_PROVIDERS: [&str; 5] = ["agy", "agyclaude", "codex", "grok", "kimi"];
 
 /// An internal account key, never a name: `acct-…`, or a [`KEY_PROVIDERS`] key such as
 /// `codex-4cc1b5c8` (8 lowercase hex). A chosen `ci-20261105` is a name, not a key.
@@ -71,14 +72,15 @@ pub fn key_like(s: &str) -> bool {
 }
 
 /// The name a key gives when nothing else does: `codex` for `codex-4cc1b5c8`, `grok-cli` for
-/// `grok-<sha8>` (the local grok CLI), the key itself when someone chose it
-/// (`AUTOPILOT_ACCOUNT`), `None` for an `acct-` key.
+/// `grok-<sha8>` (the local grok CLI), `kimi-code` for `kimi-<sha8>` (the local Kimi Code CLI),
+/// the key itself when someone chose it (`AUTOPILOT_ACCOUNT`), `None` for an `acct-` key.
 fn key_default(key: &str) -> Option<&str> {
     if key.starts_with("acct-") {
         None
     } else if key_like(key) {
         match key.split_once('-').map(|(p, _)| p) {
             Some("grok") => Some("grok-cli"),
+            Some("kimi") => Some("kimi-code"),
             other => other,
         }
     } else {
@@ -480,8 +482,9 @@ fn pair(org: &str, email: &str) -> String {
 
 /// The display name of each of `items`, in order: the set name, else the org short form, else
 /// the email local part, else the key itself when it is a name someone chose (`AUTOPILOT_ACCOUNT`),
-/// else the provider of a `<provider>-<8 hex>` key (`codex`, or `grok-cli` for grok); `None` for
-/// an `acct-` key with none of these. Default names that collide get `·<email local part>`, and what still
+/// else the provider of a `<provider>-<8 hex>` key (`codex`, `grok-cli` for grok, `kimi-code` for
+/// kimi); `None` for an `acct-` key with none of these. Default names that collide get
+/// `·<email local part>`, and what still
 /// collides gets the smallest free `-2`, `-3`… in key order (a set name is never renamed), so no
 /// two accounts end with the same name.
 pub fn assign(items: &[Who], names: &Names) -> Vec<Option<String>> {
@@ -778,6 +781,7 @@ mod tests {
                 who("codex-0a1b2c3d", None, None),
                 who("work-laptop", None, None),
                 who("grok-1a2b3c4d", None, None),
+                who("kimi-1a2b3c4d", None, None),
             ],
             &Names::default(),
         );
@@ -788,6 +792,7 @@ mod tests {
                 Some("codex".into()),
                 Some("work-laptop".into()),
                 Some("grok-cli".into()),
+                Some("kimi-code".into()),
             ]
         );
         let set = Names([("codex-4cc1b5c8".to_string(), "公司 codex".to_string())].into());
@@ -1040,6 +1045,7 @@ mod tests {
         assert_eq!(key_provider("agy-1a2b3c4d"), Some("agy"));
         assert_eq!(key_provider("agyclaude-1a2b3c4d"), Some("agyclaude"));
         assert_eq!(key_provider("grok-1a2b3c4d"), Some("grok"));
+        assert_eq!(key_provider("kimi-1a2b3c4d"), Some("kimi"));
         assert_eq!(key_provider("acct-1a2b3c4d"), None);
         assert_eq!(key_provider("ci-20261105"), None);
         assert_eq!(key_provider("codex-XYZ"), None);
@@ -1047,6 +1053,8 @@ mod tests {
         assert!(!valid_name("agy-1a2b3c4d"));
         assert!(!valid_name("agyclaude-1a2b3c4d"));
         assert!(!valid_name("grok-1a2b3c4d"));
+        assert!(!valid_name("kimi-1a2b3c4d"));
         assert!(valid_name("grok-cli"));
+        assert!(valid_name("kimi-code"));
     }
 }
