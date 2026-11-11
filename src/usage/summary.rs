@@ -526,17 +526,23 @@ fn without_email(mut v: Value) -> Option<Vec<u8>> {
     hit.then(|| serde_json::to_vec(&v).ok()).flatten()
 }
 
-/// Read the summary back, validate it, and upload exactly the validated bytes (copied to a
-/// private 0600 file) as `usage-summary.json`: the local path is never the uploaded name.
-/// Returns the blob sha the fleet printed.
-pub fn push(dir: &Path, fleet_bin: &str) -> Result<String> {
-    let path = dir.join(FILE);
-    let bytes = std::fs::read(&path)
+/// Read the local `summary.json` back, validate it, and return the bytes `usage push` would
+/// upload: every account's `email` and `name` removed, or the original bytes when no account
+/// has either. Nothing is written and no process is spawned; the local file keeps the identity.
+pub fn export_bytes(dir: &Path) -> Result<Vec<u8>> {
+    let bytes = std::fs::read(dir.join(FILE))
         .map_err(|e| anyhow::anyhow!("讀不到 summary.json（{:?}）", e.kind()))?;
     let v: Value = serde_json::from_slice(&bytes)
         .map_err(|_| anyhow::anyhow!("summary.json 不是合法 JSON"))?;
     validate(&v).context("summary.json 未通過檢查，拒絕上傳")?;
-    let bytes = without_email(v).unwrap_or(bytes);
+    Ok(without_email(v).unwrap_or(bytes))
+}
+
+/// Read the summary back (validated, email-free), and upload exactly those bytes (copied to a
+/// private 0600 file) as `usage-summary.json`: the local path is never the uploaded name.
+/// Returns the blob sha the fleet printed.
+pub fn push(dir: &Path, fleet_bin: &str) -> Result<String> {
+    let bytes = export_bytes(dir)?;
     let mut tmp = tempfile::Builder::new()
         .prefix(".push.")
         .suffix(".json")
@@ -901,6 +907,56 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn export_bytes_strips_email_and_name_and_validates() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("MARKERDIR/usage");
+        let mut v = good();
+        v["accounts"][0]["email"] = json!("a@example.com");
+        v["accounts"][0]["name"] = json!("alpha");
+        validate(&v).unwrap();
+        write(&dir, &v).unwrap();
+        let out = export_bytes(&dir).unwrap();
+        let out: Value = serde_json::from_slice(&out).unwrap();
+        validate(&out).unwrap();
+        assert!(out["accounts"][0].get("email").is_none(), "{out}");
+        assert!(out["accounts"][0].get("name").is_none(), "{out}");
+        // every other key unchanged
+        let mut expect = v.clone();
+        let o = expect["accounts"][0].as_object_mut().unwrap();
+        o.remove("email");
+        o.remove("name");
+        assert_eq!(out, expect);
+        // the local file keeps the identity
+        let local: Value = serde_json::from_slice(&std::fs::read(dir.join(FILE)).unwrap()).unwrap();
+        assert_eq!(local["accounts"][0]["email"], "a@example.com");
+        assert_eq!(local["accounts"][0]["name"], "alpha");
+    }
+
+    #[test]
+    fn export_bytes_refuses_an_invalid_summary() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("MARKERDIR/usage");
+        let mut v = good();
+        v["days"][0]["model"] = json!("/home/me");
+        write(&dir, &v).unwrap();
+        let e = export_bytes(&dir).unwrap_err().to_string();
+        assert!(!e.contains("MARKERDIR") && !e.contains("/home/me"), "{e}");
+        // no summary yet: an error, no output
+        let empty = base.path().join("MARKEREMPTY");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(export_bytes(&empty).is_err());
+    }
+
+    #[test]
+    fn export_bytes_without_identity_is_byte_identical() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("MARKERDIR/usage");
+        let path = write(&dir, &good()).unwrap();
+        let on_disk = std::fs::read(&path).unwrap();
+        assert_eq!(export_bytes(&dir).unwrap(), on_disk);
     }
 
     #[test]

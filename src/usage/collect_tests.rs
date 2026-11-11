@@ -134,6 +134,125 @@ fn collect_cli(e: &Env, extra: &[&str], env_cfg: Option<&Path>) -> std::process:
     cmd.output().unwrap()
 }
 
+// Run the real CLI in an isolated test process (the same seam as `collect_dirs_cli_child`).
+// The markers bracket the CLI's own stdout: the test harness's progress lines share the
+// process stdout, so without them the CLI's bytes would be mixed in.
+#[test]
+fn export_cli_child() {
+    use clap::Parser;
+    let Ok(args) = std::env::var("CODEFORGE_EXPORT_TEST_ARGS") else {
+        return;
+    };
+    let args: Vec<String> = serde_json::from_str(&args).unwrap();
+    println!("CF-EXPORT-STDOUT-BEGIN");
+    let cli = crate::cli::Cli::try_parse_from(args).unwrap();
+    crate::cli::run(cli).unwrap();
+    println!("CF-EXPORT-STDOUT-END");
+}
+
+/// The live base the child resolves: the `AUTOPILOT_LIVE_DIR` override is only honored when
+/// RAM-backed, so on a machine with `/dev/shm` the dir lives there; anywhere else the resolver
+/// falls back to `<HOME>/.autopilot` (the child's HOME is the test temp dir).
+fn child_live_dir(e: &Env) -> PathBuf {
+    #[cfg(unix)]
+    {
+        let d =
+            Path::new("/dev/shm").join(format!(".codeforge-export-test-{}", std::process::id()));
+        if std::fs::create_dir_all(&d).is_ok() {
+            return d;
+        }
+    }
+    e._tmp.path().join(".autopilot")
+}
+
+/// `usage export` in an isolated child: exit status, the bytes the CLI wrote to stdout
+/// (between its markers), and the child's stderr.
+fn export_cli(e: &Env, live: &Path) -> (std::process::ExitStatus, String, String) {
+    let args = vec!["codeforge", "usage", "export"];
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--exact",
+        "usage::collect::tests::export_cli_child",
+        "--nocapture",
+    ])
+    .env_clear()
+    .env("HOME", e._tmp.path())
+    .env("CODEFORGE_DIR", e._tmp.path().join("project"))
+    .env("CODEFORGE_DATA_DIR", &e.data)
+    .env("CODEX_HOME", &e.codex)
+    .env("AUTOPILOT_LIVE_DIR", live)
+    .env(
+        "CODEFORGE_ACCOUNTS_FILE",
+        e._tmp.path().join("accounts.toml"),
+    )
+    .env(
+        "CODEFORGE_EXPORT_TEST_ARGS",
+        serde_json::to_string(&args).unwrap(),
+    )
+    .current_dir(e._tmp.path());
+    let child = cmd.output().unwrap();
+    let s = String::from_utf8_lossy(&child.stdout).into_owned();
+    let begin = "CF-EXPORT-STDOUT-BEGIN\n";
+    let end = "\nCF-EXPORT-STDOUT-END";
+    let b = s.find(begin).expect("the begin marker");
+    let e = s.rfind(end).expect("the end marker");
+    (
+        child.status,
+        s[b + begin.len()..=e].to_string(),
+        String::from_utf8_lossy(&child.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn usage_export_prints_the_validated_email_free_summary() {
+    use crate::usage::quota::Window;
+    let e = env();
+    let live = child_live_dir(&e);
+    // a fresh snapshot with a login email: it enters the summary and must not leave on stdout
+    let quota = live.join("codeforge/usage/quota");
+    std::fs::create_dir_all(&quota).unwrap();
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let snap = Snapshot {
+        alias: "acct-1a2b3c4d".into(),
+        org: None,
+        email: Some("me@example.com".into()),
+        root: None,
+        written_at_ms: now_ms,
+        five_hour: Some(Window {
+            pct: 0.3,
+            resets_at: now_ms / 1000 + 3600,
+            seen: None,
+        }),
+        seven_day: Some(Window {
+            pct: 0.5,
+            resets_at: now_ms / 1000 + 5 * 86_400,
+            seen: None,
+        }),
+    };
+    std::fs::write(quota.join("acct-1a2b3c4d.json"), snap.to_json().to_string()).unwrap();
+    let (status, stdout, stderr) = export_cli(&e, &live);
+    assert!(status.success(), "{stderr}");
+    assert!(stdout.ends_with('\n'), "{stdout:?}");
+    let v: Value = serde_json::from_str(stdout.trim_end()).expect("stdout is one JSON document");
+    assert_eq!(v["schema"], "codeforge.usage-summary/1");
+    let accounts = v["accounts"].as_array().unwrap();
+    assert!(
+        accounts.iter().any(|a| a["alias"] == "acct-1a2b3c4d"),
+        "the snapshot's account is in the export: {accounts:?}"
+    );
+    for a in accounts {
+        assert!(a.get("email").is_none(), "{a}");
+        assert!(a.get("name").is_none(), "{a}");
+    }
+    assert!(!stdout.contains("me@example.com"), "{stdout}");
+    // the local summary keeps the email (only the exported bytes lose it)
+    let local: Value =
+        serde_json::from_slice(&std::fs::read(live.join("codeforge/usage/summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(local["accounts"][0]["email"], json!("me@example.com"));
+    let _ = std::fs::remove_dir_all(&live);
+}
+
 fn assert_collect_ok(output: std::process::Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(
