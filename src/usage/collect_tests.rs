@@ -92,8 +92,438 @@ fn totals(conn: &Connection) -> (Tokens, u64) {
     (t, req)
 }
 
+// Run the real CLI in an isolated test process: no shared HOME/config env mutation.
 #[test]
-fn nothing_textual_or_path_like_is_persisted() {
+fn collect_dirs_cli_child() {
+    use clap::Parser;
+    let Ok(args) = std::env::var("CODEFORGE_COLLECT_TEST_ARGS") else {
+        return;
+    };
+    let args: Vec<String> = serde_json::from_str(&args).unwrap();
+    let cli = crate::cli::Cli::try_parse_from(args).unwrap();
+    crate::cli::run(cli).unwrap();
+}
+
+fn collect_cli(e: &Env, extra: &[&str], env_cfg: Option<&Path>) -> std::process::Output {
+    let mut args = vec!["codeforge", "usage", "collect"];
+    args.extend_from_slice(extra);
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--exact",
+        "usage::collect::tests::collect_dirs_cli_child",
+        "--nocapture",
+    ])
+    .env_clear()
+    .env("HOME", e._tmp.path())
+    .env("CODEFORGE_DIR", e._tmp.path().join("project"))
+    .env("CODEFORGE_DATA_DIR", &e.data)
+    .env("CODEX_HOME", &e.codex)
+    .env("AUTOPILOT_LIVE_DIR", e._tmp.path().join("live"))
+    .env(
+        "CODEFORGE_ACCOUNTS_FILE",
+        e._tmp.path().join("accounts.toml"),
+    )
+    .env(
+        "CODEFORGE_COLLECT_TEST_ARGS",
+        serde_json::to_string(&args).unwrap(),
+    )
+    .current_dir(e._tmp.path());
+    if let Some(cfg) = env_cfg {
+        cmd.env("CLAUDE_CONFIG_DIR", cfg);
+    }
+    cmd.output().unwrap()
+}
+
+fn assert_collect_ok(output: std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(
+        output.status.success(),
+        "{stderr}\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    stderr
+}
+
+fn recent_claude(rid: &str, input: u64, output: u64) -> String {
+    claude(
+        rid,
+        input,
+        output,
+        json!({"timestamp": chrono::Utc::now().to_rfc3339()}),
+    )
+}
+
+#[test]
+fn collect_dirs_same_request_across_env_and_flag_counts_once() {
+    let e = env();
+    let other = e._tmp.path().join("headless");
+    let line = recent_claude("req_shared", 100, 20);
+    write(&e.cfg.join("projects/p/s.jsonl"), &line);
+    write(&other.join("projects/p/s.jsonl"), &line);
+    let stderr = assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", other.to_str().unwrap()],
+        Some(&e.cfg),
+    ));
+    assert!(stderr.contains("讀了 2 個轉錄檔"), "{stderr}");
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(
+        totals(&conn),
+        (
+            Tokens {
+                input: 100,
+                output: 20,
+                ..Tokens::default()
+            },
+            1
+        )
+    );
+}
+
+#[test]
+fn collect_dirs_flag_is_remembered_without_flag_or_env() {
+    let e = env();
+    let f = e.cfg.join("projects/p/s.jsonl");
+    write(&f, &recent_claude("req_first", 10, 2));
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", e.cfg.to_str().unwrap()],
+        None,
+    ));
+    append(&f, &recent_claude("req_later", 30, 4));
+    assert_collect_ok(collect_cli(&e, &[], None));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(
+        totals(&conn),
+        (
+            Tokens {
+                input: 40,
+                output: 6,
+                ..Tokens::default()
+            },
+            2
+        )
+    );
+}
+
+#[test]
+fn collect_dirs_accounts_config_is_scanned() {
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &recent_claude("req_config", 50, 7),
+    );
+    write(
+        &e._tmp.path().join("accounts.toml"),
+        &format!(
+            "[plans]\nclaude = 'max5x'\n[names]\nseat = '測試'\n[collect]\nclaude_dirs = [{:?}]\n",
+            e.cfg.to_str().unwrap()
+        ),
+    );
+    assert_collect_ok(collect_cli(&e, &[], None));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(
+        totals(&conn),
+        (
+            Tokens {
+                input: 50,
+                output: 7,
+                ..Tokens::default()
+            },
+            1
+        )
+    );
+}
+
+#[test]
+fn collect_dirs_relative_cli_and_invalid_config_are_refused() {
+    let e = env();
+    let output = collect_cli(&e, &["--claude-dir", "相對路徑"], None);
+    assert!(!output.status.success());
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        err.contains("相對路徑") && err.contains("絕對路徑"),
+        "{err}"
+    );
+    for (config, expected) in [
+        ("[collect]\nclaude_dirs = ['相對目錄']", "相對目錄"),
+        ("[collect]\nclaude_dirs = [42]", "claude_dirs[0]"),
+        ("[collect]\nclaude_dirs = '/tmp'", "claude_dirs"),
+        ("collect = 42", "collect"),
+        ("[collect", "TOML"),
+    ] {
+        write(&e._tmp.path().join("accounts.toml"), config);
+        let output = collect_cli(&e, &[], None);
+        assert!(!output.status.success(), "accepted {config}");
+        let err = String::from_utf8_lossy(&output.stderr);
+        assert!(err.contains(expected), "{err}");
+    }
+}
+
+#[test]
+fn collect_dirs_env_is_remembered_and_spellings_scan_once() {
+    let e = env();
+    let f = e.cfg.join("projects/p/s.jsonl");
+    write(&f, &recent_claude("req_env", 10, 1));
+    let slash = format!("{}/", e.cfg.display());
+    let parent = e.cfg.join("projects/..");
+    let stderr = assert_collect_ok(collect_cli(
+        &e,
+        &[
+            "--claude-dir",
+            &slash,
+            "--claude-dir",
+            parent.to_str().unwrap(),
+        ],
+        Some(&e.cfg),
+    ));
+    assert!(stderr.contains("讀了 1 個轉錄檔"), "{stderr}");
+    append(&f, &recent_claude("req_env_later", 20, 2));
+    assert_collect_ok(collect_cli(&e, &[], None));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(
+        remembered_claude_dirs(&conn).unwrap(),
+        vec![e.cfg.canonicalize().unwrap()]
+    );
+    assert_eq!(totals(&conn).1, 2);
+
+    // An env-only root is remembered too.
+    let other = e._tmp.path().join("env-only");
+    write(
+        &other.join("projects/p/s.jsonl"),
+        &recent_claude("req_env_only", 30, 3),
+    );
+    assert_collect_ok(collect_cli(&e, &[], Some(&other)));
+    append(
+        &other.join("projects/p/s.jsonl"),
+        &recent_claude("req_env_only_later", 40, 4),
+    );
+    assert_collect_ok(collect_cli(&e, &[], None));
+    assert_eq!(totals(&conn).1, 4);
+    assert!(remembered_claude_dirs(&conn)
+        .unwrap()
+        .contains(&other.canonicalize().unwrap()));
+}
+
+fn remembered_times(conn: &Connection, path: &Path) -> (i64, i64) {
+    conn.query_row(
+        "SELECT first_seen_ms, last_seen_ms FROM claude_dirs WHERE path = ?1",
+        [path.to_str().unwrap()],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
+}
+
+#[test]
+fn collect_dirs_removed_or_file_is_skipped_but_retained() {
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &recent_claude("req_removed", 10, 1),
+    );
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", e.cfg.to_str().unwrap()],
+        None,
+    ));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let canonical = e.cfg.canonicalize().unwrap();
+    let times = remembered_times(&conn, &canonical);
+    std::fs::remove_dir_all(&e.cfg).unwrap();
+    for replace_with_file in [false, true] {
+        if replace_with_file {
+            std::fs::write(&e.cfg, "not a directory").unwrap();
+        }
+        let stderr = assert_collect_ok(collect_cli(&e, &[], None));
+        assert!(stderr.contains("讀了 0 個轉錄檔"), "{stderr}");
+        assert_eq!(
+            remembered_claude_dirs(&conn).unwrap(),
+            vec![canonical.clone()]
+        );
+        assert_eq!(remembered_times(&conn, &canonical), times);
+    }
+}
+
+#[test]
+fn collect_dirs_migration_and_seen_times_preserve_existing_data() {
+    let e = env();
+    let mut conn = run(&e, &[]);
+    let canonical = e.cfg.canonicalize().unwrap();
+    assert_eq!(remembered_times(&conn, &canonical), (NOW, NOW));
+    collect(
+        &mut conn,
+        &roots(std::slice::from_ref(&e.cfg), None),
+        &[],
+        NOW + 100,
+    )
+    .unwrap();
+    assert_eq!(remembered_times(&conn, &canonical), (NOW, NOW + 100));
+    // Simulate an existing database from before the directory table was introduced.
+    conn.execute_batch("DROP TABLE claude_dirs;").unwrap();
+    drop(conn);
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert!(remembered_claude_dirs(&conn).unwrap().is_empty());
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM roots", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn collect_dirs_symlink_roots_and_projects_are_skipped() {
+    use std::os::unix::fs::symlink;
+    let e = env();
+    let other = e._tmp.path().join("other");
+    write(
+        &other.join("projects/p/s.jsonl"),
+        &recent_claude("req_link", 90, 9),
+    );
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", e.cfg.to_str().unwrap()],
+        None,
+    ));
+    std::fs::remove_dir_all(&e.cfg).unwrap();
+    symlink(&other, &e.cfg).unwrap();
+    let stderr = assert_collect_ok(collect_cli(&e, &[], None));
+    assert!(stderr.contains("讀了 0 個轉錄檔"), "{stderr}");
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(remembered_claude_dirs(&conn).unwrap(), vec![e.cfg.clone()]);
+    let slash = PathBuf::from(format!("{}/", e.cfg.display()));
+    let via_parent = e.cfg.join("../other");
+    assert!(![e.cfg.clone(), slash, via_parent]
+        .iter()
+        .any(|d| real_dir_chain(d)));
+
+    // Even a projects link pointing inside its real root must not be followed.
+    std::fs::rename(other.join("projects"), other.join("actual")).unwrap();
+    symlink(other.join("actual"), other.join("projects")).unwrap();
+    let rs = roots(&[other], None);
+    assert!(sources(&rs[0]).is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn collect_dirs_skipped_flag_dir_is_warned() {
+    use std::os::unix::fs::symlink;
+    let e = env();
+    let real = e._tmp.path().join("real");
+    write(
+        &real.join("cfg/projects/p/s.jsonl"),
+        &recent_claude("req_skipwarn", 40, 4),
+    );
+    let link = e._tmp.path().join("link");
+    symlink(&real, &link).unwrap();
+    let via_link = link.join("cfg");
+    let stderr = assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", via_link.to_str().unwrap()],
+        None,
+    ));
+    assert!(stderr.contains("略過 Claude 目錄"), "{stderr}");
+    assert!(stderr.contains(via_link.to_str().unwrap()), "{stderr}");
+    // The dir behind the symlink is not scanned.
+    assert!(stderr.contains("讀了 0 個轉錄檔"), "{stderr}");
+}
+
+#[test]
+fn collect_dirs_skipped_remembered_dir_is_silent() {
+    let e = env();
+    let other = e._tmp.path().join("other");
+    write(
+        &other.join("projects/p/s.jsonl"),
+        &recent_claude("req_remembered", 30, 3),
+    );
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", other.to_str().unwrap()],
+        None,
+    ));
+    std::fs::remove_dir_all(&other).unwrap();
+    let stderr = assert_collect_ok(collect_cli(&e, &[], None));
+    assert!(!stderr.contains("略過 Claude 目錄"), "{stderr}");
+    assert!(stderr.contains("讀了 0 個轉錄檔"), "{stderr}");
+}
+
+#[test]
+fn collect_dirs_env_dir_under_a_symlinked_parent_is_still_collected() {
+    use std::os::unix::fs::symlink;
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &recent_claude("req_parent", 70, 7),
+    );
+    let linked = e._tmp.path().join("linkhome");
+    symlink(e._tmp.path(), &linked).unwrap();
+    let stderr = assert_collect_ok(collect_cli(&e, &[], Some(&linked.join("cfg"))));
+    assert!(stderr.contains("讀了 1 個轉錄檔"), "{stderr}");
+}
+
+#[test]
+fn collect_dirs_backfill_keeps_each_roots_login_and_horizon() {
+    let e = env();
+    let home = e._tmp.path();
+    let default = home.join(".claude");
+    let now = chrono::Utc::now();
+    for (i, root) in [&default, &e.cfg].into_iter().enumerate() {
+        let recent = claude(
+            &format!("req_backfill_{i}"),
+            10 + i as u64,
+            1,
+            json!({
+                "timestamp": (now - chrono::Duration::days(HORIZON_DAYS - 1)).to_rfc3339()
+            }),
+        );
+        let old = claude(
+            &format!("req_old_{i}"),
+            999,
+            99,
+            json!({
+                "timestamp": (now - chrono::Duration::days(HORIZON_DAYS + 1)).to_rfc3339()
+            }),
+        );
+        write(&root.join("projects/p/s.jsonl"), &(recent + &old));
+        let login = if i == 0 {
+            home.join(".claude.json")
+        } else {
+            root.join(".claude.json")
+        };
+        write(
+            &login,
+            &json!({"oauthAccount": {
+                "organizationUuid": format!("org-{i}"),
+                "organizationName": "Example",
+                "emailAddress": format!("seat{i}@example.com")
+            }})
+            .to_string(),
+        );
+    }
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", e.cfg.to_str().unwrap()],
+        None,
+    ));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let rows = rows_since(&conn, "2000-01-01").unwrap();
+    assert_eq!(rows.len(), 2);
+    for (i, root) in [&default, &e.cfg].into_iter().enumerate() {
+        let identity = alias::login_identity(
+            &alias::login_path_for_root(root, home),
+            &home.join(format!("identity-{i}.json")),
+        )
+        .unwrap();
+        let row = rows.iter().find(|r| r.account == identity.alias).unwrap();
+        assert_eq!(
+            (row.tokens.input, row.tokens.output, row.requests),
+            (10 + i as u64, 1, 1)
+        );
+    }
+}
+
+#[test]
+fn transcript_content_and_paths_are_not_persisted() {
     let e = env();
     let slug = e.cfg.join("projects/-MARKERSLUG-home-repo");
     let line = claude(
@@ -125,10 +555,14 @@ fn nothing_textual_or_path_like_is_persisted() {
         "marker@example.com",
         "secretdir",
         "/srv",
-        e.cfg.to_str().unwrap(),
+        slug.to_str().unwrap(),
     ] {
         assert!(!hay.contains(m), "{m} leaked into usage.db");
     }
+    assert_eq!(
+        remembered_claude_dirs(&conn).unwrap(),
+        vec![e.cfg.canonicalize().unwrap()]
+    );
     // what is kept: counts, the model id, the cwd basename
     let rows = rows_since(&conn, "2000-01-01").unwrap();
     assert_eq!(rows.len(), 1);
@@ -432,17 +866,16 @@ fn a_root_takes_the_alias_of_the_snapshot_naming_it() {
     let hash = rs[0].hash.clone();
     let snap = |alias: &str, root: Option<&str>, at: i64| Snapshot {
         alias: alias.into(),
+        org: None,
+        email: None,
         root: root.map(String::from),
         written_at_ms: at,
         five_hour: None,
         seven_day: None,
     };
     let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
-    // no snapshot names it: the hash alias
-    assert_eq!(
-        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
-        format!("acct-{hash}")
-    );
+    // no snapshot names it, no login: unattributed, never the hash
+    assert_eq!(root_alias(&conn, &rs[0], &[], NOW).unwrap(), UNATTRIBUTED);
     // the newest snapshot naming it wins; one for another root does not
     let snaps = [
         snap("acct-b", Some(&hash), 1),
@@ -632,6 +1065,7 @@ fn counts_off_the_bound_are_skipped_and_an_overflowing_bucket_rolls_the_file_bac
         &[],
         "host-1a2b3c4d",
         NOW,
+        &Default::default(),
     ))
     .unwrap();
     // a bucket one add away from i64::MAX: the add is refused, the file's whole transaction rolls back
@@ -666,6 +1100,7 @@ fn counts_off_the_bound_are_skipped_and_an_overflowing_bucket_rolls_the_file_bac
         &[],
         "host-1a2b3c4d",
         NOW,
+        &Default::default(),
     );
     assert_eq!(
         v["days"][0]["input"],
@@ -673,4 +1108,364 @@ fn counts_off_the_bound_are_skipped_and_an_overflowing_bucket_rolls_the_file_bac
         "saturated, then capped at the contract bound"
     );
     crate::usage::summary::validate(&v).unwrap();
+}
+
+#[test]
+fn a_root_without_a_snapshot_takes_its_login_alias_over_a_stored_one() {
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &claude("req_1", 1, 1, json!({})),
+    );
+    let mut rs = roots(std::slice::from_ref(&e.cfg), None);
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(root_alias(&conn, &rs[0], &[], NOW).unwrap(), UNATTRIBUTED);
+    rs[0].account = Some("acct-1111aaaa".into());
+    assert_eq!(
+        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
+        "acct-1111aaaa"
+    );
+    // a re-login changes it; a lost login keeps the stored one
+    rs[0].account = Some("acct-2222bbbb".into());
+    assert_eq!(
+        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
+        "acct-2222bbbb"
+    );
+    rs[0].account = None;
+    assert_eq!(
+        root_alias(&conn, &rs[0], &[], NOW).unwrap(),
+        "acct-2222bbbb"
+    );
+}
+
+/// A codex rollout of `token_count` lines carrying `rate_limits` (each `(timestamp or None, rl)`).
+fn codex_rl_file(e: &Env, uuid: &str, lines: &[(Option<&str>, Value)]) -> PathBuf {
+    let f = e.codex.join(format!(
+        "sessions/2026/11/03/rollout-2026-11-03T10-00-00-{uuid}.jsonl"
+    ));
+    let mut s = String::new();
+    for (ts, rl) in lines {
+        let mut v = json!({"type": "event_msg", "payload": {"type": "token_count", "info": null, "rate_limits": rl}});
+        if let Some(ts) = ts {
+            v["timestamp"] = json!(ts);
+        }
+        s += &(v.to_string() + "\n");
+    }
+    write(&f, &s);
+    f
+}
+
+/// One rollout window; `resets_at` = NOW + `secs`.
+fn rl_win(pct: f64, minutes: u64, secs: i64) -> Value {
+    json!({"used_percent": pct, "window_minutes": minutes, "resets_at": NOW / 1000 + secs})
+}
+
+fn rl(primary: Value, secondary: Value) -> Value {
+    json!({"limit_id": "codex", "primary": primary, "secondary": secondary,
+           "credits": {"has_credits": true, "balance": "MARKERCREDIT"}, "plan_type": "MARKERPLAN"})
+}
+
+const RL_UUID: &str = "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0009";
+
+#[test]
+fn codex_rate_limits_keep_the_newest_observation_as_windows() {
+    let e = env();
+    codex_rl_file(
+        &e,
+        RL_UUID,
+        &[
+            (
+                Some("2026-11-03T11:00:00.000Z"),
+                rl(rl_win(42.0, 300, 3600), rl_win(17.5, 10_080, 86_400)),
+            ),
+            // older line later in the file: never replaces the newer observation
+            (
+                Some("2026-11-03T09:00:00.000Z"),
+                rl(rl_win(90.0, 300, 600), rl_win(80.0, 10_080, 600)),
+            ),
+        ],
+    );
+    let conn = run(&e, &[]);
+    let s = codex_snapshots(&conn, NOW).unwrap();
+    assert_eq!(s.len(), 1);
+    let s = &s[0];
+    assert!(s.alias.starts_with("codex-"));
+    let at = 1_793_703_600_000; // 11:00Z
+    assert_eq!(s.written_at_ms, at);
+    let five = s.five_hour.as_ref().unwrap();
+    let week = s.seven_day.as_ref().unwrap();
+    assert_eq!((five.pct, five.resets_at), (0.42, NOW / 1000 + 3600));
+    assert_eq!((week.pct, week.resets_at), (0.175, NOW / 1000 + 86_400));
+    assert_eq!(five.seen.as_ref().unwrap().at_ms, at);
+    assert_eq!((s.org.as_deref(), s.email.as_deref()), (None, None));
+}
+
+#[test]
+fn codex_rate_limits_store_only_numbers_and_survive_a_later_run() {
+    let e = env();
+    let f = codex_rl_file(
+        &e,
+        RL_UUID,
+        &[(Some(TS), rl(json!(null), rl_win(30.0, 10_080, 86_400)))],
+    );
+    run(&e, &[]);
+    // the next run reads only the appended bytes: a line without rate_limits keeps the observation
+    append(
+        &f,
+        &(json!({"timestamp": "2026-11-03T11:30:00.000Z", "type": "event_msg", "payload": {"type": "token_count", "info": null}}).to_string() + "\n"),
+    );
+    let conn = run(&e, &[]);
+    let s = codex_snapshots(&conn, NOW).unwrap();
+    assert_eq!(s.len(), 1);
+    assert!(s[0].five_hour.is_none(), "a null primary is no window");
+    assert_eq!(s[0].seven_day.as_ref().unwrap().pct, 0.3);
+    // the table holds the account key and numbers, nothing of credits or plan
+    let cols: Vec<String> = conn
+        .prepare("SELECT name FROM pragma_table_info('codex_limits') ORDER BY cid")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(
+        cols,
+        [
+            "account",
+            "observed_ms",
+            "five_pct",
+            "five_resets",
+            "week_pct",
+            "week_resets"
+        ]
+    );
+    let dump: String = conn
+        .query_row(
+            "SELECT group_concat(quote(account) || quote(observed_ms) || quote(five_pct) || quote(five_resets) || quote(week_pct) || quote(week_resets)) FROM codex_limits",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(!dump.contains("MARKER"));
+}
+
+#[test]
+fn codex_rate_limits_ignore_other_windows_and_say_nothing_once_reset() {
+    let e = env();
+    codex_rl_file(
+        &e,
+        RL_UUID,
+        &[(
+            Some(TS),
+            rl(rl_win(50.0, 60, 3600), rl_win(20.0, 10_080, 60)),
+        )],
+    );
+    let conn = run(&e, &[]);
+    let s = codex_snapshots(&conn, NOW).unwrap();
+    assert!(
+        s[0].five_hour.is_none(),
+        "a 60-minute window is not a 5h one"
+    );
+    assert!(s[0].seven_day.is_some());
+    // after the weekly reset nothing current is left: the account is no_window
+    assert!(codex_snapshots(&conn, NOW + 61_000).unwrap().is_empty());
+    // an observation with neither window is nothing too
+    let e = env();
+    codex_rl_file(&e, RL_UUID, &[(Some(TS), rl(json!(null), json!(null)))]);
+    assert!(codex_snapshots(&run(&e, &[]), NOW).unwrap().is_empty());
+}
+
+#[test]
+fn codex_rate_limits_without_a_timestamp_take_the_file_mtime() {
+    let e = env();
+    let f = codex_rl_file(
+        &e,
+        RL_UUID,
+        &[(None, rl(rl_win(10.0, 300, 3600), json!(null)))],
+    );
+    let mtime = std::time::UNIX_EPOCH + std::time::Duration::from_millis((NOW - 60_000) as u64);
+    std::fs::File::options()
+        .write(true)
+        .open(&f)
+        .unwrap()
+        .set_modified(mtime)
+        .unwrap();
+    let s = codex_snapshots(&run(&e, &[]), NOW).unwrap();
+    assert_eq!(s[0].written_at_ms, NOW - 60_000);
+}
+
+#[test]
+fn a_codex_account_with_windows_validates_in_the_summary() {
+    let e = env();
+    codex_rl_file(
+        &e,
+        RL_UUID,
+        &[(
+            Some(TS),
+            rl(rl_win(42.0, 300, 3600), rl_win(17.5, 10_080, 86_400)),
+        )],
+    );
+    let snaps = codex_snapshots(&run(&e, &[]), NOW).unwrap();
+    let v = crate::usage::summary::build(&[], &snaps, "host-1a2b3c4d", NOW, &Default::default());
+    crate::usage::summary::validate(&v).unwrap();
+    let a = &v["accounts"][0];
+    assert!(a["alias"].as_str().unwrap().starts_with("codex-"));
+    assert_eq!(a["seven_day"]["pct"], json!(0.175));
+    assert!(a["five_hour"]["seen_at_ms"].is_u64());
+}
+
+fn codex_rollout(e: &Env, uuid: &str, events: &[(u64, u64, u64, u64)]) {
+    let f = e.codex.join(format!(
+        "sessions/2026/11/03/rollout-2026-11-03T10-00-00-{uuid}.jsonl"
+    ));
+    let mut s = json!({"timestamp": TS, "type": "turn_context", "payload": {"model": "gpt-6.1-sol", "cwd": "/MARKERCX/proj"}}).to_string() + "\n";
+    for (i, c, o, r) in events {
+        s += &(json!({"timestamp": TS, "type": "event_msg", "payload": {"type": "token_count", "info": {"total_token_usage": {"input_tokens": i, "cached_input_tokens": c, "output_tokens": o, "reasoning_output_tokens": r, "total_tokens": i + o}}}}).to_string() + "\n");
+    }
+    write(&f, &s);
+}
+
+#[test]
+fn a_codex_rollout_lists_its_final_cumulative_totals_by_id() {
+    let e = env();
+    let a = "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0002";
+    let b = "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0001";
+    codex_rollout(
+        &e,
+        a,
+        &[(100, 40, 10, 4), (250, 100, 30, 12), (400, 160, 50, 20)],
+    );
+    codex_rollout(&e, b, &[(10, 0, 5, 0)]);
+    let conn = run(&e, &[]);
+    let got = codex_sessions_since(&conn, "2026-11-01").unwrap();
+    let acct = got[0].account.clone();
+    assert!(acct.starts_with("codex-"));
+    // sorted by id; input = non-cached, output as reported, nothing summed twice
+    let want = |id: &str, input, output, cache_read, reasoning| CodexSession {
+        rollout_id: id.into(),
+        account: acct.clone(),
+        input,
+        output,
+        cache_read,
+        reasoning,
+    };
+    assert_eq!(got, vec![want(b, 10, 5, 0, 0), want(a, 240, 50, 160, 20)]);
+    // the summary carries them, nothing else of the rollout, and validates
+    let v = crate::usage::summary::with_codex_sessions(
+        crate::usage::summary::build(&[], &[], "host-1a2b3c4d", NOW, &Default::default()),
+        &got,
+    );
+    crate::usage::summary::validate(&v).unwrap();
+    assert_eq!(
+        v["codex_sessions"][1],
+        json!({"rollout_id": a, "account": acct, "input": 240, "output": 50, "cache_read": 160, "cache_write": null, "reasoning": 20})
+    );
+    assert!(!v.to_string().contains("MARKER"));
+    // re-collecting and growing keeps one entry per rollout with the new final totals
+    codex_rollout(&e, a, &[(400, 160, 50, 20), (500, 200, 70, 31)]);
+    let conn = run(&e, &[]);
+    let got = codex_sessions_since(&conn, "2026-11-01").unwrap();
+    assert_eq!(got.len(), 2);
+    assert_eq!(
+        (got[1].input, got[1].output, got[1].reasoning),
+        (300, 70, 31)
+    );
+    // outside the day window: no entry
+    assert!(codex_sessions_since(&conn, "2026-11-04")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn no_codex_rollout_means_no_codex_sessions_key() {
+    let e = env();
+    let conn = run(&e, &[]);
+    assert!(codex_sessions_since(&conn, "2000-01-01")
+        .unwrap()
+        .is_empty());
+    let v = crate::usage::summary::with_codex_sessions(
+        crate::usage::summary::build(&[], &[], "host-1a2b3c4d", NOW, &Default::default()),
+        &[],
+    );
+    assert!(v.get("codex_sessions").is_none());
+    crate::usage::summary::validate(&v).unwrap();
+}
+
+#[test]
+fn a_codex_rollout_without_token_count_has_no_entry() {
+    let e = env();
+    codex_rollout(&e, "0199aaaa-bbbb-7ccc-8ddd-eeeeffff0003", &[]);
+    let conn = run(&e, &[]);
+    assert!(codex_sessions_since(&conn, "2000-01-01")
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn a_codex_session_row_from_before_the_columns_existed_is_migrated_and_unlisted() {
+    let e = env();
+    let dir = store::usage_dir(&e.data);
+    std::fs::create_dir_all(&dir).unwrap();
+    {
+        let c = Connection::open(dir.join("usage.db")).unwrap();
+        c.execute_batch(
+            "CREATE TABLE codex_sessions (
+                 session_id TEXT PRIMARY KEY, input INTEGER NOT NULL, cached INTEGER NOT NULL,
+                 cache_write INTEGER NOT NULL, output INTEGER NOT NULL, seen_ms INTEGER NOT NULL,
+                 model TEXT NOT NULL DEFAULT 'unknown', project TEXT NOT NULL DEFAULT '');
+             INSERT INTO codex_sessions VALUES ('0199aaaa-bbbb-7ccc-8ddd-eeeeffff0009', 5, 1, 0, 2, 1, 'm', '');",
+        )
+        .unwrap();
+    }
+    let (conn, _) = store::open(&dir).unwrap();
+    assert!(codex_sessions_since(&conn, "2000-01-01")
+        .unwrap()
+        .is_empty());
+}
+
+/// PM 01M7052H79: `acct-ae88ee5d` (the hash of `/home/cookys/.claude`) showed on every host as
+/// an account with no window. A root with no login is unattributed: new rows carry no account,
+/// an old collector's `acct-<sha8>` rows of that root read the same, and the summary lists them
+/// once with `account: null`, never as an account.
+#[test]
+fn a_root_without_a_login_is_unattributed_also_its_old_hash_keyed_rows() {
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &claude("req_1", 7, 1, json!({})),
+    );
+    let (conn, _) = run_at(&e, NOW);
+    let hash = roots(std::slice::from_ref(&e.cfg), None)[0].hash.clone();
+    let accts: Vec<String> = conn
+        .prepare("SELECT account FROM buckets")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(accts, [UNATTRIBUTED]);
+    // the same bucket as an old collector wrote it, keyed by the root's hash
+    conn.execute(
+        "INSERT INTO buckets SELECT day, source, 'acct-' || ?1, model, project, speed,
+                input, output, cw5m, cw1h, read, requests FROM buckets",
+        [&hash],
+    )
+    .unwrap();
+    let rows = rows_since(&conn, "2000-01-01").unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r.account == UNATTRIBUTED), "{rows:?}");
+    let v = crate::usage::summary::build(&rows, &[], "host-1a2b3c4d", NOW, &Default::default());
+    crate::usage::summary::validate(&v).unwrap();
+    let days = v["days"].as_array().unwrap();
+    assert_eq!(days.len(), 1, "one unattributed line, summed");
+    assert_eq!(days[0]["account"], Value::Null);
+    assert_eq!(days[0]["input"], 14);
+    assert!(!v.to_string().contains(&format!("acct-{hash}")));
+    // an account row of another root is left as is
+    conn.execute(
+        "UPDATE buckets SET account = 'acct-337c98de' WHERE account = 'acct-' || ?1",
+        [&hash],
+    )
+    .unwrap();
+    let rows = rows_since(&conn, "2000-01-01").unwrap();
+    assert!(rows.iter().any(|r| r.account == "acct-337c98de"));
 }

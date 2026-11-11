@@ -5,7 +5,12 @@
 //! model id grammar, dates, enums), so a path, an email or a prompt cannot ride along. Push
 //! validates, then uploads exactly the validated bytes under a fixed name.
 
-use super::{alias::valid_alias, collect::Row, price, quota::Snapshot};
+use super::{
+    alias::{valid_alias, valid_email, valid_org},
+    collect::Row,
+    price,
+    quota::Snapshot,
+};
 use anyhow::{bail, Context as _, Result};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
@@ -32,8 +37,36 @@ const TOP_KEYS: [&str; 6] = [
     "accounts",
     "days",
 ];
+/// Present only when a local quota snapshot was dropped: reason -> count. The key is optional so
+/// an unchanged summary keeps the old exact shape; reasons are a closed set, never an alias.
+const DROPPED_KEY: &str = "dropped_accounts";
+/// Present only when a Codex rollout has token totals in the window: one entry per rollout,
+/// sorted by `rollout_id`. Absent (not empty) when there is none, so an unchanged summary keeps
+/// the old exact shape.
+const CODEX_KEY: &str = "codex_sessions";
+const CODEX_SESSION_KEYS: [&str; 7] = [
+    "rollout_id",
+    "account",
+    "input",
+    "output",
+    "cache_read",
+    "cache_write",
+    "reasoning",
+];
+const DROP_REASONS: [&str; 3] = [
+    "written_at_ms_out_of_range",
+    "resets_at_out_of_range",
+    "pct_out_of_range",
+];
 const ACCOUNT_KEYS: [&str; 4] = ["alias", "written_at_ms", "five_hour", "seven_day"];
+/// Optional account keys: absent = unknown, so a summary from before `org`/`email` still validates.
+/// `name` = the display name ([`super::names`]), present when the account has one.
+const ACCOUNT_OPTIONAL: [&str; 3] = ["org", "email", "name"];
 const WINDOW_KEYS: [&str; 2] = ["pct", "resets_at"];
+/// Optional window keys: `seen_at_ms` = when the rate-limit data was captured; absent = unknown.
+const WINDOW_OPTIONAL: [&str; 1] = ["seen_at_ms"];
+/// A capture time may be this far ahead of the summary's own `generated_at_ms` (clock skew).
+pub const SEEN_SKEW_MS: u64 = 10 * 60 * 1000;
 const COUNT_KEYS: [&str; 6] = [
     "input",
     "output",
@@ -58,14 +91,21 @@ const DAY_KEYS: [&str; 12] = [
 ];
 const SOURCES: [&str; 2] = ["claude", "codex"];
 const SPEEDS: [&str; 2] = ["standard", "fast"];
-const PCT_MAX: f64 = 1.5;
+pub const PCT_MAX: f64 = 1.5;
 /// Every integer (counts, times, `resets_at`) is within 0..=2^53-1, exact in a JS number.
 pub const UINT_MAX: u64 = (1 << 53) - 1;
 /// The grammars `valid_alias`, `model_id` and `is_host` implement, as regexes for the pane.
 #[cfg(test)]
 const ALIAS_RE: &str = "^[a-z0-9-]{1,24}$";
 #[cfg(test)]
+const ROLLOUT_RE: &str = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
+#[cfg(test)]
 const MODEL_RE: &str = "^[A-Za-z0-9._-]{1,64}$";
+#[cfg(test)]
+const ORG_RE: &str = "^[^@\\p{Cc}]{1,40}$";
+/// `valid_email`: 3..=254 chars, one `@` with text on both sides, no whitespace or control char.
+#[cfg(test)]
+const EMAIL_RE: &str = "^(?=.{3,254}$)[^@\\s\\p{Cc}\\uFEFF]+@[^@\\s\\p{Cc}\\uFEFF]+$";
 #[cfg(test)]
 const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 
@@ -74,7 +114,7 @@ const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 pub fn contract() -> Value {
     json!({
         "schema": SCHEMA,
-        "top": TOP_KEYS, "account": ACCOUNT_KEYS, "window": WINDOW_KEYS, "day": DAY_KEYS,
+        "top": TOP_KEYS, "top_optional": [DROPPED_KEY, CODEX_KEY], "codex_session": CODEX_SESSION_KEYS, "rollout": ROLLOUT_RE, "max_codex_sessions": super::collect::MAX_CODEX_SESSIONS, "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "email": EMAIL_RE, "name_max_cells": super::names::NAME_MAX, "window": WINDOW_KEYS, "window_optional": WINDOW_OPTIONAL, "day": DAY_KEYS,
         "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
         "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE, "uint_max": UINT_MAX,
         "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
@@ -116,16 +156,31 @@ pub fn hostname() -> String {
     std::env::var("COMPUTERNAME").unwrap_or_default()
 }
 
-fn window(w: &Option<super::quota::Window>) -> Value {
+fn window(w: &Option<super::quota::Window>, now_ms: i64) -> Value {
     match w {
-        Some(w) => json!({ "pct": w.pct, "resets_at": w.resets_at }),
+        Some(w) => {
+            let mut v = json!({ "pct": w.pct, "resets_at": w.resets_at });
+            // the capture time, when the snapshot carries one the contract accepts
+            if let Some(seen) = &w.seen {
+                if (0..=now_ms.saturating_add(SEEN_SKEW_MS as i64)).contains(&seen.at_ms) {
+                    v["seen_at_ms"] = json!(seen.at_ms);
+                }
+            }
+            v
+        }
         None => Value::Null,
     }
 }
 
 /// Build the summary from bucket rows (any days; the caller passes the last 7) and the
 /// fresh quota snapshots. Projects are summed away.
-pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Value {
+pub fn build(
+    rows: &[Row],
+    accounts: &[Snapshot],
+    host: &str,
+    now_ms: i64,
+    names: &super::names::Names,
+) -> Value {
     let mut days: BTreeMap<DayKey, (price::Tokens, u64)> = BTreeMap::new();
     for r in rows {
         let e = days
@@ -146,6 +201,8 @@ pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Va
             let cost = price::cost(&model, speed == "fast", &t);
             // saturated sums are capped at the contract's integer bound, so the summary validates
             let c = |n: u64| n.min(UINT_MAX);
+            // a root with no login is unattributed: null, one line apart from every account
+            let account = Some(account).filter(|a| a != super::collect::UNATTRIBUTED);
             json!({
                 "day": day, "source": source, "account": account, "model": model, "speed": speed,
                 "input": c(t.input), "output": c(t.output), "cache_write_5m": c(t.cache_write_5m),
@@ -154,28 +211,112 @@ pub fn build(rows: &[Row], accounts: &[Snapshot], host: &str, now_ms: i64) -> Va
             })
         })
         .collect();
-    let accounts: Vec<Value> = accounts
+    // One snapshot off the contract is dropped and counted, never fatal to the whole summary.
+    let mut dropped: BTreeMap<&str, u64> = BTreeMap::new();
+    let mut kept: Vec<Value> = Vec::new();
+    for s in accounts {
+        if let Some(reason) = bad_snapshot(s) {
+            *dropped.entry(reason).or_default() += 1;
+        } else if kept.len() < MAX_ACCOUNTS {
+            let mut a = json!({
+                "alias": s.alias, "written_at_ms": s.written_at_ms,
+                "five_hour": window(&s.five_hour, now_ms), "seven_day": window(&s.seven_day, now_ms),
+            });
+            if let Some(org) = &s.org {
+                a["org"] = json!(org);
+            }
+            if let Some(email) = &s.email {
+                a["email"] = json!(email);
+            }
+            kept.push(a);
+        }
+    }
+    let who: Vec<super::names::Who> = kept
         .iter()
-        .take(MAX_ACCOUNTS)
+        .map(|a| super::names::Who {
+            key: a["alias"].as_str().unwrap_or_default(),
+            org: a["org"].as_str(),
+            email: a["email"].as_str(),
+        })
+        .collect();
+    let shown = super::names::assign(&who, names);
+    for (a, n) in kept.iter_mut().zip(shown) {
+        if let Some(n) = n {
+            a["name"] = json!(n);
+        }
+    }
+    let mut out = json!({
+        "schema": SCHEMA, "generated_at_ms": now_ms, "host": host,
+        "prices_as_of": price::PRICES_AS_OF, "accounts": kept, "days": days,
+    });
+    if !dropped.is_empty() {
+        out[DROPPED_KEY] = json!(dropped);
+    }
+    out
+}
+
+/// Add the optional `codex_sessions` array (nothing when `sessions` is empty). `cache_write` is
+/// always null: Codex reports no cache-write count, and a zero would be invented.
+pub fn with_codex_sessions(mut v: Value, sessions: &[super::collect::CodexSession]) -> Value {
+    if sessions.is_empty() {
+        return v;
+    }
+    let c = |n: u64| n.min(UINT_MAX);
+    v[CODEX_KEY] = sessions
+        .iter()
         .map(|s| {
             json!({
-                "alias": s.alias, "written_at_ms": s.written_at_ms,
-                "five_hour": window(&s.five_hour), "seven_day": window(&s.seven_day),
+                "rollout_id": s.rollout_id, "account": s.account, "input": c(s.input),
+                "output": c(s.output), "cache_read": c(s.cache_read), "cache_write": null,
+                "reasoning": c(s.reasoning),
             })
         })
         .collect();
-    json!({
-        "schema": SCHEMA, "generated_at_ms": now_ms, "host": host,
-        "prices_as_of": price::PRICES_AS_OF, "accounts": accounts, "days": days,
-    })
+    v
+}
+
+/// Why a snapshot cannot enter the summary (a `DROP_REASONS` entry), or `None`.
+fn bad_snapshot(s: &Snapshot) -> Option<&'static str> {
+    if !(0..=UINT_MAX as i64).contains(&s.written_at_ms) {
+        return Some(DROP_REASONS[0]);
+    }
+    for w in [&s.five_hour, &s.seven_day].into_iter().flatten() {
+        if !(0..=UINT_MAX as i64).contains(&w.resets_at) {
+            return Some(DROP_REASONS[1]);
+        }
+        if !(w.pct.is_finite() && (0.0..=PCT_MAX).contains(&w.pct)) {
+            return Some(DROP_REASONS[2]);
+        }
+    }
+    None
+}
+
+/// How many snapshots a built summary dropped.
+pub fn dropped_count(v: &Value) -> u64 {
+    v[DROPPED_KEY]
+        .as_object()
+        .map_or(0, |m| m.values().filter_map(Value::as_u64).sum())
 }
 
 fn obj<'a>(v: &'a Value, keys: &[&str], at: &str) -> Result<&'a Map<String, Value>> {
+    obj_with(v, keys, &[], at)
+}
+
+/// `obj` plus keys that may be absent.
+fn obj_with<'a>(
+    v: &'a Value,
+    keys: &[&str],
+    optional: &[&str],
+    at: &str,
+) -> Result<&'a Map<String, Value>> {
     let Some(m) = v.as_object() else {
         bail!("{at}: 不是物件");
     };
     // the unexpected key itself is never echoed: it is exactly what must not leave the machine
-    let extra = m.keys().filter(|k| !keys.contains(&k.as_str())).count();
+    let extra = m
+        .keys()
+        .filter(|k| !keys.contains(&k.as_str()) && !optional.contains(&k.as_str()))
+        .count();
     if extra > 0 {
         bail!("{at}: 有 {extra} 個不允許的欄位");
     }
@@ -198,15 +339,36 @@ fn is_day(s: &str) -> bool {
     s.len() == 10 && chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").is_ok()
 }
 
+/// A lowercase hyphenated uuid (`ROLLOUT_RE`).
+fn is_rollout(s: &str) -> bool {
+    s.len() == 36
+        && s.bytes().enumerate().all(|(i, b)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                b == b'-'
+            } else {
+                matches!(b, b'0'..=b'9' | b'a'..=b'f')
+            }
+        })
+}
+
 fn is_host(s: &str) -> bool {
     s.strip_prefix("host-").is_some_and(super::quota::is_hash8)
 }
 
-fn win(v: &Value, at: &str) -> Result<()> {
+fn win(v: &Value, at: &str, generated_at_ms: u64) -> Result<()> {
     if v.is_null() {
         return Ok(());
     }
-    let m = obj(v, &WINDOW_KEYS, at)?;
+    let m = obj_with(v, &WINDOW_KEYS, &WINDOW_OPTIONAL, at)?;
+    if let Some(seen) = m.get("seen_at_ms") {
+        uint(seen, &format!("{at}.seen_at_ms"))?;
+        if seen
+            .as_u64()
+            .is_some_and(|n| n > generated_at_ms.saturating_add(SEEN_SKEW_MS))
+        {
+            bail!("{at}.seen_at_ms: 在 generated_at_ms 之後太久");
+        }
+    }
     let pct = m["pct"]
         .as_f64()
         .filter(|p| p.is_finite() && (0.0..=PCT_MAX).contains(p));
@@ -218,7 +380,48 @@ fn win(v: &Value, at: &str) -> Result<()> {
 
 /// Keys, types and values, recursively. Anything else is refused.
 pub fn validate(v: &Value) -> Result<()> {
-    let top = obj(v, &TOP_KEYS, "summary")?;
+    // the optional drop record is checked on its own, then the rest must be the exact old shape
+    let mut rest = v.clone();
+    if let Some(d) = rest.as_object_mut().and_then(|m| m.remove(DROPPED_KEY)) {
+        let m = d
+            .as_object()
+            .context("summary.dropped_accounts: 不是物件")?;
+        for (k, n) in m {
+            if !DROP_REASONS.contains(&k.as_str()) {
+                bail!("summary.dropped_accounts: 有不允許的原因");
+            }
+            uint(n, "summary.dropped_accounts 的計數")?;
+        }
+    }
+    if let Some(c) = rest.as_object_mut().and_then(|m| m.remove(CODEX_KEY)) {
+        let list = c.as_array().context("summary.codex_sessions: 不是陣列")?;
+        if list.is_empty() || list.len() > super::collect::MAX_CODEX_SESSIONS {
+            bail!("summary.codex_sessions: 筆數不合規格");
+        }
+        let mut prev: Option<&str> = None;
+        for (i, e) in list.iter().enumerate() {
+            let at = format!("summary.codex_sessions[{i}]");
+            let m = obj(e, &CODEX_SESSION_KEYS, &at)?;
+            let id = m["rollout_id"].as_str().filter(|s| is_rollout(s));
+            let Some(id) = id else {
+                bail!("{at}.rollout_id: 不是 rollout uuid");
+            };
+            if prev.is_some_and(|p| p >= id) {
+                bail!("{at}.rollout_id: 沒有依 id 遞增排序");
+            }
+            prev = Some(id);
+            if !m["account"].as_str().is_some_and(valid_alias) {
+                bail!("{at}.account: 不是合法別名");
+            }
+            for k in ["input", "output", "cache_read", "reasoning"] {
+                uint(&m[k], &format!("{at}.{k}"))?;
+            }
+            if !m["cache_write"].is_null() {
+                bail!("{at}.cache_write: 必須是 null（Codex 沒有這個計數）");
+            }
+        }
+    }
+    let top = obj(&rest, &TOP_KEYS, "summary")?;
     if top["schema"] != SCHEMA {
         bail!("summary.schema: 不是 {SCHEMA}");
     }
@@ -237,13 +440,30 @@ pub fn validate(v: &Value) -> Result<()> {
     }
     for (i, a) in accounts.iter().enumerate() {
         let at = format!("summary.accounts[{i}]");
-        let m = obj(a, &ACCOUNT_KEYS, &at)?;
+        let m = obj_with(a, &ACCOUNT_KEYS, &ACCOUNT_OPTIONAL, &at)?;
         if !m["alias"].as_str().is_some_and(valid_alias) {
             bail!("{at}.alias: 不是合法別名");
         }
+        if m.get("org")
+            .is_some_and(|o| !o.as_str().is_some_and(valid_org))
+        {
+            bail!("{at}.org: 不是合法的組織顯示名");
+        }
+        if m.get("name")
+            .is_some_and(|n| !n.as_str().is_some_and(super::names::valid_name))
+        {
+            bail!("{at}.name: 不是合法的顯示名");
+        }
+        // the value is never put in the message
+        if m.get("email")
+            .is_some_and(|e| !e.as_str().is_some_and(valid_email))
+        {
+            bail!("{at}.email: 不是合法的登入信箱");
+        }
         uint(&m["written_at_ms"], &format!("{at}.written_at_ms"))?;
-        win(&m["five_hour"], &format!("{at}.five_hour"))?;
-        win(&m["seven_day"], &format!("{at}.seven_day"))?;
+        let gen = top["generated_at_ms"].as_u64().unwrap_or(0);
+        win(&m["five_hour"], &format!("{at}.five_hour"), gen)?;
+        win(&m["seven_day"], &format!("{at}.seven_day"), gen)?;
     }
     let days = top["days"].as_array().context("summary.days: 不是陣列")?;
     if days.len() > MAX_DAYS_ROWS {
@@ -258,8 +478,10 @@ pub fn validate(v: &Value) -> Result<()> {
         if !m["source"].as_str().is_some_and(|s| SOURCES.contains(&s)) {
             bail!("{at}.source: 不是 claude/codex");
         }
-        if !m["account"].as_str().is_some_and(valid_alias) {
-            bail!("{at}.account: 不是合法別名");
+        // null: a Claude root with no login (unattributed, PM 01M7052H79)
+        let unattributed = m["account"].is_null() && m["source"] == "claude";
+        if !unattributed && !m["account"].as_str().is_some_and(valid_alias) {
+            bail!("{at}.account: 不是合法別名，也不是 null（未歸屬）");
         }
         let model_ok = match m["model"].as_str() {
             Some(s) => super::collect::model_id(Some(s)) == s,
@@ -290,6 +512,20 @@ pub fn write(dir: &Path, v: &Value) -> Result<PathBuf> {
     Ok(dir.join(FILE))
 }
 
+/// The summary with every account's `email` and `name` removed (a default name can be the
+/// email's local part), or `None` when no account has either. A blob leaves the host, and
+/// these stay on it (the local file and screen only).
+fn without_email(mut v: Value) -> Option<Vec<u8>> {
+    let mut hit = false;
+    for a in v["accounts"].as_array_mut()? {
+        if let Some(o) = a.as_object_mut() {
+            hit |= o.remove("email").is_some();
+            hit |= o.remove("name").is_some();
+        }
+    }
+    hit.then(|| serde_json::to_vec(&v).ok()).flatten()
+}
+
 /// Read the summary back, validate it, and upload exactly the validated bytes (copied to a
 /// private 0600 file) as `usage-summary.json`: the local path is never the uploaded name.
 /// Returns the blob sha the fleet printed.
@@ -300,6 +536,7 @@ pub fn push(dir: &Path, fleet_bin: &str) -> Result<String> {
     let v: Value = serde_json::from_slice(&bytes)
         .map_err(|_| anyhow::anyhow!("summary.json 不是合法 JSON"))?;
     validate(&v).context("summary.json 未通過檢查，拒絕上傳")?;
+    let bytes = without_email(v).unwrap_or(bytes);
     let mut tmp = tempfile::Builder::new()
         .prefix(".push.")
         .suffix(".json")
@@ -363,11 +600,14 @@ mod tests {
     fn good() -> Value {
         let snap = Snapshot {
             alias: "acct-a".into(),
+            org: None,
+            email: None,
             root: Some("1a2b3c4d".into()),
             written_at_ms: 5,
             five_hour: Some(Window {
                 pct: 0.3,
                 resets_at: 9,
+                seen: None,
             }),
             seven_day: None,
         };
@@ -380,7 +620,147 @@ mod tests {
             &[snap],
             &host_alias("MARKERHOST.example"),
             7,
+            &Default::default(),
         )
+    }
+
+    #[test]
+    fn seen_at_ms_is_optional_validated_and_carried_from_the_snapshot() {
+        use super::super::quota::Seen;
+        let seen = |at_ms: i64| {
+            Some(Window {
+                pct: 0.3,
+                resets_at: 9,
+                seen: Some(Seen {
+                    at_ms,
+                    session: "s1".into(),
+                }),
+            })
+        };
+        let mk = |at_ms: i64| {
+            let snap = Snapshot {
+                alias: "acct-a".into(),
+                org: None,
+                email: None,
+                root: None,
+                written_at_ms: 5,
+                five_hour: seen(at_ms),
+                seven_day: None,
+            };
+            build(
+                &[],
+                &[snap],
+                &host_alias("h"),
+                1_000_000,
+                &Default::default(),
+            )
+        };
+        // carried, and valid
+        let v = mk(900_000);
+        assert_eq!(v["accounts"][0]["five_hour"]["seen_at_ms"], json!(900_000));
+        validate(&v).unwrap();
+        // a capture time in the future past the skew is not carried (the window stays valid)
+        let v = mk(1_000_000 + SEEN_SKEW_MS as i64 + 1);
+        assert!(v["accounts"][0]["five_hour"].get("seen_at_ms").is_none());
+        validate(&v).unwrap();
+        // within the skew is kept
+        let v = mk(1_000_000 + SEEN_SKEW_MS as i64);
+        validate(&v).unwrap();
+        // an older summary without the key stays valid
+        validate(&good()).unwrap();
+        assert!(good()["accounts"][0]["five_hour"]
+            .get("seen_at_ms")
+            .is_none());
+        // validate refuses a bad one
+        for bad in [
+            json!(-1),
+            json!(1.5),
+            json!("x"),
+            json!(null),
+            json!(1_000_000 + SEEN_SKEW_MS + 1),
+            json!(UINT_MAX + 1),
+        ] {
+            let mut v = mk(900_000);
+            v["accounts"][0]["five_hour"]["seen_at_ms"] = bad.clone();
+            assert!(validate(&v).is_err(), "{bad} passed");
+        }
+    }
+
+    #[test]
+    fn email_is_an_optional_account_key_that_validates() {
+        let with = |email: Option<&str>| {
+            let mut v = good();
+            match email {
+                Some(e) => v["accounts"][0]["email"] = json!(e),
+                None => assert!(v["accounts"][0].get("email").is_none()),
+            }
+            v
+        };
+        // absent: the summary from before the key (and one with no known email) validates
+        validate(&with(None)).unwrap();
+        validate(&with(Some("me@example.com"))).unwrap();
+        for bad in [
+            "no-at",
+            "a@@b",
+            "a b@example.com",
+            "@b",
+            "a@",
+            "",
+            &"a".repeat(255),
+        ] {
+            let e = validate(&with(Some(bad))).unwrap_err().to_string();
+            assert!(e.contains("email"), "{bad:?}: {e}");
+            assert!(
+                bad.is_empty() || !e.contains(bad),
+                "the value is never echoed"
+            );
+        }
+        let mut v = good();
+        v["accounts"][0]["email"] = json!(5);
+        assert!(validate(&v).is_err());
+        // build carries a snapshot's email, and only that
+        let snap = Snapshot {
+            alias: "acct-a".into(),
+            org: None,
+            email: Some("me@example.com".into()),
+            root: None,
+            written_at_ms: 5,
+            five_hour: None,
+            seven_day: None,
+        };
+        let v = build(
+            &[],
+            std::slice::from_ref(&snap),
+            &host_alias("h"),
+            7,
+            &Default::default(),
+        );
+        validate(&v).unwrap();
+        assert_eq!(v["accounts"][0]["email"], "me@example.com");
+        // and its display name: the default, or the operator's; never for a bare acct- hash
+        assert_eq!(v["accounts"][0]["name"], "me");
+        let set = super::super::names::Names([("acct-a".to_string(), "公司".to_string())].into());
+        let v = build(&[], std::slice::from_ref(&snap), &host_alias("h"), 7, &set);
+        validate(&v).unwrap();
+        assert_eq!(v["accounts"][0]["name"], "公司");
+        // an email local part that looks like a key is no name, and the summary still validates
+        let keyish = Snapshot {
+            email: Some("acct-ops@example.com".into()),
+            ..snap.clone()
+        };
+        let v = build(&[], &[keyish], &host_alias("h"), 7, &Default::default());
+        validate(&v).unwrap();
+        assert!(v["accounts"][0].get("name").is_none(), "{v}");
+        let bare = Snapshot {
+            email: None,
+            ..snap
+        };
+        let v = build(&[], &[bare], &host_alias("h"), 7, &Default::default());
+        validate(&v).unwrap();
+        assert!(v["accounts"][0].get("name").is_none(), "{v}");
+        let mut bad = v.clone();
+        bad["accounts"][0]["name"] = json!("acct-a");
+        assert!(validate(&bad).is_err());
     }
 
     #[test]
@@ -415,7 +795,7 @@ mod tests {
         v["extra"] = json!(1);
         cases.push(("top-level key", v));
         let mut v = good();
-        v["accounts"][0]["email"] = json!("me@example.com");
+        v["accounts"][0]["login"] = json!("x");
         cases.push(("key in accounts", v));
         let mut v = good();
         v["days"][0]["project"] = json!("repo");
@@ -490,6 +870,25 @@ mod tests {
             std::fs::read(log.with_extension("bytes")).unwrap(),
             std::fs::read(&path).unwrap()
         );
+        // an account email never goes into the blob; the rest is uploaded unchanged
+        let mut with_email = good();
+        with_email["accounts"][0]["email"] = json!("someone@example.com");
+        with_email["accounts"][0]["name"] = json!("someone");
+        validate(&with_email).unwrap();
+        crate::live::write_live_json(&dir, FILE, &with_email).unwrap();
+        push(&dir, fake.to_str().unwrap()).unwrap();
+        let sent: Value =
+            serde_json::from_slice(&std::fs::read(log.with_extension("bytes")).unwrap()).unwrap();
+        assert!(sent["accounts"][0].get("email").is_none(), "{sent}");
+        assert!(sent["accounts"][0].get("name").is_none(), "{sent}");
+        let mut expect = with_email.clone();
+        let o = expect["accounts"][0].as_object_mut().unwrap();
+        o.remove("email");
+        o.remove("name");
+        assert_eq!(sent, expect);
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("someone@example.com"));
         // an invalid summary on disk is refused before fleet runs
         std::fs::remove_file(&log).unwrap();
         let mut bad = good();
@@ -556,6 +955,78 @@ mod tests {
         let blocked = base.path().join("MARKERFILE");
         std::fs::write(&blocked, b"").unwrap();
         clean(write(&blocked.join("usage"), &good()).unwrap_err());
+    }
+
+    fn snap_with(alias: &str, written_at_ms: i64, pct: f64, resets_at: i64) -> Snapshot {
+        Snapshot {
+            alias: alias.into(),
+            org: None,
+            email: None,
+            root: None,
+            written_at_ms,
+            five_hour: Some(Window {
+                pct,
+                resets_at,
+                seen: None,
+            }),
+            seven_day: None,
+        }
+    }
+
+    #[test]
+    fn one_bad_snapshot_is_dropped_and_counted_not_fatal() {
+        let max = UINT_MAX as i64;
+        let snaps = [
+            snap_with("acct-a", 5, 0.3, 9),
+            snap_with("acct-bad1", 5, 0.3, max + 1),
+            snap_with("acct-bad2", max + 1, 0.3, 9),
+            snap_with("acct-bad3", -1, 0.3, 9),
+            snap_with("acct-bad4", 5, 0.3, -1),
+            snap_with("acct-bad5", 5, 9.0, 9),
+            snap_with("acct-z", 6, 0.1, 10),
+        ];
+        let v = build(
+            &[row("claude-opus-5-5", "standard", "p")],
+            &snaps,
+            &host_alias("h"),
+            7,
+            &Default::default(),
+        );
+        validate(&v).expect("a bad snapshot must not fail the whole summary");
+        let aliases: Vec<&str> = v["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["alias"].as_str().unwrap())
+            .collect();
+        assert_eq!(aliases, ["acct-a", "acct-z"]);
+        assert_eq!(v["days"].as_array().unwrap().len(), 1);
+        // not silent: reasons are an enum, counts are numbers, no alias leaks
+        assert_eq!(
+            v["dropped_accounts"],
+            json!({
+                "written_at_ms_out_of_range": 2,
+                "resets_at_out_of_range": 2,
+                "pct_out_of_range": 1,
+            })
+        );
+        assert!(!v.to_string().contains("acct-bad"));
+        // nothing dropped: the key is absent, so the shape is the old one
+        assert!(good().get("dropped_accounts").is_none());
+    }
+
+    #[test]
+    fn validate_refuses_a_malformed_dropped_record() {
+        let ok = |d: Value| {
+            let mut v = good();
+            v["dropped_accounts"] = d;
+            validate(&v)
+        };
+        ok(json!({"resets_at_out_of_range": 1})).unwrap();
+        assert!(ok(json!({"acct-a": 1})).is_err());
+        assert!(ok(json!({"resets_at_out_of_range": -1})).is_err());
+        assert!(ok(json!({"resets_at_out_of_range": "x"})).is_err());
+        assert!(ok(json!([])).is_err());
     }
 
     #[test]

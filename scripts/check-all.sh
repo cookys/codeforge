@@ -4,7 +4,7 @@
 # Runs, in order: pinned fmt check → clippy -D warnings → cargo test (through the flake guard:
 # a failed test is rerun once; one that then passes is recorded in target/flaky-tests.log and
 # named on stderr, never hidden) → cjk-safe → doc-drift → cargo deny (licenses) → shellcheck
-# install.sh → release smoke (the x86_64-unknown-linux-gnu tarball built with the MSRV toolchain
+# install.sh and the checkout guard → checkout-guard test → release smoke (the x86_64-unknown-linux-gnu tarball built with the MSRV toolchain
 # through scripts/package.sh, unpacked and run) — every job the retired ci.yml and
 # release-smoke.yml ran.
 # On Windows (Git Bash) it then repeats clippy + test on Linux through WSL, so the Unix code
@@ -70,8 +70,19 @@ python3 scripts/check-doc-drift.py 2>/dev/null || python scripts/check-doc-drift
 step "cargo deny (licenses)"
 cargo deny check licenses
 
-step "shellcheck install.sh"
-shellcheck install.sh
+step "shellcheck install.sh + checkout guard"
+shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh scripts/checkout-guard.test.sh \
+  scripts/g40-real-data/check.sh scripts/g40-real-data/check.test.sh scripts/g40-real-data/scan-statusline.test.sh
+
+step "g40 real-data scan (negative controls)"
+./scripts/g40-real-data/scan-statusline.test.sh
+./scripts/g40-real-data/check.test.sh
+
+step "checkout guard (the main clone stays on develop)"
+./scripts/checkout-guard.test.sh
+
+step "release archive hermetic (B43)"
+./scripts/test-archive-hermetic.sh
 
 # The MSRV, from Cargo.toml's rust-version: the release build must compile with it.
 MSRV=$(grep -m1 '^rust-version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')

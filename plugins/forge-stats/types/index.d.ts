@@ -66,11 +66,40 @@ export type SessionView = {
   brain: 'ok' | 'degraded' | 'offline' | 'pending' | 'hidden'
 }
 
+/** A tone of the integrated panel: three theme text-colour keys (subtle, inactive, success) and three Text styles (dim, bold, mono); never a background or inverse. */
+export type PanelTone = 'subtle' | 'inactive' | 'dim' | 'bold' | 'mono' | 'success'
+
+/** One line as the pane lays it out: parts drawn in order, none ever cut. */
+export type PanelLine = { text: string; tone?: PanelTone }[]
+
+/**
+ * `codeforge.panel/1`, the 用量 / 寵物 tabs of autopilot's integrated panel (design v2, operator d-fb45042e).
+ * `tiers` maps a width ("40" … "120") to the lines laid out for it; the reader takes the widest that fits.
+ */
+export type PanelState = {
+  schema: 'codeforge.panel/1'
+  updated_at_ms: number
+  usage: { tiers: Record<string, PanelLine[]> }
+  /** `sprite` is pet.json's `village.sprite` as forge-stats validated it (SpriteData: palette 0xRRGGBB; static in v1); `tiers` the stats lines without the art. */
+  pet: { title: string; sprite: SpriteData | null; tiers: Record<string, PanelLine[]> }
+  /** The O4 band's right-hand summary columns (doc/specs/panel-band-contract.md §2); optional: a reader without it draws the 圓桌 column alone. */
+  side?: PanelSide
+}
+
+/** Lines per column width ("30" … "50"): the reader takes the widest key that fits its inner width. Ratios and counts only, never money. */
+export type PanelSide = {
+  usage: { tiers: Record<string, PanelLine[]> }
+  usage_full: { tiers: Record<string, PanelLine[]> }
+  memory: { tiers: Record<string, PanelLine[]> }
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'forge-stats': {
       pet: Shaped<PetView>
       session: Shaped<SessionView | null>
+      /** Read by autopilot's panel; plain (no shape): its `schema` field versions it. */
+      panel: PanelState | null
     }
   }
 }

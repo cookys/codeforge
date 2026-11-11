@@ -2,7 +2,7 @@
 
 > 適用於所有我們出貨的終端介面，包括 codeforge statusline、forge-stats（band／pane）、autopilot live mod（band、分頁列、pane、待決卡）和艦隊畫面（G23 分頁、G33 band 欄）。
 > 目的是讓同一個符號、同一個顏色、同一個字在每個畫面上都是同一個意思；畫面再窄、再矮，最重要的那件事也還看得到。
-> 這份文件是規範的單一來源（`doc/specs/codeforge-mod-ui.md` §5 已改成指向本文）。autopilot 的 `docs/plans/2026-10-13-live-pane-design-system.md`（以下簡稱 DS）負責 live mod 內部的實作細節。兩者衝突時以本文為準，並回頭修正 DS。
+> 這份文件是規範的單一來源（`doc/specs/codeforge-mod-ui.md` §5 已改成指向本文）。autopilot 的 `project/plans/2026-10-13-live-pane-design-system.md`（relayout P1 前在 `docs/plans/`）（以下簡稱 DS）負責 live mod 內部的實作細節。兩者衝突時以本文為準，並回頭修正 DS。
 > 狀態：v1（PM G34，2026-11-03）。本文所說的「現況」都附出處，數字以程式碼為準。
 
 ## 1. 空間合約：誰擁有哪幾列、哪幾欄
@@ -57,7 +57,7 @@ autopilot band 寬度不夠時的捨棄順序，依 §2.1：配額 → 截短 st
 
 **pane 類畫面**（live 各分頁含艦隊、待決卡、forge-stats pane）：寬度取 `bodyColumns`（live 預設 76，最窄 20：`model.ts` `DEFAULT_PANE_COLS`、`paneWidth`），任何寬度都照 §6「一個項目一列」排。pane **沒有高度分級**：內容比 `scroll.bodyRows` 高時捲動（live 用引擎的捲動，待決分頁自己捲），pane 被縮小也一樣。現況偏差：forge-stats pane 至少畫 30 欄（`register.tsx` 的 `Math.max(30, bodyColumns - 2)`），pane 比 30 欄窄時會超寬，列入 §12。
 
-**statusline**：寬度是 `CODEFORGE_WIDTH`（預設 100），不是終端寬，也沒有高度輸入；列數固定（完整版 5 列、精簡版 2 列）。每一列在寬度內依自己的降級層級排（`statusline.rs`，例如第 3 列的 Level 1–6，依序拿掉中央燈號、版本等），`<90` 拿掉右欄寵物圖（`ART_THRESHOLD`）。設成 24／56／86 時走同一套降級；最後一層以字元數截（`.chars().take`），是 §6.3 的偏差，列入 §12。
+**statusline**：寬度是 `CODEFORGE_WIDTH`，沒設就用 `COLUMNS − 4`（Claude Code 啟動 statusline 時設 `COLUMNS` 為終端寬，resize 後下次刷新跟上；statusline 左縮 2 格、右留 2 格，120／160 欄實測），兩者都沒有才是 100；沒有高度輸入。列數：完整版 5 列；精簡版 2 列，但身分（model、路徑、分支）、2 格以上空白、版本與整段用量在寬度內放得下時併成 1 列（身分靠左；用量和版本靠右，版本在最右，和兩行版第 1 列一致；門檻由實際內容的顯示寬度算，不是固定欄數）。每一列在寬度內依自己的降級層級排（`statusline.rs`，例如第 3 列的 Level 1–6，依序拿掉中央燈號、版本等），`<90` 拿掉右欄寵物圖（`ART_THRESHOLD`）。設成 24／56／86 時走同一套降級；最後一層以字元數截（`.chars().take`），是 §6.3 的偏差，列入 §12。
 
 
 
@@ -139,7 +139,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 
 ### 3.2 結構符號
 
-`▾ ▸`（展開／收合）、`─ ━`（分隔線、目前分頁）、`└`（明細）、`›`（可跳轉）、`◦`（項目）、`—`（無資料）、`⚑`（殘留）、`ⓘ`（說明；固定佔 2 格，寫成 `'ⓘ '`）、`ϟ`（速度；分頁內部 id 是 `forge`，畫出來的名稱是 `ϟ`）、`↺`（審查輪次）、`◆`（決定）、`◷`（時間）、`★`（推薦）、`↓`（落後上游）、`↑`（領先上游，§3.4 遷移時新增）。圖表符號：`▰ ▱`（量表）、`▁…█`（走勢）、`◐`（你在這裡）。
+`▾ ▸`（展開／收合）、`─ ━`（分隔線、目前分頁）、`└`（明細）、`›`（可跳轉）、`◦`（項目）、`—`（無資料）、`⚑`（殘留）、`ⓘ`（說明；固定佔 2 格，寫成 `'ⓘ '`）、`ϟ`（速度；分頁內部 id 是 `forge`，畫出來的名稱是 `ϟ`）、`↺`（審查輪次）、`◆`（決定）、`◷`（時間）、`★`（推薦）、`↓`（落後上游）、`↑`（領先上游，§3.4 遷移時新增）、`✦`（有新的內容，例如圓桌新訊息 `✦ 3`；預設前景色，2026-11-06 新增，`pending-owner`）。圖表符號：`▰ ▱`（量表）、`▁…█`（走勢）、`◐`（你在這裡；待決清單目前那張和子選單目前那一項共用）。`▸` 只表示「收合」，不當選取記號。
 
 ### 3.3 規則
 
@@ -240,7 +240,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 1. **寬度 ≤100 欄，附保留顏色的 HTML 預覽**：operator 的檢視器不能左右捲。
 2. **兩種 session 都要拍**：一般 repo（例如 pm）和 autopilot repo，因為 band 的疊放不同。需要時深色、淺色各拍一張（§5）。
 3. **截圖裡不能有個人資料**：拍之前確認畫面上沒有 email、帳號、權杖。用量分頁的帳號列不要拍。
-4. **臨時 session 不能搶 fleet 席位**：啟動時用空的 MCP 設定，fleet MCP 就不會連上。拍完確認 `fleet peers` 沒有多出成員。
+4. **臨時 session 不能搶 fleet 席位，也不能被誤認**：空的 MCP 設定擋不住登記。claude-lane 會從 claude 行程內部登記（2026-11-05 實測：沒有 mcp-shim 子行程，仍以 `claude-lane` 登記），席位名稱是「cwd 的 basename--claude」，撞名時加 -N。所以臨時 session 只開在 codeforge 目錄或 scratch 目錄，不要開在別的 lane 的 repo（在 pm 目錄開會叫 `pm--claude-N`，容易被誤認成 PM 的席位）；`FLEET_SEAT` 對 claude-lane 無效（它只看 session 的 kind 和 entrypoint，2026-11-05 實測仍登記成 `codeforge--claude-2`）。目前沒有能關閉登記的開關（hangar backlog 576d0e9，F4 之後做 `FLEET_REGISTER=0`）。拍完確認 `fleet peers` 裡那個成員已經 offline。要讓用量分頁讀假資料，`AUTOPILOT_LIVE_DIR` 指向的目錄要同時放 `codeforge/pet.json`（mod 在哪個目錄找到 pet.json，就從那裡讀用量）。不要開在還沒信任的目錄：信任提示一按下去，就會寫進使用者設定。
 
 步驟（在要拍的 repo 目錄執行）：
 
@@ -256,7 +256,7 @@ fleet upload cap.txt  --name <名稱>.txt  --mime text/plain --summary "<說明>
 tmux kill-session -t cap
 ```
 
-回報裡附兩個 blob sha。`--plugin-dir` 指向開發中的 worktree 時，引擎會在該目錄產生 `tsconfig.json`，拍完要刪掉。兩個 plugin 都在開發中時（例如 G33 同時改 live mod 和 forge-stats），各給一個 `--plugin-dir`：autopilot 是 worktree 根目錄，forge-stats 是它自己的 plugin 根目錄（G33 前是 `<codeforge>/.claude/skills/forge-stats`，G33 搬移後以新位置為準）。拍之前用 `/plugin` 確認載入的是開發中的版本。
+回報裡附兩個 blob sha。`--plugin-dir` 指向開發中的 worktree 時，引擎會在該目錄產生 `tsconfig.json`；拍完用 `git status` 看，只有未追蹤（`??`）的才刪。forge-stats 的 `tsconfig.json` 有進 git，不要刪。兩個 plugin 都在開發中時（例如 G33 同時改 live mod 和 forge-stats），各給一個 `--plugin-dir`：autopilot 是 worktree 根目錄，forge-stats 是它自己的 plugin 根目錄（G33 前是 `<codeforge>/.claude/skills/forge-stats`，G33 搬移後以新位置為準）。拍之前用 `/plugin` 確認載入的是開發中的版本。
 
 淺色截圖：先在臨時 session 裡用 `/theme` 把 Claude Code 主題切成淺色，再拍，HTML 加 `--light`（`scripts/ansi2html.py` 的選項，只改 HTML 底色）。主題是使用者層級的設定，拍完一定要用 `/theme` 切回原本的主題。只把深色截圖套上淺色 HTML 底色，證明不了主題鍵在淺色主題下讀得出來。
 
@@ -303,4 +303,53 @@ tmux kill-session -t cap
 | statusline 截斷改用顯示寬度 | §1.2、§6.3 | codeforge | 中文內容在窄寬度下不超寬的測試 |
 | 舊符號和 `↑` 登記進 live `NEW_GLYPHS`／glyph-check，owner 驗證 | §3.3 | live＋owner | `verified` 欄位齊全 |
 | `codeforge-mod-ui.md` §5 改成指向本文 | 前言 | 本單（G34） | 已改 |
+
+
+## 13. 聊天室式 pane：操作區在底、內容往上長
+
+操作員回饋，PO 採用（2026-11-05）：操作區固定在底部，資訊從操作區往上長，視線和手都不用跟著移動。live mod、roundtable、forge-stats 三邊的 pane 都照這一節做，autopilot 的文件連結到這裡，不另寫一份。
+
+**適用範圍**：會變長的 pane。forge-stats：pane 的寵物、用量分頁。autopilot：`mods/live` 的待決卡片和 job 頁、`mods/roundtable`。`mods/viewer`（檔案和 diff 檢視器）只把底部的按鍵提示固定住，內容仍然從頂端往下讀。AbovePrompt band 本來就貼在輸入框上面，高度固定，不在此列。
+
+1. **操作區固定在底部**：選項列、按鈕、輸入列、按鍵提示放在 pane 最底部的幾行，不隨內容捲動，位置不變。
+2. **底部錨點**：最新的一項貼在操作區正上方，舊的往上推。dock 的 pane 高度是 `bodyRows`，內容不滿一頁時，空白留在上方。inline 的外框會貼合 tree 的高度，所以不留空白，直接從操作區往上長，最高長到 `bodyRows`。
+3. **只捲內容區**：內容超出時可以往上捲看舊的，操作區不動。捲動狀態（例如「↑ 還有 12 行」）顯示在內容區的第一行，不放在操作區。引擎的 body 捲動會捲整棵 tree，所以 mod 要自己切內容區的視窗。做法：hook `ui.scroll`，回傳自己的 offset。內容區高度 = `bodyRows` − 操作區行數 − 捲動提示那一行（有顯示時才扣）。操作區一定要放得下：扣掉操作區後不到 2 行，就不畫捲動提示；一行都不剩，內容區就是 0 行。
+4. **追加型內容不搶焦點**：使用者已經往上捲時，新內容進來不跳回底部，改在操作區上方一行顯示「有新訊息 ↓」，按 End 或按那一行回到底部。使用者本來就在底部時，自動跟著最新的。**快照型內容**（整份重新讀取，例如 forge-stats 的用量和寵物分頁）沒有「新訊息」：重新整理後停在原本那一行，原本在底部的留在底部。
+5. **resize**：先算操作區的高度，內容區在剩下的高度內重新排版，維持底部錨點。原本在底部的仍在底部，原本往上捲的停在同一則。
+6. **操作區高度**：同一個畫面裡固定。捲動內容、內容追加、快照重新整理，都不會改變操作區的高度。只有換卡、換分頁這種使用者自己切換情境的時候才可以變，一變就重新排版，維持底部錨點。forge-stats 的操作區是分頁列加按鍵提示，固定兩行。
+7. **按鍵**（兩邊一致）：↑↓ 一行；PgUp／PgDn 一頁；Home 跳到最舊；End 回到最新。這些鍵只送到握有鍵盤的 pane，滾輪不需要焦點。所以人開窗的路徑（斜線命令）要帶 `$.ui.open({ focus: true })`，並且在第一個 `await` 之前呼叫：`focus` 是請求，只在輸入框是空的時候批准；人正握著 band 或 pane 的元素時會被拒絕，所以從 band 按鈕開窗拿不到鍵盤。session 開始時自動開的窗不帶 `focus`，不搶輸入框。
+
+**測試**（每個 mod 都要有）：
+- 不滿一頁時，dock 的空白在上方，inline 沒有空白。
+- 超出時，捲動前後操作區（forge-stats 的分頁列）所在的螢幕列號不變。這一條是 PM 指定的。
+- End 回到最新，Home 到最舊。
+- resize 後，原本在底部的仍在底部。
+- 快照型重新整理後停在原本那一行。追加型在往上捲時出現「有新訊息 ↓」，在底部時跟著最新。
+
+## 14. band 的疊層與焦點（PM 裁定，2026-11-06）
+
+band 的版面（選單列、視窗、對話框）還在等操作員選定（ux-v5 比較頁）。這一節先寫已經裁定、也在真機量過的部分，版面選定後再補完整的互動版面。
+
+**實測版本：Claude Code 2.1.318。** 升級 Claude Code 時，本節每一條都要在真機重測，結果和版本號一起更新到這裡。
+
+### 14.1 疊層是允許的
+
+`Box` 有 `position: "absolute"`（型別檔 `index.d.ts` 905–965 行）：「leaves the flow, as in CSS: placed against its parent by the offsets, no room among its siblings, painted over those before it」，用 `top`／`left`／`right`／`bottom` 定位。下拉選單和對話框可以真的蓋在視窗上，陰影可以不佔版面；疊層裡的 Button 一樣吃數字熱鍵（輸入框空著時直接按得到），`$.ui.focus` 可以把反白移進疊層。
+
+引擎**不會**替你做三件事，所以每個疊層都必須遵守：
+
+| 規範 | 內容 | 為什麼 |
+|---|---|---|
+| R1 右緣自己裁切 | 疊層連同陰影的 `left + 寬度` 不超過 `bodyColumns`，不畫進右邊保留給 `[-]` 的 5 格；高度仍受 band 半個畫面的上限 | 疊層超出右緣不會被裁，會畫進 `[-]` 的位置 |
+| R2 底自己清 | 疊層每一列都用空白補滿到自己的寬度；要讓下層看起來變暗，就自己把下層重畫成 `inactive`／`subtle` 色 | 引擎不清疊層底下的字，也不把下層變暗 |
+| R3 每個疊層一顆接焦點的按鈕 | 每個疊層都至少有一顆 Button（例如「c: 收起」或第一個選項），打開時用 `$.ui.focus` 把反白移到它上面；被蓋住的下層 Button 要拿掉或改畫成純文字，不留在鍵盤可達的位置 | 反白所在的 Button 消失後，落點不固定，實測曾掉回輸入框，之後打的字全進了輸入框；留著被蓋住的 Button，反白會停在看不見的控制項上 |
+
+不用疊層也可以：在原位重畫 band 的一塊（例如下拉時換掉清單欄），焦點靠沿用 Button 的 key 穩住（ux-v5 的 O1、G1）。
+
+### 14.2 焦點（真機實測）
+
+- 焦點跟著 Button 的 `key` 走：換卡時沿用同一個 key（例如選項一律 `opt:1`、`opt:2`），反白就不跳。
+- 反白所在的 Button 消失時，落點**不固定**（可能是第一個 Button，也可能回到輸入框），所以不要讓焦點所在的 Button 消失而沒有接手的按鈕（見 R3）。
+- `autoFocus` 只在剛拿到鍵盤時生效；之後要移動反白，用 `$.ui.focus`，它只在 band 已經拿著鍵盤時有效。
+- Button 的 hotkey 只能是一個數字或一個小寫字母（型別檔 1117–1122 行）。輸入框空著時，打數字會直接按下 band 上的按鈕；字母熱鍵要先拿到鍵盤（ctrl+x tab 或點一下）。`?` 是 Claude Code 自己的說明鍵，不能拿來當熱鍵。
 

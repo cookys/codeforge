@@ -6,13 +6,23 @@
 //! reads the other accounts' snapshots back with a bounded read.
 //!
 //! Staleness: a window whose `resets_at` has passed is unknown; a snapshot older
-//! than [`MAX_AGE_MS`] is dropped.
+//! than [`MAX_AGE_MS`] is dropped. `written_at_ms` is when a reading was last taken: a write
+//! whose windows all lose the merge leaves the file (and its age) as it is.
+//!
+//! Several sessions of one account write the same file, each with the `rate_limits` of
+//! its own last API call, so an idle session holds an old value (measured 2026-11-06:
+//! four values alternating every second, 5h 2–16 %, 7d 48–52 %, same reset times).
+//! [`merge_snapshot`] therefore keeps a window's value only ever growing: within one
+//! window (same `resets_at`) the larger percentage wins; between two different windows
+//! the newer reading wins, except that a window that is over never replaces a running one
+//! (a session logged in to another account before a switch must not hold the value).
+//! Each window records when and by which session its value was seen (`seen_at_ms`, `seen_by`).
 
 use serde_json::{json, Value};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use super::alias::valid_alias;
+use super::alias::{valid_alias, valid_email, valid_org};
 
 pub const SCHEMA: &str = "codeforge.quota/1";
 /// Rewrite an unchanged snapshot at most this often.
@@ -22,6 +32,17 @@ pub const MAX_AGE_MS: i64 = 6 * 3600 * 1000;
 /// Bounded read of the snapshot dir.
 pub const MAX_FILES: usize = 16;
 pub const MAX_BYTES: u64 = 4096;
+/// Two `resets_at` closer than this are the same window (sessions may round differently).
+pub const SAME_WINDOW_S: i64 = 600;
+
+/// When and by which session a window's value was observed. The same value seen again
+/// within WRITE_EVERY_MS is not rewritten, so `at_ms` can lag the latest sighting by that much.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Seen {
+    pub at_ms: i64,
+    /// The writer's sanitized session id.
+    pub session: String,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Window {
@@ -29,11 +50,17 @@ pub struct Window {
     pub pct: f64,
     /// unix seconds
     pub resets_at: i64,
+    /// Provenance of `pct`; `None` from an older writer.
+    pub seen: Option<Seen>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
     pub alias: String,
+    /// The org display (`personal` or a sanitized name); `None` = unknown (an old writer).
+    pub org: Option<String>,
+    /// The login email (local 0600 file only); `None` = unknown (an old writer or a bad value).
+    pub email: Option<String>,
     /// sha8 of the canonical config dir this account's sessions run in (`None` from a
     /// pre-phase-2 writer). Lets the collector map a transcript root to an alias.
     pub root: Option<String>,
@@ -59,15 +86,83 @@ pub fn is_hash8(s: &str) -> bool {
 
 fn window_json(w: &Option<Window>) -> Value {
     match w {
+        Some(Window {
+            pct,
+            resets_at,
+            seen: Some(seen),
+        }) => {
+            json!({ "pct": pct, "resets_at": resets_at, "seen_at_ms": seen.at_ms, "seen_by": seen.session })
+        }
         Some(w) => json!({ "pct": w.pct, "resets_at": w.resets_at }),
         None => Value::Null,
     }
 }
 
+/// A session id as `sanitize_session_id` leaves it: 1–64 of `[A-Za-z0-9_-]`.
+fn valid_session(s: &str) -> bool {
+    (1..=64).contains(&s.len())
+        && s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
 fn window_from(v: &Value) -> Option<Window> {
     let pct = v["pct"].as_f64()?;
     let resets_at = v["resets_at"].as_i64()?;
-    (pct.is_finite() && (0.0..=1.5).contains(&pct)).then_some(Window { pct, resets_at })
+    let seen = match (v["seen_at_ms"].as_i64(), v["seen_by"].as_str()) {
+        (Some(at_ms), Some(session)) if valid_session(session) => Some(Seen {
+            at_ms,
+            session: session.to_string(),
+        }),
+        _ => None,
+    };
+    (pct.is_finite() && (0.0..=1.5).contains(&pct)).then_some(Window {
+        pct,
+        resets_at,
+        seen,
+    })
+}
+
+/// One window after `new` was observed on top of `old`. Within one window (reset times less
+/// than [`SAME_WINDOW_S`] apart) the larger percentage wins (a tie takes `new`, so its `seen` is
+/// the latest confirmation): an idle session reports the lower value of its last API call.
+/// Two different windows: one whose reset has passed never replaces one still running;
+/// otherwise the newer reading wins (`seen`, falling back to the later reset when neither has
+/// one). A missing side keeps the other.
+pub fn merge_window(old: Option<&Window>, new: Option<&Window>) -> Option<Window> {
+    match (old, new) {
+        (None, n) => n.cloned(),
+        (o, None) => o.cloned(),
+        (Some(o), Some(n)) => {
+            let take_new = if (n.resets_at - o.resets_at).abs() < SAME_WINDOW_S {
+                n.pct >= o.pct
+            } else {
+                let at = |w: &Window| w.seen.as_ref().map(|s| s.at_ms);
+                match at(o).max(at(n)) {
+                    None => n.resets_at > o.resets_at,
+                    Some(now_ms) => {
+                        let live = |w: &Window| w.resets_at * 1000 > now_ms;
+                        match (live(o), live(n)) {
+                            (true, false) => false,
+                            (false, true) => true,
+                            (true, true) => at(n) >= at(o),
+                            // both over: the later one, so a session left in an old window renews nothing
+                            (false, false) => n.resets_at > o.resets_at,
+                        }
+                    }
+                }
+            };
+            Some(if take_new { n.clone() } else { o.clone() })
+        }
+    }
+}
+
+/// The same percentage and reset time (provenance aside).
+fn same_value(a: &Option<Window>, b: &Option<Window>) -> bool {
+    match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => a.pct == b.pct && a.resets_at == b.resets_at,
+        _ => false,
+    }
 }
 
 impl Snapshot {
@@ -75,6 +170,8 @@ impl Snapshot {
         json!({
             "schema": SCHEMA,
             "alias": self.alias,
+            "org": self.org,
+            "email": self.email,
             "root": self.root,
             "written_at_ms": self.written_at_ms,
             "five_hour": window_json(&self.five_hour),
@@ -96,8 +193,19 @@ impl Snapshot {
             Value::String(r) if is_hash8(r) => Some(r.clone()),
             _ => return None,
         };
+        // an org off the grammar is dropped, not a reason to lose the quota numbers
+        let org = v["org"]
+            .as_str()
+            .filter(|o| valid_org(o))
+            .map(str::to_string);
+        let email = v["email"]
+            .as_str()
+            .filter(|e| valid_email(e))
+            .map(str::to_string);
         Some(Snapshot {
             alias: alias.to_string(),
+            org,
+            email,
             root,
             written_at_ms: v["written_at_ms"].as_i64()?,
             five_hour: window_from(&v["five_hour"]),
@@ -166,26 +274,61 @@ fn wider_than_0600(_path: &Path) -> bool {
     false
 }
 
-/// Write `snap` unless the file on disk already holds the same percentages, was
-/// written less than WRITE_EVERY_MS ago and is not wider than 0600 (a wider one is
-/// rewritten at once: the shared writer creates it 0600). Returns whether it wrote.
-pub fn write_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<bool> {
+/// Merge `snap` into the file on disk ([`merge_window`] per window) and write the
+/// result, unless it holds the same values as the file, which was written less than
+/// WRITE_EVERY_MS ago and is not wider than 0600 (a wider one is merged and rewritten at once: the
+/// shared writer creates it 0600). Returns the merged snapshot (what this account's
+/// row should show) and whether it wrote. An invalid alias writes nothing and returns
+/// `snap` as it came.
+///
+/// Read and write are not one atomic step: two sessions writing within the same moment
+/// can still let the lower value land, and the next write of the higher one restores it.
+pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot, bool)> {
     if !valid_alias(&snap.alias) {
-        return Ok(false);
+        return Ok((snap.clone(), false));
     }
     let file = format!("{}.json", snap.alias);
     let path = dir.join(&file);
-    if let Some(old) = read_bounded(&path).filter(|_| !wider_than_0600(&path)) {
+    let old = read_bounded(&path);
+    let merged = match &old {
+        None => snap.clone(),
+        Some(old) => {
+            let five_hour = merge_window(old.five_hour.as_ref(), snap.five_hour.as_ref());
+            let seven_day = merge_window(old.seven_day.as_ref(), snap.seven_day.as_ref());
+            // `written_at_ms` is when a reading was last taken: a snapshot whose windows all lost
+            // the merge (older or lower readings) keeps the old time, so a stale value still ages out
+            let took = |m: &Option<Window>, n: &Option<Window>| n.is_some() && m == n;
+            let taken = took(&five_hour, &snap.five_hour) || took(&seven_day, &snap.seven_day);
+            Snapshot {
+                alias: snap.alias.clone(),
+                org: snap.org.clone(),
+                email: snap.email.clone(),
+                root: snap.root.clone().or_else(|| old.root.clone()),
+                written_at_ms: if taken {
+                    snap.written_at_ms
+                } else {
+                    old.written_at_ms
+                },
+                five_hour,
+                seven_day,
+            }
+        }
+    };
+    if let Some(old) = old.as_ref().filter(|_| !wider_than_0600(&path)) {
+        if merged.written_at_ms == old.written_at_ms && old.written_at_ms != snap.written_at_ms {
+            // nothing taken: the file stays as it is
+            return Ok((merged, false));
+        }
         let age = snap.written_at_ms - old.written_at_ms;
-        if old.five_hour == snap.five_hour
-            && old.seven_day == snap.seven_day
+        if same_value(&old.five_hour, &merged.five_hour)
+            && same_value(&old.seven_day, &merged.seven_day)
             && (0..WRITE_EVERY_MS).contains(&age)
         {
-            return Ok(false);
+            return Ok((merged, false));
         }
     }
-    crate::live::write_live_json(dir, &file, &snap.to_json())?;
-    Ok(true)
+    crate::live::write_live_json(dir, &file, &merged.to_json())?;
+    Ok((merged, true))
 }
 
 /// The other accounts' snapshots worth showing at `now_ms`: not `own_alias`,
@@ -213,7 +356,8 @@ pub fn read_others(dir: &Path, own_alias: &str, now_ms: i64) -> Vec<Snapshot> {
 
 /// Every valid snapshot in `dir`, any age: name-sorted, the first MAX_FILES `*.json`, read
 /// bounded; a file whose stem is not the alias in its body is skipped (a stray or
-/// hand-edited file cannot inject another identifier).
+/// hand-edited file cannot inject another identifier), and so is one an old writer keyed by its
+/// own root's hash (no login: it names no account, PM 01M7052H79).
 pub fn read_all(dir: &Path) -> Vec<Snapshot> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -235,7 +379,11 @@ pub fn read_all(dir: &Path) -> Vec<Snapshot> {
         .filter_map(|p| {
             let s = read_bounded(p)?;
             let stem = p.file_stem().and_then(|n| n.to_str())?;
-            (stem == s.alias).then_some(s)
+            let ghost = s
+                .root
+                .as_deref()
+                .is_some_and(|r| super::alias::is_dir_hash_alias(&s.alias, r));
+            (stem == s.alias && !ghost).then_some(s)
         })
         .collect()
 }
@@ -253,9 +401,17 @@ mod tests {
         five: Option<(f64, i64)>,
         seven: Option<(f64, i64)>,
     ) -> Snapshot {
-        let w = |x: Option<(f64, i64)>| x.map(|(pct, resets_at)| Window { pct, resets_at });
+        let w = |x: Option<(f64, i64)>| {
+            x.map(|(pct, resets_at)| Window {
+                pct,
+                resets_at,
+                seen: None,
+            })
+        };
         Snapshot {
             alias: alias.into(),
+            org: None,
+            email: None,
             root: None,
             written_at_ms: at_ms,
             five_hour: w(five),
@@ -280,10 +436,48 @@ mod tests {
         let all = read_all(&dir);
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].root.as_deref(), Some("1a2b3c4d"));
+        // an old writer's no-login snapshot, keyed by its own root's hash: no account, skipped
+        let mut ghost = snap("acct-ae88ee5d", NOW_MS, Some((0.4, NOW_S + 60)), None);
+        ghost.root = Some("ae88ee5d".into());
+        crate::live::write_live_json(&dir, "acct-ae88ee5d.json", &ghost.to_json()).unwrap();
+        let all = read_all(&dir);
+        assert_eq!(
+            all.iter().map(|s| s.alias.as_str()).collect::<Vec<_>>(),
+            ["acct-b"]
+        );
         // a malformed root refuses the snapshot
         let mut v = s.to_json();
         v["root"] = json!("/home/x/.claude");
         assert_eq!(Snapshot::from_json(&v), None);
+    }
+
+    #[test]
+    fn email_round_trips_and_a_bad_one_is_dropped_not_the_snapshot() {
+        let mut s = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
+        s.email = Some("me@example.com".into());
+        assert_eq!(Snapshot::from_json(&s.to_json()), Some(s.clone()));
+        // a snapshot from an older writer has no key at all
+        let mut v = s.to_json();
+        v.as_object_mut().unwrap().remove("email");
+        assert_eq!(Snapshot::from_json(&v).unwrap().email, None);
+        for bad in [
+            json!("no-at"),
+            json!("a b@example.com"),
+            json!(5),
+            json!("a@@b"),
+        ] {
+            let mut v = s.to_json();
+            v["email"] = bad;
+            let got = Snapshot::from_json(&v).expect("the quota numbers survive");
+            assert_eq!((got.email, got.five_hour.is_some()), (None, true));
+        }
+        // the merge keeps the newest writer's email
+        let dir = tempfile::tempdir().unwrap();
+        merge_snapshot(dir.path(), &s).unwrap();
+        let mut t = snap("acct-a", NOW_MS + 60_000, Some((0.5, NOW_S + 60)), None);
+        t.email = Some("new@example.com".into());
+        let (m, _) = merge_snapshot(dir.path(), &t).unwrap();
+        assert_eq!(m.email.as_deref(), Some("new@example.com"));
     }
 
     #[test]
@@ -336,7 +530,7 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
         let dir = base.path().join("codeforge/usage/quota");
         let s = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
-        assert!(write_snapshot(&dir, &s).unwrap());
+        assert!(merge_snapshot(&dir, &s).unwrap().1);
         let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&dir.join("acct-a.json")), 0o600);
         assert_eq!(mode(&dir), 0o700);
@@ -345,16 +539,16 @@ mod tests {
             written_at_ms: NOW_MS + 10_000,
             ..s.clone()
         };
-        assert!(!write_snapshot(&dir, &later).unwrap());
+        assert!(!merge_snapshot(&dir, &later).unwrap().1);
         // a changed percentage: rewritten at once
         let changed = snap("acct-a", NOW_MS + 11_000, Some((0.33, NOW_S + 60)), None);
-        assert!(write_snapshot(&dir, &changed).unwrap());
+        assert!(merge_snapshot(&dir, &changed).unwrap().1);
         // the same numbers 30 s on: rewritten (keeps the age fresh)
         let aged = Snapshot {
             written_at_ms: NOW_MS + 41_000,
             ..changed
         };
-        assert!(write_snapshot(&dir, &aged).unwrap());
+        assert!(merge_snapshot(&dir, &aged).unwrap().1);
         // a snapshot found wider than 0600 is rewritten at once, back to 0600
         std::fs::set_permissions(
             dir.join("acct-a.json"),
@@ -365,12 +559,248 @@ mod tests {
             written_at_ms: NOW_MS + 42_000,
             ..aged.clone()
         };
-        assert!(write_snapshot(&dir, &soon).unwrap());
+        assert!(merge_snapshot(&dir, &soon).unwrap().1);
         assert_eq!(mode(&dir.join("acct-a.json")), 0o600);
+        // the rewrite still merges: a lower value of the same window does not land
+        std::fs::set_permissions(
+            dir.join("acct-a.json"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        let lower = snap("acct-a", NOW_MS + 43_000, Some((0.02, NOW_S + 60)), None);
+        let (merged, wrote) = merge_snapshot(&dir, &lower).unwrap();
+        assert!(wrote);
+        assert_eq!(mode(&dir.join("acct-a.json")), 0o600);
+        assert_eq!(merged.five_hour.map(|w| w.pct), Some(0.33));
+        assert_eq!(
+            read_bounded(&dir.join("acct-a.json"))
+                .unwrap()
+                .five_hour
+                .map(|w| w.pct),
+            Some(0.33)
+        );
         // an invalid alias is never written
         let bad = snap("Me@x", NOW_MS, Some((0.1, NOW_S + 60)), None);
-        assert!(!write_snapshot(&dir, &bad).unwrap());
+        assert!(!merge_snapshot(&dir, &bad).unwrap().1);
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn readings_that_all_lose_the_merge_do_not_renew_the_age() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        // 11% seen at NOW, in the window resetting at NOW_S + 3 days
+        let s = snap(
+            "acct-a",
+            NOW_MS,
+            Some((0.99, NOW_S + 60)),
+            Some((0.11, NOW_S + 3 * 86_400)),
+        );
+        assert!(merge_snapshot(&dir, &s).unwrap().1);
+        // an hour on, a session reports an older 5h window and a lower 7d value
+        let stale = snap(
+            "acct-a",
+            NOW_MS + 3_600_000,
+            Some((0.40, NOW_S - 4 * 3600)),
+            Some((0.05, NOW_S + 3 * 86_400)),
+        );
+        let (merged, wrote) = merge_snapshot(&dir, &stale).unwrap();
+        assert!(!wrote);
+        assert_eq!(merged.seven_day.as_ref().map(|w| w.pct), Some(0.11));
+        let file = read_bounded(&dir.join("acct-a.json")).unwrap();
+        assert_eq!(file.written_at_ms, NOW_MS);
+        // so seven hours after the last taken reading it is no longer shown as current
+        assert!(read_others(&dir, "acct-b", NOW_MS + 7 * 3_600_000).is_empty());
+        // a reading that is taken renews it
+        let higher = snap(
+            "acct-a",
+            NOW_MS + 7_200_000,
+            None,
+            Some((0.57, NOW_S + 3 * 86_400)),
+        );
+        let (merged, wrote) = merge_snapshot(&dir, &higher).unwrap();
+        assert!(wrote);
+        assert_eq!(merged.written_at_ms, NOW_MS + 7_200_000);
+        assert_eq!(merged.five_hour.as_ref().map(|w| w.pct), Some(0.99));
+        assert_eq!(
+            read_bounded(&dir.join("acct-a.json"))
+                .unwrap()
+                .written_at_ms,
+            NOW_MS + 7_200_000
+        );
+    }
+
+    #[test]
+    fn a_newer_reading_of_another_running_window_replaces_an_older_one() {
+        // aimax395-team, 2026-11-09: at 06:13 TW a session wrote 7d 11% (week resetting Mon 11-16
+        // 04:00, the account it was logged in to before) under acct-337c98de; from 20:07 the real
+        // readings say 63% in the week resetting Thu 11-12 12:00. The newer reading must win.
+        const T0: i64 = 1_794_176_000_231;
+        const T1: i64 = 1_794_226_020_000;
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let mut team = snap(
+            "acct-a",
+            T0,
+            Some((0.99, 1_794_181_200)),
+            Some((0.11, 1_794_772_800)),
+        );
+        team.five_hour = seen(team.five_hour, T0, "s-team");
+        team.seven_day = seen(team.seven_day, T0, "s-team");
+        assert!(merge_snapshot(&dir, &team).unwrap().1);
+        let mut now = snap(
+            "acct-a",
+            T1,
+            Some((0.20, T1 / 1000 + 3 * 3600)),
+            Some((0.63, 1_794_456_000)),
+        );
+        now.five_hour = seen(now.five_hour, T1, "s-now");
+        now.seven_day = seen(now.seven_day, T1, "s-now");
+        let (merged, wrote) = merge_snapshot(&dir, &now).unwrap();
+        assert!(wrote);
+        assert_eq!(merged.seven_day.as_ref().map(|w| w.pct), Some(0.63));
+        assert_eq!(merged.five_hour.as_ref().map(|w| w.pct), Some(0.20));
+        assert_eq!(merged.written_at_ms, T1);
+        assert_eq!(on_disk(&dir), (Some(0.20), Some(0.63)));
+        // later, an idle session still in the 5h window that is over and lower in this week:
+        // neither replaces anything and the age is not renewed
+        let mut idle = snap(
+            "acct-a",
+            T1 + 60_000,
+            Some((0.99, 1_794_181_200)),
+            Some((0.40, 1_794_456_000)),
+        );
+        idle.five_hour = seen(idle.five_hour, T1 + 60_000, "s-idle");
+        idle.seven_day = seen(idle.seven_day, T1 + 60_000, "s-idle");
+        let (merged, wrote) = merge_snapshot(&dir, &idle).unwrap();
+        assert!(!wrote);
+        assert_eq!(merged.written_at_ms, T1);
+        assert_eq!(on_disk(&dir), (Some(0.20), Some(0.63)));
+    }
+
+    #[test]
+    fn of_two_windows_that_are_over_the_later_one_stays() {
+        let at = 1_000_000_000;
+        let w = |pct: f64, resets_at: i64, seen_ms: i64| Window {
+            pct,
+            resets_at,
+            seen: Some(Seen {
+                at_ms: seen_ms,
+                session: "s".into(),
+            }),
+        };
+        let newer_window = w(0.5, at / 1000 - 100, at);
+        let older_window = w(0.9, at / 1000 - 9000, at + 1000);
+        assert_eq!(
+            merge_window(Some(&newer_window), Some(&older_window)),
+            Some(newer_window)
+        );
+    }
+
+    fn seen(w: Option<Window>, at_ms: i64, session: &str) -> Option<Window> {
+        w.map(|w| Window {
+            seen: Some(Seen {
+                at_ms,
+                session: session.to_string(),
+            }),
+            ..w
+        })
+    }
+
+    fn on_disk(dir: &Path) -> (Option<f64>, Option<f64>) {
+        let s = read_bounded(&dir.join("acct-a.json")).unwrap();
+        (s.five_hour.map(|w| w.pct), s.seven_day.map(|w| w.pct))
+    }
+
+    /// Measured 2026-11-06: an active and an idle session of one account alternate
+    /// every second, the idle one carrying its last (lower) value of the same window.
+    #[test]
+    fn interleaved_sessions_never_lower_a_window() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("q");
+        let fresh = |at| {
+            let mut s = snap(
+                "acct-a",
+                at,
+                Some((0.15, NOW_S + 60)),
+                Some((0.52, NOW_S + 9000)),
+            );
+            s.five_hour = seen(s.five_hour, at, "sess-active");
+            s.seven_day = seen(s.seven_day, at, "sess-active");
+            s
+        };
+        let stale = |at| {
+            snap(
+                "acct-a",
+                at,
+                Some((0.02, NOW_S + 60)),
+                Some((0.48, NOW_S + 9000)),
+            )
+        };
+        for i in 0..6 {
+            let at = NOW_MS + i * 1000;
+            let (merged, _) = if i % 2 == 0 {
+                merge_snapshot(&dir, &fresh(at)).unwrap()
+            } else {
+                merge_snapshot(&dir, &stale(at)).unwrap()
+            };
+            assert_eq!(on_disk(&dir), (Some(0.15), Some(0.52)), "write {i}");
+            assert_eq!(merged.five_hour.as_ref().map(|w| w.pct), Some(0.15));
+            assert_eq!(merged.seven_day.as_ref().map(|w| w.pct), Some(0.52));
+        }
+        // provenance names the session that saw the kept value, and when; the same value
+        // again inside WRITE_EVERY_MS is not rewritten, so it is the first sighting
+        let kept = read_bounded(&dir.join("acct-a.json")).unwrap();
+        assert_eq!(
+            kept.five_hour.unwrap().seen,
+            Some(Seen {
+                at_ms: NOW_MS,
+                session: "sess-active".into()
+            })
+        );
+    }
+
+    #[test]
+    fn a_later_window_replaces_an_earlier_one_is_dropped() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("q");
+        merge_snapshot(&dir, &snap("acct-a", NOW_MS, Some((0.9, NOW_S + 60)), None)).unwrap();
+        // the 5h window reset: a later resets_at with a lower value replaces it
+        let next = snap("acct-a", NOW_MS + 1000, Some((0.03, NOW_S + 18_060)), None);
+        merge_snapshot(&dir, &next).unwrap();
+        assert_eq!(on_disk(&dir), (Some(0.03), None));
+        // an idle session still holding the old window does not bring it back
+        let old = snap("acct-a", NOW_MS + 2000, Some((0.9, NOW_S + 60)), None);
+        let (merged, _) = merge_snapshot(&dir, &old).unwrap();
+        assert_eq!(on_disk(&dir), (Some(0.03), None));
+        assert_eq!(merged.five_hour.unwrap().resets_at, NOW_S + 18_060);
+        // resets_at a few seconds apart is the same window: the larger value stands
+        let jitter = snap("acct-a", NOW_MS + 3000, Some((0.01, NOW_S + 18_063)), None);
+        merge_snapshot(&dir, &jitter).unwrap();
+        assert_eq!(on_disk(&dir), (Some(0.03), None));
+        // a writer that saw no 7d window keeps the stored one
+        merge_snapshot(
+            &dir,
+            &snap("acct-a", NOW_MS + 4000, None, Some((0.4, NOW_S + 9000))),
+        )
+        .unwrap();
+        merge_snapshot(
+            &dir,
+            &snap("acct-a", NOW_MS + 5000, Some((0.05, NOW_S + 18_060)), None),
+        )
+        .unwrap();
+        assert_eq!(on_disk(&dir), (Some(0.05), Some(0.4)));
+    }
+
+    #[test]
+    fn seen_round_trips_and_a_bad_writer_id_is_dropped() {
+        let mut s = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
+        s.five_hour = seen(s.five_hour, NOW_MS - 5, "0f3c-session_1");
+        assert_eq!(Snapshot::from_json(&s.to_json()), Some(s.clone()));
+        let mut v = s.to_json();
+        v["five_hour"]["seen_by"] = json!("../etc");
+        let w = Snapshot::from_json(&v).unwrap().five_hour.unwrap();
+        assert_eq!((w.pct, w.seen), (0.32, None));
     }
 
     #[test]

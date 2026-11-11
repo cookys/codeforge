@@ -11,6 +11,7 @@ import {
   bandTier,
   halfBlockCells,
   heartbeatPath,
+  BAND_SEEN_MS,
   heartbeatText,
   liveBaseOf,
   meter,
@@ -33,6 +34,15 @@ import {
   usageSummaryPath,
 } from './model'
 import type { UsageView } from './model'
+import { NO_QUOTA, parseQuotaNs, pickProviders, pickViews, quotaBand, quotaBandForms, quotaEntries, quotaLiveCandidates, quotaLiveDir, quotaPaneLines, QUOTA_NS_MAX_BYTES } from './quota-view'
+import type { DirEntry, QuotaState } from './quota-view'
+import { byteLength, parseQuotaView, QUOTA_CONTRACT } from './quota'
+import { CONTROL_ROWS, clipCells, newPaneScroll, scrolled, windowOf } from './pane-view'
+import type { PaneScroll } from './pane-view'
+import { PANEL_REFRESH_MS, panelState, panelTiers } from './panel'
+import { sideState } from './side'
+import { FLEET_MAX_BYTES, fleetLines, fleetQuotaPath, parseFleetQuota } from './fleet-view'
+import type { FleetQuotaView } from './fleet-view'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -68,11 +78,19 @@ let layout: Layout = 'band'
 let sid = ''
 // The live base codeforge wrote pet.json into: heartbeats go there, so the statusline finds them.
 let liveBase: string | null = null
+// the pet view refreshPet last read (the panel writer runs outside a render, where the atom is not read)
+// the session lights refreshSession last read (the panel writer runs outside a render, where the atom is not read)
+let sessionNow: SessionView | null = null
+let petNow: PetView = { status: 'missing', readAt: 0, writtenAt: null, path: null, pet: null, village: null }
 // The band instance the AbovePrompt hook last drew (its `e.requestId`); null when it passed.
 let bandId: string | null = null
 let bandLastCells: string | null = null
 // The sprite the band drew last (full or mini): its blits must match the mounted Raster's size.
 let bandSprite: SpriteData | null = null
+// B34: the band drew itself (the summary row or the columns) since the last heartbeat; the heartbeat turns it into bandSeenAt on its own clock (a render
+// reads no clock). bandSeenAt is null before the first draw.
+let bandDrew = false
+let bandSeenAt: number | null = null
 const BAND_KEY = 'pet-band'
 const t = (): T => makeT(locale)
 
@@ -143,7 +161,14 @@ async function writeHeartbeat($: EngineInterface) {
   if (liveBase === null || sid === '') return
   try {
     const now = await $.clock.now()
-    await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout))
+    if (bandDrew) {
+      bandSeenAt = now
+      bandDrew = false
+    }
+    const age = bandSeenAt === null ? Infinity : now - bandSeenAt
+    await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout, layout === 'band' && age < BAND_SEEN_MS))
+    // an idle session may not redraw: past half the window, ask for a render, so a band still on screen refreshes bandSeenAt before it ages out
+    if (layout === 'band' && age >= BAND_SEEN_MS / 2) void $.ui.invalidate('ui.render')
   } catch {
     // best effort: no heartbeat means the statusline stays full
   }
@@ -167,6 +192,7 @@ async function refreshPet($: EngineInterface) {
     }
   }
   const next = parseSnapshot(text, path, Date.now())
+  petNow = next
   await update($, pet, () => next)
   liveBase = liveBaseOf(text === null ? null : path) ?? bases[0] ?? null
   if (liveBase === null || sid === '') return
@@ -178,6 +204,7 @@ async function refreshPet($: EngineInterface) {
     viewText = null
   }
   const view = parseSessionView(viewText, sid)
+  sessionNow = view
   await update($, session, () => view)
 }
 
@@ -234,12 +261,17 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
 }
 
 // ---- the 用量 / usage tab (PM G36 phase 4): accounts, then today's models, read from codeforge's summary.json ----
-type PaneTab = 'pet' | 'usage'
+type PaneTab = 'pet' | 'usage' | 'fleet'
 let paneTab: PaneTab = 'pet'
+// the chat-style window (guideline §13), per tab: stuck to the newest row or standing at a row; the content rows the last draw had (what ui.scroll clamps against)
+const paneScroll: Record<PaneTab, PaneScroll> = { pet: newPaneScroll(), usage: newPaneScroll(), fleet: newPaneScroll() }
+const paneTotal: Record<PaneTab, number> = { pet: 0, usage: 0, fleet: 0 }
 
 // Bounded: a regular file that is not a link and at most USAGE_MAX_BYTES, checked before the read and again on the text. Never spawns codeforge.
 async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
-  const bases = liveBase !== null ? [liveBase] : await liveBases($)
+  // liveBase is only a guess until pet.json is found (refreshPet falls back to the first candidate without checking it exists), so the other
+  // candidates stay in the scan, after liveBase: the first summary that exists wins, as codeforge's resolver takes the first dir that exists
+  const bases = [...new Set([...(liveBase !== null ? [liveBase] : []), ...(await liveBases($))])]
   for (const b of bases) {
     const path = usageSummaryPath(b)
     const st = await $.fs.stat(path).catch(() => undefined)
@@ -255,22 +287,222 @@ async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
   return parseUsage(null, now)
 }
 
+// ---- the 全部帳號 tab: `<base>/codeforge/usage/fleet-quota.json`, written by `codeforge usage collect` when CODEFORGE_FLEET_USAGE_DIR is set ----
+// The tab exists only while that file does. `fleetPresent` is found by a stat outside any render (session start, command, the 15 s timer while drawn); the file itself
+// is read in the render of that tab only, bounded the way the usage summary is. Never spawns codeforge.
+let fleetPresent = false
+async function fleetBases($: EngineInterface): Promise<string[]> {
+  return [...new Set([...(liveBase !== null ? [liveBase] : []), ...(await liveBases($))])]
+}
+async function refreshFleetPresent($: EngineInterface) {
+  let found = false
+  for (const b of await fleetBases($)) {
+    if ((await $.fs.stat(fleetQuotaPath(b)).catch(() => undefined)) !== undefined) {
+      found = true
+      break
+    }
+  }
+  if (found !== fleetPresent) {
+    fleetPresent = found
+    void $.ui.invalidate('ui.render')
+  }
+}
+async function readFleetQuota($: EngineInterface): Promise<FleetQuotaView> {
+  for (const b of await fleetBases($)) {
+    const path = fleetQuotaPath(b)
+    const st = await $.fs.stat(path).catch(() => undefined)
+    if (st === undefined) continue
+    if (st.isLink || st.kind !== 'file' || st.size > FLEET_MAX_BYTES) return parseFleetQuota('{')
+    try {
+      const text = await $.fs.read(path)
+      return parseFleetQuota(typeof text === 'string' ? text : '{')
+    } catch {
+      return parseFleetQuota('{')
+    }
+  }
+  return parseFleetQuota(null)
+}
+
+// ---- the quota mirror (G40): autopilot's `<live_dir>/quota/<provider>/<alias>.json` views, read here, never written, never in a render ----
+let quotaState: QuotaState = NO_QUOTA
+// the last time anything was drawn (band or pane): the timer reads only while someone is looking (guideline §8-2)
+let drawnAt = 0
+let uidCache: number | null | undefined
+const QUOTA_VIEW_CAP = 256
+const QUOTA_WATCH_MS = 60_000
+
+async function quotaUid($: EngineInterface): Promise<number | null> {
+  if (uidCache !== undefined) return uidCache
+  try {
+    const r = await $.process.run(['id', '-u'])
+    const n = Number(r.stdout.trim())
+    uidCache = r.exitCode === 0 && Number.isInteger(n) && n >= 0 ? n : null
+  } catch {
+    uidCache = null
+  }
+  return uidCache
+}
+
+const dirEntries = async ($: EngineInterface, path: string): Promise<DirEntry[] | null> => {
+  try {
+    return (await $.fs.list(path)) as DirEntry[]
+  } catch {
+    return null
+  }
+}
+
+/** Where the mirror root is (contract §21.3), with the candidates that exist found by `$.fs.stat`. */
+async function quotaRoot($: EngineInterface): Promise<string | null> {
+  const env = {
+    AUTOPILOT_LIVE_DIR: (await $.env.get('AUTOPILOT_LIVE_DIR').catch(() => undefined)) || undefined,
+    XDG_RUNTIME_DIR: (await $.env.get('XDG_RUNTIME_DIR').catch(() => undefined)) || undefined,
+    HOME: (await $.env.get('HOME').catch(() => undefined)) || undefined,
+  }
+  const uid = env.AUTOPILOT_LIVE_DIR ? null : await quotaUid($)
+  const there = new Set<string>()
+  for (const c of quotaLiveCandidates(env, uid)) {
+    const st = await $.fs.stat(c.dir).catch(() => undefined)
+    if (st !== undefined && st.kind === 'dir' && !st.isLink) there.add(c.dir)
+  }
+  return quotaLiveDir(env, uid, d => there.has(d))
+}
+
+/**
+ * Read one mirror file the safest way the mod API allows. `$.fs.read` has no no-follow flag and no size bound (see `FsReadCall`), so a fully race-free
+ * open is impossible. What is done instead: the text is rejected when its UTF-8 length is over `cap` (before anything parses it), and the path is
+ * `$.fs.stat`ed again after the read and must still be a regular file, not a link, of the size the listing reported.
+ * RESIDUAL RACE: a swap to a link (or a growth) between the stat and the read, undone again before the second stat, is not seen, and a very large file is
+ * still read whole before the cap rejects it. Accepted: there is no O_NOFOLLOW in the mod API, and the mirror directory is 0700 (same user only).
+ * Returns null when the file is unreadable or rejected; `rejected` is true for a reject (counted as unreadable), false for a plain read failure.
+ */
+async function readChecked($: EngineInterface, path: string, listedSize: number, cap: number): Promise<{ text: string | null; rejected: boolean }> {
+  let text: string
+  try {
+    const t = await $.fs.read(path)
+    if (typeof t !== 'string') return { text: null, rejected: false }
+    text = t
+  } catch {
+    return { text: null, rejected: false }
+  }
+  if (byteLength(text) > cap) return { text: null, rejected: true }
+  const st = await $.fs.stat(path).catch(() => undefined)
+  if (st === undefined || st.kind !== 'file' || st.isLink || st.size !== listedSize) return { text: null, rejected: true }
+  return { text, rejected: false }
+}
+
+// Bounded: at most 64 provider dirs and 256 views, a view a regular file that is not a link and at most the contract's view cap (checked on the listing and again on the text).
+async function refreshQuota($: EngineInterface, force = false) {
+  try {
+    if (!force && Date.now() - Math.max(drawnAt, await panelOpenAt($)) > QUOTA_WATCH_MS) return
+    const root = await quotaRoot($)
+    const dir = root === null ? undefined : await $.fs.stat(root + '/quota').catch(() => undefined)
+    if (root === null || dir === undefined || dir.kind !== 'dir' || dir.isLink) {
+      quotaState = NO_QUOTA
+      return
+    }
+    const top = (await dirEntries($, root + '/quota')) ?? []
+    let ns: string | null = null
+    let bad = 0
+    const nsEntry = top.find(e => e.name === 'namespace.json')
+    if (nsEntry !== undefined && nsEntry.kind === 'file' && !nsEntry.isLink && nsEntry.size <= QUOTA_NS_MAX_BYTES) {
+      const r = await readChecked($, root + '/quota/namespace.json', nsEntry.size, QUOTA_NS_MAX_BYTES)
+      if (r.rejected) bad++
+      ns = parseQuotaNs(r.text)
+    }
+    const { names, skipped: skippedDirs } = pickProviders(top)
+    const raw: QuotaState['raw'] = []
+    let skipped = skippedDirs
+    let reads = 0
+    for (const provider of names) {
+      // the listing said a directory; it is looked at again right before it is listed (a swap to a link is a reject)
+      const pst = await $.fs.stat(`${root}/quota/${provider}`).catch(() => undefined)
+      if (pst === undefined) continue
+      if (pst.kind !== 'dir' || pst.isLink) {
+        bad++
+        continue
+      }
+      const listed = await dirEntries($, `${root}/quota/${provider}`)
+      if (listed === null) continue
+      const picked = pickViews(provider, listed)
+      bad += picked.bad
+      for (const v of picked.views) {
+        if (reads >= QUOTA_VIEW_CAP) {
+          skipped++
+          continue
+        }
+        reads++
+        const got = await readChecked($, `${root}/quota/${provider}/${v.name}`, v.size, QUOTA_CONTRACT.view_max_bytes)
+        const text = got.text
+        const parsed = text === null ? null : parseQuotaView(text, provider, v.alias)
+        if (parsed === null || parsed.status === 'bad') {
+          bad++
+          continue
+        }
+        bad += parsed.rejected
+        raw.push({ provider, alias: v.alias, view: parsed })
+      }
+    }
+    quotaState = { present: true, ns, raw, bad, skipped }
+  } catch {
+    // a read that fails keeps what was last read
+  }
+}
+
+// When autopilot's integrated panel was last open (its `autopilot.panel_open_at_ms`, design v2 6(f)); 0 without autopilot, before it writes one, or for a value from the
+// future (another plugin's data: a skewed or garbage stamp must not keep the mirror scanning). Read like the fleet summary.
+async function panelOpenAt($: EngineInterface): Promise<number> {
+  try {
+    const got = await ($.state.get as (ref: { plugin: string; key: string }) => Promise<{ value: unknown }>)({ plugin: 'autopilot', key: 'panel_open_at_ms' })
+    return typeof got.value === 'number' && Number.isFinite(got.value) && got.value <= Date.now() ? got.value : 0
+  } catch (_e) {
+    return 0
+  }
+}
+
+// The integrated panel's 用量 / 寵物 content (codeforge.panel/1): the pane's own lines per tier width. Written when it changes and at least every PANEL_REFRESH_MS; a write
+// redraws every site that read it while drawing. Never from a render (the host refuses it there).
+let panelLast = ''
+let panelAt = 0
+async function writePanel($: EngineInterface) {
+  const now = Date.now()
+  const tr = t()
+  const usage = await readUsage($, now)
+  const quota = quotaState.present ? { state: quotaState, nowMs: now } : null
+  const body = {
+    usage: panelTiers(cols => usageLines(usage, cols, tr, now, quota)),
+    pet: { title: tr('tabPet'), sprite: petNow.village?.sprite ?? null, tiers: panelTiers(cols => petLines(petNow, cols, tr, now, false)) },
+    side: sideState(usage, quota === null ? null : quotaEntries(quotaState, Math.floor(now / 1000)), sessionNow, now, tr),
+  }
+  const text = JSON.stringify(body)
+  if (text === panelLast && now - panelAt < PANEL_REFRESH_MS) return
+  await $.state.set({ plugin: 'forge-stats', key: 'panel' }, panelState(now, body.usage, body.pet, body.side))
+  panelLast = text
+  panelAt = now
+}
+
 const money = (c: number) => '$' + c.toFixed(2)
 const lineWidth = (l: Line) => l.reduce((n, x) => n + displayWidth(x.text), 0)
 
-function usageLines(view: UsageView, cols: number, tr: T, now: number): Line[] {
-  if (view.status !== 'ok') return [[seg('  ' + (view.status === 'bad' ? tr('usageBad') : tr('usageMissing')), 'dim')]]
+// `quota` is the mirror when its directory exists (design §7 rule 7): then its blocks replace the G36 accounts rows and the models section stays. Without it, today's pane exactly.
+function usageLines(view: UsageView, cols: number, tr: T, now: number, quota: { state: QuotaState; nowMs: number } | null = null): Line[] {
+  const useQuota = quota !== null && quota.state.present
+  const missing = (): Line => [seg('  ' + (view.status === 'bad' ? tr('usageBad') : tr('usageMissing')), 'dim')]
+  if (view.status !== 'ok' && !useQuota) return [missing()]
   const out: Line[] = []
+  if (useQuota) {
+    out.push([seg(tr('usageAccounts'), 'dim')], ...quotaPaneLines(quota.state, quotaEntries(quota.state, Math.floor(quota.nowMs / 1000)), cols, quota.nowMs, tr))
+    if (view.status !== 'ok') return [...out, missing()]
+  }
   const age = view.generatedAt === null ? 0 : now - view.generatedAt
   if (age > USAGE_STALE_MS) out.push([seg('  ' + tr('usageAge', { n: Math.floor(age / 60_000) }) + ' · ' + tr('usageRefresh'), 'dim')])
-  out.push([seg(tr('usageAccounts'), 'dim')])
-  if (view.accounts.length === 0) out.push([seg('  ' + tr('usageNoAccounts'), 'dim')])
-  for (const a of view.accounts) {
+  if (!useQuota) out.push([seg(tr('usageAccounts'), 'dim')])
+  if (!useQuota && view.accounts.length === 0) out.push([seg('  ' + tr('usageNoAccounts'), 'dim')])
+  for (const a of useQuota ? [] : view.accounts) {
     const win = (label: string, w: UsageView['accounts'][number]['fiveHour'], withReset: boolean): Seg[] =>
       w === null
         ? [seg(`  ${label} `, 'dim'), seg(GLYPH.empty, 'dim')]
         : [seg(`  ${label} `, 'dim'), seg(`${Math.floor(w.pct * 100)}%`), ...(withReset ? [seg(' ' + countdown(w.resetsAtMs, now), 'dim')] : [])]
-    const name = seg('  ' + padRight(a.alias, KEY_W))
+    const name = seg('  ' + padRight(a.name, KEY_W))
     // the widest form that fits: both windows with countdowns, then without, then 5h alone; a field is dropped whole, never cut
     const forms: Line[] = [
       [name, ...win('5h', a.fiveHour, true), ...win('7d', a.sevenDay, true)],
@@ -332,6 +564,17 @@ function bandPetLines(view: PetView, width: number, tr: T, short = false): Line[
   return out
 }
 
+// The dim tail of the prompt hint line (PM, after the prompt-slot probe): this session's memory and brain lights in one short string, the memory first. A hidden light
+// is left out; with both hidden there is no tail. The engine cuts it where the row ends and leaves it out under four columns.
+export function promptTail(lights: SessionView | null, tr: T): string | undefined {
+  if (lights === null) return undefined
+  const parts: string[] = []
+  if (lights.memory !== 'hidden') parts.push(`${tr('memory')} ${lights.active} ${tr('entries')}`)
+  const brain: Record<Exclude<SessionView['brain'], 'hidden'>, string> = { ok: tr('brainOk'), degraded: tr('brainDegraded'), offline: tr('brainOffline'), pending: tr('brainPending') }
+  if (lights.brain !== 'hidden') parts.push(`${tr('brain')} ${brain[lights.brain]}`)
+  return parts.length === 0 ? undefined : parts.join(' · ')
+}
+
 function bandMemoryLines(lights: SessionView | null, tr: T): Line[] {
   const out: Line[] = []
   const brainWord: Record<SessionView['brain'], string> = {
@@ -375,14 +618,23 @@ export const register: Register = on => {
     // the band layout draws above the prompt instead of opening the pane (plan KR5)
     if (layout === 'pane') void $.ui.open({ id: PANE, title: t()('title') })
     await refreshPet($)
+    await refreshQuota($, true)
+    await refreshFleetPresent($)
     // first heartbeat before any timer (plan §2.5), then every 2 s
     await writeHeartbeat($)
     // statusline rewrites the snapshot every render; a slow poll keeps the pane current
     // between turns (a reload cancels the timer).
     $.clock.every(15_000, () => void refreshPet($))
+    // the quota mirror: every 15 s, and only while the band or pane was drawn in the last minute (never read in a render)
+    $.clock.every(15_000, () => void refreshQuota($))
+    // the 全部帳號 tab's file: same rule, only while something was drawn in the last minute
+    $.clock.every(15_000, () => void (Date.now() - drawnAt < QUOTA_WATCH_MS ? refreshFleetPresent($) : undefined))
     // idle animation: 2 fps, interval written as a literal (pixel-pet plan §2.5)
     $.clock.every(500, () => void stepSprite($))
     $.clock.every(2000, () => void writeHeartbeat($))
+    // the integrated panel's content: first now, then every 15 s (written only when it changed, or every 30 s)
+    await writePanel($)
+    $.clock.every(15_000, () => void writePanel($))
     return next(e)
   })
 
@@ -391,9 +643,10 @@ export const register: Register = on => {
     if (verb === 'layout') {
       if (arg !== 'band' && arg !== 'pane') return { text: t()('layoutUsage', { layout }) }
       layout = arg
+      // the open asks for the keys before any wait (§13 rule 7)
+      if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title'), focus: true })
       await $.store.set('layout', arg)
       bandLastCells = null
-      if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title') })
       $.ui.invalidate('ui.render')
       await writeHeartbeat($)
       return { text: t()('layoutSet', { layout: arg }) }
@@ -402,9 +655,12 @@ export const register: Register = on => {
     if (verb === 'usage' || verb === 'pet') {
       paneTab = verb
       if (verb === 'pet') lastCells = null
-      void $.ui.invalidate('ui.render')
     }
-    await $.ui.open({ id: PANE, title: t()('title') })
+    // ask for the keys first, while the composer the command came from is still empty (§13 rule 7:
+    // the arrows and page keys only reach a pane that holds the keyboard; the wheel needs no focus)
+    await $.ui.open({ id: PANE, title: t()('title'), focus: true })
+    if (verb === 'usage') await refreshQuota($, true)
+    if (verb === 'usage' || verb === 'pet') void $.ui.invalidate('ui.render')
     void refreshPet($)
     return { text: t()('opened') }
   })
@@ -424,19 +680,44 @@ export const register: Register = on => {
     // bodyColumns may run ~2 cells wider than what draws; keep a margin.
     const cols = Math.max(30, (e.props?.bodyColumns ?? 44) - 2)
 
-    const sprite = p.status === 'ok' && Raster !== undefined ? (p.village?.sprite ?? null) : null
+    // the operation area (tab strip + key hint) is the last CONTROL_ROWS rows; the content above it keeps the rest of bodyRows
+    const bodyRows = e.props.scroll.bodyRows
+    const dock = e.props.placement === 'dock'
+    const room = Math.max(1, bodyRows - CONTROL_ROWS)
+
+    let sprite = p.status === 'ok' && Raster !== undefined && paneTab === 'pet' ? (p.village?.sprite ?? null) : null
     // sprite beside the stats when both fit (sprite + 2 gap + 28 text), else stacked
     const side = sprite !== null && cols >= sprite.width + 2 + 28
-    const petPart = sprite === null ? petLines(p, cols, tr, Date.now()) : petLines(p, side ? cols - sprite.width - 2 : cols, tr, Date.now(), false)
+    let petPart = sprite === null ? petLines(p, cols, tr, Date.now()) : petLines(p, side ? cols - sprite.width - 2 : cols, tr, Date.now(), false)
+    // the Raster is atomic (rule row + sprite block): when it does not fit the content area the text-only pet lines are drawn instead of a sliced Raster
+    const spriteFrame0 = sprite === null ? null : halfBlockCells(sprite, spriteFrame)
+    const blockRows = spriteFrame0 === null ? 0 : side ? Math.max(spriteFrame0.rows, petPart.length) : spriteFrame0.rows + 1 + petPart.length
+    // not whole with the rule row: drop the rule (the tab strip names the tab) and keep the Raster; still not: the stats alone, no art
+    let withRule = true
+    if (sprite !== null && 1 + blockRows > room) {
+      withRule = false
+      if (blockRows > room) {
+        sprite = null
+        petPart = petLines(p, cols, tr, Date.now(), false)
+      }
+    } else if (sprite === null && paneTab === 'pet' && 1 + petPart.length > room) withRule = false
 
     const now = Date.now()
+    const clockMs = Date.now()
+    drawnAt = clockMs
+    // a tab whose file went away is not kept: back to the pet
+    if (paneTab === 'fleet' && !fleetPresent) paneTab = 'pet'
     const usage = paneTab === 'usage' ? await readUsage($, now) : null
+    const fleetView = paneTab === 'fleet' ? await readFleetQuota($) : null
     const lines: Line[] = []
     if (usage !== null) {
       const age = usage.generatedAt === null ? null : Math.floor((now - usage.generatedAt) / 60_000)
-      lines.push(rule(tr('usage'), cols, age === null ? undefined : tr('usageAge', { n: age })), ...usageLines(usage, cols, tr, now))
+      lines.push(rule(tr('usage'), cols, age === null ? undefined : tr('usageAge', { n: age })), ...usageLines(usage, cols, tr, now, { state: quotaState, nowMs: clockMs }))
+    } else if (fleetView !== null) {
+      const gen = fleetView.status === 'ok' ? fleetView.generatedAt : null
+      lines.push(rule(tr('fleetTitle'), cols, gen === null ? undefined : tr('fleetAge', { n: Math.max(0, Math.floor((now - gen) / 60_000)) })), ...fleetLines(fleetView, cols, tr, now))
     } else {
-      lines.push(rule(tr('pet'), cols))
+      if (withRule) lines.push(rule(tr('pet'), cols))
       if (sprite === null) lines.push(...petPart)
     }
 
@@ -465,11 +746,12 @@ export const register: Register = on => {
     )
     // the tab strip: Buttons where the surface has them (a press switches the tab), plain Text otherwise; the active tab bold, the other dim
     const Button = 'Button' in els ? els.Button : undefined
-    const tabs: [PaneTab, string][] = [['pet', tr('tabPet')], ['usage', tr('tabUsage')]]
+    const tabs: [PaneTab, string][] = [['pet', tr('tabPet')], ['usage', tr('tabUsage')], ...(fleetPresent ? [['fleet', tr('tabFleet')] as [PaneTab, string]] : [])]
     const select = (id: PaneTab) => {
       if (paneTab === id) return
       paneTab = id
       if (id === 'pet') lastCells = null
+      if (id === 'usage') void refreshQuota($, true)
       void $.ui.invalidate('ui.render')
     }
     const strip = (
@@ -487,8 +769,8 @@ export const register: Register = on => {
       </Box>
     )
     let petBlock = null
-    if (usage === null && sprite !== null && Raster !== undefined) {
-      const frame = halfBlockCells(sprite, spriteFrame)
+    if (usage === null && sprite !== null && Raster !== undefined && spriteFrame0 !== null) {
+      const frame = spriteFrame0
       lastCells = frame.cells
       const art = <Raster key={SPRITE_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
       const stats = <Box flexDirection="column">{petPart.map((l, i) => row(l, 'p' + i))}</Box>
@@ -505,15 +787,50 @@ export const register: Register = on => {
       )
     }
 
+    // the content window: the sprite block fits whole (checked above), so only text lines ever scroll
+    const total = lines.length + (petBlock === null ? 0 : blockRows)
+    paneTotal[paneTab] = total
+    const win = windowOf(total, bodyRows, dock, paneScroll[paneTab])
+    const shown = petBlock === null ? lines.slice(win.top, win.top + win.area) : lines
+    const more = [win.above > 0 ? tr('paneMore', { n: win.above }) : '', win.below > 0 ? '↓ ' + win.below : ''].filter(x => x !== '').join(' · ')
+
+    // top to bottom: blank pad (dock, short content), the "n more" row, the content, then the operation area. An overflowing tree carries one spare row under it so the engine
+    // still has a row to scroll and raises ui.scroll for the arrows (UiScrollInput.by: "an arrow a row while the engine has rows to scroll"); the hook never lets it move.
     return (
       <Box flexDirection="column">
-        {strip}
-        {lines.map((l, i) => row(l, 'l' + i))}
+        {Array.from({ length: win.pad }, (_, i) => <Text key={'pad' + i}> </Text>)}
+        {win.indicator ? <Text key="more" dimColor wrap="truncate">{clipCells(more, cols)}</Text> : null}
+        {shown.map((l, i) => row(l, 'l' + (win.top + i)))}
         {petBlock}
+        {strip}
+        <Text key="hint" dimColor wrap="truncate">{clipCells(tr('paneHint'), cols)}</Text>
+        {win.overflow ? <Text key="spare"> </Text> : null}
       </Box>
     )
   })
+
+  // The pane draws its own window over the content (guideline §13.3), so the person's wheel and scroll keys move the mod's offset and the engine's window stays at 0. A plugin's own
+  // move (`$.ui.scroll`) is the engine's.
+  on('ui.scroll', { component: 'Pane', requestId: PANE }, ($, e, next) => {
+    if (e.origin.kind !== 'person') return next(e)
+    const was = paneScroll[paneTab]
+    const now = scrolled(was, paneTotal[paneTab], e)
+    if (now.top !== was.top || now.bottom !== was.bottom) {
+      paneScroll[paneTab] = now
+      void $.ui.invalidate('ui.render')
+    }
+    return {}
+  })
   // The band above the prompt: Ferris | pet | memory and brain (statusline-band plan §2.5; speed is autopilot's, B32).
+  // the prompt hint line keeps the engine's text and pills; forge-stats only adds its tail (a rewritten `hint` would replace them)
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const tail = promptTail(await read($, session), t())
+    if (tail === undefined) return next(e)
+    // a tail a plugin above already set stays first; forge-stats' follows it
+    const before = e.props.tail
+    return next({ ...e, props: { ...e.props, tail: before === undefined || before === '' ? tail : before + ' · ' + tail } })
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const props = e.props
     if (e.surface !== 'terminal' || layout !== 'band' || props.hasSurvey || props.maxRows < 1) {
@@ -532,10 +849,14 @@ export const register: Register = on => {
     const sprite = tier === 'full' ? full : tier === 'mini' ? mini : null
     const tr = t()
     const fleet = await readFleet($)
+    const clockMs = Date.now()
+    drawnAt = clockMs
+    // the quota chips (G40 §6.1): only once the mirror directory exists (design §7 rule 7), none when it holds nothing to draw
+    const quotaForms = quotaState.present ? quotaBandForms(quotaBand(quotaEntries(quotaState, Math.floor(clockMs / 1000)), clockMs, tr)) : null
     // the one-line summary (TUI guideline §2.2): fleet counts, then the pet; the widest form that fits, never wider than the row (bodyColumns may run ~2 wider)
     const summaryRow = (k: string, withPet: boolean) => {
       const petTag = withPet && p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
-      const parts = summaryParts(fleet, petTag, Math.max(0, props.bodyColumns - 2), tr('fleet'))
+      const parts = summaryParts(fleet, petTag, Math.max(0, props.bodyColumns - 2), tr('fleet'), quotaForms)
       if (parts === null) return null
       return (
         <Box key={k} flexDirection="row">
@@ -552,13 +873,17 @@ export const register: Register = on => {
       bandSprite = null
       // 1–5 rows (or no sprite): one summary row. With autopilot this is the row it hands down under its tab row (summary_row in the heartbeat); with nothing to
       // draw the row is passed on, never left blank.
-      return summaryRow('summary', true) ?? next(e)
+      const row = summaryRow('summary', true)
+      if (row === null) return next(e)
+      bandDrew = true
+      return row
     }
     const lights = await read($, session)
     const layoutCols = bandLayout(props.bodyColumns, sprite.width)
     const frame = halfBlockCells(sprite, spriteFrame % sprite.frames.length)
     bandId = e.requestId
     bandSprite = sprite
+    bandDrew = true
     bandLastCells = frame.cells
 
     const draw = (s: Seg, i: number) => {
@@ -581,7 +906,7 @@ export const register: Register = on => {
     )
 
     // the fleet outranks the pet (guideline §2.1): a summary row on top when there is a summary and a row to spare above the tier's minimum (mini >= 7, full >= 13)
-    const top = fleet !== null && props.maxRows > (tier === 'mini' ? MINI_MIN_ROWS : BAND_MIN_ROWS) ? summaryRow('fleet', false) : null
+    const top = (fleet !== null || (quotaForms !== null && quotaForms.length > 0)) && props.maxRows > (tier === 'mini' ? MINI_MIN_ROWS : BAND_MIN_ROWS) ? summaryRow('fleet', false) : null
     const columns = (
       <Box flexDirection="row" gap={BAND_GAP}>
         {layoutCols.map(c => {
