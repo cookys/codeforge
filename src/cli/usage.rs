@@ -96,13 +96,29 @@ fn collect_and_summarize(
         }
     }
     claude_dirs.push(home.join(".claude"));
-    claude_dirs.extend(
-        configured_dirs
-            .into_iter()
-            .chain(collect::remembered_claude_dirs(&conn)?)
-            .chain(extra_claude_dirs.iter().cloned())
-            .filter(|d| collect::real_dir_chain(d)),
-    );
+    for (d, explicit) in configured_dirs
+        .into_iter()
+        .map(|d| (d, true))
+        .chain(
+            collect::remembered_claude_dirs(&conn)?
+                .into_iter()
+                .map(|d| (d, false)),
+        )
+        .chain(extra_claude_dirs.iter().cloned().map(|d| (d, true)))
+    {
+        if !collect::real_dir_chain(&d) {
+            // 明確給的目錄（設定檔或旗標）被略過就提醒一次；記住的目錄（例如移除的 sandbox 目錄）
+            // 是常態，靜默略過。quiet（statusline 背景跑）不印任何輸出。
+            if explicit && !quiet {
+                eprintln!(
+                    "codeforge usage: 略過 Claude 目錄「{}」（不存在、不是目錄，或路徑中有 symlink）",
+                    d.display()
+                );
+            }
+            continue;
+        }
+        claude_dirs.push(d);
+    }
     let codex = std::env::var("CODEX_HOME")
         .ok()
         .filter(|d| !d.is_empty())
