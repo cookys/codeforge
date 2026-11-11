@@ -245,6 +245,15 @@ pub(crate) fn open_no_follow(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::File::open(path)
 }
 
+/// One account's snapshot file, or nothing when it is missing, unreadable, or not that alias.
+pub fn read_own(dir: &Path, alias: &str) -> Option<Snapshot> {
+    if !valid_alias(alias) {
+        return None;
+    }
+    let snap = read_bounded(&dir.join(format!("{alias}.json")))?;
+    (snap.alias == alias).then_some(snap)
+}
+
 /// Read one snapshot file: opened with O_NOFOLLOW | O_NONBLOCK, then the handle must
 /// be a regular file of at most MAX_BYTES, and at most MAX_BYTES are read; JSON with
 /// the right schema. Anything else → None.
