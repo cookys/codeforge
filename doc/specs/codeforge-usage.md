@@ -325,7 +325,7 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
   （0600、原子寫入，同其他 usage 快取）。未滿 10 分鐘就用快取、不打端點。否則打端點：解析成功就覆寫
   快取並回傳；Denied、失敗或解析失敗時，若快取未超過 6 小時（`quota::MAX_AGE_MS`）就用快取，否則這次
   不收集。
-- **關斷**：環境變數 `CODEFORGE_USAGE_GROK=0` 時什麼都不讀、不打端點。
+- **關斷**：環境變數 `CODEFORGE_USAGE_GROK=0` 時什麼都不讀（包括快取，不輸出 grok 列）、不打端點。
 - **鍵**：`hash8` 是這台 `$HOME`（canonicalized）的 `alias::path_hash8`。
 
 ## 全帳號配額表（`usage fleet`）
