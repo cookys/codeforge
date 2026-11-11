@@ -324,7 +324,11 @@ pub enum UsageAction {
     /// 收集、寫 summary.json，驗證後以 `fleet upload` 上傳，印出 blob sha
     Push,
     /// 印出 push 會上傳的 bytes（驗證後拿掉各帳號的 email 與 name，不連線），供 hangar 用 ssh 收集
-    Export,
+    Export {
+        /// 改印每小時（UTC）每帳號每模型的 token 列（codeforge.usage-hourly/1），不印 summary
+        #[arg(long)]
+        hourly: bool,
+    },
     /// 配額檢視：讀 autopilot 的配額 mirror 並畫出每個帳號（只讀，不探測、不連網）
     Accounts {
         /// 輸出解讀後的清單（JSON）
@@ -626,7 +630,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 usage::Action::Collect { quiet, claude_dirs }
             }
             Some(UsageAction::Push) => usage::Action::Push,
-            Some(UsageAction::Export) => usage::Action::Export,
+            Some(UsageAction::Export { hourly }) => usage::Action::Export { hourly },
             Some(UsageAction::Accounts { json }) => usage::Action::Accounts { json },
             Some(UsageAction::Pools { json }) => usage::Action::Pools { json },
             Some(UsageAction::Fleet {

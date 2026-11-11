@@ -16,6 +16,7 @@
 | 摘要 | 每次收集之後 | `<live_base>/codeforge/usage/summary.json` |
 | 推送 | `codeforge usage push` | `fleet upload`，印出 blob sha |
 | 匯出 | `codeforge usage export` | 印出驗證過、拿掉 email 和 name 的 summary（同 push 上傳的內容），給 hangar 用 ssh 收 |
+| 每小時匯出 | `codeforge usage export --hourly` | 同一趟收集後，改印 UTC 每小時、每帳號、每模型的 Claude token 列（`codeforge.usage-hourly/1`），給 capacity 在重置與換帳號時切開用量 |
 | 面板分頁 | forge-stats pane 的「用量」分頁（`/forge-stats usage` 直接開到這頁） | 只讀 `summary.json`：帳號 5h／7d 與倒數、今天（UTC）各 model 的 token 與 API 等值；摘要超過 1 小時就提示執行 `codeforge usage`，不自己呼叫 codeforge |
 
 `<data_dir>` = `CODEFORGE_DATA_DIR`，預設 `~/.local/share/codeforge`；`<live_base>` 見
@@ -263,6 +264,44 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
 `days` 是最近 7 天，專案已加總掉。`usage push` 讀回、驗證、把驗過的 bytes 以固定檔名
 `usage-summary.json` 交給 `fleet upload`，不送本機路徑。
 
+## 每小時匯出（`usage export --hourly`）
+
+`codeforge usage export --hourly` 先做與 `usage export` 相同的收集（寫 `summary.json`），再把下面這份
+JSON 印到 stdout：一個文件、結尾一個換行。不印 summary。給 capacity 在每個配額池的重置時間、以及換帳號時
+切開用量。沒有 `--hourly` 的 `usage export` 印出的 bytes 不變。
+
+```json
+{"schema":"codeforge.usage-hourly/1","generated_at_ms":0,"host":"host-1a2b3c4d",
+ "rows":[{"hour":"2026-11-04T13","account":"acct-1a2b3c4d","model":"claude-opus-4-8","speed":"standard",
+          "input":0,"cache_write_5m":0,"cache_write_1h":0,"cache_read":0,"output":0,"requests":0}]}
+```
+
+沒有登入的列，`account` 是 `null`（未歸屬），不是空字串。
+
+- **schema**：`codeforge.usage-hourly/1`。每一層的 key 都是封閉集合；多一個或少一個欄位，整份不合格。
+- **generated_at_ms**：產出當下的 unix 毫秒，整數，0..=2^53−1。
+- **host**：`host-` 加 hostname sha256 的前 8 碼 hex（`summary::host_alias`）。絕不是 hostname。
+- **rows**：`requests` 裡 `source = 'claude'`、而且 `seen_ms` 沒有比 `generated_at_ms` 早超過 35 天
+  （`HORIZON_DAYS`，與收集的視野相同；未來的時間戳照計）的列，依 (hour, account, model, speed) 加總。
+  最多 100_000 列。依 hour、account、model、speed 排序（未歸屬的空字串排在有別名的前面，印出時寫成 `null`）。
+- **hour**：`seen_ms` 的 UTC 小時，`YYYY-MM-DDTHH`（`strftime('%Y-%m-%dT%H', seen_ms/1000, 'unixepoch')`）。
+- **account**：未歸屬 sentinel（空字串，同 `summary::build`）寫 `null`；否則必須是合法別名（`^[a-z0-9-]{1,24}$`）。
+- **model**：與 summary 同一條 model id 規則，`^[A-Za-z0-9._-]{1,64}$`。不合語法的記為 `unknown`
+  （同一小時、同一帳號、同一速度裡多個不合語法的 id 併成一列）。
+- **speed**：`standard` 或 `fast`。
+- **計數**：`input`、`cache_write_5m`（欄 `cw5m`）、`cache_write_1h`（欄 `cw1h`）、`cache_read`（欄 `read`）、
+  `output` 是加總，`requests` 是 `COUNT(*)`。每個整數壓在 `UINT_MAX`（2^53−1）。
+- 印出前先驗證。驗證失敗是錯誤，stdout 什麼都不印。
+
+**覆蓋**：收集只把 35 天以內的紀錄算進去，去重列在 `requests` 留到 40 天（`DEDUP_KEEP_DAYS`）才刪。
+這份匯出再依同一個 35 天視野濾一次，所以是最近 35 天的 Claude 用量。
+
+**只有 Claude**：Codex 的用量在 `codex_sessions`（每個 rollout 的累計），沒有逐筆 `requests` 列，所以這裡不出現。
+
+**為什麼沒有 email、name、org、project、路徑**：這份 JSON 會離開這台機器（capacity 用 ssh 收，跟 `usage export`
+同一條路）。email、顯示名、組織名留在本機快照與 summary。project 是 cwd 的最後一段，只留在本機 `requests`，
+不進任何一列。host 只用 hash。
+
 ## 配額檢視（G40）
 
 `codeforge usage accounts` 與 forge-stats（用量分頁、band 晶片）、statusline 都讀 autopilot 的配額
@@ -408,6 +447,7 @@ codeforge usage collect --quiet     # hook 用
 codeforge usage collect --claude-dir /srv/claude/seat-a --claude-dir /srv/claude/seat-b  # 本次掃描並記住（絕對路徑）
 codeforge usage push                # 印出 blob sha
 codeforge usage export              # 印出 push 會上傳的 bytes（驗證後拿掉 email 與 name，不連線、不寫檔），給 hangar 用 ssh 收
+codeforge usage export --hourly     # 同一趟收集後改印每小時（UTC）每帳號每模型的 Claude token 列（codeforge.usage-hourly/1）；沒有 email、name、org、project、路徑
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
 codeforge usage pools [--json]      # usage.v1 配額池（CODEFORGE_USAGE_V1 未設 = 關）
 codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）
