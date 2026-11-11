@@ -1,7 +1,7 @@
 //! `codeforge usage` (G36 plan, phase 3): collect, write `summary.json`, print a table.
 
 use crate::usage::reset_rule::Kind;
-use crate::usage::{agy, collect, grok, hourly, price, quota, store, summary};
+use crate::usage::{agy, collect, grok, hourly, kimi, price, quota, store, summary};
 use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -165,6 +165,16 @@ fn collect_and_summarize(
             &home,
             now,
             || grok::fetch_live(&home),
+        ));
+    }
+    // the host's kimi Code CLI account: 5h and weekly quota from the usages API (10-min cache,
+    // 8 s timeout, CODEFORGE_USAGE_KIMI=0 to read nothing at all, cache included)
+    if !kimi::disabled() {
+        fresh.extend(kimi::snapshots(
+            &summary::summary_dir(&live_base),
+            &home,
+            now,
+            || kimi::fetch_live(&home),
         ));
     }
     let v = summary::with_codex_sessions(
@@ -1090,13 +1100,13 @@ mod tests {
             .unwrap()
             .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&p).unwrap()).unwrap();
-        let kimi = v["accounts"]
+        let qoder = v["accounts"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|a| a["provider"] == "kimi")
+            .find(|a| a["provider"] == "qoder")
             .unwrap();
-        assert_eq!(kimi["source_note"], "web_only");
+        assert_eq!(qoder["source_note"], "web_only");
     }
 
     #[test]
