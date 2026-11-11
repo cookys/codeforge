@@ -53,6 +53,19 @@ impl Timeline {
     }
 }
 
+/// The timeline as stored, without observing anything (a root with no usable login now).
+/// A missing, corrupt or foreign file reads as empty.
+pub fn read(dir: &Path, root: &str) -> Result<Timeline> {
+    let name = state_file("logins", root)?;
+    let empty = || Timeline {
+        entries: Vec::new(),
+    };
+    Ok(match load_bytes(&dir.join(&name), LOGIN_MAX_BYTES)? {
+        Loaded::Data(buf) => parse_timeline(&buf).unwrap_or_else(empty),
+        Loaded::Missing | Loaded::Foreign => empty(),
+    })
+}
+
 /// Append `(now_ms, alias)` when the file is empty or the last alias differs.
 /// A corrupt or foreign file is treated as empty and rewritten. Only [`valid_alias`]
 /// values are stored. At most 64 entries; the oldest (front) ones are dropped.
