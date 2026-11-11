@@ -1027,8 +1027,8 @@ fn hook_entry(command: &str, timeout_ms: u64, marker: &str) -> Value {
 }
 
 /// A "hook group" is codeforge-owned when every entry in its `hooks`
-/// array carries our marker — OR is a known legacy codeforge-owned entry
-/// from before the marker was introduced (see [`hook_is_codeforge`]).
+/// array is recognized as ours — by marker, or by command when a settings
+/// rewrite dropped the marker (see [`hook_is_codeforge`]).
 fn group_is_codeforge(group: &Value) -> bool {
     let Some(inner) = group.get("hooks").and_then(|h| h.as_array()) else {
         return false;
@@ -1040,13 +1040,15 @@ fn group_is_codeforge(group: &Value) -> bool {
 }
 
 /// A single hook entry is recognized as codeforge-owned if either:
-/// - It carries our `_installed_by: codeforge@...` marker (V2.2+ install path), or
-/// - Its `command` matches a known legacy pattern that codeforge shipped
-///   before the marker existed (currently: `codeforge dream`, which was
-///   manually placed in project settings.json since Phase 1 / commit b1634ad).
+/// - It carries our `_installed_by: codeforge@...` marker (the V2.2+ install
+///   path — the primary recognition), or
+/// - Its `command` names a hook subcommand `install` writes
+///   ([`is_codeforge_hook_command`]) — the fallback for when a settings rewrite
+///   dropped the marker, or for pre-marker installs that were never marked
+///   (e.g. the hand-placed `codeforge dream` from Phase 1 / commit b1634ad).
 ///
-/// Migration intent: a fresh `codeforge install --project-hooks` on a repo
-/// with the pre-2.2 un-marker dream entry should REPLACE it (not duplicate).
+/// Either way a re-install SWEEPS the entry (no duplicate group) and
+/// `uninstall` removes it.
 fn hook_is_codeforge(h: &Value) -> bool {
     if h.get(MARKER_KEY)
         .and_then(|v| v.as_str())
@@ -1056,47 +1058,51 @@ fn hook_is_codeforge(h: &Value) -> bool {
     }
     h.get("command")
         .and_then(|c| c.as_str())
-        .is_some_and(is_legacy_codeforge_command)
+        .is_some_and(is_codeforge_hook_command)
 }
 
-/// Known codeforge-owned hook commands shipped before the marker was added.
-/// Keep this list tight — broadening it risks clobbering user hooks.
+/// Recognize a hook entry's `command` string as a codeforge-owned hook — the
+/// fallback path for when the `_installed_by` marker is absent. Claude Code can
+/// rewrite `~/.claude/settings.json` and drop the marker from every entry; after
+/// that the command is the only thing left that still identifies ours, so
+/// `install --hooks` must sweep them (no duplicate group / no dual-fire) and
+/// `uninstall` must remove them.
 ///
-/// Two families of pre-marker entries exist in the field:
-///   1. the inline `codeforge dream` command (hand-placed since Phase 1), and
+/// Keep this list tight — broadening it risks clobbering user hooks. Two
+/// families of codeforge-owned entries exist:
+///   1. the inline `codeforge <sub>` commands (`dream`, `ship`, `memory context`,
+///      `mnemos-cli context`, `hook …`, `usage collect`) — also covers pre-marker
+///      installs whose entries were never marked (e.g. the hand-placed
+///      `codeforge dream` from Phase 1), and
 ///   2. node hook-script commands written by pre-marker installs — recognized by
 ///      the codeforge-owned scripts path (`/codeforge/hooks/` for global,
-///      `/.claude/scripts/` for project) plus a known script basename.
-///
-/// Recognizing (2) lets a re-install SWEEP the old versioned copy (e.g. the
-/// `hooks/0.0.3/…` entries) instead of duplicating it alongside the new version
-/// — the dual-fire that bit the dream→ship relocation upgrade.
-///
-/// TODO: remove this once all field installs have cycled through a marker-aware
-/// install. Safe to delete when no production settings.json carries an un-marker
-/// codeforge entry.
-fn is_legacy_codeforge_command(cmd: &str) -> bool {
-    // Pre-marker inline subcommands codeforge shipped in the SessionEnd /
-    // SessionStart chains: `dream`, `ship`, `memory context`. `ship` + `memory
-    // context` were chained in after `dream` but before every field install cycled
-    // through the marker. While they were unrecognized, a pre-marker group
-    // containing one of them failed `group_is_codeforge`'s ALL-hooks-ours gate, so
-    // the WHOLE group escaped the sweep and the new marked group stacked beside it
-    // → dual-fire. Recognizing them lets a re-install reclaim the full pre-marker
-    // group. Match on a token boundary (exact, or subcommand + space) so a
-    // prefix collision like `codeforge shipment` / `memory contextualize` (or any
-    // future codeforge subcommand) is NOT mistaken for one of these.
-    let is_premarker_sub = |sub: &str| {
+///      `/.claude/scripts/` for project) plus a known script basename. Recognizing
+///      (2) lets a re-install SWEEP the old versioned copy (e.g. the
+///      `hooks/0.0.3/…` entries) instead of duplicating it — the dual-fire that
+///      bit the dream→ship relocation upgrade.
+fn is_codeforge_hook_command(cmd: &str) -> bool {
+    // Codeforge subcommands we install. Match on a token boundary (exact, or
+    // subcommand + space) so a prefix collision like `codeforge hooked` /
+    // `codeforge usage show` / `codeforge shipment` (or any future codeforge
+    // subcommand) is NOT mistaken for one of these. `hook` matches
+    // `codeforge hook <anything>` (emit-session, session-digest, …) and
+    // `usage collect` matches only the collector — bare `codeforge usage` does
+    // not.
+    let is_codeforge_sub = |sub: &str| {
         let exact = format!("codeforge {sub}");
         cmd == exact || cmd.starts_with(&format!("{exact} "))
     };
-    if is_premarker_sub("dream")
-        || is_premarker_sub("ship")
-        || is_premarker_sub("memory context")
-        // Central recall (P1.2 fleet downlink) was hand-added to some SessionStart
-        // groups before it shipped in `install`; recognize it so a re-install sweeps
-        // the un-marked entry instead of stacking a second (dual context injection).
-        || is_premarker_sub("mnemos-cli context")
+    if is_codeforge_sub("dream")
+        || is_codeforge_sub("ship")
+        || is_codeforge_sub("memory context")
+        // Central recall (P1.2 fleet downlink): recognize it so a re-install
+        // sweeps the entry instead of stacking a second (dual context injection).
+        || is_codeforge_sub("mnemos-cli context")
+        // `codeforge hook …` (embedded-binary hooks) and `codeforge usage collect`
+        // (G36) have shipped with the marker, but a settings rewrite can drop it —
+        // recognize them so a re-install sweeps the un-marked entry too.
+        || is_codeforge_sub("hook")
+        || is_codeforge_sub("usage collect")
     {
         return true;
     }
@@ -1537,41 +1543,149 @@ mod tests {
     #[test]
     fn legacy_recognizes_unmarkered_node_hook_scripts() {
         // Global pre-marker install paths.
-        assert!(is_legacy_codeforge_command(
+        assert!(is_codeforge_hook_command(
             "node /home/u/.local/share/codeforge/hooks/0.0.3/emit-session.js session_end"
         ));
-        assert!(is_legacy_codeforge_command(
+        assert!(is_codeforge_hook_command(
             "node /home/u/.local/share/codeforge/hooks/0.0.3/session-digest.js"
         ));
         // Project script path.
-        assert!(is_legacy_codeforge_command(
+        assert!(is_codeforge_hook_command(
             "node ${CLAUDE_PROJECT_DIR}/.claude/scripts/check-dev-flow.js"
         ));
         // Pre-marker inline subcommands. ship + memory-context were the dual-fire
         // root cause: previously unrecognized, so a pre-marker group containing
         // them failed the all()-codeforge gate and escaped the sweep.
-        assert!(is_legacy_codeforge_command(
+        assert!(is_codeforge_hook_command(
             "codeforge dream --quiet 2>/dev/null || true"
         ));
-        assert!(is_legacy_codeforge_command(
+        assert!(is_codeforge_hook_command(
             "codeforge ship --no-hook 2>/dev/null || true"
         ));
-        assert!(is_legacy_codeforge_command(
+        assert!(is_codeforge_hook_command(
             "codeforge memory context --hook 2>/dev/null || true"
         ));
         // Not ours — must not clobber.
-        assert!(!is_legacy_codeforge_command("node /home/u/myscript.js"));
-        assert!(!is_legacy_codeforge_command("prettier --write x.ts"));
+        assert!(!is_codeforge_hook_command("node /home/u/myscript.js"));
+        assert!(!is_codeforge_hook_command("prettier --write x.ts"));
         // Tight: a different codeforge subcommand we never auto-installed must NOT
         // be swept (guards against over-broad `codeforge ` prefix matching).
-        assert!(!is_legacy_codeforge_command("codeforge pet"));
-        assert!(!is_legacy_codeforge_command("codeforge statusline"));
+        assert!(!is_codeforge_hook_command("codeforge pet"));
+        assert!(!is_codeforge_hook_command("codeforge statusline"));
         // Token-boundary: prefix collisions must NOT be mistaken for the real subs.
-        assert!(!is_legacy_codeforge_command("codeforge shipment --foo"));
-        assert!(!is_legacy_codeforge_command(
-            "codeforge memory contextualize"
-        ));
-        assert!(!is_legacy_codeforge_command("codeforge dreamboat"));
+        assert!(!is_codeforge_hook_command("codeforge shipment --foo"));
+        assert!(!is_codeforge_hook_command("codeforge memory contextualize"));
+        assert!(!is_codeforge_hook_command("codeforge dreamboat"));
+    }
+
+    #[test]
+    fn hook_command_recognizes_installed_commands() {
+        // Every command `install --hooks` writes today must be recognized by
+        // command alone. The marker is the primary recognition path, but a
+        // settings rewrite can drop it — the marker-stripped integration test
+        // below depends on command recognition staying tight.
+        let ours = [
+            "codeforge hook emit-session session_start",
+            "codeforge hook emit-session session_end",
+            "codeforge hook session-digest",
+            "codeforge memory context --hook 2>/dev/null || true",
+            "codeforge mnemos-cli context --hook --max 5 --with-themes --max-sensitivity work 2>/dev/null || true",
+            "codeforge dream --quiet 2>/dev/null || true",
+            "codeforge ship --no-hook 2>/dev/null || true",
+            "codeforge usage collect --quiet 2>/dev/null || true",
+        ];
+        for cmd in ours {
+            assert!(
+                is_codeforge_hook_command(cmd),
+                "installed command must be recognized by command: {cmd}"
+            );
+        }
+        // Keep the rule tight: lookalikes we never auto-install must NOT match.
+        let not_ours = [
+            "codeforge hooked", // `hook` + a prefix collision, never installed
+            "codeforge usage",  // bare `usage` (we only install `usage collect`)
+            "codeforge usage show",
+            "codeforge pet",
+            "node /home/u/x.js",
+        ];
+        for cmd in not_ours {
+            assert!(
+                !is_codeforge_hook_command(cmd),
+                "non-codeforge command must NOT be recognized: {cmd}"
+            );
+        }
+    }
+
+    #[test]
+    fn reinstall_sweeps_groups_after_settings_rewrite_drops_marker() {
+        // A Claude Code settings rewrite can strip `_installed_by` from every
+        // entry (seen on a real host). After that, a re-install must still
+        // recognize each group BY COMMAND and sweep it (no duplicate groups),
+        // and uninstall must still remove every codeforge command.
+        let mut fresh = json!({});
+        patch_hooks(&mut fresh, None, false).unwrap();
+        let mut stripped = strip_markers(&fresh);
+        // A user's own hook group sits beside ours and must survive both paths.
+        stripped["hooks"]["SessionEnd"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"hooks": [{"type": "command", "command": "codeforge pet"}]}));
+        assert!(
+            !serde_json::to_string(&stripped)
+                .unwrap()
+                .contains(MARKER_KEY),
+            "precondition: every marker must be stripped"
+        );
+
+        // Re-install on the marker-less settings: prior groups swept by command.
+        let mut re = stripped.clone();
+        let action = patch_hooks(&mut re, None, false).unwrap();
+        assert_eq!(
+            action, "更新",
+            "marker-less prior groups must be recognized, swept & re-added"
+        );
+        for (ty, groups) in [("SessionStart", 1), ("SessionEnd", 2), ("PreCompact", 1)] {
+            assert_eq!(
+                re["hooks"][ty].as_array().unwrap().len(),
+                groups,
+                "{ty}: one codeforge group (no duplicate), plus the user's group on SessionEnd"
+            );
+        }
+        // And no command appears in two groups of the same type.
+        for ty in ["SessionStart", "SessionEnd", "PreCompact"] {
+            let mut seen = std::collections::HashSet::new();
+            for group in re["hooks"][ty].as_array().unwrap() {
+                for h in group["hooks"].as_array().unwrap() {
+                    let cmd = h["command"].as_str().unwrap();
+                    assert!(seen.insert(cmd), "duplicate command after reinstall: {cmd}");
+                }
+            }
+        }
+
+        // Uninstall the marker-less settings: every codeforge command must go.
+        let mut un = stripped.clone();
+        let action = unpatch_hooks(&mut un).unwrap();
+        assert_eq!(action, "已移除");
+        assert_eq!(
+            un["hooks"],
+            json!({"SessionEnd": [{"hooks": [{"type": "command", "command": "codeforge pet"}]}]}),
+            "only the user's hook may remain after uninstall"
+        );
+    }
+
+    /// Recursively drop every `_installed_by` key — simulates the Claude Code
+    /// settings rewrite that strips our marker from every hook entry.
+    fn strip_markers(v: &Value) -> Value {
+        match v {
+            Value::Object(map) => Value::Object(
+                map.iter()
+                    .filter(|(k, _)| k.as_str() != MARKER_KEY)
+                    .map(|(k, val)| (k.clone(), strip_markers(val)))
+                    .collect(),
+            ),
+            Value::Array(arr) => Value::Array(arr.iter().map(strip_markers).collect()),
+            other => other.clone(),
+        }
     }
 
     #[test]
