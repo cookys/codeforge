@@ -1,7 +1,7 @@
 //! `codeforge usage` (G36 plan, phase 3): collect, write `summary.json`, print a table.
 
 use crate::usage::reset_rule::Kind;
-use crate::usage::{agy, collect, price, quota, store, summary};
+use crate::usage::{agy, collect, hourly, price, quota, store, summary};
 use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -18,7 +18,9 @@ pub enum Action {
         claude_dirs: Vec<PathBuf>,
     },
     Push,
-    Export,
+    Export {
+        hourly: bool,
+    },
     Pools {
         json: bool,
     },
@@ -324,8 +326,18 @@ pub fn run(action: Action) -> Result<()> {
             println!("{sha}");
             Ok(())
         }
-        Action::Export => {
-            let (_conn, path) = collected(true)?;
+        Action::Export { hourly } => {
+            let (conn, path) = collected(true)?;
+            if hourly {
+                // validate before any stdout write: a failure prints nothing
+                let v = hourly::build(&conn, &summary::host_alias(&summary::hostname()), now_ms())?;
+                hourly::validate(&v).context("每小時用量未通過檢查，拒絕印出")?;
+                let bytes = serde_json::to_vec(&v)?;
+                use std::io::Write;
+                std::io::stdout().lock().write_all(&bytes)?;
+                println!();
+                return Ok(());
+            }
             let dir = path.parent().map(PathBuf::from).unwrap_or_default();
             let bytes = summary::export_bytes(&dir)?;
             use std::io::Write;
