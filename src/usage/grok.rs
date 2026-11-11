@@ -8,11 +8,14 @@
 //! expired login or HTTP 401/403 is [`Fetch::Denied`]: no refresh, no new snapshot.
 //!
 //! The response is untrusted. [`parse_billing`] keeps `config.creditUsagePercent` (a number in
-//! 0..=150, divided by 100) and `config.currentPeriod.end` (RFC3339, as unix seconds) and drops
-//! everything else. The capture is cached at `<cache_dir>/grok-usage.json` as
-//! `{"observed_ms","pct","resets_at"}` only (0600, atomic), at most 10 minutes old. A denied,
-//! failed, or unparsable fetch falls back to a cache not older than [`quota::MAX_AGE_MS`].
-//! `CODEFORGE_USAGE_GROK=0` reads nothing and calls nothing.
+//! 0..=150, divided by 100) and `config.currentPeriod.end` (RFC3339, as unix seconds). It also
+//! keeps one `config.productUsage` entry whose `product`, lowercased with every non-alphanumeric
+//! character removed, equals `grokbot`, when that entry's `usagePercent` is a number in 0..=150
+//! (divided by 100). That row is a second snapshot, `grokbot-<hash>`, with the same reset.
+//! Everything else is dropped. The capture is cached at `<cache_dir>/grok-usage.json` as
+//! `{"observed_ms","pct","resets_at"}` plus an optional `"bot_pct"` number (0600, atomic), at
+//! most 10 minutes old. A denied, failed, or unparsable fetch falls back to a cache not older
+//! than [`quota::MAX_AGE_MS`]. `CODEFORGE_USAGE_GROK=0` reads nothing and calls nothing.
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -37,7 +40,7 @@ const HTTP_TIMEOUT_S: u64 = 10;
 pub const ENV_DISABLE: &str = "CODEFORGE_USAGE_GROK";
 /// Cache file name in the summary dir.
 const CACHE_FILE: &str = "grok-usage.json";
-/// The cache holds three numbers: anything bigger is no cache.
+/// The cache holds the grok numbers plus an optional `bot_pct`. Anything bigger is no cache.
 const CACHE_MAX: usize = 4096;
 /// The login file is never read above this size.
 const AUTH_MAX: u64 = 64 * 1024;
@@ -109,10 +112,61 @@ fn read_key(auth_json_bytes: &[u8], now: DateTime<Utc>) -> KeyState {
     KeyState::Ok(cred.key)
 }
 
-/// One weekly snapshot from a billing body, or nothing when a field is missing, the wrong type,
-/// the percent is outside 0..=150, or the reset time is not RFC3339. `pct` is the used fraction
-/// (`creditUsagePercent / 100`). `five_hour` is always `None`.
-pub fn parse_billing(body: &Value, observed_ms: i64, key_hash: &str) -> Option<quota::Snapshot> {
+/// What [`parse_billing`] keeps. `grok` is the weekly credit row. `bot_pct` is set only when
+/// `productUsage` lists a Grok Bot row whose percent parses.
+pub struct Billing {
+    pub grok: quota::Snapshot,
+    /// Used fraction (`usagePercent / 100`) of the matching Grok Bot row.
+    pub bot_pct: Option<f64>,
+}
+
+fn weekly_snapshot(alias: String, pct: f64, resets_at: i64, observed_ms: i64) -> quota::Snapshot {
+    quota::Snapshot {
+        alias,
+        org: None,
+        email: None,
+        root: None,
+        written_at_ms: observed_ms,
+        five_hour: None,
+        seven_day: Some(quota::Window {
+            pct,
+            resets_at,
+            seen: Some(quota::Seen {
+                at_ms: observed_ms,
+                session: String::new(),
+            }),
+        }),
+    }
+}
+
+/// `name` lowercased with every non-alphanumeric character removed.
+fn product_key(name: &str) -> String {
+    name.to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect()
+}
+
+/// The first Grok Bot `usagePercent` that is a finite number in 0..=150, as a used fraction.
+/// A matching name with a missing, non-numeric or out-of-range percent is ignored, and so is
+/// every other product. No such row is `None`; the grok snapshot still stands.
+fn bot_fraction(config: &Value) -> Option<f64> {
+    let items = config.get("productUsage").and_then(Value::as_array)?;
+    items.iter().find_map(|item| {
+        let name = item.get("product").and_then(Value::as_str)?;
+        if product_key(name) != "grokbot" {
+            return None;
+        }
+        let raw = item.get("usagePercent").and_then(Value::as_f64)?;
+        (raw.is_finite() && (0.0..=150.0).contains(&raw)).then_some(raw / 100.0)
+    })
+}
+
+/// The grok weekly snapshot from a billing body, plus [`Billing::bot_pct`] when Grok Bot is
+/// listed. Nothing when a grok field is missing, the wrong type, the percent is outside
+/// 0..=150, or the reset time is not RFC3339. `grok.seven_day.pct` is `creditUsagePercent / 100`.
+/// A bad Grok Bot percent does not drop the grok snapshot. `five_hour` is always `None`.
+pub fn parse_billing(body: &Value, observed_ms: i64, key_hash: &str) -> Option<Billing> {
     let config = body.get("config")?;
     let raw = config.get("creditUsagePercent")?.as_f64()?;
     if !raw.is_finite() || !(0.0..=150.0).contains(&raw) {
@@ -120,30 +174,27 @@ pub fn parse_billing(body: &Value, observed_ms: i64, key_hash: &str) -> Option<q
     }
     let end = config.get("currentPeriod")?.get("end")?.as_str()?;
     let resets_at = DateTime::parse_from_rfc3339(end).ok()?.timestamp();
-    Some(quota::Snapshot {
-        alias: format!("grok-{key_hash}"),
-        org: None,
-        email: None,
-        root: None,
-        written_at_ms: observed_ms,
-        five_hour: None,
-        seven_day: Some(quota::Window {
-            pct: raw / 100.0,
+    Some(Billing {
+        grok: weekly_snapshot(
+            format!("grok-{key_hash}"),
+            raw / 100.0,
             resets_at,
-            seen: Some(quota::Seen {
-                at_ms: observed_ms,
-                session: String::new(),
-            }),
-        }),
+            observed_ms,
+        ),
+        bot_pct: bot_fraction(config),
     })
 }
 
-/// The cache file: the three numbers a snapshot needs, and nothing else.
+/// The cache file: the numbers a snapshot needs, and nothing else. `bot_pct` is absent on a
+/// cache written before Grok Bot was kept.
 #[derive(Deserialize)]
 struct Cache {
     observed_ms: i64,
     pct: f64,
     resets_at: i64,
+    /// Used fraction of Grok Bot. Missing on an old cache.
+    #[serde(default)]
+    bot_pct: Option<f64>,
 }
 
 fn read_cache(path: &Path) -> Option<Cache> {
@@ -154,29 +205,47 @@ fn snapshot_from_cache(c: &Cache, key_hash: &str) -> Option<quota::Snapshot> {
     if !c.pct.is_finite() || !(0.0..=1.5).contains(&c.pct) {
         return None;
     }
-    Some(quota::Snapshot {
-        alias: format!("grok-{key_hash}"),
-        org: None,
-        email: None,
-        root: None,
-        written_at_ms: c.observed_ms,
-        five_hour: None,
-        seven_day: Some(quota::Window {
-            pct: c.pct,
-            resets_at: c.resets_at,
-            seen: Some(quota::Seen {
-                at_ms: c.observed_ms,
-                session: String::new(),
-            }),
-        }),
-    })
+    Some(weekly_snapshot(
+        format!("grok-{key_hash}"),
+        c.pct,
+        c.resets_at,
+        c.observed_ms,
+    ))
 }
 
-/// The host's grok snapshot at `now_ms`. A cache at `cache_dir`/`grok-usage.json` younger than
-/// [`CACHE_MS`] is used and `fetch` is not called. Otherwise `fetch` runs: a [`Fetch::Body`]
-/// that parses is written back (those three fields only) and returned; [`Fetch::Denied`],
-/// [`Fetch::Failed`], and an unparsable body fall back to a cache younger than
-/// [`quota::MAX_AGE_MS`], else nothing. The key is the `path_hash8` of `home`.
+/// `grok`, then `grokbot-<hash>` when `bot_pct` is a finite used fraction in 0..=1.5.
+fn with_bot(grok: quota::Snapshot, bot_pct: Option<f64>, key_hash: &str) -> Vec<quota::Snapshot> {
+    let mut out = vec![grok];
+    let Some(pct) = bot_pct.filter(|p| p.is_finite() && (0.0..=1.5).contains(p)) else {
+        return out;
+    };
+    // Every grok snapshot this module builds carries the weekly window.
+    let (resets_at, observed_ms) = {
+        let w = out[0].seven_day.as_ref().unwrap();
+        (w.resets_at, out[0].written_at_ms)
+    };
+    out.push(weekly_snapshot(
+        format!("grokbot-{key_hash}"),
+        pct,
+        resets_at,
+        observed_ms,
+    ));
+    out
+}
+
+fn snapshots_from_cache(c: &Cache, key_hash: &str) -> Vec<quota::Snapshot> {
+    snapshot_from_cache(c, key_hash)
+        .map(|grok| with_bot(grok, c.bot_pct, key_hash))
+        .unwrap_or_default()
+}
+
+/// The host's grok snapshot at `now_ms`, plus a `grokbot-<hash>` snapshot when the billing
+/// lists Grok Bot or the cache holds `bot_pct`. A cache at `cache_dir`/`grok-usage.json`
+/// younger than [`CACHE_MS`] is used and `fetch` is not called. Otherwise `fetch` runs: a
+/// [`Fetch::Body`] that parses is written back (`observed_ms`, `pct`, `resets_at`, and
+/// `bot_pct` only when Grok Bot was kept) and returned; [`Fetch::Denied`], [`Fetch::Failed`],
+/// and an unparsable body fall back to a cache younger than [`quota::MAX_AGE_MS`], else
+/// nothing. The key is the `path_hash8` of `home`.
 pub fn snapshots(
     cache_dir: &Path,
     home: &Path,
@@ -188,32 +257,31 @@ pub fn snapshots(
     let within =
         |at_ms: i64, limit: i64| (0..limit).contains(&now_ms.checked_sub(at_ms).unwrap_or(limit));
     if let Some(c) = cache.as_ref().filter(|c| within(c.observed_ms, CACHE_MS)) {
-        return snapshot_from_cache(c, &key_hash).into_iter().collect();
+        return snapshots_from_cache(c, &key_hash);
     }
     let fallback = || {
         cache
             .as_ref()
             .filter(|c| within(c.observed_ms, quota::MAX_AGE_MS))
-            .and_then(|c| snapshot_from_cache(c, &key_hash))
-            .into_iter()
-            .collect()
+            .map(|c| snapshots_from_cache(c, &key_hash))
+            .unwrap_or_default()
     };
     match fetch() {
         Fetch::Body(body) => {
-            let Some(snap) = parse_billing(&body, now_ms, &key_hash) else {
+            let Some(parsed) = parse_billing(&body, now_ms, &key_hash) else {
                 return fallback();
             };
             // `parse_billing`'s Some always carries the weekly window.
             let (pct, resets_at) = {
-                let w = snap.seven_day.as_ref().unwrap();
+                let w = parsed.grok.seven_day.as_ref().unwrap();
                 (w.pct, w.resets_at)
             };
-            let _ = crate::live::write_live_json(
-                cache_dir,
-                CACHE_FILE,
-                &json!({ "observed_ms": now_ms, "pct": pct, "resets_at": resets_at }),
-            );
-            vec![snap]
+            let mut cached = json!({ "observed_ms": now_ms, "pct": pct, "resets_at": resets_at });
+            if let Some(bot) = parsed.bot_pct {
+                cached["bot_pct"] = json!(bot);
+            }
+            let _ = crate::live::write_live_json(cache_dir, CACHE_FILE, &cached);
+            with_bot(parsed.grok, parsed.bot_pct, &key_hash)
         }
         Fetch::Denied | Fetch::Failed => fallback(),
     }
@@ -451,7 +519,9 @@ mod tests {
     #[test]
     fn the_billing_body_is_a_weekly_snapshot() {
         assert_eq!(ts("2026-11-12T03:42:18Z"), RESETS_AT);
-        let s = parse_billing(&sample(), NOW_MS, KEY_HASH).unwrap();
+        let parsed = parse_billing(&sample(), NOW_MS, KEY_HASH).unwrap();
+        assert!(parsed.bot_pct.is_none(), "GrokBuild alone is not Grok Bot");
+        let s = parsed.grok;
         assert_eq!(s.alias, format!("grok-{KEY_HASH}"));
         assert_eq!(
             (s.org.as_ref(), s.email.as_ref(), s.root.as_ref()),
@@ -471,13 +541,13 @@ mod tests {
         );
         // the bounds, still a number (an integer JSON number is a number)
         let lo = parse_billing(&billing(json!(0), "2026-11-12T03:42:18Z"), NOW_MS, KEY_HASH);
-        assert_eq!(window(&lo.unwrap()).pct, 0.0);
+        assert_eq!(window(&lo.unwrap().grok).pct, 0.0);
         let hi = parse_billing(
             &billing(json!(150), "2026-11-12T03:42:18Z"),
             NOW_MS,
             KEY_HASH,
         );
-        assert_eq!(window(&hi.unwrap()).pct, 1.5);
+        assert_eq!(window(&hi.unwrap().grok).pct, 1.5);
     }
 
     #[test]
@@ -509,6 +579,220 @@ mod tests {
             .unwrap()
             .remove("end");
         assert!(parse_billing(&no_end, NOW_MS, KEY_HASH).is_none());
+    }
+
+    fn with_products(percent: Value, end: &str, products: Value) -> Value {
+        let mut v = billing(percent, end);
+        v["config"]["productUsage"] = products;
+        v
+    }
+
+    fn hash_of_home() -> String {
+        alias::path_hash8(&home())
+    }
+
+    /// The product string must not be written. `bot_pct` contains neither it nor `product`.
+    fn cache_has_no_product(raw: &[u8], product: &str) {
+        assert!(
+            !raw.windows(b"product".len()).any(|w| w == b"product"),
+            "cache kept a product field"
+        );
+        assert!(
+            !raw.windows(product.len()).any(|w| w == product.as_bytes()),
+            "cache kept the product name"
+        );
+        assert!(
+            !raw.windows(b"grokbot".len()).any(|w| w == b"grokbot"),
+            "cache kept the grokbot alias"
+        );
+    }
+
+    #[test]
+    fn a_listed_grok_bot_row_is_a_second_snapshot_with_the_same_reset() {
+        let end = "2026-11-12T03:42:18.768071+00:00";
+        for name in ["GrokBot", "Grok Bot", "grok-bot"] {
+            let body = with_products(
+                json!(34.0),
+                end,
+                json!([
+                    {"product": "GrokBuild", "usagePercent": 34.0},
+                    {"product": name, "usagePercent": 12.5}
+                ]),
+            );
+            let parsed = parse_billing(&body, NOW_MS, KEY_HASH).unwrap();
+            assert_eq!(parsed.bot_pct, Some(0.125), "{name}");
+            let snaps = with_bot(parsed.grok, parsed.bot_pct, KEY_HASH);
+            assert_eq!(snaps[0].alias, format!("grok-{KEY_HASH}"), "{name}");
+            assert_eq!(window(&snaps[0]).pct, 0.34, "{name}");
+            assert_eq!(snaps[1].alias, format!("grokbot-{KEY_HASH}"), "{name}");
+            assert_eq!(window(&snaps[1]).pct, 0.125, "{name}");
+            assert_eq!(window(&snaps[1]).resets_at, RESETS_AT, "{name}");
+            assert_eq!(window(&snaps[0]).resets_at, window(&snaps[1]).resets_at);
+            assert!(snaps[1].five_hour.is_none(), "{name}");
+
+            let dir = tempfile::tempdir().unwrap();
+            let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(body));
+            assert_eq!(got.len(), 2, "{name}");
+            assert_eq!(got[0].alias, format!("grok-{}", hash_of_home()), "{name}");
+            assert_eq!(window(&got[0]).pct, 0.34, "{name}");
+            assert_eq!(
+                got[1].alias,
+                format!("grokbot-{}", hash_of_home()),
+                "{name}"
+            );
+            assert_eq!(window(&got[1]).pct, 0.125, "{name}");
+            assert_eq!(
+                window(&got[1]).resets_at,
+                window(&got[0]).resets_at,
+                "{name}"
+            );
+            let raw = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
+            let v: Value = serde_json::from_slice(&raw).unwrap();
+            let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
+            keys.sort();
+            assert_eq!(
+                keys,
+                ["bot_pct", "observed_ms", "pct", "resets_at"],
+                "{name}"
+            );
+            assert_eq!(v["bot_pct"].as_f64(), Some(0.125), "{name}");
+            cache_has_no_product(&raw, name);
+            let again = snapshots(dir.path(), &home(), NOW_MS + 60_000, || -> Fetch {
+                panic!("fetch must not be called on a fresh cache")
+            });
+            assert_eq!(again.len(), 2, "{name}");
+            assert_eq!(again[1].written_at_ms, NOW_MS, "{name}");
+            assert_eq!(window(&again[1]).pct, 0.125, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_bad_or_absent_grok_bot_row_leaves_the_grok_snapshot_alone() {
+        let end = "2026-11-12T03:42:18Z";
+        let alone = |body: Value| {
+            let parsed = parse_billing(&body, NOW_MS, KEY_HASH).unwrap();
+            assert!(parsed.bot_pct.is_none());
+            assert_eq!(parsed.grok.alias, format!("grok-{KEY_HASH}"));
+            assert_eq!(window(&parsed.grok).pct, 0.34);
+            assert_eq!(window(&parsed.grok).resets_at, RESETS_AT);
+            let dir = tempfile::tempdir().unwrap();
+            let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(body));
+            assert_eq!(got.len(), 1);
+            assert_eq!(got[0].alias, format!("grok-{}", hash_of_home()));
+            assert_eq!(window(&got[0]).pct, 0.34);
+            assert_eq!(window(&got[0]).resets_at, RESETS_AT);
+            let v: Value =
+                serde_json::from_slice(&std::fs::read(dir.path().join(CACHE_FILE)).unwrap())
+                    .unwrap();
+            assert!(v.get("bot_pct").is_none());
+        };
+        // GrokBuild only.
+        alone(billing(json!(34.0), end));
+        alone(with_products(
+            json!(34.0),
+            end,
+            json!([{"product": "GrokBot", "usagePercent": 151}]),
+        ));
+        alone(with_products(
+            json!(34.0),
+            end,
+            json!([{"product": "GrokBot", "usagePercent": "x"}]),
+        ));
+        alone(with_products(
+            json!(34.0),
+            end,
+            json!([{"product": "Grok Bot"}]),
+        ));
+        // The bounds are still a Grok Bot row (an integer JSON number is a number).
+        for (raw, pct) in [(json!(0), 0.0), (json!(150), 1.5)] {
+            let body = with_products(
+                json!(34.0),
+                end,
+                json!([{"product": "grok-bot", "usagePercent": raw}]),
+            );
+            let parsed = parse_billing(&body, NOW_MS, KEY_HASH).unwrap();
+            assert_eq!(parsed.bot_pct, Some(pct));
+            assert_eq!(window(&parsed.grok).pct, 0.34);
+        }
+    }
+
+    #[test]
+    fn cache_round_trip_keeps_bot_pct_and_an_old_cache_stays_grok_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let hash = hash_of_home();
+        let observed = NOW_MS - 60_000;
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({ "observed_ms": observed, "pct": 0.34, "resets_at": RESETS_AT }),
+        )
+        .unwrap();
+        let old = snapshots(dir.path(), &home(), NOW_MS, || -> Fetch {
+            panic!("fetch must not be called on a fresh cache")
+        });
+        assert_eq!(old.len(), 1);
+        assert_eq!(old[0].alias, format!("grok-{hash}"));
+        assert_eq!(window(&old[0]).pct, 0.34);
+        assert_eq!(old[0].written_at_ms, observed);
+
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({
+                "observed_ms": observed,
+                "pct": 0.34,
+                "resets_at": RESETS_AT,
+                "bot_pct": 0.125
+            }),
+        )
+        .unwrap();
+        let both = snapshots(dir.path(), &home(), NOW_MS, || -> Fetch {
+            panic!("fetch must not be called on a fresh cache")
+        });
+        assert_eq!(both.len(), 2);
+        assert_eq!(both[0].alias, format!("grok-{hash}"));
+        assert_eq!(both[1].alias, format!("grokbot-{hash}"));
+        assert_eq!(window(&both[1]).pct, 0.125);
+        assert_eq!(window(&both[1]).resets_at, RESETS_AT);
+        assert_eq!(both[1].written_at_ms, observed);
+
+        // A bot_pct outside 0..=1.5 is not a second snapshot. The grok row still stands.
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({
+                "observed_ms": observed,
+                "pct": 0.34,
+                "resets_at": RESETS_AT,
+                "bot_pct": 1.51
+            }),
+        )
+        .unwrap();
+        let dropped = snapshots(dir.path(), &home(), NOW_MS, || -> Fetch {
+            panic!("fetch must not be called on a fresh cache")
+        });
+        assert_eq!(dropped.len(), 1);
+        assert_eq!(dropped[0].alias, format!("grok-{hash}"));
+
+        // Denied against a stale cache that still has bot_pct returns both, and does not rewrite.
+        let stale_observed = NOW_MS - 11 * 60_000;
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({
+                "observed_ms": stale_observed,
+                "pct": 0.34,
+                "resets_at": RESETS_AT,
+                "bot_pct": 0.125
+            }),
+        )
+        .unwrap();
+        let before = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
+        let stale = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied);
+        assert_eq!(stale.len(), 2);
+        assert_eq!(stale[0].written_at_ms, stale_observed);
+        assert_eq!(window(&stale[1]).pct, 0.125);
+        assert_eq!(std::fs::read(dir.path().join(CACHE_FILE)).unwrap(), before);
     }
 
     #[test]
@@ -776,6 +1060,75 @@ mod tests {
         no_sentinel(&outputs_of(&snaps, aged));
         // the old cache is left in place and still has no sentinel
         no_sentinel(&std::fs::read(dir.path().join(CACHE_FILE)).unwrap());
+    }
+
+    #[test]
+    fn the_sentinel_never_appears_on_the_grok_bot_path() {
+        // The product name and any extra field stay out of the cache, the snapshots and the
+        // summary. A usagePercent that is the sentinel is not a number.
+        let dir = tempfile::tempdir().unwrap();
+        let mut body = sample();
+        body["config"]["productUsage"] = json!([
+            {"product": "GrokBuild", "usagePercent": 34.0, "note": SENTINEL},
+            {"product": "Grok Bot", "usagePercent": 12.5, "label": SENTINEL}
+        ]);
+        body["echo"] = json!(SENTINEL);
+        let snaps = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(body));
+        assert_eq!(snaps.len(), 2);
+        assert_eq!(
+            snaps[1].alias,
+            format!("grokbot-{}", alias::path_hash8(&home()))
+        );
+        assert_eq!(window(&snaps[1]).pct, 0.125);
+        let summary = crate::usage::summary::build(
+            &[],
+            &snaps,
+            "host-aaaaaaaa",
+            NOW_MS,
+            &crate::usage::names::Names::default(),
+        );
+        crate::usage::summary::validate(&summary).unwrap();
+        assert_eq!(summary["accounts"][0]["name"], "grok-cli");
+        assert_eq!(summary["accounts"][1]["name"], "trinity");
+        no_sentinel(&outputs_of(&snaps, NOW_MS));
+        let cache = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
+        no_sentinel(&cache);
+        cache_has_no_product(&cache, "Grok Bot");
+
+        let again = snapshots(dir.path(), &home(), NOW_MS + 1_000, || -> Fetch {
+            panic!("fetch must not be called on a fresh cache")
+        });
+        assert_eq!(again.len(), 2);
+        no_sentinel(&outputs_of(&again, NOW_MS + 1_000));
+
+        let stale_at = NOW_MS + CACHE_MS + 1;
+        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied);
+        assert_eq!(snaps.len(), 2);
+        assert_eq!(snaps[0].written_at_ms, NOW_MS);
+        assert_eq!(window(&snaps[1]).pct, 0.125);
+        no_sentinel(&outputs_of(&snaps, stale_at));
+        no_sentinel(&std::fs::read(dir.path().join(CACHE_FILE)).unwrap());
+
+        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Failed);
+        assert_eq!(snaps.len(), 2);
+        no_sentinel(&outputs_of(&snaps, stale_at));
+
+        // The sentinel as a bot percent is not a number: grok only, and it is not written.
+        let dir = tempfile::tempdir().unwrap();
+        let mut body = sample();
+        body["config"]["productUsage"] = json!([
+            {"product": "GrokBuild", "usagePercent": 34.0},
+            {"product": "GrokBot", "usagePercent": SENTINEL}
+        ]);
+        body["config"]["productUsage"][1]["note"] = json!(SENTINEL);
+        let snaps = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(body));
+        assert_eq!(snaps.len(), 1);
+        assert_eq!(window(&snaps[0]).pct, 0.34);
+        no_sentinel(&outputs_of(&snaps, NOW_MS));
+        let cache = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
+        no_sentinel(&cache);
+        let v: Value = serde_json::from_slice(&cache).unwrap();
+        assert!(v.get("bot_pct").is_none());
     }
 
     #[cfg(unix)]
