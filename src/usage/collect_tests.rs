@@ -154,10 +154,13 @@ fn export_cli_child() {
 /// RAM-backed, so on a machine with `/dev/shm` the dir lives there; anywhere else the resolver
 /// falls back to `<HOME>/.autopilot` (the child's HOME is the test temp dir).
 fn child_live_dir(e: &Env) -> PathBuf {
+    child_live_labeled(e, &format!(".codeforge-export-test-{}", std::process::id()))
+}
+
+fn child_live_labeled(e: &Env, label: &str) -> PathBuf {
     #[cfg(unix)]
     {
-        let d =
-            Path::new("/dev/shm").join(format!(".codeforge-export-test-{}", std::process::id()));
+        let d = Path::new("/dev/shm").join(label);
         if std::fs::create_dir_all(&d).is_ok() {
             return d;
         }
@@ -168,7 +171,14 @@ fn child_live_dir(e: &Env) -> PathBuf {
 /// `usage export` in an isolated child: exit status, the bytes the CLI wrote to stdout
 /// (between its markers), and the child's stderr.
 fn export_cli(e: &Env, live: &Path) -> (std::process::ExitStatus, String, String) {
-    let args = vec!["codeforge", "usage", "export"];
+    export_cli_args(e, live, &["codeforge", "usage", "export"])
+}
+
+fn export_cli_args(
+    e: &Env,
+    live: &Path,
+    args: &[&str],
+) -> (std::process::ExitStatus, String, String) {
     let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
     cmd.args([
         "--exact",
@@ -250,6 +260,68 @@ fn usage_export_prints_the_validated_email_free_summary() {
         serde_json::from_slice(&std::fs::read(live.join("codeforge/usage/summary.json")).unwrap())
             .unwrap();
     assert_eq!(local["accounts"][0]["email"], json!("me@example.com"));
+    let _ = std::fs::remove_dir_all(&live);
+}
+
+#[test]
+fn usage_export_hourly_prints_the_hourly_document_and_plain_export_stays_the_summary() {
+    use crate::usage::quota::Window;
+    let e = env();
+    let live = child_live_labeled(
+        &e,
+        &format!(".codeforge-hourly-test-{}", std::process::id()),
+    );
+    let quota = live.join("codeforge/usage/quota");
+    std::fs::create_dir_all(&quota).unwrap();
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let snap = Snapshot {
+        alias: "acct-1a2b3c4d".into(),
+        org: None,
+        email: Some("me@example.com".into()),
+        root: None,
+        written_at_ms: now_ms,
+        five_hour: Some(Window {
+            pct: 0.3,
+            resets_at: now_ms / 1000 + 3600,
+            seen: None,
+        }),
+        seven_day: Some(Window {
+            pct: 0.5,
+            resets_at: now_ms / 1000 + 5 * 86_400,
+            seen: None,
+        }),
+    };
+    std::fs::write(quota.join("acct-1a2b3c4d.json"), snap.to_json().to_string()).unwrap();
+    // the project is the last path component; it must not appear in the hourly document
+    write(
+        &e._tmp.path().join(".claude/projects/p/s.jsonl"),
+        &claude(
+            "req_hourly",
+            10,
+            2,
+            json!({
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "cwd": "/srv/work/user@example.com",
+            }),
+        ),
+    );
+    let (status, stdout, stderr) =
+        export_cli_args(&e, &live, &["codeforge", "usage", "export", "--hourly"]);
+    assert!(status.success(), "{stderr}");
+    assert!(stdout.ends_with('\n'), "{stdout:?}");
+    assert!(!stdout.contains('@'), "{stdout}");
+    let v: Value = serde_json::from_str(stdout.trim_end()).expect("stdout is one JSON document");
+    assert_eq!(v["schema"], "codeforge.usage-hourly/1");
+    let rows = v["rows"].as_array().unwrap();
+    assert!(
+        rows.iter()
+            .any(|r| r["account"].is_null() && r["input"] == 10 && r["output"] == 2),
+        "{rows:?}"
+    );
+    let (status, stdout, stderr) = export_cli_args(&e, &live, &["codeforge", "usage", "export"]);
+    assert!(status.success(), "{stderr}");
+    let v: Value = serde_json::from_str(stdout.trim_end()).expect("stdout is one JSON document");
+    assert_eq!(v["schema"], "codeforge.usage-summary/1");
     let _ = std::fs::remove_dir_all(&live);
 }
 
