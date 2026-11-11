@@ -232,7 +232,7 @@ fn codex_only_alias_and_every_provider_are_no_source_with_a_reason() {
             )
         })
         .collect();
-    assert_eq!(notes["kimi"], "web_only");
+    assert_eq!(notes["qoder"], "web_only");
     assert_eq!(notes["glm"], "needs_token");
     assert_eq!(notes["minimax"], "needs_token");
     assert_eq!(notes["cx"], "no_window");
@@ -368,6 +368,31 @@ fn a_grok_account_is_a_weekly_row_named_grok_cli_and_not_a_placeholder() {
     assert!(txt.contains("grok-cli"), "{txt}");
 }
 
+#[test]
+fn a_kimi_account_is_named_kimi_code_with_both_windows_and_not_a_placeholder() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![acct(
+            "kimi-1a2b3c4d",
+            60,
+            Some((0.42, NOW_S + 2 * H)),
+            Some((1.0, NOW_S + 3 * D)),
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let r = row(&f, "kimi-1a2b3c4d");
+    assert_eq!(r.provider, "kimi");
+    assert_eq!(r.name, "kimi-code");
+    assert_eq!(r.state, State::Ok);
+    assert_eq!(r.five_hour.unwrap().pct, 0.42);
+    assert_eq!(r.weekly.as_ref().unwrap().win.pct, 1.0);
+    assert_eq!(r.source_note, None);
+    assert!(f.rows.iter().all(|r| r.alias != "kimi"), "no placeholder");
+    let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(txt.contains("kimi-code"), "{txt}");
+}
+
 fn notes(v: &[(&str, &str)]) -> super::names::Notes {
     super::names::Notes(
         v.iter()
@@ -391,14 +416,14 @@ fn notes_attach_by_account_key_first_then_provider_and_show_dim_at_the_row_end()
     attach_notes(
         &mut f,
         &notes(&[
-            ("kimi", "週配額用完"),
+            ("qoder", "週配額用完"),
             ("codex", "team plan"),
             ("codex-1a2b3c4d", "mine"),
         ]),
     );
     assert_eq!(row(&f, "codex-1a2b3c4d").note.as_deref(), Some("mine"));
     assert_eq!(row(&f, "codex-99999999").note.as_deref(), Some("team plan"));
-    assert_eq!(row(&f, "kimi").note.as_deref(), Some("週配額用完"));
+    assert_eq!(row(&f, "qoder").note.as_deref(), Some("週配額用完"));
     assert_eq!(row(&f, "work").note, None);
     let v = to_json(&f, NOW_MS);
     let by = |alias: &str| {
@@ -410,7 +435,7 @@ fn notes_attach_by_account_key_first_then_provider_and_show_dim_at_the_row_end()
             .unwrap()
             .clone()
     };
-    assert_eq!(by("kimi")["note"], "週配額用完");
+    assert_eq!(by("qoder")["note"], "週配額用完");
     assert!(by("work").get("note").is_none());
     let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
     assert!(txt.contains("無來源 · 只有網頁  週配額用完"), "{txt}");
@@ -504,7 +529,7 @@ fn a_long_cjk_note_is_cut_to_the_width_and_the_numbers_stay() {
     );
     let mut f = run(&[("a.json", &s)]);
     let long = "週".repeat(20);
-    attach_notes(&mut f, &notes(&[("work", &long), ("kimi", &long)]));
+    attach_notes(&mut f, &notes(&[("work", &long), ("qoder", &long)]));
     for cols in [100, 80, 60, 40, 20] {
         for tr in ["zh-TW", "en"] {
             let txt = text(&f, cols, NOW_MS, &Tr(tr.into()), false);
@@ -1223,19 +1248,19 @@ fn a_reset_rule_adds_the_next_occurrence_to_json_text_and_never_replaces_a_real_
     let mut f = run(&[("a.json", &s)]);
     attach_notes(
         &mut f,
-        &notes(&[("kimi", "本週已用完"), ("twgame", "週四重置")]),
+        &notes(&[("qoder", "本週已用完"), ("twgame", "週四重置")]),
     );
     attach_resets(
         &mut f,
         &resets(&[
-            ("kimi", "fri@17:00+08:00"),
+            ("qoder", "fri@17:00+08:00"),
             ("twgame", "thu@00:00+08:00"),
             ("work", "mon@01:00+00:00"),
             ("claude", "sun@01:00+00:00"),
         ]),
         NOW_MS,
     );
-    let k = row(&f, "kimi");
+    let k = row(&f, "qoder");
     assert_eq!(k.note_resets_at, Some(FRI_0900_UTC));
     assert_eq!(k.note_reset_rule.as_deref(), Some("fri@17:00+08:00"));
     assert_eq!(row(&f, "twgame").note_resets_at, Some(WED_1600_UTC));
@@ -1253,8 +1278,8 @@ fn a_reset_rule_adds_the_next_occurrence_to_json_text_and_never_replaces_a_real_
             .unwrap()
             .clone()
     };
-    assert_eq!(acc("kimi")["note_resets_at"], FRI_0900_UTC);
-    assert_eq!(acc("kimi")["note_reset_rule"], "fri@17:00+08:00");
+    assert_eq!(acc("qoder")["note_resets_at"], FRI_0900_UTC);
+    assert_eq!(acc("qoder")["note_reset_rule"], "fri@17:00+08:00");
     assert_eq!(acc("work")["weekly"]["resets_at"], NOW_S + 3 * D);
     // no rule, no keys
     attach_resets(&mut f, &resets(&[]), NOW_MS);
@@ -1269,12 +1294,12 @@ fn the_text_table_shows_a_dim_countdown_after_the_note_and_cuts_the_note_not_the
     let mut f = run(&[("a.json", &s)]);
     attach_notes(
         &mut f,
-        &notes(&[("kimi", "本週已用完"), ("glm", &"週".repeat(20))]),
+        &notes(&[("cursor", "本週已用完"), ("glm", &"週".repeat(20))]),
     );
     attach_resets(
         &mut f,
         &resets(&[
-            ("kimi", "fri@17:00+08:00"),
+            ("cursor", "fri@17:00+08:00"),
             ("glm", "fri@17:00+08:00"),
             ("qoder", "thu@00:00+08:00"),
         ]),
@@ -1325,7 +1350,7 @@ fn a_row_carries_plan_in_json_only_when_set_and_the_text_says_unknown_otherwise(
         vec![],
     );
     let mut f = run(&[("a.json", &s)]);
-    attach_plans(&mut f, &plans(&[("work", "max5x"), ("kimi", "api")]));
+    attach_plans(&mut f, &plans(&[("work", "max5x"), ("qoder", "api")]));
     assert_eq!(row(&f, "work").plan, Some("max5x"));
     assert_eq!(row(&f, "other").plan, None);
     let v = to_json(&f, NOW_MS);
@@ -1341,7 +1366,7 @@ fn a_row_carries_plan_in_json_only_when_set_and_the_text_says_unknown_otherwise(
     assert_eq!(by("work")["plan"], "max5x");
     assert!(by("other").get("plan").is_none());
     assert_eq!(
-        by("kimi")["plan"],
+        by("qoder")["plan"],
         "api",
         "a provider key applies to its rows"
     );

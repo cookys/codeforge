@@ -385,6 +385,37 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
 - **關斷**：環境變數 `CODEFORGE_USAGE_GROK=0` 時什麼都不讀（包括快取，不輸出 grok 列）、不打端點。
 - **鍵**：`hash8` 是這台 `$HOME`（canonicalized）的 `alias::path_hash8`。
 
+## kimi 配額（本機 `kimi` Code CLI 的 5 小時與週配額）
+
+`codeforge usage collect` 同時收這台主機的 `kimi`（Kimi Code CLI）帳號的 5 小時與週配額，寫進
+`summary.json`，再進 `usage fleet`（`codeforge.fleet-quota/1`）：一個帳號，鍵是 `kimi-<hash8>`。
+還沒設顯示名時，畫面顯示 `kimi-code`。月配額與 booster 錢包不收集（fleet-quota/1 沒有月視窗）。
+實作 `src/usage/kimi.rs`。不需要 `kimi` 執行檔在 PATH 上。
+
+- **端點**：`GET <base>/usages`。`base` 是環境變數 `KIMI_CODE_BASE_URL`，但只在它以 `https://` 開頭且
+  含主機時採用（`http://`、其他 scheme、以及只有 `https://` 都忽略，尾端的 `/` 會去掉），否則
+  `https://api.kimi.com/coding/v1`。標頭 `Authorization: Bearer <access_token>`、
+  `Accept: application/json`。逾時 8 秒。不走代理、不跟隨重新導向（權杖只送到這個端點）。
+- **憑證（操作員卡 d-a080c798）**：只在這台主機、這個帳號、發出請求的當下讀
+  `<kimi_home>/credentials/kimi-code.json`。`kimi_home` 是環境變數 `KIMI_CODE_HOME`（有設且非空），
+  否則 `<home>/.kimi-code`。檔案不以 symlink 開啟。權杖只放在記憶體裡的區域變數，隨請求送出；
+  不複製到任何檔案，不寫進日誌、stderr、錯誤訊息、快取、summary 或測試快照；除了這個 usages
+  端點，不送到別的地方。檔案是 JSON 物件，只用 `"access_token"`（字串，Bearer）與 `"expires_at"`
+  （數字，unix 秒）。其餘欄位（`refresh_token`、`scope` 等）不讀。`access_token` 是空字串（kimi
+  用來標記已撤銷）、`expires_at` ≤ now、或 HTTP 401／403：停止，不重新整理、不換發權杖（kimi
+  自己換發，不能跟它搶）、不打端點，本次沒有新資料，改用下面的快取（快取自己逾齡後變成過期）。
+- **換算**：`usages.limit_5h` → `five_hour`，`usages.limit_7d` → `seven_day`。`used_ratio` 是數字
+  或數字字串，已經是已用比例（0.42 = 42%），接受 0.0..=1.5，否則丟掉那個視窗。`reset_time` 是
+  RFC3339，換成 unix 秒寫進 `resets_at`；缺了或解析不出就丟掉那個視窗。`limit_month_total`、
+  `limit_month_code`、`boosterWallet` 忽略。回應不可信：沒有 `usages` 物件，或兩個視窗都無效，
+  就沒有快照。
+- **快取**：`<live_base>/codeforge/usage/kimi-usage.json` 只存 `observed_ms`，以及每個看得到的視窗
+  的 `pct`／`resets_at`（0600、原子寫入，同其他 usage 快取）。未滿 10 分鐘就用快取、不打端點。
+  否則打端點：解析成功就覆寫快取並回傳；Denied、失敗或解析失敗時，若快取未超過 6 小時
+  （`quota::MAX_AGE_MS`）就用快取，否則這次不收集。
+- **關斷**：環境變數 `CODEFORGE_USAGE_KIMI=0` 時什麼都不讀（包括憑證檔與快取）、不打端點。
+- **鍵**：`hash8` 是這台 `$HOME`（canonicalized）的 `alias::path_hash8`。
+
 ## 全帳號配額表（`usage fleet`）
 
 `codeforge usage fleet --dir <D>`：把許多主機的 `codeforge.usage-summary/1` 合併成一張全帳號配額表，
@@ -405,11 +436,12 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
   `week reset`（不顯示舊的 pct），不估算、不警示（`projected`、`warn`、`exhaust_at` 皆 `null`）。
   帳號的 provider 由鍵的形式推得（`codex-<8 碼 hex>` → `codex`，`agy-<8 碼 hex>`／`agyclaude-<8 碼 hex>` →
   `agy`／`agyclaude`（見「agy 配額」），`grok-<8 碼 hex>` → `grok`（見「grok 配額」，只有週視窗；預設顯示名
-  `grok-cli`），其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
+  `grok-cli`），`kimi-<8 碼 hex>` → `kimi`（見「kimi 配額」，5 小時與週視窗；預設顯示名 `kimi-code`），
+  其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
   只出現在 `days`（source codex）的別名是「無來源」列。provider 列（`PROVIDERS`，小寫標籤）在沒有任何該 provider 的列時補一列
-  「無來源」，並帶原因 `source_note`：kimi、qoder、qodercn、cursor、opencode → `web_only`（只有網頁）；
+  「無來源」，並帶原因 `source_note`：qoder、qodercn、cursor、opencode → `web_only`（只有網頁）；
   glm、minimax → `needs_token`（要 token，待 autopilot 鏡像）；codex → `no_window`（帳號沒有窗口資料，有窗口時就不是無來源）。
-  agy 與 grok 有本機來源，不在 `PROVIDERS` 裡：沒有資料就沒有那一列，不會補一列「只有網頁」。
+  agy、grok 與 kimi 有本機來源，不在 `PROVIDERS` 裡：沒有資料就沒有那一列，不會補一列「只有網頁」。
   文字表與分頁在「無來源」後淡色接「 · 原因」（i18n：`quota.fleet_src_*`、forge-stats `fleetSrc*`）。
 - **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗
   畫成「已重置」而不是 pct（兩個都過就是「已重置，等新觀察」，`state` 為 `stale`）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
