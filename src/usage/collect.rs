@@ -963,7 +963,7 @@ pub fn collect_with_logins(
         }
         let account = root_alias(conn, root, snapshots, now_ms)?;
         // a timeline error must not skip the root: those requests keep `account`
-        let timeline = usage_dir.and_then(|dir| login_timeline(dir, root, &account, now_ms));
+        let timeline = usage_dir.and_then(|dir| login_timeline(dir, root, now_ms));
         for path in sources(root) {
             match collect_file(conn, &path, root, &account, timeline.as_ref(), now_ms) {
                 Ok(true) => rep.files += 1,
@@ -980,13 +980,18 @@ pub fn collect_with_logins(
     Ok(rep)
 }
 
-/// The login timeline for a Claude root whose alias resolved. Observes the current login
-/// (appending only when it changed) and returns the timeline; any error is dropped.
-fn login_timeline(dir: &Path, root: &Root, account: &str, now_ms: i64) -> Option<logins::Timeline> {
-    if root.kind != Kind::Claude || !alias::valid_alias(account) {
+/// The login timeline of a Claude root. Observes the root's CURRENT login (`root.account`,
+/// appending only when it changed), never `root_alias`: that prefers a fresh snapshot, which
+/// right after a re-login is still the previous account's (review g1 s0). Without a usable
+/// login now, the stored timeline is read as is. Any error is dropped.
+fn login_timeline(dir: &Path, root: &Root, now_ms: i64) -> Option<logins::Timeline> {
+    if root.kind != Kind::Claude {
         return None;
     }
-    logins::observe(dir, &root.hash, account, now_ms).ok()
+    match root.account.as_deref().filter(|a| alias::valid_alias(a)) {
+        Some(login) => logins::observe(dir, &root.hash, login, now_ms).ok(),
+        None => logins::read(dir, &root.hash).ok(),
+    }
 }
 
 /// One bucket row.

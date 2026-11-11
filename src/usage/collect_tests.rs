@@ -1764,3 +1764,67 @@ fn requests_follow_the_login_timeline_across_a_relogin() {
         ]
     );
 }
+
+/// Review g1 s0: right after a re-login A -> B, A's snapshot naming the root is still fresh and
+/// wins `root_alias`. collect must observe the login (B), not that alias: no A entry is
+/// appended after B, and a request made after the switch stays B's. Logged out: the stored
+/// timeline is still applied.
+#[test]
+fn collect_observes_the_login_not_a_fresh_snapshot_of_the_previous_account() {
+    let hour = 3_600_000;
+    let t1 = NOW - 2 * hour;
+    let lines = claude("req_after", 20, 1, json!({"timestamp": iso(t1 + hour)}));
+    let e = env();
+    write(&e.cfg.join("projects/p/s.jsonl"), &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-bbbbbbbb".into());
+    let hash = rs[0].hash.clone();
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    crate::usage::logins::observe(&usage, &hash, "acct-bbbbbbbb", t1).unwrap();
+    let a_snap = Snapshot {
+        alias: "acct-aaaaaaaa".into(),
+        org: None,
+        email: None,
+        root: Some(hash.clone()),
+        written_at_ms: NOW - 60_000,
+        five_hour: None,
+        seven_day: None,
+    };
+    collect_with_logins(
+        &mut conn,
+        &rs,
+        std::slice::from_ref(&a_snap),
+        NOW,
+        Some(&usage),
+    )
+    .unwrap();
+    let t = crate::usage::logins::read(&usage, &hash).unwrap();
+    assert_eq!(t.alias_at(NOW), Some("acct-bbbbbbbb"));
+    assert_eq!(
+        request_accounts(&conn),
+        vec![("req_after".into(), "acct-bbbbbbbb".into())]
+    );
+
+    // logged out now: the stored timeline still attributes, nothing is appended
+    let e = env();
+    write(&e.cfg.join("projects/p/s.jsonl"), &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = None;
+    let hash = rs[0].hash.clone();
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    crate::usage::logins::observe(&usage, &hash, "acct-bbbbbbbb", t1).unwrap();
+    let before = std::fs::read(usage.join(format!("logins-{hash}.json"))).unwrap();
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        std::fs::read(usage.join(format!("logins-{hash}.json"))).unwrap(),
+        before
+    );
+    assert_eq!(
+        request_accounts(&conn),
+        vec![("req_after".into(), "acct-bbbbbbbb".into())]
+    );
+}
