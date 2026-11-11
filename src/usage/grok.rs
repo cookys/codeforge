@@ -238,13 +238,19 @@ pub fn snapshots(
     }
 }
 
+/// [`ENV_DISABLE`] `=0`: the caller skips [`snapshots`] entirely, so not even the cache is
+/// read or reported (review g1).
+pub fn disabled() -> bool {
+    std::env::var(ENV_DISABLE).is_ok_and(|v| v == "0")
+}
+
 /// The live quota. [`ENV_DISABLE`] `=0` returns [`Fetch::Failed`] before PATH is read and
 /// before the login file is opened. Otherwise `grok` must resolve on PATH and `grok --version`
 /// (killed after [`VERSION_TIMEOUT_S`]) must print `grok <version> …`; then
 /// `home/.grok/auth.json` is read. Expired is [`Fetch::Denied`] and the endpoint is not called.
 /// The bearer leaves this process only as the `Authorization` header of [`BILLING_URL`].
 pub fn fetch_live(home: &Path) -> Fetch {
-    if std::env::var(ENV_DISABLE).is_ok_and(|v| v == "0") {
+    if disabled() {
         return Fetch::Failed;
     }
     let Some(path) = std::env::var_os("PATH") else {
@@ -717,6 +723,10 @@ mod tests {
         }
         std::env::set_var(ENV_DISABLE, "0");
         let _guard = ClearEnv(ENV_DISABLE);
+        assert!(
+            disabled(),
+            "the collect step skips grok::snapshots, cache included"
+        );
         // Failed is a unit variant: it has no string to carry the login.
         assert!(matches!(fetch_live(home.path()), Fetch::Failed));
     }
