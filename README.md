@@ -436,9 +436,14 @@ codeforge usage note clear <provider|name>      # clears the note and the rule
 - Collection needs no hook: the statusline starts a background `codeforge usage collect --quiet` at most
   every 15 minutes (`CODEFORGE_USAGE_AUTOCOLLECT=0` turns that off); the SessionEnd hook, when installed,
   also runs it.
-- The collector reads only the numeric usage fields of `~/.claude/projects/**` (and `CLAUDE_CONFIG_DIR`) and
-  Codex `~/.codex/sessions/**` transcripts, incrementally, into `<data_dir>/usage/usage.db` (0600). No
-  prompt, path or email is stored; a project is its directory's last name.
+- The collector reads numeric usage fields from Claude config directories (`~/.claude`, `CLAUDE_CONFIG_DIR`,
+  `[collect] claude_dirs` in accounts.toml, previously scanned directories, and repeatable
+  `codeforge usage collect --claude-dir /absolute/path` flags) and Codex `~/.codex/sessions/**` transcripts
+  (`CODEX_HOME` overrides the Codex root), incrementally, into `<data_dir>/usage/usage.db` (0600).
+  Claude directories are remembered locally by canonical path and scanned once per run; missing or symlinked
+  added directories are skipped (`$CLAUDE_CONFIG_DIR` and `~/.claude` are taken as before). Newly added directories automatically backfill up to 35 days. Config/flag entries
+  must be absolute paths. No prompt, transcript path or email is stored; a project is its directory's last name.
+  Remembered config-directory paths stay in usage.db and never enter the summary or upload.
 - Cost is an **API-equivalent estimate** at list price (prices as of 2026-10-06); subscription plans are not
   billed this way, and models without a price row (all Codex models) show `—`.
 - `summary.json` (per-day × model totals and per-account quota, no projects or paths) is the only thing

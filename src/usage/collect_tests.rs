@@ -92,8 +92,395 @@ fn totals(conn: &Connection) -> (Tokens, u64) {
     (t, req)
 }
 
+// Run the real CLI in an isolated test process: no shared HOME/config env mutation.
 #[test]
-fn nothing_textual_or_path_like_is_persisted() {
+fn collect_dirs_cli_child() {
+    use clap::Parser;
+    let Ok(args) = std::env::var("CODEFORGE_COLLECT_TEST_ARGS") else {
+        return;
+    };
+    let args: Vec<String> = serde_json::from_str(&args).unwrap();
+    let cli = crate::cli::Cli::try_parse_from(args).unwrap();
+    crate::cli::run(cli).unwrap();
+}
+
+fn collect_cli(e: &Env, extra: &[&str], env_cfg: Option<&Path>) -> std::process::Output {
+    let mut args = vec!["codeforge", "usage", "collect"];
+    args.extend_from_slice(extra);
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--exact",
+        "usage::collect::tests::collect_dirs_cli_child",
+        "--nocapture",
+    ])
+    .env_clear()
+    .env("HOME", e._tmp.path())
+    .env("CODEFORGE_DIR", e._tmp.path().join("project"))
+    .env("CODEFORGE_DATA_DIR", &e.data)
+    .env("CODEX_HOME", &e.codex)
+    .env("AUTOPILOT_LIVE_DIR", e._tmp.path().join("live"))
+    .env(
+        "CODEFORGE_ACCOUNTS_FILE",
+        e._tmp.path().join("accounts.toml"),
+    )
+    .env(
+        "CODEFORGE_COLLECT_TEST_ARGS",
+        serde_json::to_string(&args).unwrap(),
+    )
+    .current_dir(e._tmp.path());
+    if let Some(cfg) = env_cfg {
+        cmd.env("CLAUDE_CONFIG_DIR", cfg);
+    }
+    cmd.output().unwrap()
+}
+
+fn assert_collect_ok(output: std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert!(
+        output.status.success(),
+        "{stderr}\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    stderr
+}
+
+fn recent_claude(rid: &str, input: u64, output: u64) -> String {
+    claude(
+        rid,
+        input,
+        output,
+        json!({"timestamp": chrono::Utc::now().to_rfc3339()}),
+    )
+}
+
+#[test]
+fn collect_dirs_same_request_across_env_and_flag_counts_once() {
+    let e = env();
+    let other = e._tmp.path().join("headless");
+    let line = recent_claude("req_shared", 100, 20);
+    write(&e.cfg.join("projects/p/s.jsonl"), &line);
+    write(&other.join("projects/p/s.jsonl"), &line);
+    let stderr = assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", other.to_str().unwrap()],
+        Some(&e.cfg),
+    ));
+    assert!(stderr.contains("讀了 2 個轉錄檔"), "{stderr}");
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(
+        totals(&conn),
+        (
+            Tokens {
+                input: 100,
+                output: 20,
+                ..Tokens::default()
+            },
+            1
+        )
+    );
+}
+
+#[test]
+fn collect_dirs_flag_is_remembered_without_flag_or_env() {
+    let e = env();
+    let f = e.cfg.join("projects/p/s.jsonl");
+    write(&f, &recent_claude("req_first", 10, 2));
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", e.cfg.to_str().unwrap()],
+        None,
+    ));
+    append(&f, &recent_claude("req_later", 30, 4));
+    assert_collect_ok(collect_cli(&e, &[], None));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(
+        totals(&conn),
+        (
+            Tokens {
+                input: 40,
+                output: 6,
+                ..Tokens::default()
+            },
+            2
+        )
+    );
+}
+
+#[test]
+fn collect_dirs_accounts_config_is_scanned() {
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &recent_claude("req_config", 50, 7),
+    );
+    write(
+        &e._tmp.path().join("accounts.toml"),
+        &format!(
+            "[plans]\nclaude = 'max5x'\n[names]\nseat = '測試'\n[collect]\nclaude_dirs = [{:?}]\n",
+            e.cfg.to_str().unwrap()
+        ),
+    );
+    assert_collect_ok(collect_cli(&e, &[], None));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(
+        totals(&conn),
+        (
+            Tokens {
+                input: 50,
+                output: 7,
+                ..Tokens::default()
+            },
+            1
+        )
+    );
+}
+
+#[test]
+fn collect_dirs_relative_cli_and_invalid_config_are_refused() {
+    let e = env();
+    let output = collect_cli(&e, &["--claude-dir", "相對路徑"], None);
+    assert!(!output.status.success());
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        err.contains("相對路徑") && err.contains("絕對路徑"),
+        "{err}"
+    );
+    for (config, expected) in [
+        ("[collect]\nclaude_dirs = ['相對目錄']", "相對目錄"),
+        ("[collect]\nclaude_dirs = [42]", "claude_dirs[0]"),
+        ("[collect]\nclaude_dirs = '/tmp'", "claude_dirs"),
+        ("collect = 42", "collect"),
+        ("[collect", "TOML"),
+    ] {
+        write(&e._tmp.path().join("accounts.toml"), config);
+        let output = collect_cli(&e, &[], None);
+        assert!(!output.status.success(), "accepted {config}");
+        let err = String::from_utf8_lossy(&output.stderr);
+        assert!(err.contains(expected), "{err}");
+    }
+}
+
+#[test]
+fn collect_dirs_env_is_remembered_and_spellings_scan_once() {
+    let e = env();
+    let f = e.cfg.join("projects/p/s.jsonl");
+    write(&f, &recent_claude("req_env", 10, 1));
+    let slash = format!("{}/", e.cfg.display());
+    let parent = e.cfg.join("projects/..");
+    let stderr = assert_collect_ok(collect_cli(
+        &e,
+        &[
+            "--claude-dir",
+            &slash,
+            "--claude-dir",
+            parent.to_str().unwrap(),
+        ],
+        Some(&e.cfg),
+    ));
+    assert!(stderr.contains("讀了 1 個轉錄檔"), "{stderr}");
+    append(&f, &recent_claude("req_env_later", 20, 2));
+    assert_collect_ok(collect_cli(&e, &[], None));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(
+        remembered_claude_dirs(&conn).unwrap(),
+        vec![e.cfg.canonicalize().unwrap()]
+    );
+    assert_eq!(totals(&conn).1, 2);
+
+    // An env-only root is remembered too.
+    let other = e._tmp.path().join("env-only");
+    write(
+        &other.join("projects/p/s.jsonl"),
+        &recent_claude("req_env_only", 30, 3),
+    );
+    assert_collect_ok(collect_cli(&e, &[], Some(&other)));
+    append(
+        &other.join("projects/p/s.jsonl"),
+        &recent_claude("req_env_only_later", 40, 4),
+    );
+    assert_collect_ok(collect_cli(&e, &[], None));
+    assert_eq!(totals(&conn).1, 4);
+    assert!(remembered_claude_dirs(&conn)
+        .unwrap()
+        .contains(&other.canonicalize().unwrap()));
+}
+
+fn remembered_times(conn: &Connection, path: &Path) -> (i64, i64) {
+    conn.query_row(
+        "SELECT first_seen_ms, last_seen_ms FROM claude_dirs WHERE path = ?1",
+        [path.to_str().unwrap()],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
+}
+
+#[test]
+fn collect_dirs_removed_or_file_is_skipped_but_retained() {
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &recent_claude("req_removed", 10, 1),
+    );
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", e.cfg.to_str().unwrap()],
+        None,
+    ));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let canonical = e.cfg.canonicalize().unwrap();
+    let times = remembered_times(&conn, &canonical);
+    std::fs::remove_dir_all(&e.cfg).unwrap();
+    for replace_with_file in [false, true] {
+        if replace_with_file {
+            std::fs::write(&e.cfg, "not a directory").unwrap();
+        }
+        let stderr = assert_collect_ok(collect_cli(&e, &[], None));
+        assert!(stderr.contains("讀了 0 個轉錄檔"), "{stderr}");
+        assert_eq!(
+            remembered_claude_dirs(&conn).unwrap(),
+            vec![canonical.clone()]
+        );
+        assert_eq!(remembered_times(&conn, &canonical), times);
+    }
+}
+
+#[test]
+fn collect_dirs_migration_and_seen_times_preserve_existing_data() {
+    let e = env();
+    let mut conn = run(&e, &[]);
+    let canonical = e.cfg.canonicalize().unwrap();
+    assert_eq!(remembered_times(&conn, &canonical), (NOW, NOW));
+    collect(
+        &mut conn,
+        &roots(std::slice::from_ref(&e.cfg), None),
+        &[],
+        NOW + 100,
+    )
+    .unwrap();
+    assert_eq!(remembered_times(&conn, &canonical), (NOW, NOW + 100));
+    // Simulate an existing database from before the directory table was introduced.
+    conn.execute_batch("DROP TABLE claude_dirs;").unwrap();
+    drop(conn);
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert!(remembered_claude_dirs(&conn).unwrap().is_empty());
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM roots", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn collect_dirs_symlink_roots_and_projects_are_skipped() {
+    use std::os::unix::fs::symlink;
+    let e = env();
+    let other = e._tmp.path().join("other");
+    write(
+        &other.join("projects/p/s.jsonl"),
+        &recent_claude("req_link", 90, 9),
+    );
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", e.cfg.to_str().unwrap()],
+        None,
+    ));
+    std::fs::remove_dir_all(&e.cfg).unwrap();
+    symlink(&other, &e.cfg).unwrap();
+    let stderr = assert_collect_ok(collect_cli(&e, &[], None));
+    assert!(stderr.contains("讀了 0 個轉錄檔"), "{stderr}");
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    assert_eq!(remembered_claude_dirs(&conn).unwrap(), vec![e.cfg.clone()]);
+    let slash = PathBuf::from(format!("{}/", e.cfg.display()));
+    let via_parent = e.cfg.join("../other");
+    assert!(![e.cfg.clone(), slash, via_parent]
+        .iter()
+        .any(|d| real_dir_chain(d)));
+
+    // Even a projects link pointing inside its real root must not be followed.
+    std::fs::rename(other.join("projects"), other.join("actual")).unwrap();
+    symlink(other.join("actual"), other.join("projects")).unwrap();
+    let rs = roots(&[other], None);
+    assert!(sources(&rs[0]).is_empty());
+}
+
+#[test]
+fn collect_dirs_env_dir_under_a_symlinked_parent_is_still_collected() {
+    use std::os::unix::fs::symlink;
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/s.jsonl"),
+        &recent_claude("req_parent", 70, 7),
+    );
+    let linked = e._tmp.path().join("linkhome");
+    symlink(e._tmp.path(), &linked).unwrap();
+    let stderr = assert_collect_ok(collect_cli(&e, &[], Some(&linked.join("cfg"))));
+    assert!(stderr.contains("讀了 1 個轉錄檔"), "{stderr}");
+}
+
+#[test]
+fn collect_dirs_backfill_keeps_each_roots_login_and_horizon() {
+    let e = env();
+    let home = e._tmp.path();
+    let default = home.join(".claude");
+    let now = chrono::Utc::now();
+    for (i, root) in [&default, &e.cfg].into_iter().enumerate() {
+        let recent = claude(
+            &format!("req_backfill_{i}"),
+            10 + i as u64,
+            1,
+            json!({
+                "timestamp": (now - chrono::Duration::days(HORIZON_DAYS - 1)).to_rfc3339()
+            }),
+        );
+        let old = claude(
+            &format!("req_old_{i}"),
+            999,
+            99,
+            json!({
+                "timestamp": (now - chrono::Duration::days(HORIZON_DAYS + 1)).to_rfc3339()
+            }),
+        );
+        write(&root.join("projects/p/s.jsonl"), &(recent + &old));
+        let login = if i == 0 {
+            home.join(".claude.json")
+        } else {
+            root.join(".claude.json")
+        };
+        write(
+            &login,
+            &json!({"oauthAccount": {
+                "organizationUuid": format!("org-{i}"),
+                "organizationName": "Example",
+                "emailAddress": format!("seat{i}@example.com")
+            }})
+            .to_string(),
+        );
+    }
+    assert_collect_ok(collect_cli(
+        &e,
+        &["--claude-dir", e.cfg.to_str().unwrap()],
+        None,
+    ));
+    let (conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let rows = rows_since(&conn, "2000-01-01").unwrap();
+    assert_eq!(rows.len(), 2);
+    for (i, root) in [&default, &e.cfg].into_iter().enumerate() {
+        let identity = alias::login_identity(
+            &alias::login_path_for_root(root, home),
+            &home.join(format!("identity-{i}.json")),
+        )
+        .unwrap();
+        let row = rows.iter().find(|r| r.account == identity.alias).unwrap();
+        assert_eq!(
+            (row.tokens.input, row.tokens.output, row.requests),
+            (10 + i as u64, 1, 1)
+        );
+    }
+}
+
+#[test]
+fn transcript_content_and_paths_are_not_persisted() {
     let e = env();
     let slug = e.cfg.join("projects/-MARKERSLUG-home-repo");
     let line = claude(
@@ -125,10 +512,14 @@ fn nothing_textual_or_path_like_is_persisted() {
         "marker@example.com",
         "secretdir",
         "/srv",
-        e.cfg.to_str().unwrap(),
+        slug.to_str().unwrap(),
     ] {
         assert!(!hay.contains(m), "{m} leaked into usage.db");
     }
+    assert_eq!(
+        remembered_claude_dirs(&conn).unwrap(),
+        vec![e.cfg.canonicalize().unwrap()]
+    );
     // what is kept: counts, the model id, the cwd basename
     let rows = rows_since(&conn, "2000-01-01").unwrap();
     assert_eq!(rows.len(), 1);

@@ -154,6 +154,35 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 
 ## 讀什麼、存什麼
 
+每次收集的 Claude config dirs 是以下來源的聯集：非空的 `$CLAUDE_CONFIG_DIR`、`~/.claude`、
+`accounts.toml` 的 `[collect] claude_dirs`、usage.db 記住的目錄，以及本次所有 `--claude-dir`。
+以 canonical path 去重，同一目錄用尾斜線或 `..` 等不同寫法只掃一次；`[collect] claude_dirs`、記住的目錄與 `--claude-dir`
+不接受 symlink 目錄（含路徑中間的 symlink）；`$CLAUDE_CONFIG_DIR` 與 `~/.claude` 照舊，家目錄在 symlink 底下（如
+`/home -> /usr/home`）仍會收集。
+Codex 仍只用 `$CODEX_HOME`（非空時），否則 `~/.codex`，不記入 Claude 目錄表。
+
+**額外來源設定**：沿用名字、`[plans]` 的同一份 `accounts.toml` 與 TOML parser；路徑選擇同上
+（`CODEFORGE_ACCOUNTS_FILE` → `$XDG_CONFIG_HOME/codeforge/accounts.toml` → `~/.config/codeforge/accounts.toml`）。
+
+```toml
+[collect]
+claude_dirs = ["/srv/claude/seats/seat-a", "/srv/claude/dispatches/run-b"]
+```
+
+陣列每一項必須是絕對路徑字串；相對路徑會讓 collect 報繁體中文錯誤，指出該項與值，不靜默忽略。
+也可用 `codeforge usage collect --claude-dir /srv/claude/seats/seat-a`，旗標可重複；相對路徑同樣拒絕。
+設定檔不存在或沒有 `[collect]` 時沒有額外設定來源；讀取失敗、TOML 或欄位型別錯誤則報錯。
+
+**記住目錄**：usage.db 透過既有開檔 migration 建立 `claude_dirs` 表：`path TEXT PRIMARY KEY`（canonical config dir）、
+`first_seen_ms INTEGER NOT NULL`、`last_seen_ms INTEGER NOT NULL`（首次／最近掃描的 unix 毫秒）。每個實際掃描的 Claude root
+都寫入，包含環境變數與只給過一次的旗標來源；重掃只更新 `last_seen_ms`。既有 `roots` 的 hash／別名與每個 root 的登入身分規則不變。
+記住的目錄不存在、變成一般檔案或 symlink 時，本次略過、不報錯，也不刪除表內紀錄或更新時間；之後恢復就繼續收集。
+目錄路徑只在本機 usage.db，**不進 summary.json 或 usage push**；移除設定或旗標不會忘掉已掃過的目錄。
+舊版 `roots` 只有 hash，無法還原路徑；升級後先由上述來源發現目錄，再記住它。
+
+新增目錄第一次掃描會自動從頭回補最多 `HORIZON_DAYS`（目前 **35 天**）的用量，不需要額外 backfill 指令；
+跨目錄同一 requestId 仍由 `requests.request_id PRIMARY KEY` 去重，每個 token 欄位取最大值，請求只計一次。
+
 | 來源 | glob | 存下 |
 |---|---|---|
 | Claude | `<cfg>/projects/*/*.jsonl`、`<cfg>/projects/*/*/subagents/*.jsonl` | request id、UTC 日、model id、token 數、speed、cwd 最後一段 |
@@ -169,7 +198,8 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 
 - 不進 symlink 目錄、不拿 symlink 或特殊檔；`O_NOFOLLOW | O_NONBLOCK` 開檔，必須在 root 的
   canonical path 底下。glob 以外（`settings.json`、`.credentials.json`、`auth.json`）一律不開。
-- 來源以 sha256(canonical path) 記錄，不存路徑；cwd 是家目錄時存 `~`；model id 不符
+- 轉錄檔來源以 sha256(canonical path) 記錄，不存轉錄檔路徑；Claude config dir 路徑另存於上述 `claude_dirs` 表。
+  cwd 是家目錄時存 `~`；model id 不符
   `^[A-Za-z0-9._-]{1,64}$` 存 `unknown`。
 - 增量：只讀換行結尾的行，每個檔一個 transaction；head = 前 min(4096, offset) bytes 的 sha256，
   改寫、縮短、換 inode 就從頭讀（去重保證不重算）。
@@ -186,7 +216,7 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   db、`-wal`、`-shm` 開或關任何 fd（關掉同一檔案的任一 fd 會釋放本程序在其上的所有 POSIX
   鎖，包括連線在 `-shm` 上的 DMS 鎖）。之後新建的 `-wal`／`-shm` 由 SQLite 沿用 db 的 0600。
 - 錯誤訊息只寫檔名（`usage.db`、`summary.json`）、欄位位置與錯誤類別，不帶本機路徑，不回顯
-  意外的欄位名稱，也不轉發 fleet 的 stderr。
+  意外的欄位名稱，也不轉發 fleet 的 stderr。設定／CLI 輸入驗證例外：相對 `claude_dirs`／`--claude-dir` 會指出使用者輸入的值。
 
 ## 成本估算
 
@@ -307,6 +337,7 @@ codeforge usage                     # 收集 + 最近 7 天，依 model 分組
 codeforge usage --days 3 --by project
 codeforge usage --json
 codeforge usage collect --quiet     # hook 用
+codeforge usage collect --claude-dir /srv/claude/seat-a --claude-dir /srv/claude/seat-b  # 本次掃描並記住（絕對路徑）
 codeforge usage push                # 印出 blob sha
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
 codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）

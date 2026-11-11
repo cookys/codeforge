@@ -130,6 +130,40 @@ fn read_table(path: &Path) -> Result<Option<toml::Table>> {
     Ok(Some(t))
 }
 
+/// Collector sources share accounts.toml with names/plans. Unlike display hints, invalid
+/// source configuration is an error so a typo cannot silently omit usage.
+pub fn load_claude_dirs(path: &Path) -> Result<Vec<PathBuf>> {
+    let Some(t) = read_table(path)? else {
+        return Ok(Vec::new());
+    };
+    let Some(collect) = t.get("collect") else {
+        return Ok(Vec::new());
+    };
+    let collect = collect
+        .as_table()
+        .context("accounts.toml 的 collect 必須是表格")?;
+    let Some(dirs) = collect.get("claude_dirs") else {
+        return Ok(Vec::new());
+    };
+    dirs.as_array()
+        .context("accounts.toml 的 collect.claude_dirs 必須是陣列")?
+        .iter()
+        .enumerate()
+        .map(|(i, value)| {
+            let value = value.as_str().with_context(|| {
+                format!("accounts.toml 的 collect.claude_dirs[{i}] 必須是路徑字串")
+            })?;
+            let dir = PathBuf::from(value);
+            if !dir.is_absolute() {
+                anyhow::bail!(
+                    "accounts.toml 的 collect.claude_dirs[{i}] 必須是絕對路徑：「{value}」"
+                );
+            }
+            Ok(dir)
+        })
+        .collect()
+}
+
 /// Set `key`'s name in `path`, keeping everything else in the file as it is (other names,
 /// entries [`load`] skips, other tables). A file that cannot be read or parsed is left
 /// untouched and is an error; so is a `names` key that is not a table.
