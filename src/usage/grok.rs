@@ -17,12 +17,13 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
 use super::alias;
 use super::quota;
+
+pub use super::fetch::Fetch;
 
 /// The `grok` binary (resolved on PATH; no `grok` on PATH is no capture, not an error).
 const BIN: &str = "grok";
@@ -41,16 +42,6 @@ const CACHE_MAX: usize = 4096;
 /// The login file is never read above this size.
 const AUTH_MAX: u64 = 64 * 1024;
 const BILLING_URL: &str = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
-
-/// What one attempt to read the live quota produced. Never carries the bearer.
-pub enum Fetch {
-    /// A billing JSON body. Untrusted; only [`parse_billing`] decides what is kept.
-    Body(Value),
-    /// HTTP 401/403, or the login's `expires_at` is already due. Do not refresh.
-    Denied,
-    /// Off switch, no binary, transport error, or a login file that cannot be used.
-    Failed,
-}
 
 /// Bearer from `auth.json`.
 ///
@@ -156,17 +147,7 @@ struct Cache {
 }
 
 fn read_cache(path: &Path) -> Option<Cache> {
-    let file = quota::open_no_follow(path).ok()?;
-    let meta = file.metadata().ok()?;
-    if !meta.file_type().is_file() || meta.len() > CACHE_MAX as u64 {
-        return None;
-    }
-    let mut buf = Vec::new();
-    file.take(CACHE_MAX as u64 + 1).read_to_end(&mut buf).ok()?;
-    if buf.len() as u64 > CACHE_MAX as u64 {
-        return None;
-    }
-    serde_json::from_slice(&buf).ok()
+    super::fetch::read_capped_json(path, CACHE_MAX as u64)
 }
 
 fn snapshot_from_cache(c: &Cache, key_hash: &str) -> Option<quota::Snapshot> {
@@ -273,17 +254,7 @@ pub fn fetch_live(home: &Path) -> Fetch {
 }
 
 fn read_auth(path: &Path) -> Option<Vec<u8>> {
-    let file = quota::open_no_follow(path).ok()?;
-    let meta = file.metadata().ok()?;
-    if !meta.file_type().is_file() || meta.len() > AUTH_MAX {
-        return None;
-    }
-    let mut buf = Vec::new();
-    file.take(AUTH_MAX + 1).read_to_end(&mut buf).ok()?;
-    if buf.len() as u64 > AUTH_MAX {
-        return None;
-    }
-    Some(buf)
+    super::fetch::read_capped(path, AUTH_MAX)
 }
 
 /// `grok 1.0.70 (f50904eaee6c)` → `1.0.70`. Anything else is no version.
