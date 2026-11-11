@@ -348,6 +348,26 @@ fn agy_pool_keys_are_two_rows_with_their_pool_providers() {
     assert!(f.rows.iter().all(|r| r.alias != "agyclaude"));
 }
 
+#[test]
+fn a_grok_account_is_a_weekly_row_named_grok_cli_and_not_a_placeholder() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![acct("grok-1a2b3c4d", 60, None, Some((0.34, NOW_S + 3 * D)))],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let r = row(&f, "grok-1a2b3c4d");
+    assert_eq!(r.provider, "grok");
+    assert_eq!(r.name, "grok-cli");
+    assert_eq!(r.state, State::Ok);
+    assert!(r.five_hour.is_none());
+    assert_eq!(r.weekly.as_ref().unwrap().win.pct, 0.34);
+    assert_eq!(r.source_note, None);
+    assert!(f.rows.iter().all(|r| r.alias != "grok"), "no placeholder");
+    let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(txt.contains("grok-cli"), "{txt}");
+}
+
 fn notes(v: &[(&str, &str)]) -> super::names::Notes {
     super::names::Notes(
         v.iter()
