@@ -151,7 +151,7 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   再其次是 db 裡存的，最後未歸屬（不再是 `acct-<hash>`；root 一律記進 db，讓它的舊 `acct-<hash>` 列認得出來）。
   Codex root 是 `codex-<hash>`。
 - 重新登入後的配額與請求歸屬見「重新登入的歸屬」。
-- 限制：轉錄檔不記錄是哪個 OAuth token。沒有 `CODEFORGE_ACCOUNT_ALIAS` 的 session，同一個 config dir 的用量仍依登入時間軸歸給那個 dir 的別名（配額快照仍準確）。setup-token lane 由 wrapper 設覆寫，並以 session 釘選分開歸屬（PM 01M76F3F）。G37 的「每個帳號一個 config dir」仍是沒有覆寫時的做法。
+- 限制：轉錄檔不記錄是哪個 OAuth token。沒有 `CODEFORGE_ACCOUNT_ALIAS`、也沒有 token 變數的 session，同一個 config dir 的用量仍依登入時間軸歸給那個 dir 的別名（配額快照仍準確）。setup-token lane 由 wrapper 設覆寫，並以 session 釘選分開歸屬（PM 01M76F3F）。G37 的「每個帳號一個 config dir」仍是沒有覆寫時的做法。
 
 ## 重新登入的歸屬（Re-login attribution）
 
@@ -174,6 +174,15 @@ statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Cla
 - 配額快照寫在覆寫別名下，`root` 為 null，因此 `root_alias` 不會把這個別名當成該 root 的帳號。
 - 呼叫 `pin_session`，把這個 session 釘在覆寫別名上。檔案是同一層的 `pins-<root 的 hash8>.json`，內容為 `{"<session>":{"alias":"<別名>","at_ms":<毫秒>}}`。寫入慣例與 `sessions-` 相同：`state_file`、`load_bytes` 上限、0600、暫存檔加 rename、寫入時依 `quota::MAX_AGE_MS` 修剪、最多 512 筆、不能用的 session id 略過、內容沒變不寫。缺檔、壞掉或外來（含任何 `@`）讀成空的。
 - `session_gate` 仍用覆寫別名跑。
+
+沒帶覆寫的 token lane（hangar 01M77KXH）：行程有非空的 `CLAUDE_CODE_OAUTH_TOKEN`（只看有沒有，不讀值）、卻沒有可採用的 `CODEFORGE_ACCOUNT_ALIAS` 時，statusline 不從登入檔推帳號，因為 token 可能是別的 org，例如 4124gs 的 personal token 原本被記到團隊帳號。做法如下：
+
+- 不寫配額快照，也不呼叫 `observe`。
+- 用 `pin_session` 把 session 釘在 `unattributed`（`logins::PIN_UNATTRIBUTED`）。
+- `collect` 讀到這個釘選時，該 session 的新請求一律記為未歸屬（`""`，每小時匯出為 null）。
+- 其他帳號的快照照常讀回。
+
+要歸到正確帳號，lane wrapper 應帶 `CODEFORGE_ACCOUNT_ALIAS`。
 
 請求：`collect` 插入**新的** `requests` 列時，session id 是轉錄檔名的 stem；`<session>/subagents/` 底下的子代理轉錄算父 session。同一個 root 每次收集只讀一次 pins。帳號的優先順序是：該 session 的釘選別名，沒有才取 `timeline.alias_at(該列的 seen_ms)`，再沒有才用 `root_alias`。已經在庫裡的列不改帳號（修正前入庫的列也一樣，不回填：`requests` 沒有 session 欄，無法事後分辨是哪一個 session）；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`，因此不必另外改。
 
