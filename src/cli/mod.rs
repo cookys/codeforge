@@ -329,6 +329,12 @@ pub enum UsageAction {
         #[arg(long)]
         hourly: bool,
     },
+    /// 匯入 trinity 自報配額（trinity-usage/1：observed_at、pct、resets_at，一行一個 JSON）
+    TrinityImport {
+        /// 配額檔路徑；`-` 表示從標準輸入讀
+        #[arg(value_name = "FILE", allow_hyphen_values = true)]
+        file: String,
+    },
     /// 配額檢視：讀 autopilot 的配額 mirror 並畫出每個帳號（只讀，不探測、不連網）
     Accounts {
         /// 輸出解讀後的清單（JSON）
@@ -631,6 +637,7 @@ pub fn run(cli: Cli) -> Result<()> {
             }
             Some(UsageAction::Push) => usage::Action::Push,
             Some(UsageAction::Export { hourly }) => usage::Action::Export { hourly },
+            Some(UsageAction::TrinityImport { file }) => usage::Action::TrinityImport { file },
             Some(UsageAction::Accounts { json }) => usage::Action::Accounts { json },
             Some(UsageAction::Pools { json }) => usage::Action::Pools { json },
             Some(UsageAction::Fleet {
