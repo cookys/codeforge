@@ -19,6 +19,9 @@ pub const ACCOUNT_ENV: &str = "AUTOPILOT_ACCOUNT";
 /// Per-process account override for a setup-token lane (PM 01M76F3F). The lane
 /// wrapper sets it; a value that is not `acct-` plus 8 lowercase hex digits is ignored.
 pub const ACCOUNT_ALIAS_ENV: &str = "CODEFORGE_ACCOUNT_ALIAS";
+/// Set when Claude Code runs on a setup token instead of the login file. Only its presence
+/// is read: with it and no [`ACCOUNT_ALIAS_ENV`] the session is unattributed (hangar 01M77KXH).
+pub const TOKEN_ENV: &str = "CLAUDE_CODE_OAUTH_TOKEN";
 /// Longest alias accepted.
 pub const ALIAS_MAX: usize = 24;
 

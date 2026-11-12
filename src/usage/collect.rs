@@ -868,9 +868,17 @@ pub fn collect_file(
         };
         match &session {
             None => {
-                let pinned = pins.and_then(|m| {
-                    claude_session_of(path).and_then(|sid| m.get(sid).map(String::as_str))
-                });
+                let pinned = pins
+                    .and_then(|m| {
+                        claude_session_of(path).and_then(|sid| m.get(sid).map(String::as_str))
+                    })
+                    .map(|a| {
+                        if a == logins::PIN_UNATTRIBUTED {
+                            UNATTRIBUTED
+                        } else {
+                            a
+                        }
+                    });
                 claude_line(&tx, &v, account, timeline, pinned, now_ms)?
             }
             Some(s) => codex_line(&tx, &v, s, account, now_ms, mtime_ms)?,

@@ -1866,3 +1866,42 @@ fn a_pinned_session_and_its_subagent_split_from_the_login_timeline() {
         ]
     );
 }
+
+/// A token lane without an override alias is pinned unattributed (hangar 01M77KXH): its
+/// requests carry no account, while an unpinned session on the same root keeps the login's.
+#[test]
+fn an_unattributed_pin_files_the_session_under_no_account() {
+    let hour = 3_600_000;
+    let ts = NOW - hour;
+    let line = |rid: &str, input: u64| claude(rid, input, 1, json!({"timestamp": iso(ts)}));
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/sess-tok.jsonl"),
+        &line("req_tok", 10),
+    );
+    write(
+        &e.cfg.join("projects/p/sess-login.jsonl"),
+        &line("req_login", 20),
+    );
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-aaaaaaaa".into());
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-aaaaaaaa", ts - 10 * hour).unwrap();
+    crate::usage::logins::pin_session(
+        &usage,
+        &rs[0].hash,
+        "sess-tok",
+        crate::usage::logins::PIN_UNATTRIBUTED,
+        ts,
+    )
+    .unwrap();
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_login".into(), "acct-aaaaaaaa".into()),
+            ("req_tok".into(), UNATTRIBUTED.into()),
+        ]
+    );
+}
