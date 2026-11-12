@@ -191,6 +191,14 @@ statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Cla
 
 aimax395 的 team，從 2026-11-12 06:30（+0800）起，到各 lane 帶著這個覆寫重啟為止，記成 `acct-65d2bffc` 的 Claude 請求與配額百分比實際上屬於 `acct-9832dff1`。PM 裁定不回填（PM 01M76FE9），所以這段期間的逐帳號合計是不準的。
 
+**沒有登入檔可推的 token 池用固定別名**（PM 01M78CGQ、01M78CTD）：用 `claude setup-token` 產生、沒有任何機器 `/login` 過的帳號，推不出正規別名（`sha256("<organizationUuid>\n<emailAddress>")` 取前 8 碼）。這時改用 `acct-` 加上 `sha256("token-pool:<池名>")` 的前 8 碼，在 wrapper 裡設 `CODEFORGE_ACCOUNT_ALIAS`。不拿 token 打 OAuth profile 端點讀身分（那是憑證的新用途，PM 不採用）。目前只有一個：
+
+| 池 | 別名 | lane（生效時間，+0800） |
+|---|---|---|
+| twgame.net | `acct-d5435540` | twgs-dev（2026-11-13 01:28）、revival.3d（01:32）、pinball（02:30 前後） |
+
+生效之前的請求維持未歸屬，不回填。以後有人 `/login` 這個帳號時，codeforge 推出的是正規別名：把 wrapper 換成它，舊別名的歷史留在原池，用 `codeforge usage alias set` 讓兩者同名。
+
 ## 讀什麼、存什麼
 
 每次收集的 Claude config dirs 是以下來源的聯集：非空的 `$CLAUDE_CONFIG_DIR`、`~/.claude`、
