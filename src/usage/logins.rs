@@ -276,7 +276,7 @@ fn clean_fp(fp: &str) -> bool {
 }
 
 /// A session id as `sanitize_session_id` leaves it: 1–64 of `[A-Za-z0-9_-]`.
-fn usable_session(s: &str) -> bool {
+pub(crate) fn usable_session(s: &str) -> bool {
     (1..=64).contains(&s.len())
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')

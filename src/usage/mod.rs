@@ -20,6 +20,7 @@ pub mod quota_mirror;
 pub mod quota_mirror_read;
 pub mod quota_view;
 pub mod reset_rule;
+pub mod sessions_export;
 pub mod store;
 pub mod summary;
 pub mod trinity;

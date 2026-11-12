@@ -259,7 +259,10 @@ mod tests {
 
     fn ins(conn: &Connection, r: &Ins<'_>) {
         conn.execute(
-            "INSERT INTO requests VALUES (?1, '2026-11-04', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO requests
+             (request_id, day, source, account, model, project, speed,
+              input, output, cw5m, cw1h, read, seen_ms)
+             VALUES (?1, '2026-11-04', ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             rusqlite::params![
                 r.id, r.source, r.account, r.model, r.project, r.speed, r.input, r.output, r.cw5m,
                 r.cw1h, r.read, r.seen_ms
