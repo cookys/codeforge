@@ -22,6 +22,7 @@ pub mod quota_view;
 pub mod reset_rule;
 pub mod store;
 pub mod summary;
+pub mod trinity;
 pub mod usage_v1;
 
 #[cfg(test)]

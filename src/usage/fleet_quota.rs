@@ -20,8 +20,9 @@ pub const SCHEMA: &str = "codeforge.fleet-quota/1";
 pub const DEFAULT_USE_TARGET: f64 = 0.85;
 /// Every non-Claude provider that has no local source, each listed even with no account: without
 /// quota data its row is `no_source` with the reason. codex has windows when its rollouts carried
-/// `rate_limits`. agy (`super::agy`), grok and grokbot (`super::grok`) and kimi (`super::kimi`)
-/// have a real source and never appear here — a host without that account simply has no row.
+/// `rate_limits`. agy (`super::agy`), grok and grokbot (`super::grok`), kimi (`super::kimi`)
+/// and trinity (`super::trinity`) have a real source and never appear here — a host without
+/// that account simply has no row.
 pub const PROVIDERS: [(&str, SourceNote); 7] = [
     ("glm", SourceNote::NeedsToken),
     ("qoder", SourceNote::WebOnly),
@@ -483,8 +484,8 @@ pub fn merge(
 }
 
 /// `claude`, a [`PROVIDERS`] name, or a [`super::names::KEY_PROVIDERS`] name (`agy`,
-/// `agyclaude`, `codex`, `grok`, `grokbot`, `kimi`): a notes key that labels a provider, never an
-/// account.
+/// `agyclaude`, `codex`, `grok`, `grokbot`, `kimi`, `trinity`): a notes key that labels a
+/// provider, never an account.
 pub fn is_provider_label(s: &str) -> bool {
     s == "claude"
         || PROVIDERS.iter().any(|(p, _)| *p == s)
