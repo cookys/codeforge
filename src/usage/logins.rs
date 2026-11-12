@@ -213,6 +213,10 @@ pub fn session_gate(
     Ok(SessionGate::Merge)
 }
 
+/// The pin of a token lane without an override alias. `collect` files its requests as
+/// [`crate::usage::collect::UNATTRIBUTED`]; it is a valid alias only so the pins file keeps one shape.
+pub const PIN_UNATTRIBUTED: &str = "unattributed";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PinSeen {
     alias: String,

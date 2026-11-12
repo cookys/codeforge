@@ -30,23 +30,25 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         // G36: this account's quota snapshot out, the other accounts' back in.
         // A setup-token lane sets CODEFORGE_ACCOUNT_ALIAS and does not rewrite the login
         // file (PM 01M76F3F). That override is the whole identity: do not read the login.
+        // A token lane without the override would be filed under the login file's account,
+        // which is another org's (hangar 01M77KXH): such a session is pinned unattributed.
+        // Only the variable's presence is checked; its value is never read.
         let pinned = crate::usage::alias::env_override();
-        let pin = pinned.is_some();
-        let (config_dir, acct) = match pinned {
-            Some(alias) => {
-                let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-                let cfg = std::env::var("CLAUDE_CONFIG_DIR").ok();
-                let dir = crate::usage::alias::claude_config_dir(cfg.as_deref(), &home);
-                (
-                    dir,
-                    Some(crate::usage::alias::Identity {
-                        alias,
-                        org: None,
-                        email: None,
-                    }),
-                )
-            }
-            None => crate::usage::alias::current_claude_account(&live_base),
+        let token_lane =
+            std::env::var_os(crate::usage::alias::TOKEN_ENV).is_some_and(|v| !v.is_empty());
+        let pin = pinned.is_some() || token_lane;
+        let (config_dir, acct) = if pin {
+            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+            let cfg = std::env::var("CLAUDE_CONFIG_DIR").ok();
+            let dir = crate::usage::alias::claude_config_dir(cfg.as_deref(), &home);
+            let acct = pinned.map(|alias| crate::usage::alias::Identity {
+                alias,
+                org: None,
+                email: None,
+            });
+            (dir, acct)
+        } else {
+            crate::usage::alias::current_claude_account(&live_base)
         };
         let quota_dir = crate::usage::quota::quota_dir(&live_base);
         let root_hash = crate::usage::alias::path_hash8(&config_dir);
@@ -391,7 +393,8 @@ fn record_quota(
     record_quota_with(data, dir, acct, root, session, now_ms, false)
 }
 
-/// `pin`: this process's account is `CODEFORGE_ACCOUNT_ALIAS`, not the login file.
+/// `pin`: this process's account is `CODEFORGE_ACCOUNT_ALIAS`, not the login file; with
+/// `acct` `None` it is a token lane without that override, pinned unattributed.
 /// The snapshot is filed under that alias with `root: None` (so `root_alias` does not
 /// adopt it), the login timeline is not observed, and the session is pinned. The session
 /// gate still runs with the override alias. Org and email are dropped.
@@ -430,8 +433,16 @@ fn record_quota_with(
             a.clone()
         }
     });
-    // no login: unattributed, nothing written (PM 01M7052H79); the others are still read
+    // no login: unattributed, nothing written (PM 01M7052H79); the others are still read.
+    // A token lane without an override alias (`pin` and no account) pins its session
+    // unattributed, so collect does not file its requests under the login's account.
     let Some(acct) = filed.as_ref() else {
+        if pin && crate::usage::quota::is_hash8(root) {
+            if let Some(parent) = dir.parent() {
+                let _ =
+                    logins::pin_session(parent, root, session, logins::PIN_UNATTRIBUTED, now_ms);
+            }
+        }
         return read_others(dir, "", now_ms);
     };
     // a pinned lane must not append itself to the root's login timeline
@@ -3142,6 +3153,41 @@ mod tests {
         assert!(sessions.contains("sess-token"), "{sessions}");
         assert!(sessions.contains("acct-bbbbbbbb"), "{sessions}");
         assert_tree_has_no_at(usage);
+    }
+
+    /// A token lane without an override alias (hangar 01M77KXH): nothing is filed under
+    /// any account, the login timeline is untouched, and the session is pinned unattributed.
+    #[test]
+    fn a_token_lane_without_an_override_pins_the_session_unattributed() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let now_ms = Q_NOW * 1000;
+        let root = "1a2b3c4d";
+        std::fs::create_dir_all(&dir).unwrap();
+        let usage = dir.parent().unwrap();
+        crate::usage::logins::observe(usage, root, "acct-aaaaaaaa", now_ms - 10_000).unwrap();
+        let logins_path = usage.join(format!("logins-{root}.json"));
+        let before = std::fs::read(&logins_path).unwrap();
+        let mut data = StatusInput {
+            five_hour_pct: Some(0.4),
+            five_hour_resets_at: Some(Q_NOW + 3600),
+            ..Default::default()
+        };
+        record_quota_with(&mut data, &dir, None, root, "sess-tok", now_ms, true);
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            0,
+            "a snapshot was filed"
+        );
+        assert_eq!(std::fs::read(&logins_path).unwrap(), before);
+        let pins: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(usage.join(format!("pins-{root}.json"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            pins["sess-tok"]["alias"],
+            crate::usage::logins::PIN_UNATTRIBUTED
+        );
     }
 
     fn assert_tree_has_no_at(dir: &std::path::Path) {
