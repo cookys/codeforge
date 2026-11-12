@@ -166,7 +166,8 @@ pub fn open(dir: &Path) -> Result<(Connection, Vec<String>)> {
              request_id TEXT PRIMARY KEY, day TEXT NOT NULL, source TEXT NOT NULL,
              account TEXT NOT NULL, model TEXT NOT NULL, project TEXT NOT NULL, speed TEXT NOT NULL,
              input INTEGER NOT NULL, output INTEGER NOT NULL, cw5m INTEGER NOT NULL,
-             cw1h INTEGER NOT NULL, read INTEGER NOT NULL, seen_ms INTEGER NOT NULL);
+             cw1h INTEGER NOT NULL, read INTEGER NOT NULL, seen_ms INTEGER NOT NULL,
+             session TEXT);
          CREATE TABLE IF NOT EXISTS codex_sessions (
              session_id TEXT PRIMARY KEY, input INTEGER NOT NULL, cached INTEGER NOT NULL,
              cache_write INTEGER NOT NULL, output INTEGER NOT NULL, seen_ms INTEGER NOT NULL,
@@ -203,6 +204,15 @@ pub fn open(dir: &Path) -> Result<(Connection, Vec<String>)> {
                 &format!("ALTER TABLE codex_sessions ADD COLUMN {col} {def}"),
                 [],
             )?;
+        }
+    }
+    // requests gained `session` (usage-sessions/1): old rows stay NULL; no backfill.
+    {
+        let have = conn
+            .prepare("SELECT 1 FROM pragma_table_info('requests') WHERE name = 'session'")?
+            .exists([])?;
+        if !have {
+            conn.execute("ALTER TABLE requests ADD COLUMN session TEXT", [])?;
         }
     }
     // No fd on usage.db, -wal or -shm is opened (or closed) from here on: closing any fd of a file
@@ -381,6 +391,45 @@ mod tests {
             );
             drop(conn);
         }
+    }
+
+    #[test]
+    fn an_old_requests_schema_gains_a_null_session_column() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = usage_dir(base.path());
+        std::fs::create_dir_all(&dir).unwrap();
+        {
+            let conn = Connection::open(dir.join("usage.db")).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE requests (
+                     request_id TEXT PRIMARY KEY, day TEXT NOT NULL, source TEXT NOT NULL,
+                     account TEXT NOT NULL, model TEXT NOT NULL, project TEXT NOT NULL,
+                     speed TEXT NOT NULL, input INTEGER NOT NULL, output INTEGER NOT NULL,
+                     cw5m INTEGER NOT NULL, cw1h INTEGER NOT NULL, read INTEGER NOT NULL,
+                     seen_ms INTEGER NOT NULL);
+                 INSERT INTO requests VALUES (
+                     'old', '2026-11-04', 'claude', 'acct-aaaaaaaa', 'claude-opus-4-8',
+                     'repo', 'standard', 1, 2, 0, 0, 0, 1);",
+            )
+            .unwrap();
+        }
+        let (conn, _) = open(&dir).unwrap();
+        let have: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('requests') WHERE name = 'session'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(have, 1);
+        let session: Option<String> = conn
+            .query_row(
+                "SELECT session FROM requests WHERE request_id = 'old'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(session, None);
     }
 
     #[test]

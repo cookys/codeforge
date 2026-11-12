@@ -17,6 +17,7 @@
 | 推送 | `codeforge usage push` | `fleet upload`，印出 blob sha |
 | 匯出 | `codeforge usage export` | 印出驗證過、拿掉 email 和 name 的 summary（同 push 上傳的內容），給 hangar 用 ssh 收 |
 | 每小時匯出 | `codeforge usage export --hourly` | 同一趟收集後，改印 UTC 每小時、每帳號、每模型的 Claude token 列（`codeforge.usage-hourly/1`），給 capacity 在重置與換帳號時切開用量 |
+| 每 session 匯出 | `codeforge usage export --sessions`；每次收集也寫檔 | `<live_base>/codeforge/usage/usage-sessions.json`（`codeforge.usage-sessions/1`）：每 session、每帳號、每模型的 Claude token 列，給 fleet 把 session 對到 lane |
 | 面板分頁 | forge-stats pane 的「用量」分頁（`/forge-stats usage` 直接開到這頁） | 只讀 `summary.json`：帳號 5h／7d 與倒數、今天（UTC）各 model 的 token 與 API 等值；摘要超過 1 小時就提示執行 `codeforge usage`，不自己呼叫 codeforge |
 
 `<data_dir>` = `CODEFORGE_DATA_DIR`，預設 `~/.local/share/codeforge`；`<live_base>` 見
@@ -184,7 +185,7 @@ statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Cla
 
 要歸到正確帳號，lane wrapper 應帶 `CODEFORGE_ACCOUNT_ALIAS`。
 
-請求：`collect` 插入**新的** `requests` 列時，session id 是轉錄檔名的 stem；`<session>/subagents/` 底下的子代理轉錄算父 session。同一個 root 每次收集只讀一次 pins。帳號的優先順序是：該 session 的釘選別名，沒有才取 `timeline.alias_at(該列的 seen_ms)`，再沒有才用 `root_alias`。已經在庫裡的列不改帳號（修正前入庫的列也一樣，不回填：`requests` 沒有 session 欄，無法事後分辨是哪一個 session）；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`，因此不必另外改。
+請求：`collect` 插入**新的** `requests` 列時，把轉錄檔的 session id 寫進 `requests.session`（檔名 stem；`<session>/subagents/` 底下的子代理轉錄算父 session）。同一個 root 每次收集只讀一次 pins。帳號的優先順序是：該 session 的釘選別名，沒有才取 `timeline.alias_at(該列的 seen_ms)`，再沒有才用 `root_alias`。已經在庫裡的列不改帳號、也不改 session（本功能上線前入庫的列 `session` 仍是 NULL，不回填）；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`；每 session 匯出讀 `requests.session`（NULL 的列不進匯出）。
 
 已知限制：換帳號要到下一次 statusline 渲染或 collect 才被看見；這段空檔裡的請求歸給前一個別名。時間軸出現之前就收集的轉錄檔，仍用舊規則（歸給收集當下的帳號）。釘選也要等該 lane 的 statusline 寫過 pin 之後，之後的**新**列才歸到覆寫別名。
 
@@ -224,7 +225,7 @@ claude_dirs = ["/srv/claude/seats/seat-a", "/srv/claude/dispatches/run-b"]
 
 | 來源 | glob | 存下 |
 |---|---|---|
-| Claude | `<cfg>/projects/*/*.jsonl`、`<cfg>/projects/*/*/subagents/*.jsonl` | request id、UTC 日、model id、token 數、speed、cwd 最後一段 |
+| Claude | `<cfg>/projects/*/*.jsonl`、`<cfg>/projects/*/*/subagents/*.jsonl` | request id、UTC 日、model id、token 數、speed、cwd 最後一段、session（轉錄檔 stem；子代理算父 session；本功能上線前的列為 NULL） |
 | Codex | `<codex>/sessions/YYYY/MM/DD/rollout-*.jsonl` | session id（檔名）、UTC 日、model id、token 數、cwd 最後一段；`rate_limits` 的窗口數字（見下） |
 
 - **Codex 窗口（rollout `rate_limits`）**：`payload.type == "token_count"` 行的 `payload.rate_limits.primary`／`secondary`
@@ -342,6 +343,46 @@ JSON 印到 stdout：一個文件、結尾一個換行。不印 summary。給 ca
 **為什麼沒有 email、name、org、project、路徑**：這份 JSON 會離開這台機器（capacity 用 ssh 收，跟 `usage export`
 同一條路）。email、顯示名、組織名留在本機快照與 summary。project 是 cwd 的最後一段，只留在本機 `requests`，
 不進任何一列。host 只用 hash。
+
+## 每 session 匯出（usage-sessions/1）
+
+路徑：`<live_base>/codeforge/usage/usage-sessions.json`。每次 `usage collect`（以及會先收集的
+`usage`／`usage export`／`usage push`）在寫完 `summary.json` 之後，用同一慣例寫這份檔（暫存檔加
+rename、0600）。`codeforge usage export --sessions` 先做與 `usage export` 相同的收集，再把同一份
+JSON 印到 stdout（結尾一個換行），不印 summary。與 `--hourly` 互斥。
+
+```json
+{"schema":"codeforge.usage-sessions/1","generated_at_ms":0,"host":"host-1a2b3c4d",
+ "rows":[{"session":"sess-a","account":"acct-1a2b3c4d","model":"claude-opus-4-8",
+          "first_ms":0,"last_ms":0,"input":0,"output":0,
+          "cache_write_5m":0,"cache_write_1h":0,"cache_read":0,"requests":0}]}
+```
+
+沒有登入的列，`account` 是 `null`（未歸屬），不是空字串。整份文件任何地方都不能出現 `@`。
+
+- **schema**：`codeforge.usage-sessions/1`。每一層的 key 都是封閉集合；多一個或少一個欄位，整份不合格。
+- **generated_at_ms**：產出當下的 unix 毫秒，整數，0..=2^53−1。
+- **host**：`host-` 加 hostname sha256 的前 8 碼 hex（`summary::host_alias`）。絕不是 hostname。
+- **rows**：`requests` 裡 `source = 'claude'`、`session` 不是 NULL、而且 `seen_ms` 沒有比
+  `generated_at_ms` 早超過 **8 天**的列，依 (session, account, model) 加總。最多 100_000 列。
+  依 session、account、model 排序（未歸屬的空字串排在有別名的前面，印出時寫成 `null`）。
+- **session**：轉錄檔的 session id（1–64 個 `[A-Za-z0-9_-]`）。`session` 為 NULL 的列（本功能上線前
+  入庫、未回填）不進匯出；per-lane 對帳從本功能上線當天起算。
+- **account**：未歸屬 sentinel（空字串）寫 `null`；否則必須是合法別名（`^[a-z0-9-]{1,24}$`）。
+- **model**：與 summary 同一條 model id 規則，`^[A-Za-z0-9._-]{1,64}$`。不合語法的記為 `unknown`。
+- **first_ms**／**last_ms**：該組內 `seen_ms` 的最小／最大。
+- **計數**：`input`、`output`、`cache_write_5m`（欄 `cw5m`）、`cache_write_1h`（欄 `cw1h`）、
+  `cache_read`（欄 `read`）是加總，`requests` 是 `COUNT(*)`。每個整數壓在 `UINT_MAX`（2^53−1）。
+- 寫檔與印出前先驗證。驗證失敗是錯誤，不寫檔、stdout 什麼都不印。
+
+**只有 Claude**：Codex 的用量在 `codex_sessions`（每個 rollout 的累計），沒有逐筆帶 session 的
+`requests` 列可供此報表加總，v1 **不包含** Codex。
+
+**消費者**：fleet。fleet member address 帶 `@<session uuid>`，用這份文件把 session 對到 lane；
+`fleet.console/1` 以 add-only 的方式掛上 `usage` 區塊（本文件只產出用量，不改 console schema）。
+
+**為什麼沒有 email、name、org、project、路徑**：同每小時匯出——這份 JSON 會離開這台機器。project
+只留在本機 `requests`。host 只用 hash。
 
 ## 配額檢視（G40）
 
@@ -544,6 +585,7 @@ codeforge usage collect --claude-dir /srv/claude/seat-a --claude-dir /srv/claude
 codeforge usage push                # 印出 blob sha
 codeforge usage export              # 印出 push 會上傳的 bytes（驗證後拿掉 email 與 name，不連線、不寫檔），給 hangar 用 ssh 收
 codeforge usage export --hourly     # 同一趟收集後改印每小時（UTC）每帳號每模型的 Claude token 列（codeforge.usage-hourly/1）；沒有 email、name、org、project、路徑
+codeforge usage export --sessions   # 同一趟收集後改印每 session 每帳號每模型的 Claude token 列（codeforge.usage-sessions/1）；與 --hourly 互斥；collect 也會寫 usage-sessions.json
 codeforge usage trinity-import <FILE|->  # 匯入 trinity 自報配額（trinity-usage/1）；`-` 讀標準輸入。不連線、不讀憑證
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
 codeforge usage pools [--json]      # usage.v1 配額池（CODEFORGE_USAGE_V1 未設 = 關）

@@ -326,8 +326,11 @@ pub enum UsageAction {
     /// 印出 push 會上傳的 bytes（驗證後拿掉各帳號的 email 與 name，不連線），供 hangar 用 ssh 收集
     Export {
         /// 改印每小時（UTC）每帳號每模型的 token 列（codeforge.usage-hourly/1），不印 summary
-        #[arg(long)]
+        #[arg(long, conflicts_with = "sessions")]
         hourly: bool,
+        /// 改印每 session 每帳號每模型的 Claude token 列（codeforge.usage-sessions/1），不印 summary
+        #[arg(long, conflicts_with = "hourly")]
+        sessions: bool,
     },
     /// 匯入 trinity 自報配額（trinity-usage/1：observed_at、pct、resets_at，一行一個 JSON）
     TrinityImport {
@@ -636,7 +639,9 @@ pub fn run(cli: Cli) -> Result<()> {
                 usage::Action::Collect { quiet, claude_dirs }
             }
             Some(UsageAction::Push) => usage::Action::Push,
-            Some(UsageAction::Export { hourly }) => usage::Action::Export { hourly },
+            Some(UsageAction::Export { hourly, sessions }) => {
+                usage::Action::Export { hourly, sessions }
+            }
             Some(UsageAction::TrinityImport { file }) => usage::Action::TrinityImport { file },
             Some(UsageAction::Accounts { json }) => usage::Action::Accounts { json },
             Some(UsageAction::Pools { json }) => usage::Action::Pools { json },
