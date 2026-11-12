@@ -850,7 +850,7 @@ fn an_uncommitted_collect_leaves_no_trace() {
     {
         let tx = conn.transaction().unwrap();
         let v: Value = serde_json::from_str(&claude("req_x", 10, 10, json!({}))).unwrap();
-        claude_line(&tx, &v, "acct-a", None, NOW).unwrap();
+        claude_line(&tx, &v, "acct-a", None, None, NOW).unwrap();
         // dropped without commit: an interrupted collect
     }
     assert_eq!(totals(&conn).1, 0);
@@ -1826,5 +1826,43 @@ fn collect_observes_the_login_not_a_fresh_snapshot_of_the_previous_account() {
     assert_eq!(
         request_accounts(&conn),
         vec![("req_after".into(), "acct-bbbbbbbb".into())]
+    );
+}
+
+/// One root, two sessions in the same hour. Session A is pinned to B; session B is not,
+/// so the login timeline (A) still owns it. A's subagent transcript is filed under the pin.
+#[test]
+fn a_pinned_session_and_its_subagent_split_from_the_login_timeline() {
+    let hour = 3_600_000;
+    let ts = NOW - hour;
+    let line = |rid: &str, input: u64| claude(rid, input, 1, json!({"timestamp": iso(ts)}));
+    let e = env();
+    write(&e.cfg.join("projects/p/sess-a.jsonl"), &line("req_a", 10));
+    write(&e.cfg.join("projects/p/sess-b.jsonl"), &line("req_b", 20));
+    write(
+        &e.cfg.join("projects/p/sess-a/subagents/agent-1.jsonl"),
+        &line("req_sub", 7),
+    );
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-aaaaaaaa".into());
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-aaaaaaaa", ts - 10 * hour).unwrap();
+    crate::usage::logins::pin_session(&usage, &rs[0].hash, "sess-a", "acct-bbbbbbbb", ts).unwrap();
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_a".into(), "acct-bbbbbbbb".into()),
+            ("req_b".into(), "acct-aaaaaaaa".into()),
+            ("req_sub".into(), "acct-bbbbbbbb".into()),
+        ]
+    );
+    assert_eq!(
+        bucket_accounts(&conn),
+        vec![
+            ("acct-aaaaaaaa".into(), 20, 1),
+            ("acct-bbbbbbbb".into(), 17, 2),
+        ]
     );
 }
