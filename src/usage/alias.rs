@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 /// The env var autopilot G37 sets in a spawned session (agreed with autopilot,
 /// fleet msg 01M6FKM6GMYRRV2S1269KEJWAC).
 pub const ACCOUNT_ENV: &str = "AUTOPILOT_ACCOUNT";
+/// Per-process account override for a setup-token lane (PM 01M76F3F). The lane
+/// wrapper sets it; a value that is not `acct-` plus 8 lowercase hex digits is ignored.
+pub const ACCOUNT_ALIAS_ENV: &str = "CODEFORGE_ACCOUNT_ALIAS";
 /// Longest alias accepted.
 pub const ALIAS_MAX: usize = 24;
 
@@ -26,6 +29,29 @@ pub fn valid_alias(s: &str) -> bool {
         && s.len() <= ALIAS_MAX
         && s.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// `acct-` plus exactly 8 lowercase hex digits. The whole string, not a substring.
+fn is_acct_hex8(s: &str) -> bool {
+    let Some(hex) = s.strip_prefix("acct-") else {
+        return false;
+    };
+    hex.len() == 8 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// `CODEFORGE_ACCOUNT_ALIAS` after trim, when it is a valid alias and `acct-[0-9a-f]{8}`.
+/// Anything else (unset, empty, uppercase hex, wrong length, an email) is `None`.
+/// Pure: tests pass the value in, so they never read the process environment.
+pub fn override_from(raw: Option<&str>) -> Option<String> {
+    let s = raw?.trim();
+    (valid_alias(s) && is_acct_hex8(s)).then(|| s.to_string())
+}
+
+/// This process's [`ACCOUNT_ALIAS_ENV`], or `None` when it is unset or not accepted.
+/// Not called from tests (an env seam races under `cargo test`); callers that need
+/// a seam use [`override_from`].
+pub fn env_override() -> Option<String> {
+    override_from(std::env::var(ACCOUNT_ALIAS_ENV).ok().as_deref())
 }
 
 /// First 8 hex chars of sha256 of the canonical path (the path as given when it
@@ -288,11 +314,25 @@ pub fn account_from(env_account: Option<&str>, login: Option<Identity>) -> Optio
 /// This process's config dir and account, read from the environment (the one place G36
 /// reads `AUTOPILOT_ACCOUNT`; the collector never does). Never fails: any login-file
 /// problem means no account.
+///
+/// When [`env_override`] is set, that alias is the whole identity (no org, no email) and
+/// the login file is not read. A setup-token lane does not rewrite the login file, so the
+/// file still names the previous account (PM 01M76F3F).
 pub fn current_claude_account(live_base: &Path) -> (PathBuf, Option<Identity>) {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let cfg = std::env::var("CLAUDE_CONFIG_DIR").ok();
-    let acct = std::env::var(ACCOUNT_ENV).ok();
     let dir = claude_config_dir(cfg.as_deref(), &home);
+    if let Some(alias) = env_override() {
+        return (
+            dir,
+            Some(Identity {
+                alias,
+                org: None,
+                email: None,
+            }),
+        );
+    }
+    let acct = std::env::var(ACCOUNT_ENV).ok();
     let login = login_identity(
         &login_path(cfg.as_deref(), &home),
         &identity_cache_path(live_base, &dir),
@@ -304,6 +344,32 @@ pub fn current_claude_account(live_base: &Path) -> (PathBuf, Option<Identity>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn override_from_accepts_only_acct_plus_eight_lowercase_hex() {
+        assert_eq!(
+            override_from(Some("acct-0123abcd")),
+            Some("acct-0123abcd".to_string())
+        );
+        assert_eq!(
+            override_from(Some("  acct-deadbeef\n")),
+            Some("acct-deadbeef".to_string())
+        );
+        for bad in [
+            "acct-0123ABCD",
+            "acct-0123abc",
+            "acct-0123abcde",
+            "acct-me@x.com",
+            "acct-user@example.com",
+            "",
+            "   ",
+            "acct-pinned",
+            "acct-g1234567",
+        ] {
+            assert_eq!(override_from(Some(bad)), None, "{bad}");
+        }
+        assert_eq!(override_from(None), None);
+    }
 
     #[test]
     fn valid_alias_accepts_only_the_opaque_form() {
