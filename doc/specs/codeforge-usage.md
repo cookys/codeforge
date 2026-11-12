@@ -254,6 +254,11 @@ claude_dirs = ["/srv/claude/seats/seat-a", "/srv/claude/dispatches/run-b"]
 5 分／1 小時、快取讀、fast 倍率）。標成「API 等值」：訂閱方案不按 token 計費。沒有定價的
 model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註明幾列沒定價。
 
+**已知偏差（OTEL 對帳，2026-11-12）**：Claude Code 有些呼叫不寫進 transcript：prompt_suggestion、agent_summary、
+compact、session 標題、web_search／web_fetch。codeforge 只讀 transcript，所以看不到它們。24 小時對帳中，
+這些呼叫約占 output 8.5%、API 等值 6.4%；兩邊都有的請求，四種 token 完全一致。用 codeforge 數字估成本燒速時，
+乘上 1.07。報告：`doc/reports/2026-11-12-otel-pilot-reconcile.md`。
+
 ## summary.json（唯一會離開本機的東西；帳號列帶登入 email，`usage push` 上傳的 blob 會先拿掉 email）
 
 ```json
