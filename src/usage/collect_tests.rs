@@ -325,6 +325,61 @@ fn usage_export_hourly_prints_the_hourly_document_and_plain_export_stays_the_sum
     let _ = std::fs::remove_dir_all(&live);
 }
 
+#[test]
+fn usage_export_sessions_prints_the_sessions_document_and_collect_writes_the_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let e = env();
+    let live = child_live_labeled(
+        &e,
+        &format!(".codeforge-sessions-test-{}", std::process::id()),
+    );
+    write(
+        &e._tmp.path().join(".claude/projects/p/sess-a.jsonl"),
+        &claude(
+            "req_sess",
+            10,
+            2,
+            json!({
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "cwd": "/srv/work/user@example.com",
+            }),
+        ),
+    );
+    let (status, stdout, stderr) =
+        export_cli_args(&e, &live, &["codeforge", "usage", "export", "--sessions"]);
+    assert!(status.success(), "{stderr}");
+    assert!(stdout.ends_with('\n'), "{stdout:?}");
+    assert!(!stdout.contains('@'), "{stdout}");
+    let v: Value = serde_json::from_str(stdout.trim_end()).expect("stdout is one JSON document");
+    assert_eq!(v["schema"], "codeforge.usage-sessions/1");
+    let rows = v["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().any(|r| {
+            r["session"] == "sess-a"
+                && r["account"].is_null()
+                && r["input"] == 10
+                && r["output"] == 2
+        }),
+        "{rows:?}"
+    );
+    let path = live.join("codeforge/usage/usage-sessions.json");
+    assert!(path.is_file(), "collect must write {path:?}");
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "{path:?} mode {mode:o}");
+    let on_disk: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(on_disk["schema"], "codeforge.usage-sessions/1");
+    crate::usage::sessions_export::validate(&on_disk).unwrap();
+    let _ = std::fs::remove_dir_all(&live);
+}
+
+#[test]
+fn usage_export_sessions_and_hourly_together_is_rejected() {
+    use clap::Parser;
+    let err =
+        crate::cli::Cli::try_parse_from(["codeforge", "usage", "export", "--hourly", "--sessions"]);
+    assert!(err.is_err(), "hourly and sessions must conflict");
+}
+
 fn assert_collect_ok(output: std::process::Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(
@@ -850,7 +905,7 @@ fn an_uncommitted_collect_leaves_no_trace() {
     {
         let tx = conn.transaction().unwrap();
         let v: Value = serde_json::from_str(&claude("req_x", 10, 10, json!({}))).unwrap();
-        claude_line(&tx, &v, "acct-a", None, None, NOW).unwrap();
+        claude_line(&tx, &v, "acct-a", None, None, Some("sess-x"), NOW).unwrap();
         // dropped without commit: an interrupted collect
     }
     assert_eq!(totals(&conn).1, 0);
@@ -1904,4 +1959,61 @@ fn an_unattributed_pin_files_the_session_under_no_account() {
             ("req_tok".into(), UNATTRIBUTED.into()),
         ]
     );
+}
+
+fn request_sessions(conn: &Connection) -> Vec<(String, Option<String>)> {
+    let mut st = conn
+        .prepare("SELECT request_id, session FROM requests ORDER BY request_id")
+        .unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+/// New Claude rows store the transcript session id (subagent → parent). A row that
+/// already existed with session NULL keeps NULL after a later collect / token bump.
+#[test]
+fn new_requests_store_session_and_old_null_rows_stay_null() {
+    let ts = NOW - 3_600_000;
+    let line = |rid: &str, input: u64| claude(rid, input, 1, json!({"timestamp": iso(ts)}));
+    let e = env();
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    // a pre-existing row (as if collected before the session column shipped)
+    conn.execute(
+        "INSERT INTO requests
+         (request_id, day, source, account, model, project, speed,
+          input, output, cw5m, cw1h, read, seen_ms, session)
+         VALUES ('req_old', '2026-11-03', 'claude', 'acct-aaaaaaaa', 'claude-opus-5-5',
+                 'repo', 'standard', 5, 1, 0, 0, 0, ?1, NULL)",
+        [ts],
+    )
+    .unwrap();
+    write(&e.cfg.join("projects/p/sess-a.jsonl"), &line("req_a", 10));
+    write(&e.cfg.join("projects/p/sess-b.jsonl"), &line("req_b", 20));
+    write(
+        &e.cfg.join("projects/p/sess-a/subagents/agent-1.jsonl"),
+        &line("req_sub", 7),
+    );
+    // bump the old row's tokens so collect updates it in place
+    append(&e.cfg.join("projects/p/sess-b.jsonl"), &line("req_old", 9));
+    let rs = roots(std::slice::from_ref(&e.cfg), None);
+    collect(&mut conn, &rs, &[], NOW).unwrap();
+    assert_eq!(
+        request_sessions(&conn),
+        vec![
+            ("req_a".into(), Some("sess-a".into())),
+            ("req_b".into(), Some("sess-b".into())),
+            ("req_old".into(), None),
+            ("req_sub".into(), Some("sess-a".into())),
+        ]
+    );
+    let input: i64 = conn
+        .query_row(
+            "SELECT input FROM requests WHERE request_id = 'req_old'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(input, 9, "token bump kept the same row");
 }
