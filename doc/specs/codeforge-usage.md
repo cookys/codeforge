@@ -440,7 +440,7 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
 - **observed_at**：RFC3339；比現在晚超過 5 分鐘就略過該行。
 - **pct**：已用比例，有限數字 0.0..=1.5（34% 寫 0.34）。
 - **resets_at**：RFC3339，必須晚於 `observed_at`。
-- 三個欄位都必填，不合格的行略過並計數，空白行不計。其他欄位忽略，不寫進任何檔案。檔案超過 64 KiB 或 200 行，整份拒絕。
+- 三個欄位都必填，不合格的行略過並計數，空白行不計；有不合格的行、卻一行合格的都沒有時是錯誤（結束碼非 0，收件端會通知）。其他欄位忽略，不寫進任何檔案。檔案超過 64 KiB 或 200 行，整份拒絕。
 
 **寫入**：這次匯入裡 `observed_at` 最新的那一行，比 `<live_base>/codeforge/usage/trinity-quota.json` 裡的 `observed_ms` 新時才覆寫（0600、原子寫入）：`observed_ms`（unix 毫秒）、`pct`、`resets_at`（unix 秒）。不寫 `usage.db`，不進 `usage export --hourly`。`codeforge usage` 收集時讀這份檔，做成週視窗快照（沒有 5 小時窗）；`CODEFORGE_USAGE_TRINITY=0` 時不讀。快照比 `quota::MAX_AGE_MS`（6 小時）舊、或 `resets_at` 已過，就不進 summary。
 

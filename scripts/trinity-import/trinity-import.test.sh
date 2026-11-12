@@ -49,6 +49,16 @@ msg E cookys/grokbot/trinity "$earlier" 0.99 >> "$T/inbox.json"
 [ "$(jq .pct "$q")" = 0.4 ] || fail "older report overwrote"
 grep -qxF E "$T/state/done" || fail "older report not marked done"
 
+# a well-formed message with no valid line (34 instead of 0.34) fails and alerts once
+msg G cookys/grokbot/trinity "$now" 34 >> "$T/inbox.json"
+if "$here/trinity-import.sh"; then fail "invalid-only message not reported"; fi
+"$here/trinity-import.sh" || true
+[ "$(grep -c '^cf|.*訊息 G' "$T/sent")" = 1 ] || fail "invalid-only alert not once: $(cat "$T/sent")"
+! grep -qxF G "$T/state/done" || fail "invalid-only message marked done"
+[ "$(jq .pct "$q")" = 0.4 ] || fail "invalid-only message changed the quota"
+jq -c 'select(.id != "G")' "$T/inbox.json" > "$T/inbox.tmp" && mv "$T/inbox.tmp" "$T/inbox.json"
+: > "$T/sent"
+
 touch "$T/inboxfail"
 if "$here/trinity-import.sh"; then fail "inbox failure not reported"; fi
 "$here/trinity-import.sh" || true

@@ -362,6 +362,12 @@ pub fn run(action: Action) -> Result<()> {
                 trinity::read_path(std::path::Path::new(&file))?
             };
             let parsed = trinity::parse(&text, now_ms());
+            if parsed.reports.is_empty() && parsed.skipped > 0 {
+                anyhow::bail!(
+                    "trinity 配額檔沒有一行合格（略過 {} 行），未匯入",
+                    parsed.skipped
+                );
+            }
             let (live_base, _) = crate::live::resolve_live_base();
             let written = trinity::import(&parsed.reports, &summary::summary_dir(&live_base))?;
             println!("{}", trinity::report_line(written, parsed.skipped));
