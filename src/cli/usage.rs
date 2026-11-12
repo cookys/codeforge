@@ -204,9 +204,16 @@ fn collect_and_summarize(
     let path = summary::write(&sdir, &v)?;
     {
         let host = summary::host_alias(&summary::hostname());
-        let sessions = sessions_export::build(&conn, &host, now)?;
-        sessions_export::validate(&sessions).context("每 session 用量未通過檢查，拒絕寫入")?;
-        sessions_export::write(&sdir, &sessions)?;
+        if let Err(e) = (|| -> Result<()> {
+            let sessions = sessions_export::build(&conn, &host, now)?;
+            sessions_export::validate(&sessions).context("每 session 用量未通過檢查，拒絕寫入")?;
+            sessions_export::write(&sdir, &sessions)?;
+            Ok(())
+        })() {
+            if !quiet {
+                eprintln!("codeforge usage: 每 session 用量沒有更新（{e:#}）");
+            }
+        }
     }
     let fleet_env = std::env::var("CODEFORGE_FLEET_USAGE_DIR").ok();
     if let Err(e) = write_fleet_quota(&sdir, fleet_env.as_deref(), now) {

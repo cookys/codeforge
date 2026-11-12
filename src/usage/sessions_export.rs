@@ -5,7 +5,7 @@
 //! usage lives in `codex_sessions` without per-request rows keyed for this report). No
 //! email, name, org, project or path.
 
-use super::{alias::valid_alias, collect, summary};
+use super::{alias::valid_alias, collect, logins::usable_session, summary};
 use anyhow::{bail, Context as _, Result};
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, Error};
@@ -94,8 +94,9 @@ pub fn build(conn: &Connection, host: &str, now_ms: i64) -> Result<Value> {
     // sentinel is `""`, so it sorts before any alias.
     let mut acc: Acc = Acc::new();
     for g in grouped {
+        // Defense for rows stored before collect filtered stems: skip, do not bail.
         if !usable_session(&g.session) {
-            bail!("有一筆用量的 session 不合規格");
+            continue;
         }
         let model = collect::model_id(Some(g.model.as_str()));
         let slot = acc
@@ -109,6 +110,7 @@ pub fn build(conn: &Connection, host: &str, now_ms: i64) -> Result<Value> {
     }
     let rows: Vec<Value> = acc
         .into_iter()
+        .take(MAX_ROWS)
         .map(|((session, account, model), (first_ms, last_ms, c))| {
             let account = if account == collect::UNATTRIBUTED {
                 Value::Null
@@ -187,13 +189,6 @@ pub fn write(dir: &std::path::Path, v: &Value) -> Result<std::path::PathBuf> {
     crate::live::write_live_json(dir, FILE, v)
         .map_err(|_| anyhow::anyhow!("無法寫入 usage-sessions.json"))?;
     Ok(dir.join(FILE))
-}
-
-/// A session id as pins/statusline accept: 1–64 of `[A-Za-z0-9_-]` (no `@`).
-fn usable_session(s: &str) -> bool {
-    (1..=64).contains(&s.len())
-        && s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 fn count_at(row: &rusqlite::Row<'_>, idx: usize) -> rusqlite::Result<u64> {
@@ -611,5 +606,59 @@ mod tests {
         let e = validate(&top).unwrap_err().to_string();
         assert!(e.contains("不允許的欄位"), "{e}");
         assert!(!e.contains('@'), "{e}");
+    }
+
+    /// Rows already stored with an off-grammar session (before the collect fix) are
+    /// skipped by build, so a later collect can still write usage-sessions.json.
+    #[test]
+    fn build_skips_stored_unusable_session() {
+        let (_dir, conn) = open();
+        let now = ms("2026-11-12T15:00:00Z");
+        let t1 = ms("2026-11-11T10:00:00Z");
+        let acct = "acct-1a2b3c4d";
+        let model = "claude-opus-4-8";
+        ins(
+            &conn,
+            &Ins {
+                id: "good",
+                source: "claude",
+                account: acct,
+                model,
+                project: "repo-alpha",
+                session: Some("sess-good"),
+                seen_ms: t1,
+                input: 10,
+                output: 1,
+                cw5m: 0,
+                cw1h: 0,
+                read: 0,
+            },
+        );
+        ins(
+            &conn,
+            &Ins {
+                id: "bad",
+                source: "claude",
+                account: acct,
+                model,
+                project: "repo-alpha",
+                session: Some("foo.bar"),
+                seen_ms: t1,
+                input: 99,
+                output: 0,
+                cw5m: 0,
+                cw1h: 0,
+                read: 0,
+            },
+        );
+        let v = build(&conn, HOST, now).unwrap();
+        validate(&v).unwrap();
+        let rows = v["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["session"], "sess-good");
+        assert_eq!(counts(&rows[0]), [10, 1, 0, 0, 0, 1]);
+        let text = v.to_string();
+        assert!(!text.contains("foo.bar"), "bad session leaked: {text}");
+        assert!(!text.contains("99"), "bad row counts leaked: {text}");
     }
 }
