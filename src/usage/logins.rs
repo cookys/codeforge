@@ -1,9 +1,11 @@
-//! Per-root login timeline and the statusline session gate (re-login attribution).
+//! Per-root login timeline, the statusline session gate, and session pins (re-login attribution).
 //!
 //! `<quota_dir parent>/logins-<root hash8>.json` records when the alias on a Claude config
 //! dir changed. `<quota_dir parent>/sessions-<root hash8>.json` remembers the rate-limit
 //! fingerprint each session last filed, so a session that was already running keeps its
-//! pre-switch window off the new account. Neither file stores an email or an org.
+//! pre-switch window off the new account. `<quota_dir parent>/pins-<root hash8>.json` maps a
+//! session to the alias a setup-token lane pinned (PM 01M76F3F). None of these files stores
+//! an email or an org.
 
 use super::alias::valid_alias;
 use super::quota::{self, MAX_AGE_MS};
@@ -211,6 +213,60 @@ pub fn session_gate(
     Ok(SessionGate::Merge)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PinSeen {
+    alias: String,
+    at_ms: i64,
+}
+
+/// The pinned alias of each session on this root. A missing, corrupt or foreign file
+/// (including any `@`) is an empty map. An I/O error other than those is returned.
+pub fn pins(dir: &Path, root: &str) -> Result<BTreeMap<String, String>> {
+    let name = state_file("pins", root)?;
+    let map = match load_bytes(&dir.join(&name), SESSION_MAX_BYTES)? {
+        Loaded::Data(buf) => parse_pins(&buf).unwrap_or_default(),
+        Loaded::Missing | Loaded::Foreign => BTreeMap::new(),
+    };
+    Ok(map.into_iter().map(|(k, e)| (k, e.alias)).collect())
+}
+
+/// Record `{alias, at_ms}` for `session` in `pins-<root hash8>.json`. An unusable session
+/// id or an alias that is not [`valid_alias`] is ignored. The file is rewritten only when
+/// the stored alias changed, or when the previous file was corrupt or foreign. On write,
+/// entries older than [`MAX_AGE_MS`] are dropped and the map is capped at 512.
+pub fn pin_session(dir: &Path, root: &str, session: &str, alias: &str, now_ms: i64) -> Result<()> {
+    if !usable_session(session) || !valid_alias(alias) {
+        return Ok(());
+    }
+    let name = state_file("pins", root)?;
+    let path = dir.join(&name);
+    let (mut pins, mut dirty) = match load_bytes(&path, SESSION_MAX_BYTES)? {
+        Loaded::Missing => (BTreeMap::new(), false),
+        Loaded::Foreign => (BTreeMap::new(), true),
+        Loaded::Data(buf) => match parse_pins(&buf) {
+            Some(m) => (m, false),
+            None => (BTreeMap::new(), true),
+        },
+    };
+    // same alias is not a change: leave `at_ms` and skip the write
+    let changed = !matches!(pins.get(session), Some(prev) if prev.alias == alias);
+    if changed {
+        pins.insert(
+            session.to_string(),
+            PinSeen {
+                alias: alias.to_string(),
+                at_ms: now_ms,
+            },
+        );
+        dirty = true;
+    }
+    if dirty {
+        prune_pins(&mut pins, now_ms, session);
+        write_json(dir, &name, &pins_json(&pins))?;
+    }
+    Ok(())
+}
+
 fn clean_fp(fp: &str) -> bool {
     !fp.is_empty() && fp.len() <= 256 && !fp.contains('@')
 }
@@ -220,6 +276,62 @@ fn usable_session(s: &str) -> bool {
     (1..=64).contains(&s.len())
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+fn prune_pins(map: &mut BTreeMap<String, PinSeen>, now_ms: i64, keep: &str) {
+    map.retain(|_, e| now_ms.saturating_sub(e.at_ms) <= MAX_AGE_MS);
+    while map.len() > MAX_SESSIONS {
+        let oldest = map
+            .iter()
+            .filter(|(k, _)| k.as_str() != keep)
+            .min_by(|a, b| a.1.at_ms.cmp(&b.1.at_ms).then_with(|| a.0.cmp(b.0)))
+            .map(|(k, _)| k.clone());
+        match oldest {
+            Some(k) => {
+                map.remove(&k);
+            }
+            None => break,
+        }
+    }
+}
+
+fn pins_json(map: &BTreeMap<String, PinSeen>) -> Value {
+    let mut pins = Map::new();
+    for (k, e) in map {
+        if !usable_session(k) || !valid_alias(&e.alias) {
+            continue;
+        }
+        pins.insert(k.clone(), json!({"alias": e.alias, "at_ms": e.at_ms}));
+    }
+    Value::Object(pins)
+}
+
+fn parse_pins(buf: &[u8]) -> Option<BTreeMap<String, PinSeen>> {
+    let v: Value = serde_json::from_slice(buf).ok()?;
+    let obj = v.as_object()?;
+    let mut map = BTreeMap::new();
+    for (k, item) in obj {
+        if !usable_session(k) {
+            return None;
+        }
+        let o = item.as_object()?;
+        if o.len() != 2 || !o.contains_key("alias") || !o.contains_key("at_ms") {
+            return None;
+        }
+        let alias = o.get("alias")?.as_str()?;
+        let at_ms = o.get("at_ms")?.as_i64()?;
+        if !valid_alias(alias) {
+            return None;
+        }
+        map.insert(
+            k.clone(),
+            PinSeen {
+                alias: alias.to_string(),
+                at_ms,
+            },
+        );
+    }
+    Some(map)
 }
 
 fn prune_sessions(map: &mut BTreeMap<String, SessionSeen>, now_ms: i64, keep: &str) {
@@ -530,5 +642,86 @@ mod tests {
         assert!(sessions.get("s0000").is_none());
         assert!(sessions.get("s0001").is_some());
         assert!(sessions.get("s0512").is_some());
+    }
+
+    #[test]
+    fn pin_session_writes_only_a_changed_alias_and_a_bad_file_reads_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        pin_session(dir.path(), ROOT, "", "acct-bbbbbbbb", 1).unwrap();
+        pin_session(dir.path(), ROOT, "bad/id", "acct-bbbbbbbb", 1).unwrap();
+        pin_session(dir.path(), ROOT, "sess-a", "Not-Alias", 1).unwrap();
+        assert!(pins(dir.path(), ROOT).unwrap().is_empty());
+        assert!(!dir.path().join("pins-1a2b3c4d.json").exists());
+
+        pin_session(dir.path(), ROOT, "sess-a", "acct-bbbbbbbb", 1_000).unwrap();
+        let path = dir.path().join("pins-1a2b3c4d.json");
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(
+            pins(dir.path(), ROOT)
+                .unwrap()
+                .get("sess-a")
+                .map(String::as_str),
+            Some("acct-bbbbbbbb")
+        );
+        pin_session(dir.path(), ROOT, "sess-a", "acct-bbbbbbbb", 2_000).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        no_at(&path);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+
+        let bare = tempfile::tempdir().unwrap();
+        assert!(pins(bare.path(), ROOT).unwrap().is_empty());
+        std::fs::write(&path, b"not-json").unwrap();
+        assert!(pins(dir.path(), ROOT).unwrap().is_empty());
+        std::fs::write(&path, br#"{"sess-a":{"alias":"me@x.com","at_ms":1}}"#).unwrap();
+        assert!(pins(dir.path(), ROOT).unwrap().is_empty());
+        pin_session(dir.path(), ROOT, "sess-a", "acct-bbbbbbbb", 3_000).unwrap();
+        assert_eq!(
+            pins(dir.path(), ROOT)
+                .unwrap()
+                .get("sess-a")
+                .map(String::as_str),
+            Some("acct-bbbbbbbb")
+        );
+        no_at(&path);
+    }
+
+    #[test]
+    fn pin_entries_past_max_age_are_pruned_and_the_file_caps_at_512() {
+        let dir = tempfile::tempdir().unwrap();
+        let later = 10_000_000_000;
+        let edge = later - MAX_AGE_MS;
+        pin_session(dir.path(), ROOT, "edge-session", "acct-aaaaaaaa", edge).unwrap();
+        pin_session(dir.path(), ROOT, "old-session", "acct-aaaaaaaa", edge - 1).unwrap();
+        pin_session(dir.path(), ROOT, "new-session", "acct-aaaaaaaa", later).unwrap();
+        let body = std::fs::read_to_string(dir.path().join("pins-1a2b3c4d.json")).unwrap();
+        assert!(!body.contains("old-session"), "{body}");
+        assert!(body.contains("edge-session"), "{body}");
+        assert!(body.contains("new-session"), "{body}");
+        assert!(!body.contains('@'));
+
+        let capped = tempfile::tempdir().unwrap();
+        for i in 0..513 {
+            pin_session(
+                capped.path(),
+                ROOT,
+                &format!("s{i:04}"),
+                "acct-aaaaaaaa",
+                1_000 + i,
+            )
+            .unwrap();
+        }
+        let v: Value = serde_json::from_str(
+            &std::fs::read_to_string(capped.path().join("pins-1a2b3c4d.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v.as_object().unwrap().len(), 512);
+        assert!(v.get("s0000").is_none());
+        assert!(v.get("s0001").is_some());
+        assert!(v.get("s0512").is_some());
     }
 }
