@@ -28,15 +28,49 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         // G36: this account's quota snapshot out, the other accounts' back in.
-        let (config_dir, acct) = crate::usage::alias::current_claude_account(&live_base);
-        let others = record_quota(
-            &mut data,
-            &crate::usage::quota::quota_dir(&live_base),
-            acct.as_ref(),
-            &crate::usage::alias::path_hash8(&config_dir),
-            &crate::live::sanitize_session_id(raw_sid),
-            now_ms,
-        );
+        // A setup-token lane sets CODEFORGE_ACCOUNT_ALIAS and does not rewrite the login
+        // file (PM 01M76F3F). That override is the whole identity: do not read the login.
+        let pinned = crate::usage::alias::env_override();
+        let pin = pinned.is_some();
+        let (config_dir, acct) = match pinned {
+            Some(alias) => {
+                let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+                let cfg = std::env::var("CLAUDE_CONFIG_DIR").ok();
+                let dir = crate::usage::alias::claude_config_dir(cfg.as_deref(), &home);
+                (
+                    dir,
+                    Some(crate::usage::alias::Identity {
+                        alias,
+                        org: None,
+                        email: None,
+                    }),
+                )
+            }
+            None => crate::usage::alias::current_claude_account(&live_base),
+        };
+        let quota_dir = crate::usage::quota::quota_dir(&live_base);
+        let root_hash = crate::usage::alias::path_hash8(&config_dir);
+        let session = crate::live::sanitize_session_id(raw_sid);
+        let others = if pin {
+            record_quota_with(
+                &mut data,
+                &quota_dir,
+                acct.as_ref(),
+                &root_hash,
+                &session,
+                now_ms,
+                true,
+            )
+        } else {
+            record_quota(
+                &mut data,
+                &quota_dir,
+                acct.as_ref(),
+                &root_hash,
+                &session,
+                now_ms,
+            )
+        };
         data.others = others;
         data.names = crate::usage::names::load_default();
         // G40: once `<live_dir>/quota/` exists the mirror is the only source on this row (design 7 rule 7).
@@ -354,6 +388,23 @@ fn record_quota(
     session: &str,
     now_ms: i64,
 ) -> Vec<crate::usage::quota::Snapshot> {
+    record_quota_with(data, dir, acct, root, session, now_ms, false)
+}
+
+/// `pin`: this process's account is `CODEFORGE_ACCOUNT_ALIAS`, not the login file.
+/// The snapshot is filed under that alias with `root: None` (so `root_alias` does not
+/// adopt it), the login timeline is not observed, and the session is pinned. The session
+/// gate still runs with the override alias. Org and email are dropped.
+fn record_quota_with(
+    data: &mut StatusInput,
+    dir: &std::path::Path,
+    acct: Option<&crate::usage::alias::Identity>,
+    root: &str,
+    session: &str,
+    now_ms: i64,
+    pin: bool,
+) -> Vec<crate::usage::quota::Snapshot> {
+    use crate::usage::alias::Identity;
     use crate::usage::logins::{self, SessionGate};
     use crate::usage::quota::{merge_snapshot, read_others, Seen, Snapshot, Window};
     let window = |pct: Option<f64>, at: Option<i64>| match (pct, at) {
@@ -367,21 +418,41 @@ fn record_quota(
         }),
         _ => None,
     };
+    // an override never carries the login file's org or email
+    let filed = acct.map(|a| {
+        if pin {
+            Identity {
+                alias: a.alias.clone(),
+                org: None,
+                email: None,
+            }
+        } else {
+            a.clone()
+        }
+    });
     // no login: unattributed, nothing written (PM 01M7052H79); the others are still read
-    let Some(acct) = acct else {
+    let Some(acct) = filed.as_ref() else {
         return read_others(dir, "", now_ms);
     };
-    // every render that knows the root and the current alias records the login timeline
+    // a pinned lane must not append itself to the root's login timeline
     if let Some(parent) = dir.parent() {
         if crate::usage::quota::is_hash8(root) && crate::usage::alias::valid_alias(&acct.alias) {
-            let _ = logins::observe(parent, root, &acct.alias, now_ms);
+            if pin {
+                let _ = logins::pin_session(parent, root, session, &acct.alias, now_ms);
+            } else {
+                let _ = logins::observe(parent, root, &acct.alias, now_ms);
+            }
         }
     }
     let snap = Snapshot {
         alias: acct.alias.clone(),
         org: acct.org.clone(),
         email: acct.email.clone(),
-        root: crate::usage::quota::is_hash8(root).then(|| root.to_string()),
+        root: if pin {
+            None
+        } else {
+            crate::usage::quota::is_hash8(root).then(|| root.to_string())
+        },
         written_at_ms: now_ms,
         five_hour: window(data.five_hour_pct, data.five_hour_resets_at),
         seven_day: window(data.seven_day_pct, data.seven_day_resets_at),
@@ -406,6 +477,19 @@ fn record_quota(
         apply_disk_quota(data, dir, &acct.alias, now_ms);
     } else if has_limits {
         if let Ok((merged, _)) = merge_snapshot(dir, &snap) {
+            // merge keeps an older file's root; an override must not become this root's alias
+            let merged = if pin && merged.root.is_some() {
+                let mut cleared = merged;
+                cleared.root = None;
+                let _ = crate::live::write_live_json(
+                    dir,
+                    &format!("{}.json", cleared.alias),
+                    &cleared.to_json(),
+                );
+                cleared
+            } else {
+                merged
+            };
             // a window past its reset is unknown (quota.rs), on this account's own row too
             let live = |w: Option<Window>| w.filter(|w| w.resets_at * 1000 > now_ms);
             if let Some(w) = live(merged.five_hour) {
@@ -3003,6 +3087,76 @@ mod tests {
             now_ms
         )
         .is_empty());
+    }
+
+    /// Setup-token lane (PM 01M76F3F): the override alias is filed with `root: null`,
+    /// the login timeline is not touched, and the session is pinned. No written file contains `@`.
+    #[test]
+    fn an_override_files_under_that_alias_with_no_root_and_pins_the_session() {
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let now_ms = Q_NOW * 1000;
+        let root = "1a2b3c4d";
+        std::fs::create_dir_all(dir.parent().unwrap()).unwrap();
+        let usage = dir.parent().unwrap();
+        crate::usage::logins::observe(usage, root, "acct-aaaaaaaa", now_ms - 10_000).unwrap();
+        let logins_path = usage.join(format!("logins-{root}.json"));
+        let before = std::fs::read(&logins_path).unwrap();
+        let mut data = StatusInput {
+            five_hour_pct: Some(0.4),
+            five_hour_resets_at: Some(Q_NOW + 3600),
+            seven_day_pct: Some(0.2),
+            seven_day_resets_at: Some(Q_NOW + 86_400),
+            ..Default::default()
+        };
+        // an email on the identity must not survive: the override carries neither org nor email
+        record_quota_with(
+            &mut data,
+            &dir,
+            Some(&ident("acct-bbbbbbbb", Some("me@example.com"))),
+            root,
+            "sess-token",
+            now_ms,
+            true,
+        );
+        let snap: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.join("acct-bbbbbbbb.json")).unwrap())
+                .unwrap();
+        assert_eq!(snap["alias"], "acct-bbbbbbbb");
+        assert_eq!(snap["root"], serde_json::Value::Null);
+        assert_eq!(snap["org"], serde_json::Value::Null);
+        assert_eq!(snap["email"], serde_json::Value::Null);
+        assert_eq!(
+            std::fs::read(&logins_path).unwrap(),
+            before,
+            "login timeline changed"
+        );
+        let pins: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(usage.join(format!("pins-{root}.json"))).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(pins["sess-token"]["alias"], "acct-bbbbbbbb");
+        assert_eq!(pins["sess-token"]["at_ms"], now_ms);
+        let sessions =
+            std::fs::read_to_string(usage.join(format!("sessions-{root}.json"))).unwrap();
+        assert!(sessions.contains("sess-token"), "{sessions}");
+        assert!(sessions.contains("acct-bbbbbbbb"), "{sessions}");
+        assert_tree_has_no_at(usage);
+    }
+
+    fn assert_tree_has_no_at(dir: &std::path::Path) {
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for ent in std::fs::read_dir(&d).unwrap() {
+                let p = ent.unwrap().path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    let body = std::fs::read(&p).unwrap();
+                    assert!(!body.contains(&b'@'), "{} contains @", p.display());
+                }
+            }
+        }
     }
 
     /// cuda, re-login at 17:12: session S was on A and still holds A's window (96%, reset

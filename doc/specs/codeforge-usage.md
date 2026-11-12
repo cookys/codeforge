@@ -146,17 +146,16 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   驗證同 `valid_name`，契約 `name_max_cells` = 24 與 pane 副本由測試比對。forge-stats「用量」分頁與側欄畫 `name`；舊 summary 沒有 `name`
   時依序退回 email、org、非 `acct-` 的別名，`acct-` 且三者皆無的帳號不畫。`usage push` 上傳前同時拿掉 `email` 與 `name`
   （預設名可能是 email 前段）。`codeforge usage --by account` 的文字表也印顯示名（無法命名的 `acct-` 印「未命名帳號」），`--json` 仍是鍵。
-- 收集：不讀 `AUTOPILOT_ACCOUNT`。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」，其次是該 root 自己的
+- 收集：不讀 `AUTOPILOT_ACCOUNT`，也不讀 `CODEFORGE_ACCOUNT_ALIAS`（後者只由 statusline 釘 session，見下）。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」（`root` 為 null 的覆寫快照不算），其次是該 root 自己的
   登入檔身分（預設 root `~/.claude` 對應 `~/.claude.json`，其他 root 對應 `<root>/.claude.json`），
   再其次是 db 裡存的，最後未歸屬（不再是 `acct-<hash>`；root 一律記進 db，讓它的舊 `acct-<hash>` 列認得出來）。
   Codex root 是 `codex-<hash>`。
 - 重新登入後的配額與請求歸屬見「重新登入的歸屬」。
-- 限制：轉錄檔不記錄是哪個 OAuth token。同一個 config dir 跑多個帳號時，轉錄用量歸給那個 dir
-  的別名（配額快照仍準確）。G37 採「每個帳號一個 config dir」，解除這個限制。
+- 限制：轉錄檔不記錄是哪個 OAuth token。沒有 `CODEFORGE_ACCOUNT_ALIAS` 的 session，同一個 config dir 的用量仍依登入時間軸歸給那個 dir 的別名（配額快照仍準確）。setup-token lane 由 wrapper 設覆寫，並以 session 釘選分開歸屬（PM 01M76F3F）。G37 的「每個帳號一個 config dir」仍是沒有覆寫時的做法。
 
 ## 重新登入的歸屬（Re-login attribution）
 
-同一個 Claude config dir 換帳號（帳號 A 登出、帳號 B 登入）之後，配額與請求都依**這一個**來源歸屬：該 root 的登入時間軸。
+同一個 Claude config dir 換帳號（帳號 A 登出、帳號 B 登入）之後，沒有行程覆寫的配額與請求依該 root 的登入時間軸歸屬。setup-token lane 的覆寫見下方。
 
 時間軸檔是 `<quota 目錄的上一層>/logins-<root 的 hash8>.json`（也就是 `<live_base>/codeforge/usage/`），內容為
 `{"entries":[{"since_ms":<毫秒>,"alias":"acct-xxxxxxxx"}]}`，新的在最後，最多 64 筆（丟掉最舊的）。
@@ -168,9 +167,19 @@ statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Cla
 沒有紀錄、別名相同、或 `fp` 變了（換帳號之後的新回應）：照舊合併，並把紀錄設成目前別名、新的 `fp`、現在。別名與 `fp` 都沒變就不寫檔。
 寫檔時刪掉 `at_ms` 早於 `quota::MAX_AGE_MS` 的紀錄，最多留 512 筆（丟掉 `at_ms` 最舊的）。session 是空字串就不設閘門，照舊合併。讀寫失敗就退回今天的合併，statusline 不因此失敗、也不印 stderr。
 
-請求：`collect` 插入**新的** `requests` 列時，帳號取 `timeline.alias_at(該列的 seen_ms)`，沒有才用 `root_alias` 的結果。已經在庫裡的列不改帳號；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`，因此不必另外改。
+行程覆寫：lane wrapper 可設 `CODEFORGE_ACCOUNT_ALIAS=acct-<8 個小寫 hex>`。這是給 setup-token（環境變數登入）的 lane 用的（PM 01M76F3F）：那種 lane **不改寫**登入檔，若仍從 `.claude.json` 推別名，會把該 lane 的請求和 statusline 的配額讀數記到舊帳號。statusline 只在去掉前後空白後、同時通過 `valid_alias` 且符合 `acct-[0-9a-f]{8}` 時採用；大寫 hex、長度不對、`acct-` 後面像 email、空字串，都當成沒有，不印錯誤。採用時：
 
-已知限制：換帳號要到下一次 statusline 渲染或 collect 才被看見；這段空檔裡的請求歸給前一個別名。時間軸出現之前就收集的轉錄檔，仍用舊規則（歸給收集當下的帳號）。
+- 這個行程的帳號就是該別名，org 與 email 都是空的，**不讀**登入檔。
+- **不**呼叫 `observe`。root 的登入時間軸仍只記登入檔上的帳號。
+- 配額快照寫在覆寫別名下，`root` 為 null，因此 `root_alias` 不會把這個別名當成該 root 的帳號。
+- 呼叫 `pin_session`，把這個 session 釘在覆寫別名上。檔案是同一層的 `pins-<root 的 hash8>.json`，內容為 `{"<session>":{"alias":"<別名>","at_ms":<毫秒>}}`。寫入慣例與 `sessions-` 相同：`state_file`、`load_bytes` 上限、0600、暫存檔加 rename、寫入時依 `quota::MAX_AGE_MS` 修剪、最多 512 筆、不能用的 session id 略過、內容沒變不寫。缺檔、壞掉或外來（含任何 `@`）讀成空的。
+- `session_gate` 仍用覆寫別名跑。
+
+請求：`collect` 插入**新的** `requests` 列時，session id 是轉錄檔名的 stem；`<session>/subagents/` 底下的子代理轉錄算父 session。同一個 root 每次收集只讀一次 pins。帳號的優先順序是：該 session 的釘選別名，沒有才取 `timeline.alias_at(該列的 seen_ms)`，再沒有才用 `root_alias`。已經在庫裡的列不改帳號（修正前入庫的列也一樣，不回填：`requests` 沒有 session 欄，無法事後分辨是哪一個 session）；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`，因此不必另外改。
+
+已知限制：換帳號要到下一次 statusline 渲染或 collect 才被看見；這段空檔裡的請求歸給前一個別名。時間軸出現之前就收集的轉錄檔，仍用舊規則（歸給收集當下的帳號）。釘選也要等該 lane 的 statusline 寫過 pin 之後，之後的**新**列才歸到覆寫別名。
+
+aimax395 的 team，從 2026-11-12 06:30（+0800）起，到各 lane 帶著這個覆寫重啟為止，記成 `acct-65d2bffc` 的 Claude 請求與配額百分比實際上屬於 `acct-9832dff1`。PM 裁定不回填（PM 01M76FE9），所以這段期間的逐帳號合計是不準的。
 
 ## 讀什麼、存什麼
 
