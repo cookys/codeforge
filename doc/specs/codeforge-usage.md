@@ -428,6 +428,24 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
 - **關斷**：環境變數 `CODEFORGE_USAGE_KIMI=0` 時什麼都不讀（包括憑證檔與快取）、不打端點。
 - **鍵**：`hash8` 是這台 `$HOME`（canonicalized）的 `alias::path_hash8`。
 
+## trinity 配額（自報）
+
+操作員 d-e31e39c0（PM 01M76PF4）。fleet 成員 `cookys/grokbot/trinity`（Grok Bot，自己的 VM，沒有可讀的憑證）每次被叫醒時，把自己的 Grok 額度寫成一行，同一個 UTC 小時最多一次，送到 `cookys/aimax395-team/fleet-cli`（或由它那台的 courier 定時送出同一行）。只收配額：token 數與醒來次數不匯入（醒來次數是 hangar 每 6 小時從 hub 算的代理值，給 capacity，PM 01M76GXN）。codeforge 不連線、不讀憑證，只在 `codeforge usage trinity-import <FILE>`（`-` 表示標準輸入）時匯入。帳號鍵是 `trinity-<sha8>`：sha8 是成員位址字串的 sha256 前 8 碼 hex，各主機相同；沒設顯示名時顯示 `trinity (Grok Bot)`。實作 `src/usage/trinity.rs`。
+
+```json
+{"schema":"trinity-usage/1","observed_at":"2026-11-12T03:12:00Z","pct":0.34,"resets_at":"2026-11-18T00:00:00Z"}
+```
+
+- **schema**：必須是 `trinity-usage/1`。
+- **observed_at**：RFC3339；比現在晚超過 5 分鐘就略過該行。
+- **pct**：已用比例，有限數字 0.0..=1.5（34% 寫 0.34）。
+- **resets_at**：RFC3339，必須晚於 `observed_at`。
+- 三個欄位都必填，不合格的行略過並計數，空白行不計。其他欄位忽略，不寫進任何檔案。檔案超過 64 KiB 或 200 行，整份拒絕。
+
+**寫入**：這次匯入裡 `observed_at` 最新的那一行，比 `<live_base>/codeforge/usage/trinity-quota.json` 裡的 `observed_ms` 新時才覆寫（0600、原子寫入）：`observed_ms`（unix 毫秒）、`pct`、`resets_at`（unix 秒）。不寫 `usage.db`，不進 `usage export --hourly`。`codeforge usage` 收集時讀這份檔，做成週視窗快照（沒有 5 小時窗）；`CODEFORGE_USAGE_TRINITY=0` 時不讀。快照比 `quota::MAX_AGE_MS`（6 小時）舊、或 `resets_at` 已過，就不進 summary。
+
+**收件**：`scripts/trinity-import/trinity-import.sh`，由 systemd user timer 每 15 分鐘執行一次（`codeforge-trinity-import.timer`）。它讀這台 fleet-cli 的收件匣（`fleet inbox --peek --json`），只收 courier 證明的 `from` 在 `CODEFORGE_TRINITY_SENDERS`（預設 `cookys/grokbot/trinity` 與 `cookys/grokbot/fleet-cli`：trinity 那台用排程跑 shell `fleet send` 時，寄件者是那台的 fleet-cli；hub 只認證到 courier 這層，所以內容一律當不可信資料解析）裡、內容是 `trinity-usage/1` JSON 的訊息，每則訊息只匯入一次。匯入失敗，或成功匯入後超過 `CODEFORGE_TRINITY_STALE_H`（預設 24）小時沒有新資料，就通知 capacity 與 codeforge 一次（每則訊息一次，每天一次）。
+
 ## 全帳號配額表（`usage fleet`）
 
 `codeforge usage fleet --dir <D>`：把許多主機的 `codeforge.usage-summary/1` 合併成一張全帳號配額表，
@@ -450,11 +468,12 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
   `agy`／`agyclaude`（見「agy 配額」），`grok-<8 碼 hex>` → `grok`（見「grok 配額」，只有週視窗；預設顯示名
   `grok-cli`），`grokbot-<8 碼 hex>` → `grokbot`（見「grok 配額」，只有週視窗；預設顯示名 `trinity`），
   `kimi-<8 碼 hex>` → `kimi`（見「kimi 配額」，5 小時與週視窗；預設顯示名 `kimi-code`），
+  `trinity-<8 碼 hex>` → `trinity`（見「trinity 配額（自報）」，只有週視窗；預設顯示名 `trinity (Grok Bot)`），
   其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
   只出現在 `days`（source codex）的別名是「無來源」列。provider 列（`PROVIDERS`，小寫標籤）在沒有任何該 provider 的列時補一列
   「無來源」，並帶原因 `source_note`：qoder、qodercn、cursor、opencode → `web_only`（只有網頁）；
   glm、minimax → `needs_token`（要 token，待 autopilot 鏡像）；codex → `no_window`（帳號沒有窗口資料，有窗口時就不是無來源）。
-  agy、grok、grokbot 與 kimi 有本機來源，不在 `PROVIDERS` 裡：沒有資料就沒有那一列，不會補一列「只有網頁」。
+  agy、grok、grokbot、kimi 與 trinity 有本機來源，不在 `PROVIDERS` 裡：沒有資料就沒有那一列，不會補一列「只有網頁」。
   文字表與分頁在「無來源」後淡色接「 · 原因」（i18n：`quota.fleet_src_*`、forge-stats `fleetSrc*`）。
 - **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗
   畫成「已重置」而不是 pct（兩個都過就是「已重置，等新觀察」，`state` 為 `stale`）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
@@ -511,6 +530,7 @@ codeforge usage collect --claude-dir /srv/claude/seat-a --claude-dir /srv/claude
 codeforge usage push                # 印出 blob sha
 codeforge usage export              # 印出 push 會上傳的 bytes（驗證後拿掉 email 與 name，不連線、不寫檔），給 hangar 用 ssh 收
 codeforge usage export --hourly     # 同一趟收集後改印每小時（UTC）每帳號每模型的 Claude token 列（codeforge.usage-hourly/1）；沒有 email、name、org、project、路徑
+codeforge usage trinity-import <FILE|->  # 匯入 trinity 自報配額（trinity-usage/1）；`-` 讀標準輸入。不連線、不讀憑證
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
 codeforge usage pools [--json]      # usage.v1 配額池（CODEFORGE_USAGE_V1 未設 = 關）
 codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）

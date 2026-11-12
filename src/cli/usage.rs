@@ -1,7 +1,7 @@
 //! `codeforge usage` (G36 plan, phase 3): collect, write `summary.json`, print a table.
 
 use crate::usage::reset_rule::Kind;
-use crate::usage::{agy, collect, grok, hourly, kimi, price, quota, store, summary};
+use crate::usage::{agy, collect, grok, hourly, kimi, price, quota, store, summary, trinity};
 use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -58,6 +58,10 @@ pub enum Action {
     },
     PlanClear {
         target: String,
+    },
+    /// 匯入 trinity 自報的配額檔（trinity-usage/1）
+    TrinityImport {
+        file: String,
     },
 }
 
@@ -177,6 +181,10 @@ fn collect_and_summarize(
             now,
             || kimi::fetch_live(&home),
         ));
+    }
+    // trinity's self-reported quota (no network). CODEFORGE_USAGE_TRINITY=0 reads nothing.
+    if !trinity::disabled() {
+        fresh.extend(trinity::snapshots(&summary::summary_dir(&live_base), now));
     }
     let v = summary::with_codex_sessions(
         summary::build(
@@ -345,6 +353,18 @@ pub fn run(action: Action) -> Result<()> {
             let dir = path.parent().map(PathBuf::from).unwrap_or_default();
             let sha = summary::push(&dir, "fleet")?;
             println!("{sha}");
+            Ok(())
+        }
+        Action::TrinityImport { file } => {
+            let text = if file == "-" {
+                trinity::read_reader(std::io::stdin().lock())?
+            } else {
+                trinity::read_path(std::path::Path::new(&file))?
+            };
+            let parsed = trinity::parse(&text, now_ms());
+            let (live_base, _) = crate::live::resolve_live_base();
+            let written = trinity::import(&parsed.reports, &summary::summary_dir(&live_base))?;
+            println!("{}", trinity::report_line(written, parsed.skipped));
             Ok(())
         }
         Action::Export { hourly } => {

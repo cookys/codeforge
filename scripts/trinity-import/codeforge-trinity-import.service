@@ -1,0 +1,6 @@
+[Unit]
+Description=codeforge: import trinity's self-reported quota from the fleet-cli inbox (operator d-e31e39c0)
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/codeforge-trinity-import.sh
