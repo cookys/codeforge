@@ -185,7 +185,7 @@ statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Cla
 
 要歸到正確帳號，lane wrapper 應帶 `CODEFORGE_ACCOUNT_ALIAS`。
 
-請求：`collect` 插入**新的** `requests` 列時，把轉錄檔的 session id 寫進 `requests.session`（檔名 stem；`<session>/subagents/` 底下的子代理轉錄算父 session）。同一個 root 每次收集只讀一次 pins。帳號的優先順序是：該 session 的釘選別名，沒有才取 `timeline.alias_at(該列的 seen_ms)`，再沒有才用 `root_alias`。已經在庫裡的列不改帳號、也不改 session（本功能上線前入庫的列 `session` 仍是 NULL，不回填）；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`；每 session 匯出讀 `requests.session`（NULL 的列不進匯出）。
+請求：`collect` 插入**新的** `requests` 列時，把轉錄檔的 session id 寫進 `requests.session`（檔名 stem；`<session>/subagents/` 底下的子代理轉錄算父 session）。stem 必須是 1–64 個 `[A-Za-z0-9_-]`（與 pins／statusline 同一條 `usable_session`）；不合規格的（含點號、空白、超過 64 字）存 NULL，該列仍照常計入 buckets／summary／每小時匯出。同一個 root 每次收集只讀一次 pins。帳號的優先順序是：該 session 的釘選別名，沒有才取 `timeline.alias_at(該列的 seen_ms)`，再沒有才用 `root_alias`。已經在庫裡的列不改帳號、也不改 session（本功能上線前入庫的列 `session` 仍是 NULL，不回填）；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`；每 session 匯出讀 `requests.session`（NULL 的列不進匯出）。
 
 已知限制：換帳號要到下一次 statusline 渲染或 collect 才被看見；這段空檔裡的請求歸給前一個別名。時間軸出現之前就收集的轉錄檔，仍用舊規則（歸給收集當下的帳號）。釘選也要等該 lane 的 statusline 寫過 pin 之後，之後的**新**列才歸到覆寫別名。
 
@@ -225,7 +225,7 @@ claude_dirs = ["/srv/claude/seats/seat-a", "/srv/claude/dispatches/run-b"]
 
 | 來源 | glob | 存下 |
 |---|---|---|
-| Claude | `<cfg>/projects/*/*.jsonl`、`<cfg>/projects/*/*/subagents/*.jsonl` | request id、UTC 日、model id、token 數、speed、cwd 最後一段、session（轉錄檔 stem；子代理算父 session；本功能上線前的列為 NULL） |
+| Claude | `<cfg>/projects/*/*.jsonl`、`<cfg>/projects/*/*/subagents/*.jsonl` | request id、UTC 日、model id、token 數、speed、cwd 最後一段、session（轉錄檔 stem，須為 1–64 個 `[A-Za-z0-9_-]`，否則 NULL；子代理算父 session；本功能上線前的列為 NULL） |
 | Codex | `<codex>/sessions/YYYY/MM/DD/rollout-*.jsonl` | session id（檔名）、UTC 日、model id、token 數、cwd 最後一段；`rate_limits` 的窗口數字（見下） |
 
 - **Codex 窗口（rollout `rate_limits`）**：`payload.type == "token_count"` 行的 `payload.rate_limits.primary`／`secondary`
@@ -348,8 +348,10 @@ JSON 印到 stdout：一個文件、結尾一個換行。不印 summary。給 ca
 
 路徑：`<live_base>/codeforge/usage/usage-sessions.json`。每次 `usage collect`（以及會先收集的
 `usage`／`usage export`／`usage push`）在寫完 `summary.json` 之後，用同一慣例寫這份檔（暫存檔加
-rename、0600）。`codeforge usage export --sessions` 先做與 `usage export` 相同的收集，再把同一份
-JSON 印到 stdout（結尾一個換行），不印 summary。與 `--hourly` 互斥。
+rename、0600）。sessions 匯出失敗時，`collect` 印一行 stderr（quiet 時不印）後繼續寫
+`fleet-quota.json`，不因此整趟失敗；`usage export --sessions` 仍把驗證／建檔失敗當成錯誤。
+`codeforge usage export --sessions` 先做與 `usage export` 相同的收集，再把同一份 JSON 印到
+stdout（結尾一個換行），不印 summary。與 `--hourly` 互斥。
 
 ```json
 {"schema":"codeforge.usage-sessions/1","generated_at_ms":0,"host":"host-1a2b3c4d",
@@ -364,16 +366,19 @@ JSON 印到 stdout（結尾一個換行），不印 summary。與 `--hourly` 互
 - **generated_at_ms**：產出當下的 unix 毫秒，整數，0..=2^53−1。
 - **host**：`host-` 加 hostname sha256 的前 8 碼 hex（`summary::host_alias`）。絕不是 hostname。
 - **rows**：`requests` 裡 `source = 'claude'`、`session` 不是 NULL、而且 `seen_ms` 沒有比
-  `generated_at_ms` 早超過 **8 天**的列，依 (session, account, model) 加總。最多 100_000 列。
-  依 session、account、model 排序（未歸屬的空字串排在有別名的前面，印出時寫成 `null`）。
+  `generated_at_ms` 早超過 **8 天**的列，依 (session, account, model) 加總。依 session、account、
+  model 排序（未歸屬的空字串排在有別名的前面，印出時寫成 `null`）後，**只保留前 100_000 列**
+  （超過的加總列丟掉）。庫裡已有、但 session 不合規格的列（本功能過濾 stem 之前入庫的）略過，
+  不使整份失敗。
 - **session**：轉錄檔的 session id（1–64 個 `[A-Za-z0-9_-]`）。`session` 為 NULL 的列（本功能上線前
-  入庫、未回填）不進匯出；per-lane 對帳從本功能上線當天起算。
+  入庫、未回填，或 stem 不合規格）不進匯出；per-lane 對帳從本功能上線當天起算。
 - **account**：未歸屬 sentinel（空字串）寫 `null`；否則必須是合法別名（`^[a-z0-9-]{1,24}$`）。
 - **model**：與 summary 同一條 model id 規則，`^[A-Za-z0-9._-]{1,64}$`。不合語法的記為 `unknown`。
 - **first_ms**／**last_ms**：該組內 `seen_ms` 的最小／最大。
 - **計數**：`input`、`output`、`cache_write_5m`（欄 `cw5m`）、`cache_write_1h`（欄 `cw1h`）、
   `cache_read`（欄 `read`）是加總，`requests` 是 `COUNT(*)`。每個整數壓在 `UINT_MAX`（2^53−1）。
-- 寫檔與印出前先驗證。驗證失敗是錯誤，不寫檔、stdout 什麼都不印。
+- 寫檔與印出前先驗證。驗證失敗是錯誤，不寫檔、stdout 什麼都不印（`export --sessions`）；
+  `collect` 路徑見上，驗證失敗不阻斷後續 fleet-quota。
 
 **只有 Claude**：Codex 的用量在 `codex_sessions`（每個 rollout 的累計），沒有逐筆帶 session 的
 `requests` 列可供此報表加總，v1 **不包含** Codex。

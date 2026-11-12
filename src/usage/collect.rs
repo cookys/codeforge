@@ -873,9 +873,9 @@ pub fn collect_file(
         };
         match &session {
             None => {
-                let sid = claude_session_of(path);
+                let raw_sid = claude_session_of(path);
                 let pinned = pins
-                    .and_then(|m| sid.and_then(|s| m.get(s).map(String::as_str)))
+                    .and_then(|m| raw_sid.and_then(|s| m.get(s).map(String::as_str)))
                     .map(|a| {
                         if a == logins::PIN_UNATTRIBUTED {
                             UNATTRIBUTED
@@ -883,6 +883,9 @@ pub fn collect_file(
                             a
                         }
                     });
+                // Off-grammar stems (dots, spaces, >64 chars) store NULL so
+                // sessions export can skip them; the row still counts elsewhere.
+                let sid = raw_sid.filter(|s| logins::usable_session(s));
                 claude_line(&tx, &v, account, timeline, pinned, sid, now_ms)?
             }
             Some(s) => codex_line(&tx, &v, s, account, now_ms, mtime_ms)?,

@@ -380,6 +380,74 @@ fn usage_export_sessions_and_hourly_together_is_rejected() {
     assert!(err.is_err(), "hourly and sessions must conflict");
 }
 
+/// Sessions write fails (final path is a directory) but collect still writes fleet-quota.
+/// Forced via the filesystem, with no test-only seam in production code.
+#[test]
+fn collect_writes_fleet_quota_when_sessions_export_fails() {
+    let e = env();
+    let live = child_live_labeled(
+        &e,
+        &format!(".codeforge-sessions-fleet-{}", std::process::id()),
+    );
+    let usage = live.join("codeforge/usage");
+    std::fs::create_dir_all(&usage).unwrap();
+    std::fs::create_dir_all(usage.join(crate::usage::sessions_export::FILE)).unwrap();
+    let hosts = e._tmp.path().join("fleet-hosts");
+    std::fs::create_dir_all(&hosts).unwrap();
+    write(
+        &e._tmp.path().join(".claude/projects/p/sess-a.jsonl"),
+        &claude(
+            "req_fleet",
+            3,
+            1,
+            json!({
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "cwd": "/srv/work/repo",
+            }),
+        ),
+    );
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--exact",
+        "usage::collect::tests::export_cli_child",
+        "--nocapture",
+    ])
+    .env_clear()
+    .env("HOME", e._tmp.path())
+    .env("CODEFORGE_DIR", e._tmp.path().join("project"))
+    .env("CODEFORGE_DATA_DIR", &e.data)
+    .env("CODEX_HOME", &e.codex)
+    .env("AUTOPILOT_LIVE_DIR", &live)
+    .env("CODEFORGE_FLEET_USAGE_DIR", &hosts)
+    .env(
+        "CODEFORGE_ACCOUNTS_FILE",
+        e._tmp.path().join("accounts.toml"),
+    )
+    .env(
+        "CODEFORGE_EXPORT_TEST_ARGS",
+        serde_json::to_string(&["codeforge", "usage", "collect"]).unwrap(),
+    )
+    .current_dir(e._tmp.path());
+    let child = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&child.stderr);
+    assert!(child.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("每 session 用量沒有更新"),
+        "expected sessions warning, got: {stderr}"
+    );
+    let fleet = usage.join("fleet-quota.json");
+    assert!(
+        fleet.is_file(),
+        "fleet-quota must still be written: {fleet:?}"
+    );
+    let summary = usage.join("summary.json");
+    assert!(
+        summary.is_file(),
+        "summary must still be written: {summary:?}"
+    );
+    let _ = std::fs::remove_dir_all(&live);
+}
+
 fn assert_collect_ok(output: std::process::Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(
@@ -2016,4 +2084,39 @@ fn new_requests_store_session_and_old_null_rows_stay_null() {
         )
         .unwrap();
     assert_eq!(input, 9, "token bump kept the same row");
+}
+
+/// A transcript stem outside the session grammar (e.g. `foo.bar`) is stored as NULL.
+/// Collect still succeeds; the good session is exported; the bad stem is absent.
+#[test]
+fn unusable_transcript_stem_stores_null_and_is_absent_from_sessions_export() {
+    let ts = NOW - 3_600_000;
+    let line = |rid: &str, input: u64| claude(rid, input, 1, json!({"timestamp": iso(ts)}));
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/sess-good.jsonl"),
+        &line("req_good", 10),
+    );
+    write(
+        &e.cfg.join("projects/p/foo.bar.jsonl"),
+        &line("req_bad", 20),
+    );
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let rs = roots(std::slice::from_ref(&e.cfg), None);
+    collect(&mut conn, &rs, &[], NOW).unwrap();
+    assert_eq!(
+        request_sessions(&conn),
+        vec![
+            ("req_bad".into(), None),
+            ("req_good".into(), Some("sess-good".into())),
+        ]
+    );
+    let host = crate::usage::summary::host_alias("test-host");
+    let v = crate::usage::sessions_export::build(&conn, &host, NOW).unwrap();
+    crate::usage::sessions_export::validate(&v).unwrap();
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["session"], "sess-good");
+    let text = v.to_string();
+    assert!(!text.contains("foo.bar"), "bad stem leaked: {text}");
 }
