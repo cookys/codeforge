@@ -329,6 +329,7 @@ fn claude_line(
     account: &str,
     timeline: Option<&logins::Timeline>,
     pinned: Option<&str>,
+    session: Option<&str>,
     now_ms: i64,
 ) -> Result<()> {
     let Some(rid) = request_id(v) else {
@@ -402,12 +403,15 @@ fn claude_line(
             };
             // pin for this session, else the alias logged in at this line's time, else
             // the account resolved for the root at collect. Rows already stored are not
-            // rewritten: requests has no session column, so a pin cannot backfill them.
+            // rewritten (account or session): a later token increase keeps the same row.
             let row_account = pinned
                 .or_else(|| timeline.and_then(|t| t.alias_at(ms)))
                 .unwrap_or(account);
             tx.execute(
-                "INSERT INTO requests VALUES (?1, ?2, 'claude', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                "INSERT INTO requests
+                 (request_id, day, source, account, model, project, speed,
+                  input, output, cw5m, cw1h, read, seen_ms, session)
+                 VALUES (?1, ?2, 'claude', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     rid,
                     day,
@@ -420,7 +424,8 @@ fn claude_line(
                     line.cw5m,
                     line.cw1h,
                     line.read,
-                    ms
+                    ms,
+                    session
                 ],
             )?;
             let k = Key {
@@ -868,10 +873,9 @@ pub fn collect_file(
         };
         match &session {
             None => {
+                let raw_sid = claude_session_of(path);
                 let pinned = pins
-                    .and_then(|m| {
-                        claude_session_of(path).and_then(|sid| m.get(sid).map(String::as_str))
-                    })
+                    .and_then(|m| raw_sid.and_then(|s| m.get(s).map(String::as_str)))
                     .map(|a| {
                         if a == logins::PIN_UNATTRIBUTED {
                             UNATTRIBUTED
@@ -879,7 +883,10 @@ pub fn collect_file(
                             a
                         }
                     });
-                claude_line(&tx, &v, account, timeline, pinned, now_ms)?
+                // Off-grammar stems (dots, spaces, >64 chars) store NULL so
+                // sessions export can skip them; the row still counts elsewhere.
+                let sid = raw_sid.filter(|s| logins::usable_session(s));
+                claude_line(&tx, &v, account, timeline, pinned, sid, now_ms)?
             }
             Some(s) => codex_line(&tx, &v, s, account, now_ms, mtime_ms)?,
         }

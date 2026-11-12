@@ -1,7 +1,9 @@
 //! `codeforge usage` (G36 plan, phase 3): collect, write `summary.json`, print a table.
 
 use crate::usage::reset_rule::Kind;
-use crate::usage::{agy, collect, grok, hourly, kimi, price, quota, store, summary, trinity};
+use crate::usage::{
+    agy, collect, grok, hourly, kimi, price, quota, sessions_export, store, summary, trinity,
+};
 use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -20,6 +22,7 @@ pub enum Action {
     Push,
     Export {
         hourly: bool,
+        sessions: bool,
     },
     Pools {
         json: bool,
@@ -199,6 +202,19 @@ fn collect_and_summarize(
     summary::validate(&v)?;
     let sdir = summary::summary_dir(&live_base);
     let path = summary::write(&sdir, &v)?;
+    {
+        let host = summary::host_alias(&summary::hostname());
+        if let Err(e) = (|| -> Result<()> {
+            let sessions = sessions_export::build(&conn, &host, now)?;
+            sessions_export::validate(&sessions).context("每 session 用量未通過檢查，拒絕寫入")?;
+            sessions_export::write(&sdir, &sessions)?;
+            Ok(())
+        })() {
+            if !quiet {
+                eprintln!("codeforge usage: 每 session 用量沒有更新（{e:#}）");
+            }
+        }
+    }
     let fleet_env = std::env::var("CODEFORGE_FLEET_USAGE_DIR").ok();
     if let Err(e) = write_fleet_quota(&sdir, fleet_env.as_deref(), now) {
         if !quiet {
@@ -373,12 +389,25 @@ pub fn run(action: Action) -> Result<()> {
             println!("{}", trinity::report_line(written, parsed.skipped));
             Ok(())
         }
-        Action::Export { hourly } => {
+        Action::Export { hourly, sessions } => {
             let (conn, path) = collected(true)?;
             if hourly {
                 // validate before any stdout write: a failure prints nothing
                 let v = hourly::build(&conn, &summary::host_alias(&summary::hostname()), now_ms())?;
                 hourly::validate(&v).context("每小時用量未通過檢查，拒絕印出")?;
+                let bytes = serde_json::to_vec(&v)?;
+                use std::io::Write;
+                std::io::stdout().lock().write_all(&bytes)?;
+                println!();
+                return Ok(());
+            }
+            if sessions {
+                let v = sessions_export::build(
+                    &conn,
+                    &summary::host_alias(&summary::hostname()),
+                    now_ms(),
+                )?;
+                sessions_export::validate(&v).context("每 session 用量未通過檢查，拒絕印出")?;
                 let bytes = serde_json::to_vec(&v)?;
                 use std::io::Write;
                 std::io::stdout().lock().write_all(&bytes)?;
