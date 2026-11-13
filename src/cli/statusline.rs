@@ -32,21 +32,20 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         // file (PM 01M76F3F). That override is the whole identity: do not read the login.
         // A token lane without the override would be filed under the login file's account,
         // which is another org's (hangar 01M77KXH): such a session is pinned unattributed.
-        // Only the variable's presence is checked; its value is never read.
-        let pinned = crate::usage::alias::env_override();
-        let token_lane =
-            std::env::var_os(crate::usage::alias::TOKEN_ENV).is_some_and(|v| !v.is_empty());
-        let pin = pinned.is_some() || token_lane;
-        let (config_dir, acct) = if pin {
-            let home = dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-            let cfg = std::env::var("CLAUDE_CONFIG_DIR").ok();
-            let dir = crate::usage::alias::claude_config_dir(cfg.as_deref(), &home);
-            let acct = pinned.map(|alias| crate::usage::alias::Identity {
-                alias,
-                org: None,
-                email: None,
-            });
-            (dir, acct)
+        // Only the token env's presence is checked; its value is never read.
+        // Decision lives in usage::lane_pin (also used at SessionStart for headless -p).
+        let lane = crate::usage::lane_pin::lane_pin_from_env();
+        let pin = lane.is_some();
+        let (config_dir, acct) = if let Some(lane) = &lane {
+            let acct = lane
+                .override_alias
+                .as_ref()
+                .map(|alias| crate::usage::alias::Identity {
+                    alias: alias.clone(),
+                    org: None,
+                    email: None,
+                });
+            (lane.config_dir.clone(), acct)
         } else {
             crate::usage::alias::current_claude_account(&live_base)
         };

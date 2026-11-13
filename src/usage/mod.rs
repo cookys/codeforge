@@ -12,6 +12,7 @@ pub mod fleet_quota;
 pub mod grok;
 pub mod hourly;
 pub mod kimi;
+pub mod lane_pin;
 pub mod logins;
 pub mod names;
 pub mod price;

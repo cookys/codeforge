@@ -176,6 +176,8 @@ statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Cla
 - 呼叫 `pin_session`，把這個 session 釘在覆寫別名上。檔案是同一層的 `pins-<root 的 hash8>.json`，內容為 `{"<session>":{"alias":"<別名>","at_ms":<毫秒>}}`。寫入慣例與 `sessions-` 相同：`state_file`、`load_bytes` 上限、0600、暫存檔加 rename、寫入時依 `quota::MAX_AGE_MS` 修剪、最多 512 筆、不能用的 session id 略過、內容沒變不寫。缺檔、壞掉或外來（含任何 `@`）讀成空的。
 - `session_gate` 仍用覆寫別名跑。
 
+釘選由 statusline **與** SessionStart 的 `memory context --hook` 兩邊寫入（決策與寫入在 `usage::lane_pin`）：無頭的 `claude -p` 不會跑 statusline，若只靠 statusline 釘選，token lane 子 session 的請求會被 collect 歸到登入檔帳號（2026-11-13，cuda：twgame token lane 子行程記到團隊帳號）。hook 不改 additionalContext 的位元組輸出。
+
 沒帶覆寫的 token lane（hangar 01M77KXH）：行程有非空的 `CLAUDE_CODE_OAUTH_TOKEN`（只看有沒有，不讀值）、卻沒有可採用的 `CODEFORGE_ACCOUNT_ALIAS` 時，statusline 不從登入檔推帳號，因為 token 可能是別的 org，例如 4124gs 的 personal token 原本被記到團隊帳號。做法如下：
 
 - 不寫配額快照，也不呼叫 `observe`。
@@ -187,7 +189,7 @@ statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Cla
 
 請求：`collect` 插入**新的** `requests` 列時，把轉錄檔的 session id 寫進 `requests.session`（檔名 stem；`<session>/subagents/` 底下的子代理轉錄算父 session）。stem 必須是 1–64 個 `[A-Za-z0-9_-]`（與 pins／statusline 同一條 `usable_session`）；不合規格的（含點號、空白、超過 64 字）存 NULL，該列仍照常計入 buckets／summary／每小時匯出。同一個 root 每次收集只讀一次 pins。帳號的優先順序是：該 session 的釘選別名，沒有才取 `timeline.alias_at(該列的 seen_ms)`，再沒有才用 `root_alias`。已經在庫裡的列不改帳號、也不改 session（本功能上線前入庫的列 `session` 仍是 NULL，不回填）；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`；每 session 匯出讀 `requests.session`（NULL 的列不進匯出）。
 
-已知限制：換帳號要到下一次 statusline 渲染或 collect 才被看見；這段空檔裡的請求歸給前一個別名。時間軸出現之前就收集的轉錄檔，仍用舊規則（歸給收集當下的帳號）。釘選也要等該 lane 的 statusline 寫過 pin 之後，之後的**新**列才歸到覆寫別名。
+已知限制：換帳號要到下一次 statusline 渲染或 collect 才被看見；這段空檔裡的請求歸給前一個別名。時間軸出現之前就收集的轉錄檔，仍用舊規則（歸給收集當下的帳號）。釘選在 SessionStart（`memory context --hook`）或該 lane 的 statusline 寫過 pin 之後，之後的**新**列才歸到覆寫別名。
 
 aimax395 的 team，從 2026-11-12 06:30（+0800）起，到各 lane 帶著這個覆寫重啟為止，記成 `acct-65d2bffc` 的 Claude 請求與配額百分比實際上屬於 `acct-9832dff1`。PM 裁定不回填（PM 01M76FE9），所以這段期間的逐帳號合計是不準的。
 
