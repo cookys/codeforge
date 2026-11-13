@@ -3,4 +3,8 @@ Description=codeforge: import trinity's self-reported quota from the fleet-cli i
 
 [Service]
 Type=oneshot
+# Same live base as the Claude sessions that run `codeforge usage` (they have no XDG_RUNTIME_DIR).
+# Without this, systemd's XDG_RUNTIME_DIR makes codeforge write trinity-quota.json under
+# /run/user/<uid>/autopilot, where collect never reads it.
+Environment=AUTOPILOT_LIVE_DIR=/dev/shm/autopilot-%U
 ExecStart=%h/.local/bin/codeforge-trinity-import.sh
