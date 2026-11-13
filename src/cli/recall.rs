@@ -8,6 +8,7 @@ use crate::db;
 use crate::memory::{l1, projection, recall};
 use anyhow::Result;
 use std::io::Read;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn run(ctx: &db::Context, max_tokens: usize, hook: bool) -> Result<()> {
     let store_dir = ctx.project_dir.join("store");
@@ -26,6 +27,18 @@ pub fn run(ctx: &db::Context, max_tokens: usize, hook: bool) -> Result<()> {
         // drain it (hooks must consume stdin), then emit our additionalContext.
         let mut buf = String::new();
         let _ = std::io::stdin().read_to_string(&mut buf);
+        // Token-lane pin at SessionStart: headless `claude -p` never runs the
+        // statusline, so pin here (same decision + write as statusline). Must not
+        // touch stdout/stderr — additionalContext stays byte-identical.
+        {
+            let lane = crate::usage::lane_pin::lane_pin_from_env();
+            let (live_base, _) = crate::live::resolve_live_base();
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            crate::usage::lane_pin::pin_from_session_start(lane.as_ref(), &live_base, &buf, now_ms);
+        }
         // Nothing to surface (no store / no active L1) → inject nothing.
         if ranked.is_empty() {
             return Ok(());
