@@ -302,10 +302,11 @@ fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> boo
     v["schema"] == MOD_ALIVE_SCHEMA
         && v["session_id"] == raw_sid
         && age.is_some_and(|a| (0..MOD_ALIVE_FRESH_MS).contains(&a))
+        // Operator rule (2026-10-31, card d-feb71b14 → A): a fresh `layout: band` heartbeat alone compacts.
+        // `band_seen` is deliberately NOT read: B34 restored the full RPG panel whenever autopilot's O4 shell
+        // drew the band instead of forge-stats, which brought the banner back after /reload-plugins
+        // (PM 01M7E1M5). The pet tag is on autopilot's band (PM 01M78CB6).
         && v["layout"] == "band"
-        // B34: a forge-stats whose band was not drawn lately (a plugin above it drew its own band) says
-        // `band_seen: false`; an older one never writes the field and keeps compacting as before.
-        && v["band_seen"] != false
 }
 
 /// The width to draw at: `CODEFORGE_WIDTH` when set, else the terminal's `COLUMNS` (set by
@@ -2260,7 +2261,7 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_band_not_seen_keeps_the_full_statusline() {
+    fn heartbeat_band_not_seen_still_compacts_no_rpg_panel_after_reload() {
         let dir = tempfile::tempdir().unwrap();
         let with = |seen: serde_json::Value| {
             let mut v: serde_json::Value =
@@ -2268,13 +2269,13 @@ mod tests {
             v["band_seen"] = seen;
             v.to_string()
         };
-        // B34: the band layout chosen, but the band not drawn lately (autopilot's O4 shell above it)
+        // PM 01M7E1M5: after /reload-plugins autopilot's O4 shell draws the band, forge-stats has not
+        // drawn yet and writes band_seen:false. The operator's choice (d-feb71b14 → A) is still the
+        // compact form, never the RPG panel.
         write_heartbeat(dir.path(), HB_SID, &with(serde_json::json!(false)));
-        assert!(!read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
-        // drawn lately
+        assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
         write_heartbeat(dir.path(), HB_SID, &with(serde_json::json!(true)));
         assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
-        // an older forge-stats writes no band_seen: it compacts as before (the fresh-band test above)
     }
 
     #[test]
