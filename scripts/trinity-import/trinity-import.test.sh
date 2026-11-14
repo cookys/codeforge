@@ -65,7 +65,11 @@ if "$here/trinity-import.sh"; then fail "inbox failure not reported"; fi
 [ "$(grep -c '^cap|' "$T/sent")" = 1 ] || fail "inbox alert not once: $(cat "$T/sent")"
 rm "$T/inboxfail"
 
+# an idle trinity sends nothing for a day: no alert (2026-11-14 false alarm at 24h)
 echo $(( $(date +%s) - 25 * 3600 )) > "$T/state/last_ok"
+"$here/trinity-import.sh"
+! grep -q '小時沒有新的 trinity 配額' "$T/sent" || fail "stale alert after 25h (threshold is one weekly window)"
+echo $(( $(date +%s) - 169 * 3600 )) > "$T/state/last_ok"
 "$here/trinity-import.sh"
 grep -q '^cf|.*小時沒有新的 trinity 配額' "$T/sent" || fail "stale alert missing"
 echo "trinity-import.test.sh: ok"

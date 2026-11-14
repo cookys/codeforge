@@ -10,7 +10,7 @@ export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 STATE=${CODEFORGE_TRINITY_STATE:-$HOME/.local/state/codeforge/trinity-import}
 SENDERS=${CODEFORGE_TRINITY_SENDERS:-cookys/grokbot/trinity cookys/grokbot/fleet-cli}
 NOTIFY=${CODEFORGE_TRINITY_NOTIFY:-cookys/aimax395-team/capacity--claude cookys/aimax395-team/codeforge--claude}
-STALE_H=${CODEFORGE_TRINITY_STALE_H:-24}
+STALE_H=${CODEFORGE_TRINITY_STALE_H:-168}
 FLEET=${FLEET_BIN:-fleet}
 CODEFORGE=${CODEFORGE_BIN:-codeforge}
 
