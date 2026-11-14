@@ -76,6 +76,21 @@ impl Context {
     pub fn no_ship(&self) -> bool {
         self.project_dir.join("no-ship").exists()
     }
+
+    /// 全域資料目錄（預設 `~/.local/share/codeforge`，或 `$CODEFORGE_DATA_DIR`）。
+    /// 由 `db_path` 父目錄推導，確保測試構造 `Context { db_path: tmp.join("state.db"), .. }`
+    /// 時自動隔離至暫存目錄。
+    pub fn data_dir(&self) -> PathBuf {
+        self.db_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| {
+                dirs::data_local_dir()
+                    .unwrap_or_else(|| PathBuf::from("~/.local/share"))
+                    .join("codeforge")
+            })
+    }
 }
 
 pub mod migrations {
@@ -1276,5 +1291,57 @@ mod tests {
             })
             .unwrap();
         assert_eq!(gen, 0);
+    }
+
+    // ─── PM 01M7C8NM (v10): compiled_signatures daily dedup ──────
+
+    #[test]
+    fn v10_version_and_compiled_signatures_table_created() {
+        let conn = open_migrated_memory_db();
+        let v10: i64 = conn
+            .query_row(
+                "SELECT version FROM schema_version WHERE version=10",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(v10, 10);
+
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(compiled_signatures)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(cols, vec!["sig".to_string(), "compiled_date".to_string()]);
+
+        // Same (sig, date) collides under PK; different date is allowed.
+        conn.execute(
+            "INSERT INTO compiled_signatures (sig, compiled_date) VALUES ('s1', '2026-11-14')",
+            [],
+        )
+        .unwrap();
+        let dup = conn.execute(
+            "INSERT INTO compiled_signatures (sig, compiled_date) VALUES ('s1', '2026-11-14')",
+            [],
+        );
+        assert!(dup.is_err(), "duplicate (sig, compiled_date) must fail PK");
+        conn.execute(
+            "INSERT INTO compiled_signatures (sig, compiled_date) VALUES ('s1', '2026-11-15')",
+            [],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn context_data_dir_derives_from_db_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = Context {
+            project_dir: tmp.path().join(".codeforge"),
+            brain_dir: tmp.path().join("brain"),
+            db_path: tmp.path().join("data").join("state.db"),
+        };
+        assert_eq!(ctx.data_dir(), tmp.path().join("data"));
     }
 }
