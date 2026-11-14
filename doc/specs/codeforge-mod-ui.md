@@ -101,12 +101,13 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
 - **band 版面（statusline-band，2026-10-31）**：`/forge-stats layout band|pane`（存 `$.store`，預設 band）。band 畫在
   prompt 正上方（AbovePrompt），分級與排欄見下面兩條；記憶與大腦讀 `codeforge/session/<sid>.json`。mod 每 2 秒寫
   `codeforge/mod-alive/<sid>.json` 心跳（`schema`、`session_id`、`written_at_ms`、`layout`、`summary_row`、`band_seen`）；
-  statusline 讀到自己 session、未滿 10 秒、`layout: band`、而且 `band_seen` 不是 `false` 的心跳就縮成 2 行：寵物歸 band
+  statusline 讀到自己 session、未滿 10 秒、`layout: band` 的心跳就縮成 2 行：寵物歸 band
   （autopilot 的 forge 分頁），statusline 只留不必即時更新的資料（owner 2026-10-31 定案；原本另看 blit 是否成功的
-  `pet_shown`，已拿掉）。**`band_seen`（B34，2026-11-07）**：forge-stats 的 band 在最近 30 秒內真的畫過（摘要列或欄位）才是
-  `true`。AbovePrompt 一次只有一個實例，鏈上排在上面的 plugin 不呼叫 `next(e)`（例如 autopilot 的 O4 外殼）就輪不到
-  forge-stats，這時 `band_seen` 會變成 `false`，statusline 恢復完整版、把寵物留著。`layout` 照舊寫使用者選的版面，
-  因為 autopilot 靠它決定要不要把一列交給 forge-stats；如果 `layout` 跟著畫面變，forge-stats 就永遠拿不回那一列。
+  `pet_shown`，已拿掉）。**`band_seen`（B34，2026-11-07；statusline 自 2026-11-15 起不再讀）**：forge-stats 的 band 在最近 30 秒內真的畫過才是
+  `true`。B34 曾讓 statusline 在 `band_seen: false` 時恢復完整版（RPG 大塊）。但 autopilot 的 O4 外殼自己畫 band、不呼叫 `next(e)`，
+  `/reload-plugins` 後 forge-stats 還沒畫過，於是操作員又看到整塊橫幅（PM 01M7E1M5）。這違反 owner 2026-10-31 的定案（卡 d-feb71b14 → A）：
+  有 band 心跳就縮，不看畫面上實際畫了什麼。寵物標籤放在 autopilot 的 band（PM 01M78CB6）。所以 statusline 只看 `layout`；
+  `band_seen` 欄位仍照寫（舊版 statusline 讀它），之後再一起拿掉。紅測：`heartbeat_band_not_seen_still_compacts_no_rpg_panel_after_reload`。
   閒置時沒有重畫：超過半個視窗（15 秒）沒畫，心跳就請一次重畫，band 還在螢幕上的話會在下一拍更新。
   舊版 forge-stats 沒有 `band_seen` 欄位，statusline 照舊縮。
   Claude Code 只在事件時重跑 statusLine（新的 assistant 訊息、/compact、模式切換…），閒置時不會重跑，心跳變了畫面也不跟著變
