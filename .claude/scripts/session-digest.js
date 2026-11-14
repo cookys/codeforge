@@ -223,6 +223,19 @@ function isPureExitStatusNoise(errorText) {
   return residual.length === 0;   // 剝樣板後無殘留 → 純噪音
 }
 
+const HOOK_DENIAL_PATTERNS = [
+  /PreToolUse:[\w:*-]*\s*hook\s+error/i,
+  /bash-footgun-guard/i,
+  /bash-launch-guard/i,
+  /depth0-delegate-gate/i,
+  /\bno matches found\b/i,
+];
+
+function isHookDenialError(errorText) {
+  const text = typeof errorText === 'string' ? errorText : String(errorText ?? '');
+  return HOOK_DENIAL_PATTERNS.some(p => p.test(text));
+}
+
 // 精確 path detector：避免吃普通英文 word/word；涵蓋帶 line:col 尾綴
 // 順序重要（alternation 從左優先）：最具體「含副檔名多段路徑」在前。
 const PATH_RE = new RegExp([
@@ -298,8 +311,9 @@ function extractErrorRecoveries(messages) {
 
       const errorText = toolResultText(result);
 
-      // Filter out cancelled
+      // Filter out cancelled and PreToolUse hook denials / shell nomatch
       if (/cancell?ed/i.test(errorText)) continue;
+      if (isHookDenialError(errorText)) continue;
 
       // Filter out git errors in Bash
       if (toolName === 'Bash') {
@@ -1096,6 +1110,7 @@ if (require.main === module) {
 } else {
   module.exports = {
     isPureExitStatusNoise,
+    isHookDenialError,
     recoverySignature,
     withRepeatMeta,
     extractErrorRecoveries,
