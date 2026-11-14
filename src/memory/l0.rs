@@ -211,11 +211,7 @@ pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result
 }
 
 /// 將指定來源檔的編譯 cursor 單調推進至 `offset`（不越過未處理的 signal）。
-pub fn advance_cursor(
-    conn: &rusqlite::Connection,
-    source_file: &str,
-    offset: i64,
-) -> Result<()> {
+pub fn advance_cursor(conn: &rusqlite::Connection, source_file: &str, offset: i64) -> Result<()> {
     conn.execute(
         "INSERT INTO signal_cursors (source_file, last_offset, updated_at)
          VALUES (?1, ?2, datetime('now'))
