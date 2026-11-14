@@ -887,6 +887,9 @@ async fn compile_batch(
         return (rule, "rule", None);
     };
     let mut out: Vec<Option<l1::L1Entry>> = (0..batch.len()).map(|_| None).collect();
+    // 回覆沒涵蓋到的 signal(整批解析失敗、漏格、壞元素)退回 rule-based,
+    // 不讓它被記成已編譯卻沒產出(簽章已記、cursor 已前進 → 永久遺失)。
+    let mut covered = vec![false; batch.len()];
     if let Ok(arr) = extract_json_array(&text) {
         for (pos, val) in arr.into_iter().enumerate() {
             if !val.is_object() {
@@ -898,7 +901,13 @@ async fn compile_batch(
             }
             if let Ok(opt) = parse_compile_response(&val.to_string(), &batch[slot]) {
                 out[slot] = opt;
+                covered[slot] = true;
             }
+        }
+    }
+    for (slot, done) in covered.iter().enumerate() {
+        if !done {
+            out[slot] = compile_rule_based(&batch[slot]).ok().flatten();
         }
     }
     (out, engine, usage)
@@ -1395,6 +1404,46 @@ mod tests {
         assert_eq!(v["items"], 10);
         assert_eq!(v["deferred"], 15);
         assert_eq!(v["engine"], "claude");
+    }
+
+    #[test]
+    fn unparseable_batch_reply_falls_back_to_rule_based_not_dropped() {
+        let tmp = TempDir::new().unwrap();
+        let (ctx, conn) = batch_ctx(&tmp);
+        let all: Vec<String> = (0..3).map(distinct).collect();
+        write_signals(&ctx, &all);
+        // First item answered properly, the rest missing; then a wholly garbage reply.
+        for reply in [
+            r#"[{"index":0,"type":"concept","topic":"ok-topic","title":"t","body":"b","links":[],"quality":0.9}]"#,
+            "sorry, I cannot help with that",
+        ] {
+            let mut fake = |prompt: &str, _m: &str| -> Result<crate::llm::LlmOutput> {
+                Ok(crate::llm::LlmOutput {
+                    text: if prompt.contains("對賬器") {
+                        "[]".into()
+                    } else {
+                        reply.into()
+                    },
+                    engine: "claude",
+                    usage: None,
+                })
+            };
+            let mut hook = LlmHook {
+                fake: Some(&mut fake),
+            };
+            let r = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(run_with(&ctx, &conn, 10, &mut hook))
+                .unwrap();
+            if reply.starts_with('[') {
+                assert_eq!(r.signals_processed, 3);
+                assert_eq!(r.l1_created, 3, "missing slots compiled rule-based");
+                write_signals(&ctx, &(3..6).map(distinct).collect::<Vec<_>>());
+            } else {
+                assert_eq!(r.l1_created, 3, "garbage reply: all rule-based");
+            }
+        }
     }
 
     #[test]
