@@ -1,6 +1,7 @@
 const assert = require('assert');
 const {
   isPureExitStatusNoise,
+  isHookDenialError,
   recoverySignature,
   withRepeatMeta,
   extractErrorRecoveries
@@ -339,6 +340,38 @@ test('Case 18: same-file repeat marker omits files= segment', () => {
     'marker must carry repeat_count=3');
   assert.ok(!signals[0].context.includes('files='),
     'fileCount=1 must omit files= segment (deliberate plan design)');
+});
+
+// ---------------------------------------------------------------------------
+// Case 19: PreToolUse hook denials and zsh nomatch are filtered (PM 01M7C8NM)
+// ---------------------------------------------------------------------------
+test('Case 19: PreToolUse hook denials and zsh nomatch are filtered', () => {
+  const hookErrors = [
+    'PreToolUse:Bash hook error: blocked bare ls',
+    'Blocked by bash-footgun-guard: pkill -f matches self',
+    'bash-launch-guard denied backgrounded command',
+    'depth0-delegate-gate: depth-0 agent cannot edit directly',
+    'zsh:1: no matches found: *.rs',
+  ];
+  for (const errorText of hookErrors) {
+    assert.strictEqual(
+      isHookDenialError(errorText),
+      true,
+      `Should identify "${errorText}" as hook denial / shell nomatch`
+    );
+  }
+  const messages = makeRecoveryMessages(
+    'Bash',
+    hookErrors.map(errorText => ({ errorText, cmd: 'ls' }))
+  );
+  const signals = extractErrorRecoveries(messages);
+  assert.strictEqual(signals.length, 0, 'Hook denials must not be extracted as error-recovery');
+
+  assert.strictEqual(
+    isHookDenialError('error[E0308]: mismatched types in src/main.rs'),
+    false,
+    'Real compiler error must not be treated as hook denial'
+  );
 });
 
 console.log(`\nTests completed: ${passedTests}/${totalTests} passed.`);

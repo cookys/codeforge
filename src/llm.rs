@@ -1,11 +1,20 @@
 //! LLM backend for codeforge digest / compile。
 //!
 //! codeforge 是 Claude Code 套件,LLM 子任務**優先走 `claude -p` headless**:免 API key、
-//! 用既有訂閱(零 per-token 成本),品質遠勝 rule-based passthrough。bake-off(2026-06-17,
-//! ship digest prompt × haiku/sonnet/opus)實測:Opus 最銳(title/detail/source_evidence
-//! 最正規),Haiku 會丟教訓 + 編假 evidence。故預設 `opus`,由 `CODEFORGE_DIGEST_MODEL` 可調。
+//! 用既有訂閱(零 per-token 成本),品質遠勝 rule-based passthrough。
 //!
-//! 呼叫端 fallback 鏈(見 [`headless_digest`]):
+//! 兩條呼叫鏈各自選用預設模型:
+//! - **ship digest** (`digest_model()`,env `CODEFORGE_DIGEST_MODEL`,預設 `opus`):
+//!   bake-off(2026-06-17,ship digest prompt × haiku/sonnet/opus)實測 Opus 最銳
+//!   (title/detail/source_evidence 最正規),Haiku 會丟教訓 + 編假 evidence。
+//! - **dream compile / reconcile** (`compile_model()`,env `CODEFORGE_COMPILE_MODEL`,預設 `haiku`):
+//!   PM 01M7C8NM(2026-11-14)事故後分流 — dream 批次編譯 L0 signals 不需要逐條冷啟動 Opus,
+//!   預設改用 `haiku`,大幅壓低 token 與成本。
+//!
+//! `claude -p` 以 `--output-format json` 執行,回傳 `result` 文字並解析 `usage` token 計數
+//! (供 dream compile 寫入 `<data_dir>/llm-usage.jsonl`)。
+//!
+//! 呼叫端 fallback 鏈(見 [`headless_digest`] / [`headless_digest_with_usage`]):
 //!   `claude -p`(Anthropic 訂閱)→ `agy`(Gemini,訂閱)→ `codex`(OpenAI/ChatGPT 訂閱)
 //!     → `ANTHROPIC_API_KEY`(Haiku API,呼叫端)→ rule-based(呼叫端)
 //!
@@ -13,7 +22,7 @@
 //! 掉 rule-based 是品質懸崖。agy/codex 是 **decorrelated**(不同廠)的免 key 中間檔 ——
 //! Anthropic 那條失敗時,Google/OpenAI 那條通常不受影響,把下限從 rule-based 拉到 LLM 級。
 //! bake-off(2026-06-24,真實 ship prompt)實測三家都產 valid JSON;agy 最快(16s)、codex
-//! 最徹底(多抓一條)、claude(Opus)nuance 最全 → Opus 當主、agy→codex 當 fallback。
+//! 最徹底(多抓一條)、claude(Opus)nuance 最全 → claude 當主、agy→codex 當 fallback。
 //!
 //! 運維注意:
 //! - **限流閥(throttle)**:LLM 子程序受三層保護,別讓 dream/ship 壓垮忙碌的機器 ——
@@ -29,22 +38,47 @@ use anyhow::{Context, Result};
 use std::io::Write;
 use std::process::Stdio;
 
-/// digest/compile 用的 model alias。env `CODEFORGE_DIGEST_MODEL`,預設 `opus`(bake-off 最佳)。
-pub fn digest_model() -> String {
-    std::env::var("CODEFORGE_DIGEST_MODEL")
+/// 解析 env string override;未設或空字串回預設值。
+fn env_or_default(key: &str, default: &str) -> String {
+    std::env::var(key)
         .ok()
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "opus".to_string())
+        .unwrap_or_else(|| default.to_string())
+}
+
+/// ship digest 用的 model alias。env `CODEFORGE_DIGEST_MODEL`,預設 `opus`(bake-off 最佳)。
+pub fn digest_model() -> String {
+    env_or_default("CODEFORGE_DIGEST_MODEL", "opus")
+}
+
+/// dream compile / reconcile 用的 model alias。env `CODEFORGE_COMPILE_MODEL`,預設 `haiku`
+/// (PM 01M7C8NM:避免 dream compile 每次冷啟動 Opus)。空字串視同未設。
+pub fn compile_model() -> String {
+    env_or_default("CODEFORGE_COMPILE_MODEL", "haiku")
 }
 
 /// agy(Gemini)fallback 用的 model。env `CODEFORGE_AGY_MODEL`,預設快又夠好的 Flash。
 /// 預設字串是 `agy models` 的人類可讀 label(非 API id);agy 改版若重命名(如 Gemini 3.6)
 /// 此預設會靜默失效 → 鏈落到 codex。要換時對照 `agy models` 輸出更新。
 fn agy_model() -> String {
-    std::env::var("CODEFORGE_AGY_MODEL")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "Gemini 3.5 Flash (Medium)".to_string())
+    env_or_default("CODEFORGE_AGY_MODEL", "Gemini 3.5 Flash (Medium)")
+}
+
+/// 從 headless CLI / API 回應解析出的 token 用量。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TokenUsage {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub cache_read: Option<u64>,
+    pub cache_write: Option<u64>,
+}
+
+/// headless 鏈的回傳值:回應文字、命中的 engine 名稱,以及可選的 token 用量。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlmOutput {
+    pub text: String,
+    pub engine: &'static str,
+    pub usage: Option<TokenUsage>,
 }
 
 fn timeout_secs() -> u64 {
@@ -188,9 +222,63 @@ fn run_cli(label: &str, argv: &[&str], prompt: &str) -> Result<String> {
     Ok(text)
 }
 
-/// 跑 `claude -p --model <model>`,prompt 走 stdin,回 stdout 文字。
-pub fn claude_p(prompt: &str, model: &str) -> Result<String> {
-    run_cli("claude -p", &["claude", "-p", "--model", model], prompt)
+/// 解析 `claude -p --output-format json` 的輸出:取 `result` 文字與 `usage` token 計數。
+/// 支援單一 JSON 物件或事件陣列(取最後一筆含 `result` 者)。
+pub fn parse_claude_json(raw: &str) -> Result<(String, Option<TokenUsage>)> {
+    let val: serde_json::Value =
+        serde_json::from_str(raw.trim()).context("claude -p JSON 解析失敗")?;
+    let obj = match &val {
+        serde_json::Value::Object(_) => &val,
+        serde_json::Value::Array(items) => items
+            .iter()
+            .rev()
+            .find(|item| {
+                item.get("type").and_then(|t| t.as_str()) == Some("result")
+                    || item.get("result").is_some()
+            })
+            .context("claude -p JSON 陣列中找不到 result 項目")?,
+        _ => anyhow::bail!("claude -p 回傳非 JSON 物件"),
+    };
+
+    if obj.get("is_error").and_then(|b| b.as_bool()) == Some(true) {
+        let msg = obj
+            .get("result")
+            .and_then(|r| r.as_str())
+            .unwrap_or("unknown error");
+        anyhow::bail!("claude -p 回報錯誤：{msg}");
+    }
+
+    let text = obj
+        .get("result")
+        .and_then(|r| r.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .context("claude -p 回空 result（疑大 prompt）")?
+        .to_string();
+
+    let usage = obj
+        .get("usage")
+        .and_then(|u| u.as_object())
+        .map(|u| TokenUsage {
+            input_tokens: u.get("input_tokens").and_then(|x| x.as_u64()),
+            output_tokens: u.get("output_tokens").and_then(|x| x.as_u64()),
+            cache_read: u.get("cache_read_input_tokens").and_then(|x| x.as_u64()),
+            cache_write: u
+                .get("cache_creation_input_tokens")
+                .and_then(|x| x.as_u64()),
+        });
+
+    Ok((text, usage))
+}
+
+/// 跑 `claude -p --model <model> --output-format json`,prompt 走 stdin,回傳 `(result, usage)`。
+pub fn claude_p(prompt: &str, model: &str) -> Result<(String, Option<TokenUsage>)> {
+    let raw = run_cli(
+        "claude -p",
+        &["claude", "-p", "--model", model, "--output-format", "json"],
+        prompt,
+    )?;
+    parse_claude_json(&raw)
 }
 
 /// 跑 `agy -p --model <agy_model>`(Gemini headless,免 Anthropic key),prompt 走 stdin。
@@ -220,21 +308,44 @@ pub fn codex_exec(prompt: &str) -> Result<String> {
     )
 }
 
+/// headless 鏈:`claude -p` → `agy`(Gemini,快)→ `codex`(最徹底)。
+/// 回第一個成功(非空)引擎的文字、engine 名稱與可選 token 用量;三家全失敗才 Err。
+pub fn headless_digest_with_usage(prompt: &str, model: &str) -> Result<LlmOutput> {
+    match claude_p(prompt, model) {
+        Ok((text, usage)) => {
+            return Ok(LlmOutput {
+                text,
+                engine: "claude",
+                usage,
+            })
+        }
+        Err(e) => eprintln!("ℹ claude -p 不可用（{e}）— 試 agy"),
+    }
+    match agy_p(prompt) {
+        Ok(text) => {
+            return Ok(LlmOutput {
+                text,
+                engine: "agy",
+                usage: None,
+            })
+        }
+        Err(e) => eprintln!("ℹ agy 不可用（{e}）— 試 codex"),
+    }
+    let text = codex_exec(prompt).context("headless 三引擎全失敗(claude -p / agy / codex)")?;
+    Ok(LlmOutput {
+        text,
+        engine: "codex",
+        usage: None,
+    })
+}
+
 /// headless digest 鏈:`claude -p`(Opus,最佳)→ `agy`(Gemini,快)→ `codex`(最徹底)。
 /// 回第一個成功(非空)引擎的原始輸出;三家全失敗才 Err(呼叫端再接 Haiku/rule-based)。
 ///
 /// parse(JSON 解析)留給呼叫端 —— 它對「成功引擎但回垃圾」的處置(passthrough vs 跳過)
 /// 各 call site 語義不同,不適合在此統一。本函式只負責「拿到一段非空 LLM 輸出」。
 pub fn headless_digest(prompt: &str, model: &str) -> Result<String> {
-    match claude_p(prompt, model) {
-        Ok(t) => return Ok(t),
-        Err(e) => eprintln!("ℹ claude -p 不可用（{e}）— 試 agy"),
-    }
-    match agy_p(prompt) {
-        Ok(t) => return Ok(t),
-        Err(e) => eprintln!("ℹ agy 不可用（{e}）— 試 codex"),
-    }
-    codex_exec(prompt).context("headless 三引擎全失敗(claude -p / agy / codex)")
+    headless_digest_with_usage(prompt, model).map(|out| out.text)
 }
 
 #[cfg(test)]
@@ -255,6 +366,70 @@ mod tests {
         assert_eq!(agy_model(), "Gemini 3.5 Flash (Medium)");
 
         std::env::remove_var("CODEFORGE_AGY_MODEL");
+    }
+
+    #[test]
+    fn compile_model_default_and_override_and_digest_model_is_opus() {
+        let prev_compile = std::env::var_os("CODEFORGE_COMPILE_MODEL");
+        let prev_digest = std::env::var_os("CODEFORGE_DIGEST_MODEL");
+
+        std::env::remove_var("CODEFORGE_COMPILE_MODEL");
+        std::env::remove_var("CODEFORGE_DIGEST_MODEL");
+        assert_eq!(compile_model(), "haiku");
+        assert_eq!(digest_model(), "opus");
+
+        std::env::set_var("CODEFORGE_COMPILE_MODEL", "");
+        assert_eq!(compile_model(), "haiku");
+
+        std::env::set_var("CODEFORGE_COMPILE_MODEL", "sonnet");
+        assert_eq!(compile_model(), "sonnet");
+        assert_eq!(digest_model(), "opus");
+
+        match prev_compile {
+            Some(v) => std::env::set_var("CODEFORGE_COMPILE_MODEL", v),
+            None => std::env::remove_var("CODEFORGE_COMPILE_MODEL"),
+        }
+        match prev_digest {
+            Some(v) => std::env::set_var("CODEFORGE_DIGEST_MODEL", v),
+            None => std::env::remove_var("CODEFORGE_DIGEST_MODEL"),
+        }
+    }
+
+    #[test]
+    fn parse_claude_json_extracts_result_and_usage() {
+        let fixture = r#"{
+            "type": "result",
+            "subtype": "success",
+            "is_error": false,
+            "result": "  [{\"index\":0,\"quality\":0.9}]  ",
+            "usage": {
+                "input_tokens": 1200,
+                "output_tokens": 350,
+                "cache_read_input_tokens": 4000,
+                "cache_creation_input_tokens": 800
+            }
+        }"#;
+        let (text, usage) = parse_claude_json(fixture).unwrap();
+        assert_eq!(text, r#"[{"index":0,"quality":0.9}]"#);
+        assert_eq!(
+            usage,
+            Some(TokenUsage {
+                input_tokens: Some(1200),
+                output_tokens: Some(350),
+                cache_read: Some(4000),
+                cache_write: Some(800),
+            })
+        );
+
+        // Missing usage yields None.
+        let no_usage = r#"{"type":"result","result":"ok"}"#;
+        let (text2, usage2) = parse_claude_json(no_usage).unwrap();
+        assert_eq!(text2, "ok");
+        assert_eq!(usage2, None);
+
+        // Error or empty result yields Err.
+        assert!(parse_claude_json(r#"{"is_error":true,"result":"boom"}"#).is_err());
+        assert!(parse_claude_json(r#"{"type":"result","result":"   "}"#).is_err());
     }
 
     /// 限流閥 load ceiling:閥值設極高時永不擋(load/core 不可能超過 1e6)。

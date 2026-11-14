@@ -391,3 +391,17 @@ CREATE INDEX IF NOT EXISTS idx_active_effects_live
     ON active_effects(effect_kind, zone_id, expires_at);
 
 INSERT OR IGNORE INTO schema_version (version) VALUES (9);
+
+-- ═══════════════════════════════════════════════════════════════
+-- PM 01M7C8NM — Compile signature daily dedup (version 10)
+-- Same-day compiled signal signatures are persisted here so repeated
+-- signals on the same UTC date are skipped before calling the LLM.
+-- ═══════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS compiled_signatures (
+    sig           TEXT NOT NULL,
+    compiled_date TEXT NOT NULL,            -- YYYY-MM-DD (UTC)
+    PRIMARY KEY (sig, compiled_date)
+);
+
+INSERT OR IGNORE INTO schema_version (version) VALUES (10);

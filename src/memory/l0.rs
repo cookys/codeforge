@@ -125,8 +125,20 @@ impl<'a> SignalWriter<'a> {
     }
 }
 
-/// 讀取所有未編譯的 signals（從上次編譯 cursor 之後）
-pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result<Vec<Signal>> {
+/// 未編譯 L0 signal 及其來源檔與行尾 byte offset,
+/// 供 `dream compile` 依實際處理到的位置增量推進 `signal_cursors`,不越過未處理項目。
+#[derive(Debug, Clone)]
+pub struct LocatedSignal {
+    pub signal: Signal,
+    pub source_file: String,
+    pub end_offset: i64,
+}
+
+/// 讀取所有未編譯的 signals（含來源檔與行尾 byte offset，從上次編譯 cursor 之後）。
+pub fn read_uncompiled_located(
+    ctx: &db::Context,
+    conn: &rusqlite::Connection,
+) -> Result<Vec<LocatedSignal>> {
     let signal_dir = ctx.project_dir.join("signals");
     if !signal_dir.exists() {
         return Ok(vec![]);
@@ -166,15 +178,21 @@ pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result
             .map(|(byte_pos, _)| byte_pos)
             .unwrap_or(content.len());
 
-        let slice = &content[char_start..];
-        for line in slice.lines() {
-            let line = line.trim();
+        let mut pos = char_start;
+        for raw_line in content[char_start..].split_inclusive('\n') {
+            let line_end = (pos + raw_line.len()) as i64;
+            pos += raw_line.len();
+            let line = raw_line.trim();
             if line.is_empty() {
                 continue;
             }
             if let Ok(s) = serde_json::from_str::<Signal>(line) {
                 if !s.compiled {
-                    signals.push(s);
+                    signals.push(LocatedSignal {
+                        signal: s,
+                        source_file: cursor_key.clone(),
+                        end_offset: line_end,
+                    });
                 }
             }
         }
@@ -183,7 +201,30 @@ pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result
     Ok(signals)
 }
 
-/// 標記 signal 為已編譯（更新 cursor）
+/// 讀取所有未編譯的 signals（從上次編譯 cursor 之後）
+#[allow(dead_code)]
+pub fn read_uncompiled(ctx: &db::Context, conn: &rusqlite::Connection) -> Result<Vec<Signal>> {
+    Ok(read_uncompiled_located(ctx, conn)?
+        .into_iter()
+        .map(|ls| ls.signal)
+        .collect())
+}
+
+/// 將指定來源檔的編譯 cursor 單調推進至 `offset`（不越過未處理的 signal）。
+pub fn advance_cursor(conn: &rusqlite::Connection, source_file: &str, offset: i64) -> Result<()> {
+    conn.execute(
+        "INSERT INTO signal_cursors (source_file, last_offset, updated_at)
+         VALUES (?1, ?2, datetime('now'))
+         ON CONFLICT(source_file) DO UPDATE SET
+             last_offset = MAX(signal_cursors.last_offset, excluded.last_offset),
+             updated_at = datetime('now')",
+        rusqlite::params![source_file, offset],
+    )?;
+    Ok(())
+}
+
+/// 標記整日 signal 檔為已編譯（更新 cursor 至檔尾）
+#[allow(dead_code)]
 pub fn mark_compiled(
     ctx: &db::Context,
     conn: &rusqlite::Connection,
@@ -197,11 +238,7 @@ pub fn mark_compiled(
 
     // cursor key = 完整路徑(含 repo),與 read_uncompiled 一致,避免跨 repo 共用 cursor。
     let cursor_key = path.to_string_lossy().to_string();
-    conn.execute(
-        "INSERT OR REPLACE INTO signal_cursors (source_file, last_offset, updated_at) VALUES (?1, ?2, datetime('now'))",
-        rusqlite::params![&cursor_key, size],
-    )?;
-    Ok(())
+    advance_cursor(conn, &cursor_key, size)
 }
 
 /// 安全截斷字串（不在中文字元邊界截斷）
@@ -249,5 +286,38 @@ mod tests {
             .unwrap()
             .count();
         assert_eq!(n, 1, "應寫出一個 jsonl 檔");
+    }
+
+    #[test]
+    fn advance_cursor_preserves_unprocessed_tail_signals() {
+        let tmp = TempDir::new().unwrap();
+        let ctx = db::Context {
+            project_dir: tmp.path().to_path_buf(),
+            brain_dir: tmp.path().join("brain"),
+            db_path: tmp.path().join("state.db"),
+        };
+        let conn = ctx.open_db().unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+
+        let writer = SignalWriter::new(&ctx);
+        for i in 0..5 {
+            writer
+                .append(&Signal::new(
+                    format!("中文訊號第 {i} 條"),
+                    SignalSource::Manual,
+                ))
+                .unwrap();
+        }
+
+        let all = read_uncompiled_located(&ctx, &conn).unwrap();
+        assert_eq!(all.len(), 5);
+
+        // 只處理前 2 條，cursor 停在第 2 條行尾。
+        advance_cursor(&conn, &all[1].source_file, all[1].end_offset).unwrap();
+
+        let rest = read_uncompiled(&ctx, &conn).unwrap();
+        assert_eq!(rest.len(), 3);
+        assert!(rest[0].content.contains("第 2 條"));
+        assert!(rest[2].content.contains("第 4 條"));
     }
 }
