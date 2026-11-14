@@ -4,7 +4,6 @@ use crate::memory::{l0, l1};
 /// Dream Compile：L0 signals → L1 Markdown（增量、批次 LLM 編譯與去重）
 use anyhow::Result;
 use rusqlite::Connection;
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::Path;
@@ -23,7 +22,7 @@ pub struct CompileResult {
 /// mem0-style reconciliation decision (T2.2) for a freshly-compiled fact against
 /// the related existing L1 entries surfaced by FTS. Biased toward `Add` — a wrong
 /// `Noop`/`Delete` loses knowledge, so any ambiguity resolves to `Add`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Reconcile {
     /// Genuinely new (or merely complementary) — write a new file.
     Add,
@@ -43,15 +42,13 @@ enum Applied {
     Noop,
 }
 
+type FakeLlm<'a> = &'a mut (dyn FnMut(&str, &str) -> Result<crate::llm::LlmOutput> + Send);
+
 struct LlmHook<'a> {
-    fake: Option<&'a mut (dyn FnMut(&str, &str) -> Result<crate::llm::LlmOutput> + Send)>,
+    fake: Option<FakeLlm<'a>>,
 }
 
 impl LlmHook<'_> {
-    fn is_fake(&self) -> bool {
-        self.fake.is_some()
-    }
-
     fn call_if_fake(&mut self, prompt: &str, model: &str) -> Option<Result<crate::llm::LlmOutput>> {
         self.fake.as_mut().map(|f| f(prompt, model))
     }
@@ -244,9 +241,7 @@ async fn run_with(
 
     let reconcile_called = reconcile_engine.is_some();
     if !llm_batch.is_empty() || reconcile_called {
-        let engine = compile_engine
-            .or(reconcile_engine)
-            .unwrap_or("rule");
+        let engine = compile_engine.or(reconcile_engine).unwrap_or("rule");
         let total_usage = merge_usage(compile_usage, reconcile_usage);
         append_usage_log(
             &ctx.data_dir(),
@@ -563,10 +558,7 @@ fn parse_batch_reconcile_decisions(text: &str, candidate_lens: &[usize]) -> Vec<
         if !val.is_object() {
             continue;
         }
-        let slot = val["index"]
-            .as_u64()
-            .map(|u| u as usize)
-            .unwrap_or(pos);
+        let slot = val["index"].as_u64().map(|u| u as usize).unwrap_or(pos);
         if slot >= candidate_lens.len() {
             continue;
         }
@@ -615,7 +607,7 @@ async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Optio
     // backend fallback 鏈:headless 三引擎(claude -p → agy → codex)→ ANTHROPIC_API_KEY(Haiku)→ rule-based。
     // 注意:parse 出 Ok(None)(quality 太低)是有效「跳過此 signal」,直接回,不降級到 rule-based。
     // 每個 fallback transition 都出聲(對齊 ship.rs;否則 compile 靜默降級無法診斷品質下降)。
-    match crate::llm::headless_digest(&prompt, &crate::llm::digest_model()) {
+    match crate::llm::headless_digest(&prompt, &crate::llm::compile_model()) {
         Ok(text) => match parse_compile_response(&text, signal) {
             Ok(opt) => return Ok(opt),
             Err(e) => eprintln!("  ⚠ compile: headless digest 回應 parse 失敗（{e}）— fallback"),
@@ -624,8 +616,10 @@ async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Optio
     }
     if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
         if !api_key.is_empty() {
-            match call_haiku_compile(&api_key, &prompt).await {
-                Ok(text) => match parse_compile_response(&text, signal) {
+            match call_haiku_compile_with_usage(&api_key, &crate::llm::compile_model(), &prompt)
+                .await
+            {
+                Ok((text, _)) => match parse_compile_response(&text, signal) {
                     Ok(opt) => return Ok(opt),
                     Err(e) => eprintln!("  ⚠ compile: Haiku 回應 parse 失敗（{e}）— rule-based"),
                 },
@@ -663,16 +657,26 @@ type 說明：
     )
 }
 
-/// Haiku API fallback(僅當 claude -p 不可用且有 ANTHROPIC_API_KEY)。回原始回應文字。
-async fn call_haiku_compile(api_key: &str, prompt: &str) -> Result<String> {
+/// Haiku API fallback(僅當 claude -p 不可用且有 ANTHROPIC_API_KEY)。回原始回應文字與 token 用量。
+/// `model` 為 `claude-*` 全名時照用,否則(alias 如 `haiku`)用固定的 Haiku id。
+async fn call_haiku_compile_with_usage(
+    api_key: &str,
+    model: &str,
+    prompt: &str,
+) -> Result<(String, Option<crate::llm::TokenUsage>)> {
+    let api_model = if model.starts_with("claude-") {
+        model
+    } else {
+        "claude-haiku-4-5-20251001"
+    };
     let client = reqwest::Client::new();
     let resp = client
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .json(&serde_json::json!({
-            "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 1024,
+            "model": api_model,
+            "max_tokens": 4096,
             "messages": [{"role": "user", "content": prompt}]
         }))
         .send()
@@ -681,10 +685,232 @@ async fn call_haiku_compile(api_key: &str, prompt: &str) -> Result<String> {
         anyhow::bail!("LLM API 錯誤：{}", resp.status());
     }
     let body: serde_json::Value = resp.json().await?;
-    Ok(body["content"][0]["text"]
+    let text = body["content"][0]["text"]
         .as_str()
         .unwrap_or("{}")
-        .to_string())
+        .to_string();
+    let u = &body["usage"];
+    let usage = u.is_object().then(|| crate::llm::TokenUsage {
+        input_tokens: u["input_tokens"].as_u64(),
+        output_tokens: u["output_tokens"].as_u64(),
+        cache_read: u["cache_read_input_tokens"].as_u64(),
+        cache_write: u["cache_creation_input_tokens"].as_u64(),
+    });
+    Ok((text, usage))
+}
+
+/// 去重簽名(PM 01M7C8NM):來源種類 + 內容前 120 字,小寫、空白折疊、連續數字換成一個 `#`。
+fn signal_signature(signal: &l0::Signal) -> String {
+    let kind = match &signal.source {
+        l0::SignalSource::Manual => "manual",
+        l0::SignalSource::ClaudeCodeSession => "claude-code",
+        l0::SignalSource::WebChatClaude => "claude.ai",
+        l0::SignalSource::WebChatChatGpt => "chatgpt",
+        l0::SignalSource::Ingest { .. } => "ingest",
+        l0::SignalSource::Hook { event } => event.as_str(),
+        l0::SignalSource::AbsorbedMemory => "absorbed",
+        l0::SignalSource::SessionDigest => "session-digest",
+    };
+    let head: String = signal.content.chars().take(120).collect();
+    let mut norm = String::new();
+    for c in head
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+    {
+        // a run of digits becomes a single `#`
+        if c.is_ascii_digit() {
+            if !norm.ends_with('#') {
+                norm.push('#');
+            }
+        } else {
+            norm.push(c);
+        }
+    }
+    format!("{kind}|{norm}")
+}
+
+fn is_signature_compiled_on_date(conn: &Connection, sig: &str, date: &str) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM compiled_signatures WHERE sig = ?1 AND compiled_date = ?2",
+            rusqlite::params![sig, date],
+            |_| Ok(()),
+        )
+        .is_ok())
+}
+
+fn record_compiled_signature(conn: &Connection, sig: &str, date: &str) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO compiled_signatures (sig, compiled_date) VALUES (?1, ?2)",
+        rusqlite::params![sig, date],
+    )?;
+    Ok(())
+}
+
+fn sum_opt(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+    match (a, b) {
+        (None, None) => None,
+        (x, y) => Some(x.unwrap_or(0) + y.unwrap_or(0)),
+    }
+}
+
+fn merge_usage(
+    a: Option<crate::llm::TokenUsage>,
+    b: Option<crate::llm::TokenUsage>,
+) -> Option<crate::llm::TokenUsage> {
+    match (a, b) {
+        (None, None) => None,
+        (x, y) => {
+            let (x, y) = (x.unwrap_or_default(), y.unwrap_or_default());
+            Some(crate::llm::TokenUsage {
+                input_tokens: sum_opt(x.input_tokens, y.input_tokens),
+                output_tokens: sum_opt(x.output_tokens, y.output_tokens),
+                cache_read: sum_opt(x.cache_read, y.cache_read),
+                cache_write: sum_opt(x.cache_write, y.cache_write),
+            })
+        }
+    }
+}
+
+fn usage_line(
+    items: usize,
+    skipped_dupes: usize,
+    deferred: usize,
+    model: &str,
+    engine: &str,
+    usage: Option<&crate::llm::TokenUsage>,
+) -> serde_json::Value {
+    let u = usage.cloned().unwrap_or_default();
+    serde_json::json!({
+        "ts_ms": chrono::Utc::now().timestamp_millis(),
+        "op": "compile",
+        "items": items,
+        "skipped_dupes": skipped_dupes,
+        "deferred": deferred,
+        "model": model,
+        "engine": engine,
+        "input_tokens": u.input_tokens,
+        "output_tokens": u.output_tokens,
+        "cache_read": u.cache_read,
+        "cache_write": u.cache_write,
+    })
+}
+
+/// 附加一行到 `<data_dir>/llm-usage.jsonl`(0600);任何寫入失敗一律忽略(dream 跑在 SessionEnd hook)。
+fn append_usage_log(
+    data_dir: &Path,
+    items: usize,
+    skipped_dupes: usize,
+    deferred: usize,
+    model: &str,
+    engine: &str,
+    usage: Option<&crate::llm::TokenUsage>,
+) {
+    let line = usage_line(items, skipped_dupes, deferred, model, engine, usage).to_string() + "\n";
+    let _ = std::fs::create_dir_all(data_dir);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    if let Ok(mut f) = opts.open(data_dir.join("llm-usage.jsonl")) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
+fn build_batch_compile_prompt(batch: &[l0::Signal]) -> String {
+    let mut blocks = String::new();
+    for (i, s) in batch.iter().enumerate() {
+        let content: String = s.content.chars().take(1500).collect();
+        blocks.push_str(&format!("\n=== Signal index {i} ===\n{content}\n"));
+    }
+    format!(
+        r##"你是一個知識編譯器。將下方 {n} 個 signal 各自編譯為結構化的 L1 知識條目。
+{blocks}
+回傳 JSON 陣列（嚴格格式，每個 signal 一個元素，index 對應上方編號）：
+[{{
+  "index": 0,
+  "type": "concept" | "connection" | "qa",
+  "topic": "簡短主題 3-10 字",
+  "title": "完整標題",
+  "body": "完整 Markdown 內容，含 wikilink 至少 2 個",
+  "links": ["topic1", "topic2"],
+  "quality": 0.0-1.0
+}}]
+
+type 說明：
+- concept：獨立知識點（事實、定義、技術要點）
+- connection：兩個概念的關係（X 如何影響 Y）
+- qa：問答對（問題 + 解答）
+
+若某 signal 品質太低（無意義、重複、過短），該元素回傳 {{"index": N, "quality": 0.0}}。只輸出 JSON 陣列。"##,
+        n = batch.len()
+    )
+}
+
+/// 一次 LLM 呼叫編譯整批 signals(PM 01M7C8NM)。回每個 signal 一格結果(壞元素 → None,不影響其他)、
+/// 命中的 engine 與 token 用量。所有 LLM 後端都失敗才逐條 rule-based(engine = "rule")。
+async fn compile_batch(
+    batch: &[l0::Signal],
+    model: &str,
+    hook: &mut LlmHook<'_>,
+) -> (
+    Vec<Option<l1::L1Entry>>,
+    &'static str,
+    Option<crate::llm::TokenUsage>,
+) {
+    let prompt = build_batch_compile_prompt(batch);
+    let reply: Option<(String, &'static str, Option<crate::llm::TokenUsage>)> =
+        if let Some(res) = hook.call_if_fake(&prompt, model) {
+            res.ok().map(|o| (o.text, o.engine, o.usage))
+        } else if let Ok(o) = crate::llm::headless_digest_with_usage(&prompt, model) {
+            Some((o.text, o.engine, o.usage))
+        } else {
+            match std::env::var("ANTHROPIC_API_KEY") {
+                Ok(k) if !k.is_empty() => call_haiku_compile_with_usage(&k, model, &prompt)
+                    .await
+                    .ok()
+                    .map(|(t, u)| (t, "api", u)),
+                _ => None,
+            }
+        };
+    let Some((text, engine, usage)) = reply else {
+        let rule = batch
+            .iter()
+            .map(|s| compile_rule_based(s).ok().flatten())
+            .collect();
+        return (rule, "rule", None);
+    };
+    let mut out: Vec<Option<l1::L1Entry>> = (0..batch.len()).map(|_| None).collect();
+    if let Ok(arr) = extract_json_array(&text) {
+        for (pos, val) in arr.into_iter().enumerate() {
+            if !val.is_object() {
+                continue;
+            }
+            let slot = val["index"].as_u64().map(|u| u as usize).unwrap_or(pos);
+            if slot >= batch.len() {
+                continue;
+            }
+            if let Ok(opt) = parse_compile_response(&val.to_string(), &batch[slot]) {
+                out[slot] = opt;
+            }
+        }
+    }
+    (out, engine, usage)
+}
+
+fn extract_json_array(text: &str) -> Result<Vec<serde_json::Value>> {
+    if let (Some(start), Some(end)) = (text.find('['), text.rfind(']')) {
+        if start < end {
+            return Ok(serde_json::from_str(&text[start..=end])?);
+        }
+    }
+    anyhow::bail!("LLM 回應中找不到 JSON 陣列")
 }
 
 /// 解析 LLM 回應 → L1Entry。quality<0.3 回 Ok(None)(有效跳過);JSON 壞回 Err(呼叫端 fallback)。
@@ -1070,5 +1296,179 @@ mod tests {
             apply_decision(Reconcile::Delete(0), new.clone(), &[], &fts, dir.path()).unwrap();
         assert_eq!(applied, Applied::Added);
         assert!(new.file_path.exists());
+    }
+
+    // ---- PM 01M7C8NM: batch / cap / dedupe / usage log ----
+
+    fn batch_ctx(tmp: &TempDir) -> (db::Context, Connection) {
+        let ctx = db::Context {
+            project_dir: tmp.path().join(".codeforge"),
+            brain_dir: tmp.path().join("brain"),
+            db_path: tmp.path().join("data").join("state.db"),
+        };
+        let conn = ctx.open_db().unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        (ctx, conn)
+    }
+
+    fn write_signals(ctx: &db::Context, contents: &[String]) {
+        let w = l0::SignalWriter::new(ctx);
+        for c in contents {
+            w.append(&l0::Signal::new(c.clone(), l0::SignalSource::Manual))
+                .unwrap();
+        }
+    }
+
+    /// Letters only (digits are normalized to `#` in signatures, so they would collide).
+    fn distinct(i: usize) -> String {
+        let a = (b'a' + (i / 26) as u8) as char;
+        let b = (b'a' + (i % 26) as u8) as char;
+        format!("distinct lesson about topic {a}{b} and its handling")
+    }
+
+    /// Fake LLM: records the number of compile items per call; answers every item.
+    fn run_fake(
+        ctx: &db::Context,
+        conn: &Connection,
+        max_items: usize,
+        calls: &mut Vec<usize>,
+    ) -> CompileResult {
+        let mut n = 0usize;
+        let mut fake = |prompt: &str, _model: &str| -> Result<crate::llm::LlmOutput> {
+            let items = prompt.matches("=== Signal index").count();
+            let text = if prompt.contains("對賬器") {
+                "[]".to_string()
+            } else {
+                calls.push(items);
+                let arr: Vec<_> = (0..items)
+                    .map(|i| {
+                        n += 1;
+                        serde_json::json!({"index": i, "type": "concept",
+                            "topic": format!("fake-topic-{n}"), "title": format!("t{n}"),
+                            "body": "body", "links": [], "quality": 0.9})
+                    })
+                    .collect();
+                serde_json::to_string(&arr).unwrap()
+            };
+            Ok(crate::llm::LlmOutput {
+                text,
+                engine: "claude",
+                usage: None,
+            })
+        };
+        let mut hook = LlmHook {
+            fake: Some(&mut fake),
+        };
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(run_with(ctx, conn, max_items, &mut hook))
+            .unwrap()
+    }
+
+    #[test]
+    fn cap_sends_one_call_of_ten_and_defers_rest_to_next_run() {
+        let tmp = TempDir::new().unwrap();
+        let (ctx, conn) = batch_ctx(&tmp);
+        let all: Vec<String> = (0..25).map(distinct).collect();
+        write_signals(&ctx, &all);
+
+        let mut calls = Vec::new();
+        let r1 = run_fake(&ctx, &conn, 10, &mut calls);
+        assert_eq!(calls, vec![10], "exactly one LLM call with 10 items");
+        assert_eq!(r1.signals_processed, 10);
+        let rest = l0::read_uncompiled(&ctx, &conn).unwrap();
+        assert_eq!(rest.len(), 15, "cursor must not pass unprocessed signals");
+        assert_eq!(rest[0].content, all[10]);
+
+        let r2 = run_fake(&ctx, &conn, 10, &mut calls);
+        assert_eq!(calls, vec![10, 10], "second run takes the next 10");
+        assert_eq!(r2.signals_processed, 10);
+        let rest = l0::read_uncompiled(&ctx, &conn).unwrap();
+        assert_eq!(rest.len(), 5);
+        assert_eq!(rest[0].content, all[20]);
+
+        // usage line written with the expected keys
+        let log = std::fs::read_to_string(ctx.data_dir().join("llm-usage.jsonl")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(log.lines().next().unwrap()).unwrap();
+        assert_eq!(v["op"], "compile");
+        assert_eq!(v["items"], 10);
+        assert_eq!(v["deferred"], 15);
+        assert_eq!(v["engine"], "claude");
+    }
+
+    #[test]
+    fn duplicate_signatures_compile_once_and_not_again_same_day() {
+        let tmp = TempDir::new().unwrap();
+        let (ctx, conn) = batch_ctx(&tmp);
+        write_signals(
+            &ctx,
+            &[
+                "Error  recovery: command 12 blocked".to_string(),
+                "error recovery: COMMAND 99 blocked".to_string(),
+                distinct(1),
+            ],
+        );
+        let mut calls = Vec::new();
+        let r = run_fake(&ctx, &conn, 10, &mut calls);
+        assert_eq!(calls, vec![2], "duplicate sent once");
+        assert_eq!(
+            r.signals_processed, 3,
+            "duplicate still counts as processed"
+        );
+        assert!(l0::read_uncompiled(&ctx, &conn).unwrap().is_empty());
+
+        // Same signature, later run, same day: never reaches the LLM.
+        write_signals(&ctx, &["error recovery: command 7 blocked".to_string()]);
+        let r = run_fake(&ctx, &conn, 10, &mut calls);
+        assert_eq!(calls, vec![2], "no new LLM call");
+        assert_eq!(r.signals_processed, 1);
+        assert!(l0::read_uncompiled(&ctx, &conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn usage_line_has_expected_keys_from_claude_json_fixture() {
+        let tmp = TempDir::new().unwrap();
+        let fixture = r#"{"type":"result","is_error":false,"result":"[]",
+            "usage":{"input_tokens":11,"output_tokens":22,
+            "cache_read_input_tokens":33,"cache_creation_input_tokens":44}}"#;
+        let (_, usage) = crate::llm::parse_claude_json(fixture).unwrap();
+        append_usage_log(tmp.path(), 10, 2, 15, "haiku", "claude", usage.as_ref());
+        append_usage_log(tmp.path(), 1, 0, 0, "haiku", "agy", None);
+        let path = tmp.path().join("llm-usage.jsonl");
+        let log = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<serde_json::Value> = log
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(lines.len(), 2);
+        let v = &lines[0];
+        assert!(v["ts_ms"].as_i64().unwrap() > 0);
+        assert_eq!(v["op"], "compile");
+        assert_eq!(v["items"], 10);
+        assert_eq!(v["skipped_dupes"], 2);
+        assert_eq!(v["deferred"], 15);
+        assert_eq!(v["model"], "haiku");
+        assert_eq!(v["engine"], "claude");
+        assert_eq!(v["input_tokens"], 11);
+        assert_eq!(v["output_tokens"], 22);
+        assert_eq!(v["cache_read"], 33);
+        assert_eq!(v["cache_write"], 44);
+        assert!(lines[1]["input_tokens"].is_null(), "other engines: null");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+    }
+
+    #[test]
+    fn signature_normalizes_case_space_and_digits() {
+        let a = l0::Signal::new("Foo   BAR 123".into(), l0::SignalSource::Manual);
+        let b = l0::Signal::new("foo bar 9".into(), l0::SignalSource::Manual);
+        let c = l0::Signal::new("foo bar 9".into(), l0::SignalSource::SessionDigest);
+        assert_eq!(signal_signature(&a), signal_signature(&b));
+        assert_ne!(signal_signature(&b), signal_signature(&c));
     }
 }
