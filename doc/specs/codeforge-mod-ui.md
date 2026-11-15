@@ -110,6 +110,10 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   `band_seen` 欄位仍照寫（舊版 statusline 讀它），之後再一起拿掉。紅測：`heartbeat_band_not_seen_still_compacts_no_rpg_panel_after_reload`。
   閒置時沒有重畫：超過半個視窗（15 秒）沒畫，心跳就請一次重畫，band 還在螢幕上的話會在下一拍更新。
   舊版 forge-stats 沒有 `band_seen` 欄位，statusline 照舊縮。
+  - **autopilot band-facts 合約（2026-11，對照 autopilot 的 `mods/band-statusline-map.md`）**：精簡版另外讀
+    `<live_base>/autopilot/band-facts/<sid>.json`（上限 4096 位元組、同 session id、age `< 30 s`、`v == 1`；無檔或過期即視同不存在）：
+    - `contract`：`quota_warn_pct`（預設 `80`）、`quota_error_pct`（預設 `100`）、`round`（`"floor"` 預設／`"round"`）、`bar_on`/`bar_off`（預設 `▰`/`▱`）、`alert`（預設 `▲`）、`age`（預設 `◷`）；任一鍵缺漏或無效就退回該鍵預設值。量表顏色一律依 `< warn` 綠 / `warn..error` 黃 / `>= error` 紅，保留每列最多一個黃色的規則；他帳號警示固定顯示 `7d` 標籤與 `alert`（`▲`）。
+    - `progress` 與 `spend`：有效時接在精簡版第一列（`branch` 之後），依序為 `● N`（`live_dispatches > 0`）、`position`（≤16 字元）、`unit`（≤12 字元）、`↺ R<review_round>`、`◆ N`（`decisions_open > 0`）、`$<floor usd>`（`cap_usd > 0` 時附 5 格 `usd/cap_usd` 量表）。欄位可為 `null`（略過）；字串一律先去控制字元再依字元數截斷。列寬不足時由清單尾端反序先丟棄新增片段，最後才影響既有身份與路徑。
   Claude Code 只在事件時重跑 statusLine（新的 assistant 訊息、/compact、模式切換…），閒置時不會重跑，心跳變了畫面也不跟著變
   （2026-11-07 rig 實測：110 秒只跑了一次）。所以 `codeforge install` 會寫 `statusLine.refreshInterval: 10`（秒，和心跳 10 秒
   的新鮮度一致）；設定裡原本就有的值（使用者自己設的）不覆蓋。操作員卡 d-f6e451d2。install 每次真的改動 settings.json 前，先把原檔存成
