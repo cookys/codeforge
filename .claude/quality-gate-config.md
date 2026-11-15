@@ -28,6 +28,14 @@ cargo test 2>&1
 
 > If `./scripts/fmt.sh --check` fails, run `./scripts/fmt.sh` to auto-fix, then re-stage. Do **not** run a bare `cargo fmt` to fix it — see Formatting below.
 
+## Test Command
+
+```bash
+./scripts/check-all.sh
+```
+
+The merge gate, run from the repo root with no arguments: fmt, clippy, tests (flake guard), cjk-safe, doc-drift, cargo deny, shellcheck, checkout guard, MSRV release smoke. No paid API or real engine; about 3 min warm (2m26s measured), cold build longer. `cargo` must be on PATH (team account: `PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"`).
+
 ## Completeness Scan (run before every commit)
 
 Scan for placeholder/stub patterns:
