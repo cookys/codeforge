@@ -155,7 +155,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 |---|---|---|---|
 | forge-stats 記憶／大腦燈號 | `●` 綠／灰（`model.ts` `GLYPH.latest`） | `●` 在共用表裡是「執行中」 | 健康狀態不是工作狀態，不借用狀態符號：只畫字樣（例如 `記憶 正常`、`大腦 離線`），用主題色；沒資料寫 `—` |
 | statusline 大腦燈號 | `● ◐ ○ ◌`，原始 RGB（`statusline.rs` brain lights，`BRAIN_GREEN` 等） | `◐` 是「你在這裡」，`○` 是「未開始」，`◌` 是「已停」 | 同上：只畫字樣（正常、降級、離線、未檢查），顏色依 §5 的 ANSI 對照 |
-| statusline 量表 | `▮▯`（`statusline.rs` 用量列） | 共用表的量表是 `▰▱` | 改成 `▰▱` |
+| statusline 量表與警示 | 已遷移（原本 `▮▯`／`⚠`／50–80%） | — | 現用 `▰▱`、`▲`、`floor` 捨去與 80/100% 門檻（依 autopilot band-facts contract，預設 `80`/`100`/`floor`/`▰`/`▱`/`▲`） |
 | statusline 上游 | `⇡⇣`（`statusline.rs` `git_ahead_behind`） | 共用表的落後是 `↓` | 改成 `↑N ↓N`；`↑` 先登記進 live `GLYPHS.structure`（`ahead`），並列入 glyph-check |
 
 ### 3.5 間距（晶片與分隔）

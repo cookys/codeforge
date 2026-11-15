@@ -87,6 +87,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             now_ms,
             crate::usage::autocollect::spawn_collect,
         );
+        data.band_facts = read_band_facts(&live_base, raw_sid, now_ms);
         read_mod_heartbeat(&live_base, raw_sid, now_ms)
     };
     let conn = ctx.open_db()?;
@@ -265,8 +266,40 @@ fn light_words(b: &crate::mnemos::health::BrainHealth) -> (&'static str, &'stati
 const MOD_ALIVE_SCHEMA: &str = "codeforge.mod-alive/1";
 /// A heartbeat older than this no longer counts (the mod rewrites it every 2 s).
 const MOD_ALIVE_FRESH_MS: i64 = 10_000;
-/// Heartbeats are one short line; anything larger is not one.
-const MOD_ALIVE_MAX_BYTES: u64 = 4096;
+/// Autopilot band-facts older than this are treated as absent.
+const BAND_FACTS_FRESH_MS: i64 = 30_000;
+/// Heartbeats and band-facts are short status files; anything larger is rejected.
+const LIVE_JSON_MAX_BYTES: u64 = 4096;
+
+/// Read a size-capped per-session JSON file whose `session_id` equals `raw_sid`
+/// and whose `written_at_ms` is within `0..fresh_ms` of `now_ms`.
+fn read_live_session_json(
+    dir: &std::path::Path,
+    raw_sid: &str,
+    now_ms: i64,
+    fresh_ms: i64,
+) -> Option<serde_json::Value> {
+    if raw_sid.is_empty() {
+        return None;
+    }
+    let path = dir.join(format!(
+        "{}.json",
+        crate::live::sanitize_session_id(raw_sid)
+    ));
+    let meta = std::fs::metadata(&path).ok()?;
+    if meta.len() > LIVE_JSON_MAX_BYTES {
+        return None;
+    }
+    let text = std::fs::read_to_string(&path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let age = v["written_at_ms"]
+        .as_i64()
+        .and_then(|w| now_ms.checked_sub(w))?;
+    if v["session_id"].as_str() != Some(raw_sid) || !(0..fresh_ms).contains(&age) {
+        return None;
+    }
+    Some(v)
+}
 
 /// True only when this session's forge-stats mod runs in its band layout: the
 /// heartbeat for `raw_sid` exists, parses, has the right schema and session id, is
@@ -274,39 +307,134 @@ const MOD_ALIVE_MAX_BYTES: u64 = 4096;
 /// in the band (autopilot's forge tab), so the statusline keeps only the slow data
 /// (owner, 2026-10-31). Anything else → false, and the statusline draws its full form.
 fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> bool {
-    if raw_sid.is_empty() {
-        return false;
+    let dir = base.join(crate::pet::view::DIR).join("mod-alive");
+    read_live_session_json(&dir, raw_sid, now_ms, MOD_ALIVE_FRESH_MS).is_some_and(|v| {
+        v["schema"] == MOD_ALIVE_SCHEMA
+            // Operator rule (2026-10-31, card d-feb71b14 → A): a fresh `layout: band` heartbeat alone compacts.
+            // `band_seen` is deliberately NOT read: B34 restored the full RPG panel whenever autopilot's O4 shell
+            // drew the band instead of forge-stats, which brought the banner back after /reload-plugins
+            // (PM 01M7E1M5). The pet tag is on autopilot's band (PM 01M78CB6).
+            && v["layout"] == "band"
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RoundMode {
+    Floor,
+    Round,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Contract {
+    quota_warn_pct: f64,
+    quota_error_pct: f64,
+    round: RoundMode,
+    bar_on: String,
+    bar_off: String,
+    alert: String,
+    #[allow(dead_code)] // v1 contract field reserved for age labels
+    age: String,
+}
+
+impl Default for Contract {
+    fn default() -> Self {
+        Self {
+            quota_warn_pct: 80.0,
+            quota_error_pct: 100.0,
+            round: RoundMode::Floor,
+            bar_on: "▰".to_string(),
+            bar_off: "▱".to_string(),
+            alert: "▲".to_string(),
+            age: "◷".to_string(),
+        }
     }
-    let path = base
-        .join(crate::pet::view::DIR)
-        .join("mod-alive")
-        .join(format!(
-            "{}.json",
-            crate::live::sanitize_session_id(raw_sid)
-        ));
-    let Ok(meta) = std::fs::metadata(&path) else {
-        return false;
-    };
-    if meta.len() > MOD_ALIVE_MAX_BYTES {
-        return false;
+}
+
+/// Strip control characters first, then take at most `max_chars` Unicode scalar values.
+fn clean_user_str(s: &str, max_chars: usize) -> String {
+    s.chars()
+        .filter(|c| !c.is_control())
+        .take(max_chars)
+        .collect()
+}
+
+fn clean_glyph(v: Option<&serde_json::Value>, default: &str) -> String {
+    v.and_then(|x| x.as_str())
+        .map(|s| clean_user_str(s, 2))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| default.to_string())
+}
+
+impl Contract {
+    fn from_json(v: &serde_json::Value) -> Self {
+        let def = Self::default();
+        let Some(obj) = v.as_object() else {
+            return def;
+        };
+        let quota_warn_pct = obj
+            .get("quota_warn_pct")
+            .and_then(|x| x.as_f64())
+            .filter(|x| x.is_finite() && *x >= 0.0)
+            .unwrap_or(def.quota_warn_pct);
+        let quota_error_pct = obj
+            .get("quota_error_pct")
+            .and_then(|x| x.as_f64())
+            .filter(|x| x.is_finite() && *x >= 0.0)
+            .unwrap_or(def.quota_error_pct);
+        let round = match obj.get("round").and_then(|x| x.as_str()) {
+            Some("round") => RoundMode::Round,
+            _ => def.round,
+        };
+        Self {
+            quota_warn_pct,
+            quota_error_pct,
+            round,
+            bar_on: clean_glyph(obj.get("bar_on"), &def.bar_on),
+            bar_off: clean_glyph(obj.get("bar_off"), &def.bar_off),
+            alert: clean_glyph(obj.get("alert"), &def.alert),
+            age: clean_glyph(obj.get("age"), &def.age),
+        }
     }
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return false;
-    };
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return false;
-    };
-    let age = v["written_at_ms"]
-        .as_i64()
-        .and_then(|w| now_ms.checked_sub(w));
-    v["schema"] == MOD_ALIVE_SCHEMA
-        && v["session_id"] == raw_sid
-        && age.is_some_and(|a| (0..MOD_ALIVE_FRESH_MS).contains(&a))
-        // Operator rule (2026-10-31, card d-feb71b14 → A): a fresh `layout: band` heartbeat alone compacts.
-        // `band_seen` is deliberately NOT read: B34 restored the full RPG panel whenever autopilot's O4 shell
-        // drew the band instead of forge-stats, which brought the banner back after /reload-plugins
-        // (PM 01M7E1M5). The pet tag is on autopilot's band (PM 01M78CB6).
-        && v["layout"] == "band"
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+struct BandFacts {
+    contract: Contract,
+    live_dispatches: u64,
+    position: Option<String>,
+    unit: Option<String>,
+    review_round: Option<u64>,
+    decisions_open: u64,
+    usd: Option<f64>,
+    cap_usd: Option<f64>,
+}
+
+/// Read `<live_base>/autopilot/band-facts/<sid>.json` (v1, untrusted).
+/// Valid only if it parses, `v == 1`, `session_id` equals `raw_sid`, size `<= 4096`, and age `< 30 s`.
+fn read_band_facts(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> Option<BandFacts> {
+    let dir = base.join("autopilot").join("band-facts");
+    let v = read_live_session_json(&dir, raw_sid, now_ms, BAND_FACTS_FRESH_MS)?;
+    if v["v"].as_u64() != Some(1) {
+        return None;
+    }
+    let p = &v["progress"];
+    let s = &v["spend"];
+    Some(BandFacts {
+        contract: Contract::from_json(&v["contract"]),
+        live_dispatches: p["live_dispatches"].as_u64().unwrap_or(0),
+        position: p["position"]
+            .as_str()
+            .map(|raw| clean_user_str(raw, 16))
+            .filter(|clean| !clean.is_empty()),
+        unit: p["unit"]
+            .as_str()
+            .map(|raw| clean_user_str(raw, 12))
+            .filter(|clean| !clean.is_empty()),
+        review_round: p["review_round"].as_u64(),
+        decisions_open: p["decisions_open"].as_u64().unwrap_or(0),
+        usd: s["usd"].as_f64().filter(|x| x.is_finite() && *x >= 0.0),
+        cap_usd: s["cap_usd"].as_f64().filter(|x| x.is_finite() && *x > 0.0),
+    })
 }
 
 /// The width to draw at: `CODEFORGE_WIDTH` when set, else the terminal's `COLUMNS` (set by
@@ -351,6 +479,8 @@ struct StatusInput {
     names: crate::usage::names::Names,
     /// G40: the quota mirror's merged entries; `None` while `<live_dir>/quota/` does not exist (then `others` is drawn, as before).
     mirror: Option<Vec<crate::usage::quota_mirror_read::QEntry>>,
+    /// Autopilot band-facts for the compact top row and unified quota styling.
+    band_facts: Option<BandFacts>,
 }
 
 // ─── G36 per-account quota (doc/plans/2026-11-03-usage-collector.md §2–3) ─────
@@ -518,9 +648,22 @@ fn record_quota_with(
 
 /// The quota part of the usage row: the mirror's chips when the mirror exists (G40), else the G36
 /// snapshot chips exactly as before. The statusline never draws both.
-fn quota_segment(data: &StatusInput, now_s: i64, avail: usize, yellow_taken: bool) -> String {
+fn quota_segment(
+    data: &StatusInput,
+    now_s: i64,
+    avail: usize,
+    yellow_taken: bool,
+    contract: &Contract,
+) -> String {
     match &data.mirror {
-        None => others_segment(&data.others, &data.names, now_s, avail, yellow_taken),
+        None => others_segment(
+            &data.others,
+            &data.names,
+            now_s,
+            avail,
+            yellow_taken,
+            contract,
+        ),
         Some(entries) => mirror_segment(entries, now_s, avail),
     }
 }
@@ -555,8 +698,8 @@ fn mirror_segment(
     String::new()
 }
 
-/// The other accounts on the usage row, only those with a weekly warning: ` · ⚠ name 週 97% 3d1h
-/// 後重置` when the week will run short (or is at 95 %+), ` · name 週 12% 20h 後重置 會浪費` when
+/// The other accounts on the usage row, only those with a weekly warning: ` · ▲ name 7d 97% 3d1h
+/// 後重置` when the week will run short (or is at 95 %+), ` · name 7d 12% 20h 後重置 會浪費` when
 /// it will be wasted; nothing else. The name comes from `usage::names` (the set name, else the
 /// org short form): the `acct-` key is never drawn, and an account with no name (an identity
 /// from before the login-derived alias) is skipped. Most constrained first, as many as fit in
@@ -570,6 +713,7 @@ fn others_segment(
     now_s: i64,
     avail: usize,
     yellow_taken: bool,
+    contract: &Contract,
 ) -> String {
     use crate::usage::fleet_quota as fq;
     use crate::usage::names::{assign, Who};
@@ -606,11 +750,12 @@ fn others_segment(
         if !short && !waste {
             continue;
         }
-        let pct = format!("{:.0}%", w.pct * 100.0);
+        let pct = fmt_pct(w.pct, contract);
+        let wk_lbl = tr.t("quota.sl_weekly", &[]);
         let head = if short {
-            format!("⚠ {name} {} {pct}", tr.t("quota.w_weekly", &[]))
+            format!("{} {name} {wk_lbl} {pct}", contract.alert)
         } else {
-            format!("{name} {} {pct}", tr.t("quota.w_weekly", &[]))
+            format!("{name} {wk_lbl} {pct}")
         };
         let mut tail = tr.t(
             "quota.sl_resets_in",
@@ -710,6 +855,7 @@ fn read_status_input() -> (StatusInput, serde_json::Value) {
                 others: Vec::new(),
                 names: Default::default(),
                 mirror: None,
+                band_facts: None,
             };
             return (input, v);
         }
@@ -799,10 +945,10 @@ const MODEL_C: Rgb = (0xFF, 0xD7, 0x87); // 222 — model name
 const CTX_SZ: Rgb = (0xD7, 0xAF, 0x5F); // 179 — ctx window size
 const CWD_C: Rgb = (0x5F, 0xAF, 0xAF); // 73  — cwd path
 const BRANCH_C: Rgb = (0x87, 0xD7, 0x87); // 114 — git branch
-const BAR_LOW: Rgb = (0x87, 0xD7, 0x87); // 114 — bar <50%
-const BAR_MID: Rgb = (0xD7, 0xAF, 0x5F); // 179 — bar 50-80%
-const BAR_HIGH: Rgb = (0xD7, 0x5F, 0x5F); // 167 — bar >80%
-const BAR_EMPTY: Rgb = (0x30, 0x30, 0x30); // 236 — bar ▯
+const BAR_LOW: Rgb = (0x87, 0xD7, 0x87); // 114 — bar <warn (default 80%)
+const BAR_MID: Rgb = (0xD7, 0xAF, 0x5F); // 179 — bar warn..error (default 80-100%)
+const BAR_HIGH: Rgb = (0xD7, 0x5F, 0x5F); // 167 — bar >=error (default 100%)
+const BAR_EMPTY: Rgb = (0x30, 0x30, 0x30); // 236 — bar ▱
 const BAR_LBL: Rgb = (0x8A, 0x8A, 0x8A); // 245 — "5h" "7d" "ctx"
 const REMAIN: Rgb = (0x58, 0x58, 0x58); // 240 — "4h2m"
 const PET_NAME: Rgb = (0xEE, 0xEE, 0xEE); // 255 — pet name
@@ -897,10 +1043,20 @@ fn stdout_is_plain() -> bool {
     !color_enabled()
 }
 
-fn bar_rgb(pct: f64) -> Rgb {
-    if pct < 0.5 {
+fn fmt_pct(pct: f64, contract: &Contract) -> String {
+    let p = pct.max(0.0) * 100.0;
+    let n = match contract.round {
+        RoundMode::Floor => (p + 1e-9).floor() as i64,
+        RoundMode::Round => p.round() as i64,
+    };
+    format!("{n}%")
+}
+
+fn bar_rgb(pct: f64, contract: &Contract) -> Rgb {
+    let p = pct * 100.0;
+    if p < contract.quota_warn_pct {
         BAR_LOW
-    } else if pct < 0.8 {
+    } else if p < contract.quota_error_pct {
         BAR_MID
     } else {
         BAR_HIGH
@@ -908,13 +1064,13 @@ fn bar_rgb(pct: f64) -> Rgb {
 }
 
 /// Colored progress bar (filled=semantic, empty=dim 236)
-fn colored_bar(pct: f64, width: usize) -> String {
-    let filled = ((pct.clamp(0.0, 1.0)) * width as f64) as usize;
-    let empty = width - filled;
+fn colored_bar(pct: f64, width: usize, contract: &Contract) -> String {
+    let filled = ((pct.clamp(0.0, 1.0) * width as f64) as usize).min(width);
+    let empty = width.saturating_sub(filled);
     format!(
         "{}{}",
-        tcs("▮".repeat(filled), bar_rgb(pct)),
-        tcs("▯".repeat(empty), BAR_EMPTY)
+        tcs(contract.bar_on.repeat(filled), bar_rgb(pct, contract)),
+        tcs(contract.bar_off.repeat(empty), BAR_EMPTY)
     )
 }
 
@@ -929,7 +1085,7 @@ fn hp_rgb(hp: u32) -> Rgb {
     }
 }
 
-/// Visible column width (handles wide chars: CJK=2col, ASCII/▮▯=1col)
+/// Visible column width (handles wide chars: CJK=2col, ASCII/▰▱=1col)
 /// Use this for calculating layout, NOT str.len() or chars().count()
 fn vis(s: &str) -> usize {
     UnicodeWidthStr::width(s)
@@ -1045,13 +1201,13 @@ fn pad_to_vis(s: &str, width: usize) -> String {
     }
 }
 
-/// True when this session's own usage bars already draw the yellow (`BAR_MID`,
-/// 50–80 % in `bar_rgb`), so the other accounts must not add a second one.
-fn own_bars_yellow(data: &StatusInput) -> bool {
+/// True when this session's own usage bars already draw the yellow (`BAR_MID`),
+/// so the other accounts must not add a second one.
+fn own_bars_yellow(data: &StatusInput, contract: &Contract) -> bool {
     [data.five_hour_pct, data.seven_day_pct, data.context_pct]
         .into_iter()
         .flatten()
-        .any(|p| bar_rgb(p) == BAR_MID)
+        .any(|p| bar_rgb(p, contract) == BAR_MID)
 }
 
 fn fmt_remaining(resets_at: i64) -> String {
@@ -1184,10 +1340,10 @@ fn current_dir_short() -> Option<String> {
 // ─── Usage segment builder ────────────────────────────────────────────────────
 
 /// Usage segment WITHOUT ▏▕ wrappers — for box layout row 1
-fn usage_bare(label: &str, pct: f64, remain: Option<String>) -> String {
-    let bar = colored_bar(pct, 6);
-    let pct_num = format!("{:.0}%", pct * 100.0);
-    let (r, g, b) = bar_rgb(pct);
+fn usage_bare(label: &str, pct: f64, remain: Option<String>, contract: &Contract) -> String {
+    let bar = colored_bar(pct, 6, contract);
+    let pct_num = fmt_pct(pct, contract);
+    let (r, g, b) = bar_rgb(pct, contract);
     let remain_part = match &remain {
         Some(s) => format!(" {}", tc(s, REMAIN)),
         None => String::new(),
@@ -1230,6 +1386,57 @@ fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Res
     render_strip(out, data, width, true)
 }
 
+fn band_facts_pieces(facts: &BandFacts) -> Vec<(String, usize)> {
+    let mut pieces = Vec::new();
+    if facts.live_dispatches > 0 {
+        let s = format!("● {}", facts.live_dispatches);
+        pieces.push((tc(&s, AHEAD_BEHIND), vis(&s)));
+    }
+    if let Some(pos) = &facts.position {
+        pieces.push((tc(pos, STAT_VAL), vis(pos)));
+    }
+    if let Some(unit) = &facts.unit {
+        pieces.push((tc(unit, BAR_LBL), vis(unit)));
+    }
+    if let Some(round) = facts.review_round {
+        let s = format!("↺ R{round}");
+        pieces.push((tc(&s, BAR_LBL), vis(&s)));
+    }
+    if facts.decisions_open > 0 {
+        let s = format!("◆ {}", facts.decisions_open);
+        pieces.push((tc_bold(&s, BAR_LBL), vis(&s)));
+    }
+    if let Some(usd) = facts.usd {
+        let dollars = format!("${}", (usd + 1e-9).floor() as u64);
+        if let Some(cap) = facts.cap_usd.filter(|c| *c > 0.0) {
+            let pct = usd / cap;
+            let rgb = bar_rgb(pct, &facts.contract);
+            let bar = colored_bar(pct, 5, &facts.contract);
+            let styled = format!("{} {}", tc(&dollars, rgb), bar);
+            let w = ansi_vis(&styled);
+            pieces.push((styled, w));
+        } else {
+            pieces.push((tc(&dollars, BAR_LBL), vis(&dollars)));
+        }
+    }
+    pieces
+}
+
+fn fit_band_facts(pieces: &[(String, usize)], avail: usize) -> (String, usize) {
+    let mut out = String::new();
+    let mut used = 0usize;
+    for (styled, w) in pieces {
+        let need = 2 + *w;
+        if used + need > avail {
+            break;
+        }
+        out.push_str("  ");
+        out.push_str(styled);
+        used += need;
+    }
+    (out, used)
+}
+
 /// The 2-line identity + usage strip shared by the no-pet form (with the adopt
 /// hint) and the compact form (without it).
 fn render_strip<W: Write>(
@@ -1238,8 +1445,22 @@ fn render_strip<W: Write>(
     width: usize,
     adopt_hint: bool,
 ) -> Result<()> {
+    let default_contract = Contract::default();
+    let contract = data
+        .band_facts
+        .as_ref()
+        .map_or(&default_contract, |f| &f.contract);
+    let facts_pieces = if !adopt_hint {
+        data.band_facts
+            .as_ref()
+            .map(band_facts_pieces)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     // Row 0 — identity strip (no box, no chip wrappers).
-    // Composition: model ── cwd ⇡⇣ branch ─────── version
+    // Composition: model ── cwd ⇡⇣ branch [band-facts] ─────── version
     // Cross-mode anchor: same model/cwd/branch/version order as render_full's
     // top border, just without the ╭─...─╮ frame. Adopting a pet is a "bloom"
     // (extra rows appear), not a re-layout.
@@ -1268,7 +1489,7 @@ fn render_strip<W: Write>(
 
     let (ver_str, ver_vis) = render_version(data, delim_c);
 
-    // Layout: " " model " ── " cwd <ab_part> " " branch " " fill(N) " " version
+    // Layout: " " model " ── " cwd <ab_part> " " branch [band-facts] " " fill(N) " " version
     //   fixed widths: 1 + model + 4 + ab_vis + 1 + 1 + 1 + ver_vis
     let fixed = 1 + model_vis + 4 + ab_vis + 1 + 1 + 1 + ver_vis;
     // Allocate cwd ≥ 10 cols, branch ≥ 4 cols.
@@ -1278,18 +1499,6 @@ fn render_strip<W: Write>(
     let branch_budget = width.saturating_sub(fixed + cwd_vis).max(4);
     let branch_display = shorten_str(&branch_full, branch_budget);
     let branch_vis = vis(&branch_display);
-    let fill = width.saturating_sub(fixed + cwd_vis + branch_vis).max(2);
-
-    let row0 = format!(
-        " {}{}{}{} {} {} {}",
-        model_text,
-        tc(" ── ", delim_c),
-        tc(&cwd_display, CWD_C),
-        ab_part,
-        tc(&branch_display, BRANCH_C),
-        tcs("─".repeat(fill), delim_c),
-        ver_str,
-    );
 
     // Row 1 — usage bars on LEFT, onboarding hint right-aligned on the
     // SAME row. Hint stays visible regardless of usage data because
@@ -1303,6 +1512,7 @@ fn render_strip<W: Write>(
             "5h",
             pct,
             data.five_hour_resets_at.map(fmt_remaining),
+            contract,
         ));
     }
     if let Some(pct) = data.seven_day_pct {
@@ -1310,10 +1520,11 @@ fn render_strip<W: Write>(
             "7d",
             pct,
             data.seven_day_resets_at.map(fmt_remaining),
+            contract,
         ));
     }
     if let Some(pct) = data.context_pct {
-        usage_parts.push(usage_bare("ctx", pct, None));
+        usage_parts.push(usage_bare("ctx", pct, None, contract));
     }
     let usage_left = if usage_parts.is_empty() {
         tc("─", delim_c)
@@ -1325,7 +1536,7 @@ fn render_strip<W: Write>(
         let now_s = chrono::Utc::now().timestamp();
         format!(
             "{usage_left}{}",
-            quota_segment(data, now_s, room, own_bars_yellow(data))
+            quota_segment(data, now_s, room, own_bars_yellow(data, contract), contract,)
         )
     };
     let usage_left_vis = ansi_vis(&usage_left);
@@ -1343,9 +1554,9 @@ fn render_strip<W: Write>(
     } else {
         None
     };
-    // One line (compact form only): " " identity, at least 2 spaces, usage "   " version
+    // One line (compact form only): " " identity [band-facts], at least 2 spaces, usage "   " version
     // (the version stays rightmost, as on the two-line form's first row).
-    // The usage part is the one the two-line form would draw, so nothing is dropped.
+    // The usage and band-facts parts are full, so nothing is dropped when one line fits.
     if !adopt_hint {
         let left = format!(
             " {}{}{}{} {}",
@@ -1356,18 +1567,37 @@ fn render_strip<W: Write>(
             tc(&branch_display, BRANCH_C),
         );
         let left_vis = 1 + model_vis + 4 + cwd_vis + ab_vis + 1 + branch_vis;
+        let (facts_all, all_facts_vis) = fit_band_facts(&facts_pieces, usize::MAX);
         let sep = if ver_vis == 0 { "" } else { "   " };
         let right = format!("{usage_left}{sep}{ver_str}");
         let right_vis = usage_left_vis + sep.len() + ver_vis;
-        if left_vis + 2 + right_vis <= width {
-            let pad = width - left_vis - right_vis;
+        if left_vis + all_facts_vis + 2 + right_vis <= width {
+            let pad = width - left_vis - all_facts_vis - right_vis;
             let rows = [Row {
                 art: None,
-                info: format!("{left}{}{right}", " ".repeat(pad)),
+                info: format!("{left}{facts_all}{}{right}", " ".repeat(pad)),
             }];
             return render_rows(out, &rows, 0);
         }
     }
+
+    let row0_facts_avail = width.saturating_sub(fixed + cwd_vis + branch_vis + 2);
+    let (row0_facts, row0_facts_vis) = fit_band_facts(&facts_pieces, row0_facts_avail);
+    let fill = width
+        .saturating_sub(fixed + cwd_vis + branch_vis + row0_facts_vis)
+        .max(2);
+
+    let row0 = format!(
+        " {}{}{}{} {}{} {} {}",
+        model_text,
+        tc(" ── ", delim_c),
+        tc(&cwd_display, CWD_C),
+        ab_part,
+        tc(&branch_display, BRANCH_C),
+        row0_facts,
+        tcs("─".repeat(fill), delim_c),
+        ver_str,
+    );
 
     let row1 = match hint_render {
         Some((h, hv)) => {
@@ -1546,15 +1776,21 @@ fn render_full<W: Write>(
         tc("──╮", delim_c),
     );
 
-    // ── Row 1: usage bars inside box │ 5h ▮▯ 5%  7d ▮▮ 39%  ctx ▮▮▮ 54%   │
+    // ── Row 1: usage bars inside box │ 5h ▰▱ 5%  7d ▰▰ 39%  ctx ▰▰▰ 54%   │
 
     let row1_info = {
+        let default_contract = Contract::default();
+        let contract = data
+            .band_facts
+            .as_ref()
+            .map_or(&default_contract, |f| &f.contract);
         let mut parts: Vec<String> = Vec::new();
         if let Some(pct) = data.five_hour_pct {
             parts.push(usage_bare(
                 "5h",
                 pct,
                 data.five_hour_resets_at.map(fmt_remaining),
+                contract,
             ));
         }
         if let Some(pct) = data.seven_day_pct {
@@ -1562,15 +1798,22 @@ fn render_full<W: Write>(
                 "7d",
                 pct,
                 data.seven_day_resets_at.map(fmt_remaining),
+                contract,
             ));
         }
         if let Some(pct) = data.context_pct {
-            parts.push(usage_bare("ctx", pct, None));
+            parts.push(usage_bare("ctx", pct, None, contract));
         }
         let mut content = parts.join("  ");
         let room = panel_w.saturating_sub(vis("│ ") + ansi_vis(&content) + vis("│") + 1);
         let now_s = chrono::Utc::now().timestamp();
-        content.push_str(&quota_segment(data, now_s, room, own_bars_yellow(data)));
+        content.push_str(&quota_segment(
+            data,
+            now_s,
+            room,
+            own_bars_yellow(data, contract),
+            contract,
+        ));
         box_mid(&content, "│ ", "│")
     };
 
@@ -2776,20 +3019,22 @@ mod tests {
             quota_snap("acct-calm", 0.30, Q_NOW + 4 * 86400),
         ];
         let tr = crate::usage::quota_view::Tr::current();
-        let wk = tr.t("quota.w_weekly", &[]);
+        let wk = tr.t("quota.sl_weekly", &[]);
         let r1 = tr.t("quota.sl_resets_in", &[("t", "3d1h")]);
         let r2 = tr.t("quota.sl_resets_in", &[("t", "20h0m")]);
         let waste = tr.t("quota.fleet_waste", &[]);
+        let c = Contract::default();
         let full = strip_ansi(&others_segment(
             &others,
             &Default::default(),
             Q_NOW,
             200,
             false,
+            &c,
         ));
         assert_eq!(
             full,
-            format!(" · ⚠ stranity {wk} 97% {r1} · work {wk} 10% {r2} {waste}")
+            format!(" · ▲ stranity {wk} 97% {r1} · work {wk} 10% {r2} {waste}")
         );
         assert!(!full.contains("acct-") && !full.contains("calm"), "{full}");
         // every room: never wider than given
@@ -2800,23 +3045,32 @@ mod tests {
                 Q_NOW,
                 room,
                 false,
+                &c,
             ));
             assert!(vis(&got) <= room, "room {room}: {got:?}");
         }
         // no countdown when only the head fits; nothing when not even that
-        let head = format!(" · ⚠ stranity {wk} 97%");
+        let head = format!(" · ▲ stranity {wk} 97%");
         assert_eq!(
             strip_ansi(&others_segment(
                 &others,
                 &Default::default(),
                 Q_NOW,
                 vis(&head),
-                false
+                false,
+                &c,
             )),
             head
         );
         assert_eq!(
-            others_segment(&others, &Default::default(), Q_NOW, vis(&head) - 1, false),
+            others_segment(
+                &others,
+                &Default::default(),
+                Q_NOW,
+                vis(&head) - 1,
+                false,
+                &c,
+            ),
             ""
         );
         // a name the operator set wins over the org
@@ -2824,8 +3078,8 @@ mod tests {
             "acct-Stranity".to_string(),
             "公司".to_string(),
         )]));
-        let got = strip_ansi(&others_segment(&others, &names, Q_NOW, 200, false));
-        assert!(got.starts_with(&format!(" · ⚠ 公司 {wk} 97%")), "{got}");
+        let got = strip_ansi(&others_segment(&others, &names, Q_NOW, 200, false, &c));
+        assert!(got.starts_with(&format!(" · ▲ 公司 {wk} 97%")), "{got}");
     }
 
     fn mirror_entries(now: i64) -> Vec<crate::usage::quota_mirror_read::QEntry> {
@@ -2859,11 +3113,12 @@ mod tests {
             mirror: None,
             ..Default::default()
         };
+        let c = Contract::default();
         for avail in [0usize, 12, 14, 31, 40, 80, 200] {
             for yellow in [false, true] {
                 assert_eq!(
-                    quota_segment(&data, Q_NOW, avail, yellow),
-                    others_segment(&others, &Default::default(), Q_NOW, avail, yellow),
+                    quota_segment(&data, Q_NOW, avail, yellow, &c),
+                    others_segment(&others, &Default::default(), Q_NOW, avail, yellow, &c),
                     "avail {avail}"
                 );
             }
@@ -2880,7 +3135,8 @@ mod tests {
             mirror: Some(mirror_entries(Q_NOW)),
             ..Default::default()
         };
-        let seg = strip_ansi(&quota_segment(&data, Q_NOW, 200, false));
+        let c = Contract::default();
+        let seg = strip_ansi(&quota_segment(&data, Q_NOW, 200, false, &c));
         assert!(seg.starts_with(" · "), "{seg:?}");
         assert!(
             seg.contains("claude:work") && seg.contains("62%") && seg.contains("◷ 2h5m"),
@@ -2889,12 +3145,12 @@ mod tests {
         assert!(!seg.contains("acct-b"), "{seg:?}");
         // fits its room at every width, never panics, never a bare separator
         for avail in 0..120 {
-            let s = strip_ansi(&quota_segment(&data, Q_NOW, avail, false));
+            let s = strip_ansi(&quota_segment(&data, Q_NOW, avail, false, &c));
             assert!(s.is_empty() || vis(&s) <= avail, "avail {avail}: {s:?}");
             assert_ne!(s.trim(), "·", "avail {avail}");
         }
         // narrowest form: alias and value only
-        let tight = strip_ansi(&quota_segment(&data, Q_NOW, 3 + vis("work 62%"), false));
+        let tight = strip_ansi(&quota_segment(&data, Q_NOW, 3 + vis("work 62%"), false, &c));
         assert_eq!(tight, " · work 62%");
     }
 
@@ -2905,7 +3161,10 @@ mod tests {
             mirror: Some(vec![]),
             ..Default::default()
         };
-        assert_eq!(quota_segment(&data, Q_NOW, 200, false), "");
+        assert_eq!(
+            quota_segment(&data, Q_NOW, 200, false, &Contract::default()),
+            ""
+        );
     }
 
     #[test]
@@ -2923,7 +3182,14 @@ mod tests {
             quota_snap("acct-y", 0.88, Q_NOW + left),
             quota_snap("acct-z", 0.84, Q_NOW + left),
         ];
-        let seg = others_segment(&others, &Default::default(), Q_NOW, 200, false);
+        let seg = others_segment(
+            &others,
+            &Default::default(),
+            Q_NOW,
+            200,
+            false,
+            &Contract::default(),
+        );
         assert_eq!(seg.matches(&esc(BAR_MID)).count(), 1, "{seg:?}");
         assert_eq!(seg.matches(&esc(BAR_HIGH)).count(), 1, "{seg:?}");
         assert!(
@@ -3373,7 +3639,7 @@ mod tests {
         let mut buf = Vec::new();
         render_compact(&mut buf, &data, 100).unwrap();
         let text = strip_ansi(&String::from_utf8(buf).unwrap());
-        assert!(text.contains("· ⚠ b ") && text.contains(" 97%"), "{text}");
+        assert!(text.contains("· ▲ b ") && text.contains(" 97%"), "{text}");
         assert!(!text.contains("acct-"), "{text}");
         for line in text.lines() {
             assert!(vis(line) <= 100, "{line:?}");
@@ -3402,17 +3668,17 @@ mod tests {
             render_compact(&mut buf, &data, 100).unwrap();
             let text = String::from_utf8(buf).unwrap();
             text.lines()
-                .find(|l| l.contains("⚠ b"))
+                .find(|l| l.contains("▲ b"))
                 .unwrap_or_default()
                 .to_string()
         };
-        // from the separator before the other account (its colour escape precedes the ⚠)
+        // from the separator before the other account (its colour escape precedes the ▲)
         let other_part = |r: &str| {
-            let at = r.find("⚠ b").unwrap();
+            let at = r.find("▲ b").unwrap();
             r[r[..at].rfind('·').unwrap()..].to_string()
         };
-        // own 7d in the yellow band (50-80 %): the 85 % account is bold, not a second yellow
-        let r = row1(0.6);
+        // own 7d in the yellow band (80-100 %): the 85 % account is bold, not a second yellow
+        let r = row1(0.85);
         assert!(
             r[..r.find('·').unwrap()].contains(&esc),
             "own bar is yellow: {r:?}"
@@ -3422,13 +3688,332 @@ mod tests {
         // own bars green: the other account takes the yellow
         let r = row1(0.2);
         assert!(other_part(&r).contains(&esc), "{r:?}");
-        assert!(own_bars_yellow(&StatusInput {
-            context_pct: Some(0.7),
+        let def = Contract::default();
+        assert!(own_bars_yellow(
+            &StatusInput {
+                context_pct: Some(0.85),
+                ..Default::default()
+            },
+            &def,
+        ));
+        assert!(!own_bars_yellow(
+            &StatusInput {
+                context_pct: Some(0.70),
+                ..Default::default()
+            },
+            &def,
+        ));
+        assert!(!own_bars_yellow(
+            &StatusInput {
+                context_pct: Some(1.0),
+                ..Default::default()
+            },
+            &def,
+        ));
+    }
+
+    // ── autopilot band-facts + unified quota styling ─────────────────────────
+
+    fn write_band_facts(base: &std::path::Path, file_sid: &str, body: &str) {
+        let dir = base.join("autopilot").join("band-facts");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{file_sid}.json")), body).unwrap();
+    }
+
+    fn sample_band_facts_json(sid: &str, written_at_ms: i64) -> String {
+        serde_json::json!({
+            "v": 1,
+            "written_at_ms": written_at_ms,
+            "session_id": sid,
+            "contract": {
+                "quota_warn_pct": 80,
+                "quota_error_pct": 100,
+                "round": "floor",
+                "bar_on": "▰",
+                "bar_off": "▱",
+                "alert": "▲",
+                "age": "◷"
+            },
+            "progress": {
+                "live_dispatches": 2,
+                "position": "M·finish",
+                "unit": "3/3",
+                "review_round": 2,
+                "decisions_open": 1
+            },
+            "spend": {
+                "usd": 271.4,
+                "cap_usd": 300
+            }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn band_facts_reader_validates_freshness_size_sid_nulls_cjk_and_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+
+        // missing file -> None
+        assert_eq!(read_band_facts(base, HB_SID, HB_NOW), None);
+
+        // valid file -> Some
+        write_band_facts(base, HB_SID, &sample_band_facts_json(HB_SID, HB_NOW - 1000));
+        let facts = read_band_facts(base, HB_SID, HB_NOW).expect("valid band-facts");
+        assert_eq!(facts.contract, Contract::default());
+        assert_eq!(facts.live_dispatches, 2);
+        assert_eq!(facts.position.as_deref(), Some("M·finish"));
+        assert_eq!(facts.unit.as_deref(), Some("3/3"));
+        assert_eq!(facts.review_round, Some(2));
+        assert_eq!(facts.decisions_open, 1);
+        assert_eq!(facts.usd, Some(271.4));
+        assert_eq!(facts.cap_usd, Some(300.0));
+
+        // sanitized sid maps raw "a/b:c d" to "a_b_c_d.json"
+        let raw_sid = "a/b:c d";
+        write_band_facts(
+            base,
+            "a_b_c_d",
+            &sample_band_facts_json(raw_sid, HB_NOW - 500),
+        );
+        assert!(read_band_facts(base, raw_sid, HB_NOW).is_some());
+
+        // stale (>= 30_000 ms, e.g. 31 s) -> None
+        write_band_facts(
+            base,
+            HB_SID,
+            &sample_band_facts_json(HB_SID, HB_NOW - 31_000),
+        );
+        assert_eq!(read_band_facts(base, HB_SID, HB_NOW), None);
+        write_band_facts(
+            base,
+            HB_SID,
+            &sample_band_facts_json(HB_SID, HB_NOW - 30_000),
+        );
+        assert_eq!(read_band_facts(base, HB_SID, HB_NOW), None);
+
+        // future timestamp -> None
+        write_band_facts(base, HB_SID, &sample_band_facts_json(HB_SID, HB_NOW + 1));
+        assert_eq!(read_band_facts(base, HB_SID, HB_NOW), None);
+
+        // wrong session_id -> None
+        write_band_facts(
+            base,
+            HB_SID,
+            &sample_band_facts_json("other-session", HB_NOW - 100),
+        );
+        assert_eq!(read_band_facts(base, HB_SID, HB_NOW), None);
+
+        // v=2 -> None
+        let mut v2: serde_json::Value =
+            serde_json::from_str(&sample_band_facts_json(HB_SID, HB_NOW - 100)).unwrap();
+        v2["v"] = serde_json::json!(2);
+        write_band_facts(base, HB_SID, &v2.to_string());
+        assert_eq!(read_band_facts(base, HB_SID, HB_NOW), None);
+
+        // > 4096 bytes -> None
+        let mut huge: serde_json::Value =
+            serde_json::from_str(&sample_band_facts_json(HB_SID, HB_NOW - 100)).unwrap();
+        huge["progress"]["position"] = serde_json::json!("x".repeat(4200));
+        write_band_facts(base, HB_SID, &huge.to_string());
+        assert_eq!(read_band_facts(base, HB_SID, HB_NOW), None);
+
+        // nulls + zeros -> omitted
+        let nulls = serde_json::json!({
+            "v": 1,
+            "written_at_ms": HB_NOW - 100,
+            "session_id": HB_SID,
+            "progress": {
+                "live_dispatches": 0,
+                "position": null,
+                "unit": null,
+                "review_round": null,
+                "decisions_open": 0
+            },
+            "spend": {
+                "usd": null,
+                "cap_usd": null
+            }
+        });
+        write_band_facts(base, HB_SID, &nulls.to_string());
+        let f_nulls = read_band_facts(base, HB_SID, HB_NOW).expect("null fields still parse");
+        assert_eq!(f_nulls.contract, Contract::default());
+        assert_eq!(f_nulls.live_dispatches, 0);
+        assert_eq!(f_nulls.position, None);
+        assert_eq!(f_nulls.unit, None);
+        assert_eq!(f_nulls.review_round, None);
+        assert_eq!(f_nulls.decisions_open, 0);
+        assert_eq!(f_nulls.usd, None);
+        assert_eq!(f_nulls.cap_usd, None);
+
+        // bad contract key falls back for that key only; valid sibling keys preserved
+        let partial = serde_json::json!({
+            "v": 1,
+            "written_at_ms": HB_NOW - 100,
+            "session_id": HB_SID,
+            "contract": {
+                "quota_warn_pct": "not-a-number",
+                "quota_error_pct": 95,
+                "round": "round",
+                "bar_on": "",
+                "bar_off": "-",
+                "alert": 999
+            },
+            "progress": {
+                "position": "\x1b[31m一二三四五六七八九十甲乙丙丁戊己庚辛壬癸\n",
+                "unit": "\x07abcdefghijklmno"
+            }
+        });
+        write_band_facts(base, HB_SID, &partial.to_string());
+        let f_partial = read_band_facts(base, HB_SID, HB_NOW).expect("partial contract");
+        assert_eq!(f_partial.contract.quota_warn_pct, 80.0);
+        assert_eq!(f_partial.contract.quota_error_pct, 95.0);
+        assert_eq!(f_partial.contract.round, RoundMode::Round);
+        assert_eq!(f_partial.contract.bar_on, "▰");
+        assert_eq!(f_partial.contract.bar_off, "-");
+        assert_eq!(f_partial.contract.alert, "▲");
+        assert_eq!(f_partial.contract.age, "◷");
+        // Control chars stripped and 20 CJK chars cut to 16 chars without panic
+        assert_eq!(
+            f_partial.position.as_deref(),
+            Some("[31m一二三四五六七八九十甲乙")
+        );
+        assert_eq!(f_partial.position.as_ref().unwrap().chars().count(), 16);
+        assert_eq!(f_partial.unit.as_deref(), Some("abcdefghijkl"));
+
+        // Pure 20 CJK chars in position -> 16 chars cleanly
+        let cjk20 = serde_json::json!({
+            "v": 1,
+            "written_at_ms": HB_NOW - 100,
+            "session_id": HB_SID,
+            "progress": {
+                "position": "一二三四五六七八九十甲乙丙丁戊己庚辛壬癸"
+            }
+        });
+        write_band_facts(base, HB_SID, &cjk20.to_string());
+        let f_cjk = read_band_facts(base, HB_SID, HB_NOW).unwrap();
+        assert_eq!(
+            f_cjk.position.as_deref(),
+            Some("一二三四五六七八九十甲乙丙丁戊己")
+        );
+        assert_eq!(f_cjk.position.as_ref().unwrap().chars().count(), 16);
+    }
+
+    #[test]
+    fn quota_styling_uses_80_100_thresholds_floor_rounding_and_unified_glyphs() {
+        let def = Contract::default();
+        assert_eq!(bar_rgb(0.799, &def), BAR_LOW);
+        assert_eq!(bar_rgb(0.85, &def), BAR_MID);
+        assert_eq!(bar_rgb(0.999, &def), BAR_MID);
+        assert_eq!(bar_rgb(1.0, &def), BAR_HIGH);
+
+        let bare_floor = strip_ansi(&usage_bare("5h", 0.799, None, &def));
+        assert_eq!(bare_floor, "5h ▰▰▰▰▱▱ 79%");
+
+        let round_c = Contract {
+            round: RoundMode::Round,
+            ..Contract::default()
+        };
+        let bare_round = strip_ansi(&usage_bare("5h", 0.799, None, &round_c));
+        assert_eq!(bare_round, "5h ▰▰▰▰▱▱ 80%");
+
+        let bar_only = strip_ansi(&colored_bar(0.5, 6, &def));
+        assert_eq!(bar_only, "▰▰▰▱▱▱");
+        assert!(!bar_only.contains('▮') && !bar_only.contains('▯'));
+
+        let left = 5 * 86400;
+        let others = [quota_snap("acct-b", 0.85, Q_NOW + left)];
+        let other_seg = strip_ansi(&others_segment(
+            &others,
+            &Default::default(),
+            Q_NOW,
+            200,
+            false,
+            &def,
+        ));
+        assert!(other_seg.contains("▲ b 7d 85%"), "{other_seg:?}");
+        assert!(!other_seg.contains('⚠'), "{other_seg:?}");
+
+        let _g = ENV_LOCK.lock().unwrap();
+        if color_enabled() {
+            let mid_esc = format!("\x1b[38;2;{};{};{}m", BAR_MID.0, BAR_MID.1, BAR_MID.2);
+            let bare_85 = usage_bare("5h", 0.85, None, &def);
+            assert!(
+                bare_85.contains(&mid_esc),
+                "85% must use BAR_MID: {bare_85:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn compact_row_with_band_facts_shows_progress_and_spend_and_drops_tail_first() {
+        let facts = BandFacts {
+            contract: Contract::default(),
+            live_dispatches: 2,
+            position: Some("M·finish".into()),
+            unit: Some("3/3".into()),
+            review_round: Some(2),
+            decisions_open: 1,
+            usd: Some(271.4),
+            cap_usd: Some(300.0),
+        };
+        let with_facts = StatusInput {
+            model: Some("Opus 5.5".into()),
+            cwd: Some("/tmp/範例專案".into()),
+            version: Some("2.1.318".into()),
+            context_pct: Some(0.31),
+            five_hour_pct: Some(0.08),
+            seven_day_pct: Some(0.46),
+            band_facts: Some(facts),
             ..Default::default()
-        }));
-        assert!(!own_bars_yellow(&StatusInput {
-            context_pct: Some(0.9),
-            ..Default::default()
-        }));
+        };
+
+        // Wide enough for one line: all progress + spend pieces present
+        let one_line = compact_lines(&with_facts, 240);
+        assert_eq!(one_line.len(), 1, "{one_line:?}");
+        for expected in ["● 2", "M·finish", "3/3", "↺ R2", "◆ 1", "$271 ▰▰▰▰▱"] {
+            assert!(
+                one_line[0].contains(expected),
+                "missing {expected} in {:?}",
+                one_line[0]
+            );
+        }
+
+        // Two-line compact width: top row holds all progress + spend pieces
+        let two_line = compact_lines(&with_facts, 130);
+        assert_eq!(two_line.len(), 2, "{two_line:?}");
+        for expected in ["● 2", "M·finish", "3/3", "↺ R2", "◆ 1", "$271"] {
+            assert!(
+                two_line[0].contains(expected),
+                "missing {expected} in top row {:?}",
+                two_line[0]
+            );
+        }
+        assert!(vis(&two_line[0]) <= 130, "{:?}", two_line[0]);
+
+        // Narrow width: spend & open decisions drop in reverse order before model/path
+        let narrow = compact_lines(&with_facts, 50);
+        assert!(narrow[0].contains("Opus 5.5"), "{:?}", narrow[0]);
+        assert!(narrow[0].contains("範例專案"), "{:?}", narrow[0]);
+        assert!(
+            !narrow[0].contains("$271"),
+            "spend should drop first: {:?}",
+            narrow[0]
+        );
+        assert!(
+            !narrow[0].contains("◆ 1"),
+            "decisions should drop before model/path: {:?}",
+            narrow[0]
+        );
+
+        // Absent band-facts: no progress/spend pieces emitted
+        let without_facts = StatusInput {
+            band_facts: None,
+            ..with_facts
+        };
+        let baseline = compact_lines(&without_facts, 240);
+        assert!(!baseline[0].contains("$271"), "{baseline:?}");
+        assert!(!baseline[0].contains("M·finish"), "{baseline:?}");
+        assert!(!baseline[0].contains('▮') && !baseline[0].contains('▯'));
     }
 }
