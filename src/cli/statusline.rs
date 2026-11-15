@@ -1536,13 +1536,7 @@ fn render_strip<W: Write>(
         let now_s = chrono::Utc::now().timestamp();
         format!(
             "{usage_left}{}",
-            quota_segment(
-                data,
-                now_s,
-                room,
-                own_bars_yellow(data, contract),
-                contract,
-            )
+            quota_segment(data, now_s, room, own_bars_yellow(data, contract), contract,)
         )
     };
     let usage_left_vis = ansi_vis(&usage_left);
@@ -3777,13 +3771,25 @@ mod tests {
 
         // sanitized sid maps raw "a/b:c d" to "a_b_c_d.json"
         let raw_sid = "a/b:c d";
-        write_band_facts(base, "a_b_c_d", &sample_band_facts_json(raw_sid, HB_NOW - 500));
+        write_band_facts(
+            base,
+            "a_b_c_d",
+            &sample_band_facts_json(raw_sid, HB_NOW - 500),
+        );
         assert!(read_band_facts(base, raw_sid, HB_NOW).is_some());
 
         // stale (>= 30_000 ms, e.g. 31 s) -> None
-        write_band_facts(base, HB_SID, &sample_band_facts_json(HB_SID, HB_NOW - 31_000));
+        write_band_facts(
+            base,
+            HB_SID,
+            &sample_band_facts_json(HB_SID, HB_NOW - 31_000),
+        );
         assert_eq!(read_band_facts(base, HB_SID, HB_NOW), None);
-        write_band_facts(base, HB_SID, &sample_band_facts_json(HB_SID, HB_NOW - 30_000));
+        write_band_facts(
+            base,
+            HB_SID,
+            &sample_band_facts_json(HB_SID, HB_NOW - 30_000),
+        );
         assert_eq!(read_band_facts(base, HB_SID, HB_NOW), None);
 
         // future timestamp -> None
@@ -3932,7 +3938,10 @@ mod tests {
         if color_enabled() {
             let mid_esc = format!("\x1b[38;2;{};{};{}m", BAR_MID.0, BAR_MID.1, BAR_MID.2);
             let bare_85 = usage_bare("5h", 0.85, None, &def);
-            assert!(bare_85.contains(&mid_esc), "85% must use BAR_MID: {bare_85:?}");
+            assert!(
+                bare_85.contains(&mid_esc),
+                "85% must use BAR_MID: {bare_85:?}"
+            );
         }
     }
 
