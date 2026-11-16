@@ -13,7 +13,7 @@
 # Usage:
 #   ./scripts/check-all.sh                 # native pass (+ WSL Linux pass on Windows)
 #   ./scripts/check-all.sh --no-wsl        # native pass only
-#   ./scripts/check-all.sh --install-hook  # run this before every `git push` (core.hooksPath=.githooks)
+#   ./scripts/check-all.sh --install-hook  # run this before every `git push` (copied into the common hooks dir)
 #
 # Env:
 #   CODEFORGE_TOOLCHAIN   cargo +toolchain override for the native pass
@@ -28,8 +28,25 @@ for arg in "$@"; do
   case "$arg" in
     --no-wsl) WITH_WSL=0 ;;
     --install-hook)
-      git config core.hooksPath .githooks
-      echo "check-all: pre-push hook enabled (git config core.hooksPath .githooks)."
+      # Copy into the common hooks dir (shared by every worktree; in a worktree .git is a file).
+      # Never set core.hooksPath: a repo-level value hides the global lab hook, which chains
+      # to this dir itself (lab 01M7K094, PM 01M7K08N).
+      hooks="$(git rev-parse --path-format=absolute --git-common-dir)/hooks"
+      dst="$hooks/pre-push"
+      if [ -e "$dst" ] && ! cmp -s .githooks/pre-push "$dst" \
+        && ! grep -q 'check-all.sh --install-hook' "$dst"; then
+        echo "check-all: $dst already exists and is not this hook; not replacing it" >&2
+        exit 1
+      fi
+      mkdir -p "$hooks"
+      cp .githooks/pre-push "$dst.tmp.$$"
+      chmod 755 "$dst.tmp.$$"
+      mv -f "$dst.tmp.$$" "$dst"
+      if git config --local --get core.hooksPath >/dev/null; then
+        git config --local --unset core.hooksPath
+        echo "check-all: removed the local core.hooksPath (it hid the global hooks)."
+      fi
+      echo "check-all: pre-push hook installed at $dst."
       echo "           bypass once with: git push --no-verify"
       exit 0
       ;;
