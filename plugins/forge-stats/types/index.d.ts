@@ -81,10 +81,13 @@ export type PanelState = {
   updated_at_ms: number
   usage: { tiers: Record<string, PanelLine[]> }
   /** `sprite` is pet.json's `village.sprite` as forge-stats validated it (SpriteData: palette 0xRRGGBB; static in v1); `tiers` the stats lines without the art. */
-  pet: { title: string; sprite: SpriteData | null; tiers: Record<string, PanelLine[]> }
+  pet: { title: string; sprite: SpriteData | null; tiers: Record<string, PanelLine[]>; icon?: PetIcon }
   /** The O4 band's right-hand summary columns (doc/specs/panel-band-contract.md §2); optional: a reader without it draws the 圓桌 column alone. */
   side?: PanelSide
 }
+
+/** The pet tab's icon on autopilot-live's tab row (PM 01M7MD5Z): `text` is what to draw, exactly 2 cells (`emoji`, or `fallback` where the terminal cannot draw it). */
+export type PetIcon = { id: string; emoji: string; fallback: string; text: string }
 
 /** Lines per column width ("30" … "50"): the reader takes the widest key that fits its inner width. Ratios and counts only, never money. */
 export type PanelSide = {
