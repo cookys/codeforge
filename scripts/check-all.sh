@@ -3,7 +3,8 @@
 #
 # Runs, in order: pinned fmt check → clippy -D warnings → cargo test (through the flake guard:
 # a failed test is rerun once; one that then passes is recorded in target/flaky-tests.log and
-# named on stderr, never hidden) → cjk-safe → doc-drift → cargo deny (licenses) → shellcheck
+# named on stderr, never hidden) → forge-stats plugin tests (when claude is on PATH)
+# → cjk-safe → doc-drift → cargo deny (licenses) → shellcheck
 # install.sh and the checkout guard → checkout-guard test → release smoke (the x86_64-unknown-linux-gnu tarball built with the MSRV toolchain
 # through scripts/package.sh, unpacked and run) — every job the retired ci.yml and
 # release-smoke.yml ran.
@@ -77,6 +78,13 @@ step "clippy -D warnings (${TC:-default toolchain})"
 
 step "cargo test (${TC:-default toolchain}, flake guard)"
 ./scripts/test-flake-guard.sh "${CARGO[@]}"
+
+step "forge-stats plugin tests"
+if command -v claude >/dev/null 2>&1; then
+  claude plugin test plugins/forge-stats
+else
+  echo "check-all: SKIP forge-stats plugin tests (claude is not on PATH)."
+fi
 
 step "cjk-safe"
 ./scripts/check-cjk-safe.sh
