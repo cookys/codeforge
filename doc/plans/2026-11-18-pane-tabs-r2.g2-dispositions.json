@@ -1,0 +1,72 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "codeforge:pane-tabs-r2",
+ "generation": 2,
+ "findings": [
+  {
+   "fingerprint": "6619743e343f77d0ee3643440d6126301a7b095fe5e63cf68da02afa3882aafb",
+   "disposition": "rejected",
+   "rationale": "R7 的門檻（綠 90–95%、黃 >10% 未用）已被操作員本人的規則取代，經 PM 01M7N41T 轉達：「不是 90-95，是盡量要用完!!!」。優先序是操作員原話 > 檔案，凍結的 rubric 不能推翻操作員。速率欄照 burn_window_h 標「近 N 時」（現在 6，capacity r5 後 3），不在 pane 重算；95–100% 已明寫為綠。這條政策變更已另外記在 dispositions.md 開頭和 folds §A0，不當成 rubric 的修訂。"
+  },
+  {
+   "fingerprint": "256e570dc803ee8e7b19a6bc674ed18152e8609a0dcf2fa1c40edfebf3b06e4f",
+   "disposition": "accepted_blocker",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A1：池值只取新鮮席位的最大值；如果有過期席位的舊值比它高，池列加 ✖ 並寫原因「席 X 過期 N 分，舊值 Y% 較高」；全部過期就整池過期。band 也套用同一條規則。"
+  },
+  {
+   "fingerprint": "aa10d722a9c947b7ea5b14c8f0a597fe0d4b06f796d7ffa722ae65acdbcdaf1b",
+   "disposition": "accepted_blocker",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A2：只有一套時程。批 0（步驟 A）在 02:30 前合進 develop，S1–S4 以它為基準，05:00 跟批 1 一起 pin。批 1 整批一起 pin，不做單頁的 legacy 退路。哪一頁沒過，就只修那一頁、再跑一輪閘門，最晚 11-18 18:00 重新 pin。額度頁沒有 legacy 可退，只能走這條路。"
+  },
+  {
+   "fingerprint": "7e77c1c192c4ff4916631e1848304d7fd31e8c3a4481d2148a126b28d59c90f8",
+   "disposition": "accepted_blocker",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A3：每一席都可以呼叫 `fleet seats --quota --json`（bus，快取 60 秒），而且接上 quota.pools 之後也保留；只有 `fleet console --json` 限 console 席呼叫。§6.5 的測試跟著改。"
+  },
+  {
+   "fingerprint": "f7fb2cd433cc23c019a2ac509e6cd890a552a05532a50d4afaa650de4a267ae3",
+   "disposition": "accepted_blocker",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A2（整批 pin，取消單頁退路）＋ §A4：1fba336 §4.1 的 tabrow-console-{80,120}.txt 和 §6 petTabFits 的 ›，由 r2 明文取代並刪除；pin 前要確認操作員那幾席 forge-stats 的 layout，是 pane 就改成 band（可逆設定），只畫一條分頁列，截圖為證。"
+  },
+  {
+   "fingerprint": "111e83b50bf73ef09aa1ce7559927cf031dbc48f4aab61ff102945d87491fab0",
+   "disposition": "accepted_blocker",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A5：從提示列進來的方法是 Ctrl+x Tab（register.ts:1335）或用滑鼠點分頁。焦點在提示列時，所有熱鍵都回 pass，keys.test 加測（patch 0003）。折疊只用 Space，艦隊頁的 Enter 只用來「看」。現況和額度的 Enter 統一是「看焦點項」或「展開各席」。舊的 6 選項卡改成用 j/k 移到第 6 項再按 Enter，不靠滑鼠點。"
+  },
+  {
+   "fingerprint": "d3aaa29c3454ab74f4ab8f6fab070f9bed97a938634c831256797848078ae82f",
+   "disposition": "accepted_blocker",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A6：9 寵物、0 forge、? 說明都走 frameRows，進 PAGES 的 golden 矩陣；寵物頁在 P2 之前是 H 列的佔位。示意圖補上折疊開／關的成對畫面，以及 8 頁的 120x30。"
+  },
+  {
+   "fingerprint": "c955acb60b05319460383e5b438dde8506ae7b8efc2b7415c4151bd466ea0ee5",
+   "disposition": "accepted_blocker",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A7：判定表補三種情況：P>100% 但席位可以切池時算綠，文字「約 X 時後用完，席位可切池」；換池資料是 null 時算紅，文字「約 X 時後用完，換池資料無來源」；拿掉 ↑。紅色之間的排序是 limit_hit → 最早有限的 projected_exhaustion_at_ms → 過期（最舊的排前面）。"
+  },
+  {
+   "fingerprint": "0b20af7a6c2430dbd8e9b180d2311e49e9bc732ac444c9698d00b361bbe390df",
+   "disposition": "accepted_blocker",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A2＋§A8：批 0 先合進 develop，再一起在 05:00 pin。05:00 不跑 pet-cross，寵物頁只是佔位；pet-cross 從帶 pettab 的那次 pin 開始跑，寵物頁照 1fba336 的 P2、P3 排程。S0 和 S4 出差錯時，最晚 11-18 18:00 重新 pin。"
+  },
+  {
+   "fingerprint": "b8643fa75500a8a942ed3a87386515f44aeddec149fc489ce0e067d475f08f45",
+   "disposition": "accepted_nonblocking",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A9：S0 之後 band 的測試矩陣（0 張卡、≥1 張卡、過期原因很長、沒有 pace、console 開／關，每種都是 2 列）；patch 由 codeforge 交，已在 01M7N58C 交出。"
+  },
+  {
+   "fingerprint": "7514ab7489a8f14d6a7aa1fb30066ae80b00188e27149c1245d77b1e67b3903a",
+   "disposition": "accepted_nonblocking",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A10：80x24 的頁首先縮健康的欄位，完整的原因不截斷；補上「指令失敗但快照還新」的情況（照用快照，標黃「指令失敗，用快照 N 秒前」）；tokens.json 的角色名稱在 P4a 跟 fleet 協調，broken 照舊。"
+  },
+  {
+   "fingerprint": "416f554aafb2ea445d26ff0b5fe7703b17d09d954d1d68c9d6f5e2db7936a349",
+   "disposition": "accepted_nonblocking",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A11：示意圖重產：每池一列；來源的時間前後一致；欄位不混用 r5 之前和之後的值；艦隊頁的數字加總要是 51。"
+  },
+  {
+   "fingerprint": "c4f5c49e99c13f0c81f373d0ea94ca7df4c273a4622805efbf69618a6f68450d",
+   "disposition": "accepted_nonblocking",
+   "rationale": "依 folds 檔 doc/plans/2026-11-18-pane-tabs-r2.g2-folds.md §A12：分頁列和提示列的列號在 30 格裡都要一樣；頁首的列號只比對展開的那幾格。"
+  }
+ ]
+}

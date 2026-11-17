@@ -1,0 +1,82 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "codeforge:pane-tabs-r2",
+ "generation": 1,
+ "findings": [
+  {
+   "fingerprint": "8d277d5a0a1936176172141c561cdbb78b6657993cc8d727f2d80c384a1a520b",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：補上每一批的分頁列和內容對應表；本席和 `用量` 在批 1 就關掉入口（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "6cf8c8e7e381cf59acc8bc6a7a930f1275156074222de9d771263bd1a72e1484",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：每一頁都加了狀態變化，另加一幅 120x30；產生器也會檢查各區的邊界；殘留的清除移到動作區，作用在焦點列（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "ed0803f0b429bca48345dfe63b2ce2155eea38219de7ea39c7dd9fbad476ea33",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：panel/1 的 `usageRows`、`readLegacyUsage` 列入退場，批 1 停讀，批 3 刪（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "90b63e5b33ad04194c0adfce4582ee255bdd7ca7b6f481a30c7d7c88288dab6c",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：沒有 pace 時判定也寫無來源，例外只有 limit_hit；P = 100% 算綠；80x24 每池 6 欄都在（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "8c34b62adec5813fcef52b01615446450206d3270dbe0bf462143da6148ebbde",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：§3.2 就是綁定的鍵表，02:30 是截止，codeforge 負責定稿（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "ca3fcdb31c6c1e0346362f6e09ded614bfd67e3425fb613c6b57e153d39747b3",
+   "disposition": "accepted_nonblocking",
+   "rationale": "採納：lint 的紅也記錄（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "cab5a2d409efbe353528d7f77ea5c25d1ca34696b6bdeda9f57739cb435cb379",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：`用量` 在批 1 併入 4 額度，花費頁的上限區在包裝時濾掉；本席在批 1 退場；5–8 頁用 legacy 包裝；寵物和 forge 用 9、0 放在同一條分頁列（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "1398c9a60713dced3e13388cf67154a5acf48a84c7482dc748e04fba88cc1bcb",
+   "disposition": "accepted_blocker",
+   "rationale": "大部分採納：整張鍵表加焦點列（j/k）、Space 折疊、`n` 文字模式、`x` 全部清除、`?`/9/0；殘留的跳頁改成 [8]。**6 個選項這點駁回**：autopilot 在 `open-decision.js` 加上限 5（01M7N46A），所以 a–e 夠用；上限上線前的舊卡，第 6 項用點選（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "c7fa9ebe0f34929ffe82326729ae083fc77f4b0c51e7ba657e0b86ea05f0b079",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：頁首和 band 硬截成一行；動作區由頁自己壓在 A 以內，超過就丟錯；band 改成摘要在上、分頁列在下（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "87a76d8ddd1699550ec02c14a8fe241561de1266eed2022ae58785f710acce9a",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：寫明測試檔名、紅測紀錄的檔案、在 faa6b4cb6 上的實際紅；第 1 批 golden 放 `mods/live/`，P4b 再搬（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "36be52c97dfe7c393c557e0709dbd28948bab8150f455a4889efa9ec0ba9810f",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：panel/1 和 `consoleSource` 寫死 null 列入退場；本席資料為什麼留在本機寫明理由；只有 console 席呼叫指令，其他席讀快照；沒有快照的帳號標紅（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "77398ddf2d44174eb05ddaed38aaa5b182daf6ca32387d95e90106e1da2d7a16",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：資料過期綁 broken，不用 tokens.json 的灰色 inactive；補上「快照不能用」和 `seats --quota` 失敗兩列；舊數字保留並加 ✖（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "f360db096ec9820e8d4577b09f743e4dde577987b1793a1c55f75b61f98b1d50",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：沒有 pace 時的判定、照 `pool_key` 分組、80x24 欄位齊全、P = 100%、band 和現況用同一個排序函式（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "3cc07bfb39eeb80795e566e0904ce4b78bbc4e970b577c6f8bc903edbf4759e8",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：示意圖重產；席位和池對齊；星期改正（11-20 是週五）；預測的數字自洽；超出時只用「↓ 還有 N 列」；8 頁都有狀態變化（plan 9d160fc）"
+  },
+  {
+   "fingerprint": "1f050b5fd4102c50c7b406ccce38d0b22e7faa1d38ad9bc9eacc059f15728ead",
+   "disposition": "accepted_blocker",
+   "rationale": "採納：批 0、鍵表、pace 三項依賴都寫了退路；「不跳動」的證據改成比列號；上線改用 live tag 和 hangar；批 3 寫明 20:00 和依賴（plan 9d160fc）"
+  }
+ ]
+}
