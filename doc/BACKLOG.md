@@ -211,13 +211,13 @@ codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責�
 **Trigger**: 下次動 `dup_detect.rs` 的行分類，或實際觀察到這種假分身怪。
 **Not done**: 只記錄；B10 已修掉 g1、g2 的兩個同類問題（`c2679ad`、`bd59ca5`）。
 
-## B38 — MOB scanner 會掃進 `.claude/worktrees` 等 worktree 副本
+## B38 — MOB scanner 會掃進 `.claude/worktrees` 等 worktree 副本 ✅ 2026-11-17
 
 **Area**: `src/daemon/mob_scanner.rs` `should_skip_dir`
 **Premise**: skip 清單只有 `target`、`node_modules`、`.git`、`dist`、`build` 等；有 git worktree 放在 repo 內（例如 `.claude/worktrees/<lane>/`）時，scanner 會把 worktree 裡的副本當成獨立檔案。B10 實測 autopilot repo：3 隻分身怪全是 worktree 副本與主檔之間的重複；殭屍、Boss 等既有怪也會重複出現。
 **Proposed**: skip `.claude/worktrees`，或更一般地跳過含 `.git` 檔案（worktree 標記）的子目錄；加 tempdir 測試。
 **Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
-**Not done**: 只記錄；B10 verify（2026-11-02）時發現，不在 B10 範圍。
+**Done**: `should_skip_dir` 跳過含 `.git`（檔案或目錄）的子目錄及 `.claude/worktrees`（掃描根目錄本身不跳過），並補上 tempdir 測試。
 
 ## B45 — G40 配額顯示（forge-stats）的後續
 
