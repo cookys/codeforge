@@ -1,0 +1,33 @@
+{
+  "astra": {
+    "M1": {
+      "red": "r2-navigation-red.log",
+      "red_exit": 1,
+      "intermediate": "r2-actions-verified.log",
+      "intermediate_exit": 1,
+      "intermediate_note": "M1 passed, M2 intentionally still red",
+      "green": "r2-navigation-green.log",
+      "green_exit": 0
+    },
+    "M2": {
+      "red": "r2-navigation-red.log",
+      "red_exit": 1,
+      "green": "r2-navigation-green.log",
+      "green_exit": 0
+    },
+    "M3": {
+      "red": "r2-theme-red.log",
+      "red_exit": 1,
+      "green": "r2-theme-export.log",
+      "green_exit": 0
+    },
+    "m1": {
+      "red": "r2-model-subset-red.log",
+      "red_exit": 1,
+      "green": "r2-model-subset-green.log",
+      "green_exit": 0
+    }
+  },
+  "carbon": "pending independent report; transport attempts do not count as scored reviews",
+  "artifact_root": "/tmp/forge-stats-pane-v2-evidence"
+}

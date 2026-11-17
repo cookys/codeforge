@@ -139,29 +139,6 @@ const openUsage = async ($: Parameters<TestBody>[0]) => {
   return ui
 }
 
-test('the pane has a tab strip and the usage tab shows accounts and today\'s models', async ($, on) => {
-  base(on, JSON.stringify(summary()))
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.findAll({ type: 'Button' })).length >= 2).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
-  await ui.press({ key: 'tab-usage' })
-  expect((await ui.find({ type: 'Text', text: /^Usage$/ }))?.props.bold).toBe(true)
-  expect((await ui.find({ type: 'Text', text: /smith1/ })) !== undefined).toBe(true)
-  expect((await ui.find({ type: 'Text', text: /^30%$/ })) !== undefined).toBe(true)
-  expect((await ui.find({ type: 'Text', text: /^ 2h\d+m$/ })) !== undefined).toBe(true)
-  expect((await ui.find({ type: 'Text', text: /claude-opus-5-5/ })) !== undefined).toBe(true)
-  expect((await ui.find({ type: 'Text', text: /\$1\.50/ })) !== undefined).toBe(true)
-  // the codex model has no price: a dash, and the total says it is partial
-  expect((await ui.find({ type: 'Text', text: /total ≥\$1\.50/ })) !== undefined).toBe(true)
-  expect((await ui.find({ type: 'Text', text: /1 rows unpriced/ })) !== undefined).toBe(true)
-  // fresh: no refresh hint
-  expect(await ui.find({ type: 'Text', text: /to refresh/ })).toBe(undefined)
-  // and back to the pet
-  await ui.press({ key: 'tab-pet' })
-  expect(await ui.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
-  await ui.unmount()
-})
 
 test('parseUsage takes an optional account email by the same rule as the writer', () => {
   const acc = (email: unknown) => ({ ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: null, seven_day: null, email }] })
@@ -191,81 +168,12 @@ test('parseUsage draws the account by name; an acct- hash with no name, email or
   for (const bad of ['acct-1a2b3c4d', 'a@b', '', ' x', 'a\tb', 'x'.repeat(25), '工'.repeat(13), '工作\uFEFF', 5, null]) expect(parseUsage(JSON.stringify(one({ name: bad })), NOW).status).toBe('bad')
 })
 
-test('a summary older than an hour names `codeforge usage` as the refresh', async ($, on) => {
-  base(on, JSON.stringify(summary({ generated_at_ms: Date.now() - 90 * 60_000 })))
-  const ui = await openUsage($)
-  const hint = await ui.find({ type: 'Text', text: /summary from 9\d min ago · run `codeforge usage` to refresh/ })
-  expect(hint?.props.dimColor).toBe(true)
-  await ui.unmount()
-})
 
-test('no summary file says how to make one', async ($, on) => {
-  base(on, null)
-  const ui = await openUsage($)
-  expect((await ui.find({ type: 'Text', text: /no usage summary yet: run `codeforge usage`/ })) !== undefined).toBe(true)
-  await ui.unmount()
-})
 
-test('a summary path that is a link is refused before reading', async ($, on) => {
-  base(on, JSON.stringify(summary()), { isLink: true })
-  const ui = await openUsage($)
-  expect((await ui.find({ type: 'Text', text: /unreadable/ })) !== undefined).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
-  await ui.unmount()
-})
 
-test('a summary larger than the bound is refused before reading', async ($, on) => {
-  base(on, JSON.stringify(summary()), { size: USAGE_MAX_BYTES + 1 })
-  const ui = await openUsage($)
-  expect((await ui.find({ type: 'Text', text: /unreadable/ })) !== undefined).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
-  await ui.unmount()
-})
 
-test('`/forge-stats usage` opens the pane on the usage tab, `/forge-stats pet` back', async ($, on) => {
-  base(on, JSON.stringify(summary()))
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run(cmd('usage'))
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Text', text: /smith1/ })) !== undefined).toBe(true)
-  await $.command.run(cmd('pet'))
-  await ui.unmount()
-  const again = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect(await again.find({ type: 'Text', text: /smith1/ })).toBe(undefined)
-  await again.unmount()
-})
 
-test('a narrow pane drops the requests column and keeps the model id and the total whole', async ($, on) => {
-  base(on, JSON.stringify(summary()))
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run(cmd('usage'))
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: 37 } })
-  expect((await ui.find({ type: 'Text', text: /claude-opus-5-5/ })) !== undefined).toBe(true)
-  expect(await ui.find({ type: 'Text', text: /\d+req/ })).toBe(undefined)
-  expect((await ui.find({ type: 'Text', text: /^  total ≥\$1\.50 · API-equivalent estimate$/ })) !== undefined).toBe(true)
-  expect((await ui.find({ type: 'Text', text: /^  1 rows unpriced$/ })) !== undefined).toBe(true)
-  await ui.unmount()
-})
 
-test('the account row drops countdowns, then 7d, as the pane narrows, and never cuts a field', async ($, on) => {
-  const both = summary({ accounts: [{ alias: 'acct-1a2b3c4d', name: 'stranity·amy1', written_at_ms: Date.now(), five_hour: { pct: 0.3, resets_at: Math.floor(Date.now() / 1000) + 7800 }, seven_day: { pct: 0.45, resets_at: Math.floor(Date.now() / 1000) + 3 * 86400 } }] })
-  base(on, JSON.stringify(both))
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run(cmd('usage'))
-  const at = async (bodyColumns: number) => {
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
-    const got = {
-      reset: (await ui.find({ type: 'Text', text: /^ \d+h\d+m$|^ \d+d\d+h$/ })) !== undefined,
-      sevenDay: (await ui.find({ type: 'Text', text: /^  7d $/ })) !== undefined,
-      fiveHour: (await ui.find({ type: 'Text', text: /^30%$/ })) !== undefined,
-    }
-    await ui.unmount()
-    return got
-  }
-  expect(await at(70)).toEqual({ reset: true, sevenDay: true, fiveHour: true })
-  expect(await at(37)).toEqual({ reset: false, sevenDay: true, fiveHour: true })
-  expect(await at(30)).toEqual({ reset: false, sevenDay: false, fiveHour: true })
-})
 
 
 test('parseUsage takes an optional window seen_at_ms: a uint, at most 10 min after generated_at_ms', () => {

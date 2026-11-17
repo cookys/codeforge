@@ -1,0 +1,9 @@
+EVENT={"surface":"terminal","component":"Pane","requestId":"probe","viewport":{"columns":160,"rows":40,"isFullscreen":true},"props":{"title":"probe","bodyColumns":160,"isFocused":true,"placement":"dock","scroll":{"offset":0,"bodyRows":30},"view":{}}}
+DRAW={"type":"Text","props":{},"children":["probe"],"part":{"plugin":"test"}}
+
+tests/probe.test.tsx:
+(pass) probe [20.70ms]
+
+ 1 pass
+ 0 fail
+Ran 1 test across 1 file. [0.14s]

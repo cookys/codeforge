@@ -1,0 +1,60 @@
+{
+  "note": "Unscored transport failures; no UX score or passing result is inferred",
+  "attempts": [
+    {
+      "artifact": "round-1-carbon.transport.json",
+      "transport": {
+        "conversation_id": "9d6e0d19-67ea-400b-b8fa-2eccb958a63c",
+        "status": "ERROR",
+        "response": "",
+        "error": "print timeout after 7m0s with the turn still in progress; the response is partial",
+        "duration_seconds": 58.38007825,
+        "num_turns": 1,
+        "usage": {
+          "input_tokens": 88921,
+          "output_tokens": 1291,
+          "thinking_tokens": 681,
+          "cache_read_tokens": 271322,
+          "total_tokens": 90212
+        },
+        "finished_reason": "print_timeout"
+      }
+    },
+    {
+      "artifact": "round-1-carbon-inline.transport.json",
+      "transport": {
+        "conversation_id": "cff524e5-1d98-4f1a-a383-9bec48101865",
+        "status": "SUCCESS",
+        "response": "{\n  \"error\": \"missing_stdin_payload\",\n  \"message\": \"No standard input content was received in the model prompt context; the source, evidence, and requested JSON schema are missing (likely because the CLI ignored piped stdin when a prompt argument was also passed on the command line). Concatenate the prompt instructions with the stdin payload into a single input stream and retry.\"\n}\n",
+        "duration_seconds": 60.066564234,
+        "num_turns": 1,
+        "usage": {
+          "input_tokens": 8746,
+          "output_tokens": 3134,
+          "thinking_tokens": 3050,
+          "cache_read_tokens": 0,
+          "total_tokens": 11880
+        }
+      }
+    },
+    {
+      "artifact": "round-1-carbon-final.transport.json",
+      "transport": {
+        "conversation_id": "14e1e1d8-5a4f-40f3-b5d9-a481049d221c",
+        "status": "ERROR",
+        "response": "",
+        "error": "print timeout after 7m0s with the turn still in progress; the response is partial",
+        "duration_seconds": 0,
+        "num_turns": 1,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "thinking_tokens": 0,
+          "cache_read_tokens": 0,
+          "total_tokens": 0
+        },
+        "finished_reason": "print_timeout"
+      }
+    }
+  ]
+}

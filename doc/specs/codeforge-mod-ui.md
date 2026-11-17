@@ -150,16 +150,25 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   hidden 的燈不寫，兩個都 hidden 就不加 tail。引擎把 tail 灰色接在提示行尾，行尾放不下時切掉並補「…」，剩不到 4 欄就整段
   不畫（實測 120 欄完整、62–64 欄被切、60 欄消失）。prompt 周圍的位置由上往下：band（AbovePrompt）→ 輸入行 →
   `$.ui.status`（引擎加「⚠ plugin:」前綴，只放真的警告）→ statusline → 提示行（含 tail）→ SessionMode 標籤。
-- **「全部帳號」分頁（forge-stats pane 的第三個分頁，2026-11-09）**：pane 分頁列原本是 寵物｜用量；**只有** `<base>/codeforge/usage/fleet-quota.json`
-  存在時才多一個「全部帳號」（`<base>` 的掃描順序同用量分頁：liveBase 先，再 `liveBases()`）。沒有這個檔時分頁列和每一個畫面都和
-  之前逐位元組相同（測試 `tests/fleet-tab.test.tsx` 比對）。檔由 `codeforge usage collect` 在環境變數 `CODEFORGE_FLEET_USAGE_DIR`
-  有設時寫（見 `codeforge-usage.md`）。存在與否只在 render 外 `stat`（session 開始、指令、畫過後每 15 秒），檔案只在這個分頁的 render 裡讀，
-  界線同用量摘要：stat 先、一般檔案、不是連結、≤ 512 KiB，不 spawn codeforge。依 `codeforge.fleet-quota/1` 嚴格解析，
-  不合就畫一行 dim「全部帳號資料無法讀取」，不 throw。內容：標題列帶檔案年齡（「合併於 N 分鐘前」）；先是警示列（與 CLI 同序、
-  同字：`會浪費 · 名字 · email · 週 N% · 重置 ◷ … · 目標 85%`、`會不夠 估 · 名字 · email · 週 N% · 估 … 後用完 · 重置 ◷ …`），再每帳號一列
-  `名字 · email  週 N% ◷ 2d5h  5h N%  主機…  年齡`（`緊` ≥ 90%、年齡超過 30 分鐘才顯示、`無來源`／`過期`／`已重置，等新觀察`）。
-  警示、projected、exhaust_at 全取自 JSON，TS 不重算；過期的檔照原樣畫並標年齡。寬度不夠時整欄丟（主機、年齡、5h、倒數），
-  最後才用 `…` 截。名字取 JSON 的 `name`（`acct-` 鍵永不顯示；舊檔沒有 `name` 的退回規則見 `codeforge-usage.md`「顯示名」）。實作 `plugins/forge-stats/hooks/fleet-view.ts`。
+- **forge-stats pane v2（2026-11-17）**：預設「總覽」，次頁「寵物」；`/forge-stats usage` 相容轉到總覽。
+  總覽讀 `$HOME/.local/state/fleet/brief.json`（`fleet.brief/1`，512 KiB、最多 500 items，未知 kind 略過），
+  按待決、卡住、各池、交辦排列；待決固定一列，以來源 counts 和最舊標題顯示，不代替 autopilot 的完整決策卡。
+  各池沿用 `fleet-view.ts` 的 parser，來源為 `<base>/codeforge/usage/fleet-quota.json`，無來源帳號在所有寬度固定合併一列。
+  超高依序減交辦、各池、卡住；卡住保留至少三筆（宿主必須供給足夠空間），縮減區有一列剩餘數並可用按鈕捲動。
+  頂列只放背景筆數、本機成本和資料年齡，不重複主體數字；少於兩項時併至頁籤列。
+  超過五分鐘的 brief 與 quota 檔案年齡用 warning；缺檔或壞檔明示，不顯示成正常零筆。
+  操作員交辦是有型別的 `Assignment[]`；正式來源尚未接上，傳空陣列且佔零列。
+  寵物保留像素動畫，僅裁掉所有幀共用的透明外列；逐 model 成本放頁底，最多六列。
+  高度是內容加兩列操作區，上限 `min(scroll.bodyRows, floor(viewport.rows*0.6))`，不加 pad 或 spare。
+  dock 的 `bodyRows` 由宿主供給，mod 沒有改高度的控制；樹只回實際列數，未用空白掩飾宿主留白。
+  `j/k` 捲卡住、`u` 捲各池、`a` 捲交辦，僅在有效時顯示；`p` 換頁、`i` 說明。
+  測試宿主 `ui.focus` 回報 no implementation，`ui.open` 不保留外加 plugin 參數；未證實跨 mod 聚焦，
+  因此 `d` 在按鍵列顯示「輸入 /autopilot 開決策卡」，不另外建立同名空 pane。
+  截圖：`UX_SHOTS_DIR=<目錄> python3 plugins/forge-stats/tests/export-ux-shots.py`。
+  測試 sandbox 不能讀程序環境或寫實體檔案，因此匯出腳本執行同一份 `ux-shots.test.tsx` 斷言再寫文字、語意色與宿主預設 light/dark 前景／參考底色；未設目錄不寫檔。
+  匯出時比對已安裝宿主的色盤與 fixture；一般文字參考底色對比 ≥4.5，僅結構線 ≥2。自訂主題與實體終端仍須目視檢查。
+  UX 閘門與評分依 [forge-stats-ux-gate.md](forge-stats-ux-gate.md)，這次證據在
+  [pane v2 評審包](../design/ux-gate/2026-11-17-pane-v2/README.md)。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、縮圖；tok/s 歸 autopilot）；需要操作的完整介面留給 `codeforge attach`
   （獨立 tmux pane，crossterm alt-screen，可用 sixel——WT 與 WezTerm 都回報支援，畫面未實測）。
 
