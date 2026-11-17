@@ -4,6 +4,7 @@
 
 | Plan | Created | Project |
 |------|---------|---------|
+| [2026-11-17-shared-tui-components](2026-11-17-shared-tui-components.md) | 2026-11-17 | PM 01M7MD5Z（凍結 11-18 12:00；無 project 目錄，實作分 codeforge／autopilot 兩邊） |
 | [2026-11-02-autopilot-hook-bridge](2026-11-02-autopilot-hook-bridge.md) | 2026-11-02 | [2026-11-02-autopilot-hook-bridge](../projects/2026-11-02-autopilot-hook-bridge/README.md) |
 
 ---

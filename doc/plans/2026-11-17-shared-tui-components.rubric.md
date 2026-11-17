@@ -1,0 +1,13 @@
+# Rubric — shared TUI components plan (forge-stats × autopilot-live, pet tab)
+
+> Source plan: doc/plans/2026-11-17-shared-tui-components.md (codeforge, PM 01M7MD5Z; scope PM 01M7M9J4 + 01M7MD92). Frozen before generation 1.
+
+R1: Single source — the plan names exactly one owning repo and path for every shared item (tab strip, glyph table, palette roles, width function, cut/duration/percent helpers, width tiers, panel contract type, tokens), says how it is versioned and pinned on the other side, and a hand edit of a pinned copy is detected by a named check.
+R2: Cross-side red — for each of: tab order/position change, glyph change, width-rule change, panel contract change, the plan names the test on each side that turns red and the mechanism by which the other side runs it; the "sibling repo absent" case is stated and cannot pass silently at release.
+R3: Layout — tab row and act-on controls sit at the bottom near the input per tux v1.4 §1/§5 with autopilot's bottom-anchored build as baseline; the plan leaves no forge-stats top tab row and states the single-row fallback when autopilot is absent.
+R4: Merge vs pane — both options are costed on the same axes, the recommendation follows from them, and any departure from tux v1.4 §6 ("不開第二窗") carries a written reason; the effect on 01M7KRP3 (pane v2) is stated as a decision for the PM.
+R5: Pet tab — the icon is exactly 2 cells as emoji and as fallback, the fallback condition is env-detectable and tested, the emoji exception to the glyph lint is scoped to one named key, the reader refuses a non-2-cell label, and the conflict with tux §6.2/L19 (no codeforge.panel in quota rendering) is resolved without weakening L19.
+R6: Design-system alignment — colour roles and wording are shared with fleet's console web design system (01M7M7Y7) through one file with a defined owner; terminal theme keys and web colours map by semantic role, and the plan says what is checked mechanically and what is not.
+R7: Inventory fidelity — every conflict found in §1.1 (rounding, thresholds, glyph meaning, tone set, width tiers, duration format, dead code, v2 drift) is mapped to a work item or explicitly dropped with a reason; no shared item is proposed that the inventory shows unused.
+R8: Release cadence — the operator clone's return from detached 47a2cf2 to a pinned live tag is concrete (tag name, who runs it, sha16 record, rollback command), both repos' pins must agree on the shared version before go-live, and nothing goes live from a branch tip.
+R9: Sequencing — the pet tab can ship on 11-18 without waiting for the extraction work, each item has an owner and a dependency, and parallel items do not write the same files.
