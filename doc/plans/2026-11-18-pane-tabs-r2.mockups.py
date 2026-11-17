@@ -12,7 +12,7 @@ import sys
 import unicodedata
 
 SIZES = {"160x40": (160, 40, 6), "80x24": (80, 24, 4)}  # W, H, reserved action rows
-TABS = ["現況", "待決", "艦隊", "派工", "審查", "花費", "殘留"]
+TABS = ["現況", "待決", "艦隊", "額度", "派工", "審查", "花費", "殘留"]
 
 
 def cells(s):
@@ -63,7 +63,7 @@ def band(size, active, line2, badges):
     return out
 
 
-BADGES = {"待決": "³", "艦隊": "✖", "殘留": "²"}
+BADGES = {"待決": "³", "艦隊": "✖", "額度": "✖", "殘留": "²"}
 HDR = {
     "160x40": "autopilot · pm 席 · fleet 資料 12 秒前 · 額度 40 秒前 · 本席 codeforge--claude plan/shared-tui@926af0e",
     "80x24": "pm 席 · fleet 12 秒前 · 額度 40 秒前",
@@ -246,13 +246,7 @@ P["花費"] = {
          "  7 天    ███████████████░░░░░  75%                     重置 週四 08:00",
          "  今天    $3.10 · 近 24 小時 ▁▁▂▃▅▂▁▁▁▂▂▃▁▁▁▁▂▅▇▃▂▁▁▁",
          "",
-         "── 額度池（原「額度」頁）──────────────────────────────",
-         "  池                    席數   5 小時    7 天     重置             資料",
-         "  ▲ stranity-personal    5      2%        75%      週四 08:00        6 秒前",
-         "  ● stranity-team        3      17%       68%      週六 12:00        6 秒前",
-         "  ● twgame               2      —         49%      週四 09:00        6 秒前",
-         "  ✖ trinity              1      —         —        —                 ✖ 3 時未更新（statusline 沒在跑）",
-         "  ○ 其他 4 池（Enter 展開）"],
+         "  （各池的額度在 4 額度 頁）"],
         [NONE],
     ),
     "80x24": (
@@ -260,13 +254,39 @@ P["花費"] = {
          "5時 ██░░░░░░░░  2% 重置 03:40",
          "7天 ████████░░ 75% 重置 週四",
          "今天 $3.10 ▁▂▃▅▂▁▂▅▇▃",
-         "── 額度池 ──",
-         "▲ stranity-personal 5席 75%",
-         "● stranity-team     3席 68%",
-         "● twgame            2席 49%",
-         "✖ trinity 3 時未更新",
-         "○ 其他 4 池"],
+         "（各池額度在 4 額度）"],
         [NONE],
+    ),
+}
+P["額度"] = {
+    "160x40": (
+        ["── 額度池（fleet console quota items；速率和預測取 capacity pace，pane 不重算）────────── 資料 40 秒前",
+         "  池                    7 天    5 小時   重置（台北）       近 3 小時速率     照此速率到重置時         判定",
+         "  ✖ stranity-team        68%↑    17%      11-21 週六 12:00    +1.9%/時          約 11-19 22:00 用完       約 38 小時前用完",
+         "  ✖ stranity-personal    75%↑     2%      11-20 週四 08:00    +1.1%/時          約 11-19 23:00 用完       約 9 小時前用完",
+         "  ✓ twgame               49%      —       11-20 週四 09:00    +1.4%/時          約 93%                    在 90–95% 目標內",
+         "  ▲ stranity-lab         22%      4%      11-22 週日 10:00    +0.2%/時          約 32%                    約剩 68% 沒用",
+         "  ▲ grok                 10%      —       11-24 週二 00:00    +0.0%/時          約 10%                    約剩 90% 沒用",
+         "  ✖ trinity              —        —       —                   —                 —                         ✖ 3 時未更新（超過 10 分鐘算過期；statusline 沒在跑）",
+         "  ○ 其他 2 池（Enter 展開）",
+         "",
+         "── 這一池的席（Enter 在上表選池）───────────────────────────",
+         "  stranity-team：alfred--claude 17%/68% · 308--claude —/49% · capacity--claude 2%/75%"],
+        ["  ✖ stranity-team 約 11-19 22:00 用完，比重置早 38 小時    [f] 換池建議填入提示列（不送出）"],
+    ),
+    "80x24": (
+        ["池          7天  5時 重置    判定",
+         "✖ team      68%↑ 17% 週六12  早38時用完",
+         "✖ personal  75%↑  2% 週四08  早9時用完",
+         "✓ twgame    49%   —  週四09  約93%",
+         "▲ lab       22%   4% 週日10  約剩68%",
+         "▲ grok      10%   —  週二00  約剩90%",
+         "✖ trinity   3 時未更新（>10 分）",
+         "○ 其他 2 池",
+         "── 速率（capacity pace）──",
+         "team +1.9%/時 · personal +1.1%/時",
+         "資料 40 秒前"],
+        ["✖ team 約 11-19 22:00 用完 [f]"],
     ),
 }
 P["殘留"] = {
@@ -299,7 +319,7 @@ def main():
         w, h, a = SIZES[size]
         out.write(f"\n## {size}（body {h - 2 - a} 列 + 預留動作 {a} 列 + 頁首 1 + 分頁列 1 = {h}）\n")
         out.write("\n### band（主畫面上方，永遠 2 列；按分頁鍵開 pane，沒有「開面板」那一列）\n\n```\n")
-        out.write("\n".join(r + "│" for r in band(size, "現況", "  ✖ capacity 卡住 2 時 · 待決 3 張（最舊 40 分）" if w >= 160 else "✖capacity 卡住 · 待決3", BADGES)) + "\n```\n")
+        out.write("\n".join(r + "│" for r in band(size, "現況", "  ✖ capacity 卡住 2 時 · 待決 3 張（最舊 40 分）                額度 ✖ 團隊 68%↑ 約 11-19 用完" if w >= 160 else "✖capacity 卡住 · 待決3   ✖團隊68%↑ 11-19用完", BADGES)) + "\n```\n")
         for page in TABS:
             body, acts = P[page][size]
             out.write(f"\n### {page}\n\n```\n" + "\n".join(r + "│" for r in frame(size, page, HDR[size], body, acts, BADGES)) + "\n```\n")
