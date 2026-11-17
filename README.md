@@ -162,7 +162,7 @@ codeforge memory search "tokio cancellation"
 # pet status
 codeforge pet
 
-# 5-line statusline panel + right-column pet art (for the Claude Code statusline hook)
+# one-line statusline (for the Claude Code statusline hook; never the pet)
 codeforge statusline
 ```
 
@@ -364,13 +364,13 @@ write): the lights for this session only — `pet.json` is shared by every sessi
 Schema `codeforge.session-view/1`: `{session_id, written_at, memory: {light: active|empty|hidden, active}, brain: {light:
 ok|degraded|offline|pending|hidden}}`.
 
-**Compact statusline**: forge-stats writes a heartbeat `<base>/codeforge/mod-alive/<session_id>.json`
-(`codeforge.mod-alive/1`: `session_id`, `written_at_ms`, `layout`). When the heartbeat for the statusline's own
-`session_id` is under 10 seconds old and says `layout: band`, `codeforge statusline` prints a 2-line strip (identity +
-usage) instead of the pet panel: the pet lives in the band (autopilot's forge tab), the statusline keeps the slow data.
-With no such heartbeat the output is unchanged. Set
-`statusLine.refreshInterval` (e.g. 2) so the strip follows within seconds; without it Claude Code runs the statusline only
-on UI events.
+**One-line statusline**: `codeforge statusline` prints exactly one line at any width and in any state: identity left
+(model ── cwd ⇡⇣ branch [autopilot band-facts]), usage then version right. When it does not fit, band-facts shrink, then
+the version goes, then the line is cut at the width; it never wraps. The pet is never drawn there; it lives in its own
+tab (operator via PM 01M7MEY1, 2026-11-17). Until v0.0.9 a missing forge-stats heartbeat (`mod-alive/<sid>.json`,
+`layout: band`) drew a 5-line RPG box instead; the statusline no longer reads that heartbeat (forge-stats still writes
+it). `tests/statusline_one_line.rs` turns red on any multi-line output. Set `statusLine.refreshInterval` (e.g. 2) so the
+line follows within seconds; without it Claude Code runs the statusline only on UI events.
 
 The repo ships one reader: **forge-stats**, a Claude Code plugin in `plugins/forge-stats/`, listed by the repo's own
 marketplace (`.claude-plugin/marketplace.json`). Install it once and every session shows it, in any project:

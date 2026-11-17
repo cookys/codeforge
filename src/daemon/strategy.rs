@@ -53,16 +53,6 @@ impl Strategy {
         })
     }
 
-    /// Short 3-letter tag for the statusline segment.
-    pub fn short_tag(self) -> &'static str {
-        match self {
-            Self::Aggressive => "agg",
-            Self::Defensive => "def",
-            Self::Explorer => "exp",
-            Self::Scholar => "sch",
-        }
-    }
-
     /// Damage multiplier applied to `pet.atk` before the 0.8..1.2 roll.
     pub fn atk_mult(self) -> f64 {
         match self {
@@ -233,16 +223,6 @@ mod tests {
             MobKind::Void,
         ] {
             assert_eq!(s.priority_order(kind), 0, "{kind:?} should be neutral");
-        }
-    }
-
-    #[test]
-    fn short_tags_are_unique_and_short() {
-        use std::collections::HashSet;
-        let tags: HashSet<_> = Strategy::ALL.iter().map(|s| s.short_tag()).collect();
-        assert_eq!(tags.len(), 4);
-        for s in Strategy::ALL {
-            assert!(s.short_tag().len() <= 8);
         }
     }
 

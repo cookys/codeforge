@@ -19,7 +19,7 @@ src/
     search.rs       ← codeforge memory search
     ingest.rs       ← codeforge ingest
     pet.rs          ← codeforge pet
-    statusline.rs   ← codeforge statusline (ANSI 5-line panel + right-column pet art)
+    statusline.rs   ← codeforge statusline (exactly one ANSI line, never the pet)
     install.rs      ← codeforge install (--hooks / --all / --project-hooks) + uninstall
     ship.rs         ← codeforge ship (Mnemos L2 ledger)
     mnemos_cli.rs   ← codeforge mnemos-cli (cite / cite-detect / context)

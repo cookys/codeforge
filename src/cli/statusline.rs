@@ -1,17 +1,11 @@
-use crate::commentary::display::statusline_override;
-use crate::daemon::strategy::{Strategy, DEFAULT_STRATEGY};
+use crate::daemon::strategy::DEFAULT_STRATEGY;
 use crate::db;
-use crate::pet::ability::next_unlock;
 use crate::pet::live_state::LiveState;
-use crate::pet::session::{get_last_seen, update_last_seen, WelcomeBackSummary};
-use crate::pet::state::PetState;
+use crate::pet::session::update_last_seen;
 use crate::pet::village::VILLAGES;
-/// Statusline — 兩欄渲染：info（左）+ art（右）
-/// info 欄 pad 到 panel_w，後接 2 空格，再寫 art（已 pad 到 ART_W）
-/// UX Pro palette: 三層亮度 (Tier1=222-231 身份, Tier2=71-179 狀態, Tier3=236-246 背景)
+/// Statusline — exactly one line, never the pet (the pet lives in its own tab; PM 01M7MEY1).
 use anyhow::Result;
 use owo_colors::OwoColorize;
-use rust_i18n::t;
 use std::io::{self, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 use unicode_width::UnicodeWidthStr;
@@ -20,8 +14,10 @@ pub fn run(ctx: &db::Context) -> Result<()> {
     let (mut data, raw) = read_status_input();
     write_live_context(&raw);
     let raw_sid = raw["session_id"].as_str().unwrap_or("");
-    // forge-stats band showing the pet for THIS session → compact form (plan §2.5).
-    let compact = {
+    // The statusline is always one line and never draws the pet: the pet lives in its own tab
+    // (operator via PM 01M7MEY1, 2026-11-17). It used to draw a full RPG box unless a fresh
+    // forge-stats `layout: band` heartbeat existed for this session (15be75a).
+    {
         let (live_base, _source) = crate::live::resolve_live_base();
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -88,8 +84,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
             crate::usage::autocollect::spawn_collect,
         );
         data.band_facts = read_band_facts(&live_base, raw_sid, now_ms);
-        read_mod_heartbeat(&live_base, raw_sid, now_ms)
-    };
+    }
     let conn = ctx.open_db()?;
     let has_pet = LiveState::exists(&conn).unwrap_or(false);
 
@@ -110,74 +105,23 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         None
     };
 
-    // Phase 3d §3.1: Welcome Back Report. Compute BEFORE updating
-    // last_seen — otherwise the first post-gap call overwrites its own
-    // baseline. Only rendered when the session gap ≥ ABSENCE_THRESHOLD,
-    // so intra-session statusline refreshes (~every 5s) stay silent.
     let now_unix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let hp_snapshot = loaded
-        .as_ref()
-        .and_then(|l| l.mood.map(|_| (l.state.hp, l.state.hp.max(1))));
-    // hp_max isn't exposed on LiveState yet — PetState lacks it too since
-    // Phase 1 only had hp. The snapshot does, but adding a field is beyond
-    // P5 scope. Pass None so render_lines skips the HP line rather than
-    // fabricating a misleading percentage. P3d follow-up in backlog.
-    let _ = hp_snapshot;
-    if let Ok(Some(last)) = get_last_seen(&conn) {
-        if let Ok(Some(summary)) = WelcomeBackSummary::build(&conn, last, now_unix, None) {
-            if summary.has_content() || summary.absence_seconds >= 3600 {
-                // Print each line plainly — avoids fighting the panel's
-                // ANSI framing. Prefix with a soft indicator so the user
-                // spots it amid normal output.
-                for line in summary.render_lines() {
-                    writeln!(out, "{}", line)?;
-                }
-            }
-        }
-    }
     // Window is closed — next statusline call sees a fresh baseline.
     let _ = update_last_seen(&conn, now_unix);
 
     let (brain, active_l1) = brain_health(ctx);
 
+    render_line(&mut out, &data, width)?;
     match loaded {
         Some(live) => {
-            // Phase 3c P5: commentary bubble. Priority order when picking
-            // the speech-bubble text:
-            //   1. stdin "message" (explicit caller intent — never stomped)
-            //   2. Commentary feed (5% roll, ≤1h old, opt-in gate)
-            //   3. daemon-authored last_message (combat narration)
-            if data.message.is_none() {
-                if let Ok(Some(phrase)) = statusline_override(&conn, now_unix) {
-                    data.message = Some(phrase);
-                } else {
-                    data.message = live.last_message.clone();
-                }
-            }
             let village = VILLAGES
                 .iter()
                 .find(|v| v.id == live.state.village)
                 .unwrap_or(&VILLAGES[2]);
-            // Phase 3b: current strategy from snapshot (falls back to
-            // DEFAULT_STRATEGY when the snapshot predates v6 — wait-for-tick
-            // window is one daemon cycle).
             let strategy = live.strategy.unwrap_or(DEFAULT_STRATEGY);
-            if compact {
-                render_compact(&mut out, &data, width)?;
-            } else {
-                render_full(
-                    &mut out,
-                    &data,
-                    &live.state,
-                    village,
-                    strategy,
-                    width,
-                    &brain,
-                )?;
-            }
             crate::pet::view::publish(
                 Some((&live.state, village)),
                 crate::pet::view::Extras {
@@ -187,14 +131,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
                 },
             );
         }
-        None => {
-            if compact {
-                render_compact(&mut out, &data, width)?;
-            } else {
-                render_no_pet(&mut out, &data, width)?;
-            }
-            crate::pet::view::publish(None, Default::default());
-        }
+        None => crate::pet::view::publish(None, Default::default()),
     }
 
     out.flush()?;
@@ -262,10 +199,6 @@ fn light_words(b: &crate::mnemos::health::BrainHealth) -> (&'static str, &'stati
 
 // ─── forge-stats band heartbeat (doc/plans/2026-10-31-statusline-band.md §2.5) ─
 
-/// Schema of the heartbeat forge-stats writes to `<live_base>/codeforge/mod-alive/<sid>.json`.
-const MOD_ALIVE_SCHEMA: &str = "codeforge.mod-alive/1";
-/// A heartbeat older than this no longer counts (the mod rewrites it every 2 s).
-const MOD_ALIVE_FRESH_MS: i64 = 10_000;
 /// Autopilot band-facts older than this are treated as absent.
 const BAND_FACTS_FRESH_MS: i64 = 30_000;
 /// Heartbeats and band-facts are short status files; anything larger is rejected.
@@ -299,23 +232,6 @@ fn read_live_session_json(
         return None;
     }
     Some(v)
-}
-
-/// True only when this session's forge-stats mod runs in its band layout: the
-/// heartbeat for `raw_sid` exists, parses, has the right schema and session id, is
-/// fresh (`0 <= now - written_at < 10 s`) and says `layout: band`. The pet then lives
-/// in the band (autopilot's forge tab), so the statusline keeps only the slow data
-/// (owner, 2026-10-31). Anything else → false, and the statusline draws its full form.
-fn read_mod_heartbeat(base: &std::path::Path, raw_sid: &str, now_ms: i64) -> bool {
-    let dir = base.join(crate::pet::view::DIR).join("mod-alive");
-    read_live_session_json(&dir, raw_sid, now_ms, MOD_ALIVE_FRESH_MS).is_some_and(|v| {
-        v["schema"] == MOD_ALIVE_SCHEMA
-            // Operator rule (2026-10-31, card d-feb71b14 → A): a fresh `layout: band` heartbeat alone compacts.
-            // `band_seen` is deliberately NOT read: B34 restored the full RPG panel whenever autopilot's O4 shell
-            // drew the band instead of forge-stats, which brought the banner back after /reload-plugins
-            // (PM 01M7E1M5). The pet tag is on autopilot's band (PM 01M78CB6).
-            && v["layout"] == "band"
-    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -448,15 +364,6 @@ fn statusline_width(codeforge_width: Option<&str>, columns: Option<&str>) -> usi
         .unwrap_or(100)
 }
 
-/// The compact form drawn while the forge-stats band layout runs: the no-pet
-/// identity + usage strip (2 lines, no frame, no pet rows), without the adopt hint.
-/// When the identity, the version and the whole usage part fit on one line with 2
-/// columns between them, it is one line: identity left, usage then version right (the
-/// version rightmost on either form).
-fn render_compact<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
-    render_strip(out, data, width, false)
-}
-
 // ─── Input ────────────────────────────────────────────────────────────────────
 
 #[derive(Default)]
@@ -466,9 +373,7 @@ struct StatusInput {
     version: Option<String>, // running session version (from /proc tree)
     latest_version: Option<String>, // latest installed version (symlink target)
     update_available: bool,  // latest > session version
-    message: Option<String>, // pet speech bubble (from JSON "message" field)
     context_pct: Option<f64>, // 0.0–1.0
-    context_window_size: Option<u64>,
     five_hour_pct: Option<f64>,
     five_hour_resets_at: Option<i64>,
     seven_day_pct: Option<f64>,
@@ -819,7 +724,6 @@ fn read_status_input() -> (StatusInput, serde_json::Value) {
             let context_pct = v["context_window"]["used_percentage"]
                 .as_f64()
                 .map(|p| p / 100.0);
-            let context_window_size = v["context_window"]["context_window_size"].as_u64();
             let five_hour_pct = v["rate_limits"]["five_hour"]["used_percentage"]
                 .as_f64()
                 .map(|p| p / 100.0);
@@ -845,9 +749,7 @@ fn read_status_input() -> (StatusInput, serde_json::Value) {
                 version: session_v.or_else(|| latest_v.clone()),
                 latest_version: latest_v,
                 update_available,
-                message: v["message"].as_str().map(|s| s.to_string()),
                 context_pct,
-                context_window_size,
                 five_hour_pct,
                 five_hour_resets_at,
                 seven_day_pct,
@@ -940,9 +842,7 @@ type Rgb = (u8, u8, u8);
 const DELIM: Rgb = (0x44, 0x44, 0x44); // 238 — ( )
 const DELIM_DIM: Rgb = (0x30, 0x30, 0x30); // 236 — dimmed separator (ctx>80%)
 const AHEAD_BEHIND: Rgb = (0x87, 0xAF, 0xD7); // 110 — git ⇡⇣ chip (soft blue)
-const HINT_C: Rgb = (0x5F, 0x5F, 0x5F); // 240 — onboarding hint (slightly above DELIM)
 const MODEL_C: Rgb = (0xFF, 0xD7, 0x87); // 222 — model name
-const CTX_SZ: Rgb = (0xD7, 0xAF, 0x5F); // 179 — ctx window size
 const CWD_C: Rgb = (0x5F, 0xAF, 0xAF); // 73  — cwd path
 const BRANCH_C: Rgb = (0x87, 0xD7, 0x87); // 114 — git branch
 const BAR_LOW: Rgb = (0x87, 0xD7, 0x87); // 114 — bar <warn (default 80%)
@@ -951,17 +851,9 @@ const BAR_HIGH: Rgb = (0xD7, 0x5F, 0x5F); // 167 — bar >=error (default 100%)
 const BAR_EMPTY: Rgb = (0x30, 0x30, 0x30); // 236 — bar ▱
 const BAR_LBL: Rgb = (0x8A, 0x8A, 0x8A); // 245 — "5h" "7d" "ctx"
 const REMAIN: Rgb = (0x58, 0x58, 0x58); // 240 — "4h2m"
-const PET_NAME: Rgb = (0xEE, 0xEE, 0xEE); // 255 — pet name
-const PET_LV: Rgb = (0xFF, 0xD7, 0x87); // 222 — "Lv.N"
-const STAT_LBL: Rgb = (0x58, 0x58, 0x58); // 240 — "ATK:"
 const STAT_VAL: Rgb = (0x94, 0x94, 0x94); // 246 — stat numbers
 const UPDATE_C: Rgb = (0xFF, 0xAF, 0x00); // 214 — amber update banner
                                           // Brain indicator palette (Task 13)
-const BRAIN_GREEN: Rgb = (0x5F, 0xAF, 0x5F); // 71  — ● active / ok
-const BRAIN_YELLOW: Rgb = (0xD7, 0xAF, 0x5F); // 179 — ◐ degraded
-const BRAIN_GRAY: Rgb = (0x5F, 0x5F, 0x5F); // 240 — ○ offline / ◌ pending / empty
-const BRAIN_LBL: Rgb = (0x5F, 0x5F, 0x5F); // 240 — "memory"/"mnemos" labels
-const BRAIN_HINT: Rgb = (0x5F, 0x5F, 0x5F); // 240 — "→ doctor" hint
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 // The statusline's stdout is consumed by Claude Code's renderer (which handles
@@ -998,51 +890,6 @@ fn tcs(s: String, (r, g, b): Rgb) -> String {
     }
 }
 
-/// HSV(S=V=1)的 hue(度,0..360)→ RGB。給彩虹漸層用(純函式,可測)。
-fn hue_rgb(h: f64) -> Rgb {
-    let hp = (h.rem_euclid(360.0)) / 60.0;
-    let x = 1.0 - (hp % 2.0 - 1.0).abs();
-    let (r, g, b) = match hp as u32 {
-        0 => (1.0, x, 0.0),
-        1 => (x, 1.0, 0.0),
-        2 => (0.0, 1.0, x),
-        3 => (0.0, x, 1.0),
-        4 => (x, 0.0, 1.0),
-        _ => (1.0, 0.0, x),
-    };
-    ((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
-}
-
-/// 連上央腦(CentralLight::Ok)時,把 "mnemos" label 渲染成隨時間流動的彩虹漸層:
-/// 每字一個 hue stop、相位由系統時鐘推進 → statusline 每次重繪 hue 位移,字看起來在流動
-/// (Claude Code ultra-think 那種閃爍感)。bold 讓它跳出來。
-/// 只走有色路徑(no-color 用 `label:status` 純文字變體);gate 在 color_enabled。
-fn rainbow(text: &str) -> String {
-    if !color_enabled() {
-        return text.to_string();
-    }
-    // 相位:系統時鐘毫秒。CC 約每數秒重繪,每次重繪相位前進 → 彩虹沿字流動。
-    let phase = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let phase_deg = (phase / 90) as f64 % 360.0;
-    let mut out = String::new();
-    for (i, ch) in text.chars().enumerate() {
-        let (r, g, b) = hue_rgb(phase_deg + i as f64 * 45.0); // 45°/字 散開成漸層
-        out.push_str(&format!("{}", ch.truecolor(r, g, b).bold()));
-    }
-    out
-}
-
-/// Whether to render the plain (no-ANSI) statusline form. Mirrors `color_enabled()`:
-/// the standard NO_COLOR env var (non-empty) selects plain. Pipe-vs-tty is
-/// irrelevant — CC consumes ANSI, so color is never stripped just because stdout
-/// isn't a terminal.
-fn stdout_is_plain() -> bool {
-    !color_enabled()
-}
-
 fn fmt_pct(pct: f64, contract: &Contract) -> String {
     let p = pct.max(0.0) * 100.0;
     let n = match contract.round {
@@ -1072,17 +919,6 @@ fn colored_bar(pct: f64, width: usize, contract: &Contract) -> String {
         tcs(contract.bar_on.repeat(filled), bar_rgb(pct, contract)),
         tcs(contract.bar_off.repeat(empty), BAR_EMPTY)
     )
-}
-
-/// HP bar color: green >60%, amber 30-60%, red <30%
-fn hp_rgb(hp: u32) -> Rgb {
-    if hp > 60 {
-        BAR_LOW
-    } else if hp > 30 {
-        BAR_MID
-    } else {
-        BAR_HIGH
-    }
 }
 
 /// Visible column width (handles wide chars: CJK=2col, ASCII/▰▱=1col)
@@ -1152,16 +988,6 @@ fn to_home_rel(path: &str) -> String {
     path.to_string()
 }
 
-fn fmt_ctx_window(n: u64) -> String {
-    if n >= 1_000_000 {
-        format!("{}M", n / 1_000_000)
-    } else if n >= 1_000 {
-        format!("{}k", n / 1_000)
-    } else {
-        format!("{}", n)
-    }
-}
-
 /// Strip ANSI/VT escape sequences from a string for visible-width measurement.
 /// Handles CSI sequences (ESC [ ... <final>) where final byte is 0x40–0x7E,
 /// covering SGR (colors/bold), cursor movement, erase, etc.
@@ -1189,16 +1015,6 @@ fn strip_ansi(s: &str) -> String {
 /// Visible column width of an ANSI string (excludes escape codes)
 fn ansi_vis(s: &str) -> usize {
     vis(&strip_ansi(s))
-}
-
-/// Pad an ANSI string to at least `width` visible columns with trailing spaces
-fn pad_to_vis(s: &str, width: usize) -> String {
-    let w = ansi_vis(s);
-    if w < width {
-        format!("{}{}", s, " ".repeat(width - w))
-    } else {
-        s.to_string()
-    }
 }
 
 /// True when this session's own usage bars already draw the yellow (`BAR_MID`),
@@ -1359,33 +1175,6 @@ fn usage_bare(label: &str, pct: f64, remain: Option<String>, contract: &Contract
 
 // ─── Position-based renderer ──────────────────────────────────────────────────
 
-/// 一行的兩欄資料
-struct Row {
-    /// art 欄（None = 不寫 art，讓 col 0..ART_W 保持空白）
-    art: Option<String>,
-    /// info 欄（從 col INFO_COL 開始寫）
-    info: String,
-}
-
-/// 核心渲染引擎：info 欄（左）pad 到 info_w 寬，後接 2 空格，再寫 art（右）
-///
-/// art 已在 art() closure 中 pad 到 ART_W，讓右側欄對齊。
-/// 不需要 MoveToColumn — 純 write! + writeln!，相容所有環境。
-/// info_w=0（render_no_pet）時 None art 行直接輸出 info，不加尾端空格。
-fn render_rows<W: Write>(out: &mut W, rows: &[Row], info_w: usize) -> Result<()> {
-    for row in rows {
-        match &row.art {
-            Some(art) => writeln!(out, "{}  {}", pad_to_vis(&row.info, info_w), art)?,
-            None => writeln!(out, "{}", row.info)?,
-        }
-    }
-    Ok(())
-}
-
-fn render_no_pet<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
-    render_strip(out, data, width, true)
-}
-
 fn band_facts_pieces(facts: &BandFacts) -> Vec<(String, usize)> {
     let mut pieces = Vec::new();
     if facts.live_dispatches > 0 {
@@ -1437,27 +1226,21 @@ fn fit_band_facts(pieces: &[(String, usize)], avail: usize) -> (String, usize) {
     (out, used)
 }
 
-/// The 2-line identity + usage strip shared by the no-pet form (with the adopt
-/// hint) and the compact form (without it).
-fn render_strip<W: Write>(
-    out: &mut W,
-    data: &StatusInput,
-    width: usize,
-    adopt_hint: bool,
-) -> Result<()> {
+/// The statusline: exactly one line, never the pet (operator via PM 01M7MEY1).
+/// Identity left (model ── cwd ⇡⇣ branch [band-facts]), usage then version right. When it
+/// does not fit, band-facts shrink first, then the version goes, then the line is cut at
+/// `width` columns; it never wraps into a second row.
+fn render_line<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Result<()> {
     let default_contract = Contract::default();
     let contract = data
         .band_facts
         .as_ref()
         .map_or(&default_contract, |f| &f.contract);
-    let facts_pieces = if !adopt_hint {
-        data.band_facts
-            .as_ref()
-            .map(band_facts_pieces)
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    let facts_pieces = data
+        .band_facts
+        .as_ref()
+        .map(band_facts_pieces)
+        .unwrap_or_default();
 
     // Row 0 — identity strip (no box, no chip wrappers).
     // Composition: model ── cwd ⇡⇣ branch [band-facts] ─────── version
@@ -1540,84 +1323,66 @@ fn render_strip<W: Write>(
         )
     };
     let usage_left_vis = ansi_vis(&usage_left);
-    // Two hint forms, picked by available width
-    let hint_long = "→ codeforge adopt";
-    let hint_short = "→ adopt";
-    let min_gap = 3; // breathing room between usage and hint
-    let avail_for_hint = width.saturating_sub(1 + usage_left_vis + min_gap + 1); // leading space + content + gap + trailing
-    let hint_render = if !adopt_hint {
-        None
-    } else if avail_for_hint >= vis(hint_long) {
-        Some((hint_long, vis(hint_long)))
-    } else if avail_for_hint >= vis(hint_short) {
-        Some((hint_short, vis(hint_short)))
-    } else {
-        None
-    };
-    // One line (compact form only): " " identity [band-facts], at least 2 spaces, usage "   " version
-    // (the version stays rightmost, as on the two-line form's first row).
-    // The usage and band-facts parts are full, so nothing is dropped when one line fits.
-    if !adopt_hint {
-        let left = format!(
-            " {}{}{}{} {}",
-            model_text,
-            tc(" ── ", delim_c),
-            tc(&cwd_display, CWD_C),
-            ab_part,
-            tc(&branch_display, BRANCH_C),
-        );
-        let left_vis = 1 + model_vis + 4 + cwd_vis + ab_vis + 1 + branch_vis;
-        let (facts_all, all_facts_vis) = fit_band_facts(&facts_pieces, usize::MAX);
-        let sep = if ver_vis == 0 { "" } else { "   " };
-        let right = format!("{usage_left}{sep}{ver_str}");
-        let right_vis = usage_left_vis + sep.len() + ver_vis;
-        if left_vis + all_facts_vis + 2 + right_vis <= width {
-            let pad = width - left_vis - all_facts_vis - right_vis;
-            let rows = [Row {
-                art: None,
-                info: format!("{left}{facts_all}{}{right}", " ".repeat(pad)),
-            }];
-            return render_rows(out, &rows, 0);
-        }
-    }
-
-    let row0_facts_avail = width.saturating_sub(fixed + cwd_vis + branch_vis + 2);
-    let (row0_facts, row0_facts_vis) = fit_band_facts(&facts_pieces, row0_facts_avail);
-    let fill = width
-        .saturating_sub(fixed + cwd_vis + branch_vis + row0_facts_vis)
-        .max(2);
-
-    let row0 = format!(
-        " {}{}{}{} {}{} {} {}",
+    let left = format!(
+        " {}{}{}{} {}",
         model_text,
         tc(" ── ", delim_c),
         tc(&cwd_display, CWD_C),
         ab_part,
         tc(&branch_display, BRANCH_C),
-        row0_facts,
-        tcs("─".repeat(fill), delim_c),
-        ver_str,
     );
-
-    let row1 = match hint_render {
-        Some((h, hv)) => {
-            let pad = width.saturating_sub(1 + usage_left_vis + hv + 1);
-            format!(" {}{}{}", usage_left, " ".repeat(pad), tc(h, HINT_C))
-        }
-        None => format!(" {}", usage_left),
+    let left_vis = 1 + model_vis + 4 + cwd_vis + ab_vis + 1 + branch_vis;
+    // Version rightmost; dropped before anything is cut.
+    let with_ver = left_vis + 2 + usage_left_vis + 3 + ver_vis <= width && ver_vis > 0;
+    let (right, right_vis) = if with_ver {
+        (
+            format!("{usage_left}   {ver_str}"),
+            usage_left_vis + 3 + ver_vis,
+        )
+    } else {
+        (usage_left, usage_left_vis)
     };
+    let facts_avail = width.saturating_sub(left_vis + 2 + right_vis);
+    let (facts, facts_vis) = fit_band_facts(&facts_pieces, facts_avail);
+    let used = left_vis + facts_vis + right_vis;
+    let pad = width.saturating_sub(used).max(2);
+    let line = format!("{left}{facts}{}{right}", " ".repeat(pad));
+    writeln!(out, "{}", cut_to_width(&line, width))?;
+    Ok(())
+}
 
-    let rows = vec![
-        Row {
-            art: None,
-            info: row0,
-        },
-        Row {
-            art: None,
-            info: row1,
-        },
-    ];
-    render_rows(out, &rows, 0)
+/// Cut an ANSI string to at most `width` visible columns, keeping escape codes whole and
+/// resetting the colour when something was cut. Never splits a wide character.
+fn cut_to_width(s: &str, width: usize) -> String {
+    if ansi_vis(s) <= width {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut cols = 0;
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            out.push(c);
+            out.push(chars.next().unwrap_or('['));
+            for c2 in chars.by_ref() {
+                out.push(c2);
+                if ('\x40'..='\x7e').contains(&c2) {
+                    break;
+                }
+            }
+            continue;
+        }
+        let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+        if cols + w > width {
+            break;
+        }
+        cols += w;
+        out.push(c);
+    }
+    if color_enabled() {
+        out.push_str("\x1b[0m");
+    }
+    out
 }
 
 /// Format model name + optional context-window size. Shared between both modes.
@@ -1657,817 +1422,6 @@ fn render_version(data: &StatusInput, dim_c: Rgb) -> (String, usize) {
     }
 }
 
-fn render_full<W: Write>(
-    out: &mut W,
-    data: &StatusInput,
-    pet: &PetState,
-    village: &crate::pet::village::Village,
-    strategy: Strategy,
-    width: usize,
-    brain_health: &crate::mnemos::health::BrainHealth,
-) -> Result<()> {
-    const ART_W: usize = 10;
-    const ART_THRESHOLD: usize = 90; // drop art column below this width
-
-    // V2: context-pressure dimming. When ctx > 80%, all Tier-3 elements
-    // (separators, box-drawing, dim labels) shift one stop dimmer. The chat
-    // gets visual priority back; the statusline becomes peripheral signal.
-    let dimmed = data.context_pct.is_some_and(|p| p > 0.8);
-    let delim_c = if dimmed { DELIM_DIM } else { DELIM };
-
-    let art_visible = width >= ART_THRESHOLD;
-    let panel_w = if art_visible {
-        width.saturating_sub(ART_W + 2)
-    } else {
-        width
-    };
-    let vrgb = village.rgb();
-
-    let cwd_raw = data
-        .cwd
-        .clone()
-        .or_else(current_dir_short)
-        .unwrap_or_else(|| "~".to_string());
-    let cwd_home = to_home_rel(&cwd_raw);
-    let branch_full = git_branch().unwrap_or_else(|| "—".to_string());
-    let ab_str = fmt_ahead_behind(git_ahead_behind());
-
-    let box_mid = |content: &str, left: &str, right: &str| -> String {
-        let pad = panel_w.saturating_sub(vis(left) + ansi_vis(content) + vis(right));
-        format!(
-            "{}{}{}{}",
-            tc(left, delim_c),
-            content,
-            " ".repeat(pad),
-            tc(right, delim_c)
-        )
-    };
-
-    let art_lines: Vec<&str> = village.ascii_small.lines().collect();
-
-    // ── Row 0: top border ╭─ model (ctx) ─── cwd ⇡N main ──── Village ──╮
-    //
-    // V2: village name lives in the top border (saves 1 row vs. the old
-    // dedicated divider). Identity chips share the same model→cwd→branch
-    // order as render_no_pet — cross-mode anchor.
-
-    let (model_inner, model_inner_vis) = match (&data.model, data.context_window_size) {
-        (Some(m), Some(cw)) => {
-            let m_s = shorten_str(m, 18);
-            let cw_s = fmt_ctx_window(cw);
-            let v = vis(&m_s) + 3 + vis(&cw_s); // "m (cw)"
-            (
-                format!(
-                    "{} {}{}{}",
-                    tc_bold(&m_s, MODEL_C),
-                    tc("(", delim_c),
-                    tc(&cw_s, CTX_SZ),
-                    tc(")", delim_c),
-                ),
-                v,
-            )
-        }
-        (Some(m), None) => {
-            let m_s = shorten_str(m, 18);
-            (tc_bold(&m_s, MODEL_C), vis(&m_s))
-        }
-        _ => (tc("—", STAT_VAL), 1),
-    };
-
-    let vkey = format!("village.{}.name", village.id);
-    let vname = t!(&vkey).to_string();
-    let vname_short = shorten_str(&vname, 22);
-    let vname_vis = vis(&vname_short);
-
-    // Fixed overhead on row 0:
-    //   ╭─ (3) + model + " ── " (4) + cwd + ⇡N (ab_vis) + " " (1) + branch
-    //   + " ──── " (6) + village + " ──╮" (4) + fill(N)
-    let ab_part = if ab_str.is_empty() {
-        String::new()
-    } else {
-        format!(" {}", tc(&ab_str, AHEAD_BEHIND))
-    };
-    let ab_vis = if ab_str.is_empty() {
-        0
-    } else {
-        1 + vis(&ab_str)
-    };
-    let fixed0 = 3 + model_inner_vis + 4 + ab_vis + 1 + 6 + vname_vis + 4;
-    // cwd budget: leave ≥ 4 for branch
-    let cwd_budget = panel_w.saturating_sub(fixed0 + 4).max(8);
-    let cwd_display = shorten_path(&cwd_home, cwd_budget);
-    let cwd_vis_w = vis(&cwd_display);
-    let branch_avail = panel_w.saturating_sub(fixed0 + cwd_vis_w).max(4);
-    let branch_display = shorten_str(&branch_full, branch_avail);
-    let branch_vis_w = vis(&branch_display);
-    let r0_fill = panel_w.saturating_sub(fixed0 + cwd_vis_w + branch_vis_w);
-
-    let row0_info = format!(
-        "{}{}{}{}{}{}{}{}{}{}",
-        tc("╭─ ", delim_c),
-        model_inner,
-        tc(" ── ", delim_c),
-        tc(&cwd_display, CWD_C),
-        ab_part,
-        tc(&format!(" {}", branch_display), BRANCH_C),
-        tc(" ──── ", delim_c),
-        tc_bold(&vname_short, vrgb),
-        tcs(format!(" {}", "─".repeat(r0_fill)), delim_c),
-        tc("──╮", delim_c),
-    );
-
-    // ── Row 1: usage bars inside box │ 5h ▰▱ 5%  7d ▰▰ 39%  ctx ▰▰▰ 54%   │
-
-    let row1_info = {
-        let default_contract = Contract::default();
-        let contract = data
-            .band_facts
-            .as_ref()
-            .map_or(&default_contract, |f| &f.contract);
-        let mut parts: Vec<String> = Vec::new();
-        if let Some(pct) = data.five_hour_pct {
-            parts.push(usage_bare(
-                "5h",
-                pct,
-                data.five_hour_resets_at.map(fmt_remaining),
-                contract,
-            ));
-        }
-        if let Some(pct) = data.seven_day_pct {
-            parts.push(usage_bare(
-                "7d",
-                pct,
-                data.seven_day_resets_at.map(fmt_remaining),
-                contract,
-            ));
-        }
-        if let Some(pct) = data.context_pct {
-            parts.push(usage_bare("ctx", pct, None, contract));
-        }
-        let mut content = parts.join("  ");
-        let room = panel_w.saturating_sub(vis("│ ") + ansi_vis(&content) + vis("│") + 1);
-        let now_s = chrono::Utc::now().timestamp();
-        content.push_str(&quota_segment(
-            data,
-            now_s,
-            room,
-            own_bars_yellow(data, contract),
-            contract,
-        ));
-        box_mid(&content, "│ ", "│")
-    };
-
-    // ── Version chip (used by bottom border) ─────────────────────────────────
-
-    let (ver_str, ver_vis) = render_version(data, delim_c);
-
-    // ── Brain health (Task 13): local + central lights for bottom border ──────
-
-    // Probe tc() to decide plain vs. color path — see stdout_is_plain() for rationale.
-    let no_color = stdout_is_plain();
-
-    // ── Art helper: pad art line to ART_W, colored with village rgb ──────────
-    // When art_visible is false, every helper returns None so render_rows
-    // omits the trailing "  art" entirely (info_w = panel_w).
-
-    let art = |i: usize| -> Option<String> {
-        if !art_visible {
-            return None;
-        }
-        art_lines.get(i).map(|s| {
-            let w = vis(s);
-            let pad = if w < ART_W {
-                " ".repeat(ART_W - w)
-            } else {
-                String::new()
-            };
-            format!("{}{}", tcs(s.to_string(), vrgb), pad)
-        })
-    };
-    let art_s = |i: usize| -> String {
-        art(i).unwrap_or_else(|| {
-            if art_visible {
-                " ".repeat(ART_W)
-            } else {
-                String::new()
-            }
-        })
-    };
-
-    // ── Rows 2-4: pet stats or speech bubble (V2: was rows 3-5) ──────────────
-    //
-    // Normal:
-    //   │ Ferris Lv.1  ♥ █░░ ...                                    │  art[2]
-    //   │ ATK 18  DEF 20  ...  ▸ agg                                 │  art[3]
-    //   ╰─ memory ● active ──────────────────────────────── v2.1.105 ╯  art[4]
-    //
-    // Bubble path renumbered (now rows 2,3,4 instead of 3,4,5):
-
-    if let Some(msg) = data.message.as_deref() {
-        render_rows(
-            out,
-            &[
-                Row {
-                    art: art(0),
-                    info: row0_info,
-                },
-                Row {
-                    art: art(1),
-                    info: row1_info,
-                },
-            ],
-            panel_w,
-        )?;
-
-        let max_msg = panel_w.saturating_sub(7).max(1);
-        let msg_display = shorten_str(msg, max_msg);
-        let msg_vis_w = vis(&msg_display);
-        let bw = (msg_vis_w + 4).min(panel_w.saturating_sub(3)).max(6);
-        let inner_pad = bw.saturating_sub(4 + msg_vis_w);
-        let left_fill = panel_w.saturating_sub(2 + bw);
-
-        // Row 2 (was 3): bubble top
-        let r2 = format!(
-            "{}{}{}{}{}",
-            tc("│ ", delim_c),
-            " ".repeat(left_fill),
-            tc("╭", vrgb),
-            tcs("─".repeat(bw.saturating_sub(2)), vrgb),
-            tc("╮", vrgb),
-        );
-        if art_visible {
-            writeln!(
-                out,
-                "{}{} {}",
-                pad_to_vis(&r2, panel_w),
-                tc("\\", vrgb),
-                art_s(2)
-            )?;
-        } else {
-            writeln!(out, "{}", r2)?;
-        }
-
-        // Row 3 (was 4): bubble content
-        let r3 = format!(
-            "{}{}{}{}{}{}{}",
-            tc("│ ", delim_c),
-            " ".repeat(left_fill),
-            tc("│ ", vrgb),
-            tc(&msg_display, PET_NAME),
-            " ".repeat(inner_pad),
-            tc(" ", vrgb),
-            tc("│", vrgb),
-        );
-        if art_visible {
-            writeln!(
-                out,
-                "{} {}{}",
-                pad_to_vis(&r3, panel_w),
-                tc(">", vrgb),
-                art_s(3)
-            )?;
-        } else {
-            writeln!(out, "{}", r3)?;
-        }
-
-        // Row 4 (was 5): bottom border with memory status + version
-        let r4 = bottom_border(
-            panel_w,
-            delim_c,
-            ver_str.clone(),
-            ver_vis,
-            brain_health,
-            no_color,
-        );
-        if art_visible {
-            writeln!(
-                out,
-                "{}{} {}",
-                pad_to_vis(&r4, panel_w),
-                tc("/", vrgb),
-                art_s(4)
-            )?;
-        } else {
-            writeln!(out, "{}", r4)?;
-        }
-    } else {
-        // ── Row 2 (was 3): pet HP / XP ──────────────────────────────────────
-        // V2: ♥/✦ symbols replace stat.hp / stat.xp text labels.
-
-        let hp_pct = (pet.hp as f64 / 100.0).clamp(0.0, 1.0);
-        let hp_filled = (hp_pct * 6.0) as usize;
-        let hp_bar = format!(
-            "{}{}",
-            tcs("█".repeat(hp_filled), hp_rgb(pet.hp)),
-            tcs("░".repeat(6 - hp_filled), BAR_EMPTY),
-        );
-        let xp_filled = ((pet.xp as f64 / pet.xp_to_next as f64).clamp(0.0, 1.0) * 6.0) as usize;
-        let xp_bar = format!(
-            "{}{}",
-            tcs("█".repeat(xp_filled), vrgb),
-            tcs("░".repeat(6 - xp_filled), BAR_EMPTY),
-        );
-        let unlock_suffix = next_unlock(pet.level)
-            .map(|u| {
-                let name = shorten_str(u.name, 16);
-                let lv_label = t!("stat.lv");
-                format!(
-                    "  {} {}{} {}",
-                    tc("→", delim_c),
-                    tc(&lv_label, STAT_LBL),
-                    tc(&u.required_level.to_string(), PET_LV),
-                    tc(&name, STAT_VAL),
-                )
-            })
-            .unwrap_or_default();
-
-        let r2_content = format!(
-            "{} {}  {} {} {}  {} {} {}/{}{}",
-            tc_bold(&pet.name, PET_NAME),
-            tc(&format!("{}{}", t!("stat.lv"), pet.level), PET_LV),
-            tc("♥", hp_rgb(pet.hp)),
-            hp_bar,
-            tc(&pet.hp.to_string(), hp_rgb(pet.hp)),
-            tc("✦", vrgb),
-            xp_bar,
-            tc(&pet.xp.to_string(), vrgb),
-            tc(&pet.xp_to_next.to_string(), STAT_VAL),
-            unlock_suffix,
-        );
-        let row2_info = box_mid(&r2_content, "│ ", "│");
-
-        // ── Row 3 (was 4): stats ────────────────────────────────────────────
-        // V2: no colons on labels; strategy as "▸ agg" (mode indicator, not k:v).
-
-        let r3_content = format!(
-            "{} {}  {} {}  {} {}  {} {}   {} {}",
-            tc(&t!("stat.atk"), STAT_LBL),
-            tc(&format!("{:2}", pet.atk), STAT_VAL),
-            tc(&t!("stat.def"), STAT_LBL),
-            tc(&format!("{:2}", pet.def), STAT_VAL),
-            tc(&t!("stat.sup"), STAT_LBL),
-            tc(&format!("{:2}", pet.sup), STAT_VAL),
-            tc(&t!("stat.ver"), STAT_LBL),
-            tc(&format!("{:2}", pet.ver), STAT_VAL),
-            tc("▸", delim_c),
-            tc(strategy.short_tag(), STAT_VAL),
-        );
-        let row3_info = box_mid(&r3_content, "│ ", "│");
-
-        // ── Row 4 (was 5): bottom border with memory ● active + version ─────
-
-        let row4_info = bottom_border(panel_w, delim_c, ver_str, ver_vis, brain_health, no_color);
-
-        let rows = vec![
-            Row {
-                art: art(0),
-                info: row0_info,
-            },
-            Row {
-                art: art(1),
-                info: row1_info,
-            },
-            Row {
-                art: art(2),
-                info: row2_info,
-            },
-            Row {
-                art: art(3),
-                info: row3_info,
-            },
-            Row {
-                art: art(4),
-                info: row4_info,
-            },
-        ];
-        render_rows(out, &rows, panel_w)?;
-    }
-
-    Ok(())
-}
-
-/// Render the bottom border with dual brain lights + 6-level degradation ladder.
-///
-/// Format (colored): `╰─ memory ● active   mnemos ● ok ─── v0.0.5 ──╯`
-/// Format (no-color): `╰─ memory:active   mnemos:ok ─── v0.0.5 ──╯`
-///
-/// Degradation ladder (wide → narrow):
-///   1. Full: both segments + hint (only in yellow/gray states) + version
-///   2. Drop `→ doctor` hint
-///   3. central word → short code (skipped when no_color=true)
-///   4. Drop version chip (keep `⬆` update banner when present)
-///   5. Central pure glyph, no word
-///   6. Only local segment
-///
-/// Each level ensures `ansi_vis(output) <= panel_w`.
-fn bottom_border(
-    panel_w: usize,
-    delim_c: Rgb,
-    ver_str: String,
-    ver_vis: usize,
-    brain: &crate::mnemos::health::BrainHealth,
-    no_color: bool,
-) -> String {
-    use crate::mnemos::health::{CentralLight, LocalLight};
-
-    // ─── Segment builders ────────────────────────────────────────────────
-    // local segment: "memory ● active" (colored) or "memory:active" (no-color)
-    let local_label = t!("ui.brain.local_label").to_string();
-    let local_status = match brain.local {
-        LocalLight::Active => t!("ui.brain.status.active").to_string(),
-        LocalLight::Empty => t!("ui.brain.status.empty").to_string(), // gray: store exists but active=0
-        LocalLight::Hidden => String::new(),                          // not rendered
-    };
-    let local_glyph = match brain.local {
-        LocalLight::Active => "●",
-        LocalLight::Empty => "◌",
-        LocalLight::Hidden => "",
-    };
-    let local_glyph_color = match brain.local {
-        LocalLight::Active => BRAIN_GREEN,
-        _ => BRAIN_GRAY,
-    };
-
-    let central_label = t!("ui.brain.central_label").to_string();
-    let central_status_full = match brain.central {
-        CentralLight::Ok => t!("ui.brain.status.ok").to_string(),
-        CentralLight::Degraded => t!("ui.brain.status.degraded").to_string(),
-        CentralLight::Offline => t!("ui.brain.status.offline").to_string(),
-        CentralLight::Pending => t!("ui.brain.status.pending").to_string(),
-        CentralLight::Hidden => String::new(),
-    };
-    let central_status_short = match brain.central {
-        CentralLight::Ok => "ok",
-        CentralLight::Degraded => "deg",
-        CentralLight::Offline => "off",
-        CentralLight::Pending => "pend",
-        CentralLight::Hidden => "",
-    };
-    let central_glyph = match brain.central {
-        CentralLight::Ok => "●",
-        CentralLight::Degraded => "◐",
-        CentralLight::Offline => "○",
-        CentralLight::Pending => "◌",
-        CentralLight::Hidden => "",
-    };
-    let central_glyph_color = match brain.central {
-        CentralLight::Ok => BRAIN_GREEN,
-        CentralLight::Degraded => BRAIN_YELLOW,
-        _ => BRAIN_GRAY,
-    };
-    // 連上央腦(Ok)→ "mnemos" label 跑彩虹流光(ultra-think vibe);其餘狀態維持灰。
-    let central_label_render = if matches!(brain.central, CentralLight::Ok) {
-        rainbow(&central_label)
-    } else {
-        tc(&central_label, BRAIN_LBL)
-    };
-
-    // hint only appears for yellow/gray central states
-    let show_hint = matches!(
-        brain.central,
-        CentralLight::Degraded | CentralLight::Offline | CentralLight::Pending
-    );
-    let hint_text = "→ doctor";
-
-    // Whether the version chip includes an update banner (preserve `⬆` across lvl 4)
-    let has_update_banner = ver_str.contains('⬆');
-
-    // ─── Segment rendering helpers ──────────────────────────────────────
-    // Build colored/no-color segment strings and measure their visible widths.
-
-    let make_local_seg_colored = |_glyph_only: bool| -> (String, usize) {
-        if matches!(brain.local, LocalLight::Hidden) {
-            return (String::new(), 0);
-        }
-        let s = format!(
-            "{} {} {}",
-            tc(&local_label, BRAIN_LBL),
-            tc(local_glyph, local_glyph_color),
-            tc(&local_status, STAT_VAL),
-        );
-        let w = vis(&local_label) + 1 + 1 + 1 + vis(&local_status);
-        (s, w)
-    };
-
-    let make_local_seg_glyph_only_colored = || -> (String, usize) {
-        if matches!(brain.local, LocalLight::Hidden) {
-            return (String::new(), 0);
-        }
-        let s = format!(
-            "{} {}",
-            tc(&local_label, BRAIN_LBL),
-            tc(local_glyph, local_glyph_color),
-        );
-        let w = vis(&local_label) + 1 + 1; // label + space + glyph(1col)
-        (s, w)
-    };
-
-    let make_local_seg_nocolor = || -> (String, usize) {
-        if matches!(brain.local, LocalLight::Hidden) {
-            return (String::new(), 0);
-        }
-        let s = format!("{}:{}", local_label, local_status);
-        let w = vis(&local_label) + 1 + vis(&local_status);
-        (s, w)
-    };
-
-    let make_central_seg_colored = |word: &str| -> (String, usize) {
-        if matches!(brain.central, CentralLight::Hidden) {
-            return (String::new(), 0);
-        }
-        let s = format!(
-            "{} {} {}",
-            central_label_render,
-            tc(central_glyph, central_glyph_color),
-            tc(word, STAT_VAL),
-        );
-        let w = vis(&central_label) + 1 + 1 + 1 + vis(word);
-        (s, w)
-    };
-
-    let make_central_seg_glyph_only_colored = || -> (String, usize) {
-        if matches!(brain.central, CentralLight::Hidden) {
-            return (String::new(), 0);
-        }
-        let s = format!(
-            "{} {}",
-            central_label_render,
-            tc(central_glyph, central_glyph_color),
-        );
-        let w = vis(&central_label) + 1 + 1;
-        (s, w)
-    };
-
-    let make_central_seg_nocolor = |word: &str| -> (String, usize) {
-        if matches!(brain.central, CentralLight::Hidden) {
-            return (String::new(), 0);
-        }
-        let s = format!("{}:{}", central_label, word);
-        let w = vis(&central_label) + 1 + vis(word);
-        (s, w)
-    };
-
-    // ─── 未來 indicator 擴充點(hangar-bridge / autopilot / …) ─────────────
-    // 新 indicator 是「左側 content」的另一段,擺在 central(mnemos)之後、右側版號之前
-    // (中間的 fill 會自動吸收/縮短)。接法(對齊 central segment 的既有 pattern):
-    //   1. 加狀態來源(如 health.rs 的 CentralLight 那樣的 enum)+ glyph/顏色 match。
-    //   2. 寫 make_<name>_seg_{colored,glyph_only_colored,nocolor} 三個變體(回 (String, vis))。
-    //   3. 在下面 degradation ladder 的每個 level:`total += seg_vis + gap`、
-    //      `content.push_str("   "); content.push_str(&seg)`(接在 central 之後)。
-    //      width 自動正確 —— ladder 用 vis 量、assemble 的 fill = panel_w - overhead
-    //      - left_vis - right_vis,indicator 算進 left_vis 即可。
-    //   4. 窄寬度時於 ladder 較低 level 優先丟掉此 indicator(如 hint 的處理方式)。
-    // 設計細節 + 觸發語義見 BACKLOG B27。
-
-    // ─── Assemble final string from chosen components ───────────────────
-    // The caller passes `no_color` so we can vary layout.
-    // The border itself is: ╰─ <content> ──╯
-    // ╰─ (3) + content + ──╯ (4) = 7 overhead
-    let overhead = vis("╰─ ") + vis(" ──╯"); // 3 + 4 = 7
-
-    // Narrower than the frame itself: no level fits (the no-color local-only level and the
-    // ultimate fallback would both emit the 7-cell frame), so draw a plain rule of exactly
-    // panel_w dashes and never overflow.
-    if panel_w < overhead {
-        return tcs("─".repeat(panel_w), delim_c);
-    }
-
-    // Helper: assemble the full border from measured components.
-    // Layout: ╰─ <left content> <fill dashes> <right> ──╯
-    // `right` (version chip) is right-aligned; the middle fill is reserved空間 —
-    // 未來 indicator(hangar-bridge / autopilot 之類)就 slot 在這段 fill。
-    let assemble = |left: String, left_vis: usize, right: String, right_vis: usize| -> String {
-        let fill = panel_w.saturating_sub(overhead + left_vis + right_vis);
-        format!(
-            "{}{}{}{}{}",
-            tc("╰─ ", delim_c),
-            left,
-            tcs("─".repeat(fill), delim_c),
-            right,
-            tc(" ──╯", delim_c),
-        )
-    };
-
-    // 版號做成右對齊段:前置一個空格與 fill dashes 分隔。`v`==0(無版號/被丟)→ 空。
-    let ver_right = |s: &str, v: usize| -> (String, usize) {
-        if v > 0 {
-            (format!(" {s}"), 1 + v)
-        } else {
-            (String::new(), 0)
-        }
-    };
-
-    // ─── Degradation ladder ─────────────────────────────────────────────
-    // Each level assembles a candidate and checks if it fits.
-    // Returns early with the first level that fits.
-
-    if no_color {
-        // No-color path: simpler candidates (no glyphs, label:word form)
-        let (local_seg, local_vis) = make_local_seg_nocolor();
-        let (central_seg, central_vis) = make_central_seg_nocolor(&central_status_full);
-        let has_central = !matches!(brain.central, CentralLight::Hidden) && !central_seg.is_empty();
-
-        // Level 1/2 (merged for no-color — no hint, no short code)
-        // both segments + version
-        {
-            let seg_gap = if has_central { 3 } else { 0 }; // "   " gap
-            let ver_part_vis = if ver_vis > 0 { 1 + ver_vis } else { 0 }; // " v..."
-            let total_content_vis = local_vis + seg_gap + central_vis + ver_part_vis;
-            if overhead + total_content_vis <= panel_w {
-                let mut content = local_seg.clone();
-                if has_central {
-                    content.push_str("   ");
-                    content.push_str(&central_seg);
-                }
-                let (vr, vr_vis) = ver_right(&ver_str, ver_vis);
-                let result = assemble(content, total_content_vis - vr_vis, vr, vr_vis);
-                if ansi_vis(&result) <= panel_w {
-                    return result;
-                }
-            }
-        }
-
-        // Level 4: drop version chip (keep ⬆ if present)
-        {
-            let (eff_ver_str, eff_ver_vis) = if has_update_banner {
-                (ver_str.clone(), ver_vis)
-            } else {
-                (String::new(), 0)
-            };
-            let ver_part_vis = if eff_ver_vis > 0 { 1 + eff_ver_vis } else { 0 };
-            let seg_gap = if has_central { 3 } else { 0 };
-            let total_content_vis = local_vis + seg_gap + central_vis + ver_part_vis;
-            if overhead + total_content_vis <= panel_w {
-                let mut content = local_seg.clone();
-                if has_central {
-                    content.push_str("   ");
-                    content.push_str(&central_seg);
-                }
-                let (vr, vr_vis) = ver_right(&eff_ver_str, eff_ver_vis);
-                let result = assemble(content, total_content_vis - vr_vis, vr, vr_vis);
-                if ansi_vis(&result) <= panel_w {
-                    return result;
-                }
-            }
-        }
-
-        // Level 6: only local
-        {
-            let total_content_vis = local_vis;
-            let mut content = local_seg.clone();
-            // If even this overflows, truncate label
-            if overhead + total_content_vis > panel_w {
-                let avail = panel_w.saturating_sub(overhead);
-                content = content.chars().take(avail).collect::<String>();
-            }
-            return assemble(
-                content,
-                total_content_vis.min(panel_w.saturating_sub(overhead)),
-                String::new(),
-                0,
-            );
-        }
-    }
-
-    // Colored path:
-    let (local_seg_full, local_vis_full) = make_local_seg_colored(false);
-    let (central_seg_full, central_vis_full) = make_central_seg_colored(&central_status_full);
-    let (central_seg_short, central_vis_short) = make_central_seg_colored(central_status_short);
-    let (central_seg_glyph, central_vis_glyph) = make_central_seg_glyph_only_colored();
-    let (local_seg_glyph, local_vis_glyph) = make_local_seg_glyph_only_colored();
-    let has_central =
-        !matches!(brain.central, CentralLight::Hidden) && !central_seg_full.is_empty();
-    let hint_colored = tc(hint_text, BRAIN_HINT);
-    let hint_vis = vis(hint_text);
-
-    // Level 1: full (both segments + hint + version)
-    {
-        let seg_gap = if has_central { 3 } else { 0 };
-        let hint_part_vis = if show_hint { 3 + hint_vis } else { 0 }; // "   → doctor"
-        let ver_part_vis = if ver_vis > 0 { 1 + ver_vis } else { 0 };
-        let total = local_vis_full + seg_gap + central_vis_full + hint_part_vis + ver_part_vis;
-        if overhead + total <= panel_w {
-            let mut content = local_seg_full.clone();
-            if has_central {
-                content.push_str("   ");
-                content.push_str(&central_seg_full);
-            }
-            if show_hint {
-                content.push_str("   ");
-                content.push_str(&hint_colored);
-            }
-            let (vr, vr_vis) = ver_right(&ver_str, ver_vis);
-            let result = assemble(content, total - vr_vis, vr, vr_vis);
-            if ansi_vis(&result) <= panel_w {
-                return result;
-            }
-        }
-    }
-
-    // Level 2: drop hint
-    {
-        let seg_gap = if has_central { 3 } else { 0 };
-        let ver_part_vis = if ver_vis > 0 { 1 + ver_vis } else { 0 };
-        let total = local_vis_full + seg_gap + central_vis_full + ver_part_vis;
-        if overhead + total <= panel_w {
-            let mut content = local_seg_full.clone();
-            if has_central {
-                content.push_str("   ");
-                content.push_str(&central_seg_full);
-            }
-            let (vr, vr_vis) = ver_right(&ver_str, ver_vis);
-            let result = assemble(content, total - vr_vis, vr, vr_vis);
-            if ansi_vis(&result) <= panel_w {
-                return result;
-            }
-        }
-    }
-
-    // Level 3: central word → short code (colored only)
-    {
-        let seg_gap = if has_central { 3 } else { 0 };
-        let ver_part_vis = if ver_vis > 0 { 1 + ver_vis } else { 0 };
-        let total = local_vis_full + seg_gap + central_vis_short + ver_part_vis;
-        if overhead + total <= panel_w {
-            let mut content = local_seg_full.clone();
-            if has_central {
-                content.push_str("   ");
-                content.push_str(&central_seg_short);
-            }
-            let (vr, vr_vis) = ver_right(&ver_str, ver_vis);
-            let result = assemble(content, total - vr_vis, vr, vr_vis);
-            if ansi_vis(&result) <= panel_w {
-                return result;
-            }
-        }
-    }
-
-    // Level 4: drop version chip (keep ⬆ if present)
-    {
-        let (eff_ver_str, eff_ver_vis) = if has_update_banner {
-            (ver_str.clone(), ver_vis)
-        } else {
-            (String::new(), 0)
-        };
-        let seg_gap = if has_central { 3 } else { 0 };
-        let ver_part_vis = if eff_ver_vis > 0 { 1 + eff_ver_vis } else { 0 };
-        let total = local_vis_full + seg_gap + central_vis_short + ver_part_vis;
-        if overhead + total <= panel_w {
-            let mut content = local_seg_full.clone();
-            if has_central {
-                content.push_str("   ");
-                content.push_str(&central_seg_short);
-            }
-            let (vr, vr_vis) = ver_right(&eff_ver_str, eff_ver_vis);
-            let result = assemble(content, total - vr_vis, vr, vr_vis);
-            if ansi_vis(&result) <= panel_w {
-                return result;
-            }
-        }
-    }
-
-    // Level 5: central pure glyph, no word
-    {
-        let seg_gap = if has_central { 3 } else { 0 };
-        let (eff_ver_str, eff_ver_vis) = if has_update_banner {
-            (ver_str.clone(), ver_vis)
-        } else {
-            (String::new(), 0)
-        };
-        let ver_part_vis = if eff_ver_vis > 0 { 1 + eff_ver_vis } else { 0 };
-        let total = local_vis_full + seg_gap + central_vis_glyph + ver_part_vis;
-        if overhead + total <= panel_w {
-            let mut content = local_seg_full.clone();
-            if has_central {
-                content.push_str("   ");
-                content.push_str(&central_seg_glyph);
-            }
-            let (vr, vr_vis) = ver_right(&eff_ver_str, eff_ver_vis);
-            let result = assemble(content, total - vr_vis, vr, vr_vis);
-            if ansi_vis(&result) <= panel_w {
-                return result;
-            }
-        }
-    }
-
-    // Level 6: local segment only (glyph-only variant if still too wide)
-    {
-        let total = local_vis_full;
-        if overhead + total <= panel_w {
-            return assemble(local_seg_full, total, String::new(), 0);
-        }
-    }
-    {
-        let total = local_vis_glyph;
-        if overhead + total <= panel_w {
-            return assemble(local_seg_glyph, total, String::new(), 0);
-        }
-    }
-
-    // Ultimate fallback: just the border frame
-    assemble(String::new(), 0, String::new(), 0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2475,128 +1429,10 @@ mod tests {
     // Serialize env mutations across tests to avoid race conditions.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    // ── forge-stats heartbeat → compact form ─────────────────────────────
+    // ── shared fixtures ──────────────────────────────────────────────────
 
     const HB_SID: &str = "93196c52-25cb-47ca-821c-cec391832eed";
     const HB_NOW: i64 = 1_793_400_000_000;
-
-    fn write_heartbeat(base: &std::path::Path, file_sid: &str, body: &str) {
-        let dir = base.join("codeforge").join("mod-alive");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(format!("{file_sid}.json")), body).unwrap();
-    }
-
-    fn heartbeat(sid: &str, written_at_ms: i64, band: bool) -> String {
-        serde_json::json!({
-            "schema": "codeforge.mod-alive/1",
-            "session_id": sid,
-            "written_at_ms": written_at_ms,
-            "layout": if band { "band" } else { "pane" },
-        })
-        .to_string()
-    }
-
-    #[test]
-    fn heartbeat_fresh_band_compacts_even_with_the_forge_tab_closed() {
-        let dir = tempfile::tempdir().unwrap();
-        write_heartbeat(dir.path(), HB_SID, &heartbeat(HB_SID, HB_NOW - 1_500, true));
-        assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
-    }
-
-    #[test]
-    fn heartbeat_band_not_seen_still_compacts_no_rpg_panel_after_reload() {
-        let dir = tempfile::tempdir().unwrap();
-        let with = |seen: serde_json::Value| {
-            let mut v: serde_json::Value =
-                serde_json::from_str(&heartbeat(HB_SID, HB_NOW - 1_500, true)).unwrap();
-            v["band_seen"] = seen;
-            v.to_string()
-        };
-        // PM 01M7E1M5: after /reload-plugins autopilot's O4 shell draws the band, forge-stats has not
-        // drawn yet and writes band_seen:false. The operator's choice (d-feb71b14 → A) is still the
-        // compact form, never the RPG panel.
-        write_heartbeat(dir.path(), HB_SID, &with(serde_json::json!(false)));
-        assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
-        write_heartbeat(dir.path(), HB_SID, &with(serde_json::json!(true)));
-        assert!(read_mod_heartbeat(dir.path(), HB_SID, HB_NOW));
-    }
-
-    #[test]
-    fn heartbeat_rejects_every_other_case() {
-        let dir = tempfile::tempdir().unwrap();
-        let base = dir.path();
-        // no file
-        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
-        // stale (exactly 10 s old)
-        write_heartbeat(base, HB_SID, &heartbeat(HB_SID, HB_NOW - 10_000, true));
-        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
-        // from the future
-        write_heartbeat(base, HB_SID, &heartbeat(HB_SID, HB_NOW + 1, true));
-        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
-        // pane layout
-        write_heartbeat(base, HB_SID, &heartbeat(HB_SID, HB_NOW - 100, false));
-        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
-        // another session's id inside this session's file
-        write_heartbeat(base, HB_SID, &heartbeat("someone-else", HB_NOW - 100, true));
-        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
-        // wrong schema
-        let other = heartbeat(HB_SID, HB_NOW - 100, true).replace("mod-alive/1", "mod-alive/9");
-        write_heartbeat(base, HB_SID, &other);
-        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
-        // half-written / not JSON
-        write_heartbeat(base, HB_SID, "{\"schema\":\"codeforge.mod");
-        assert!(!read_mod_heartbeat(base, HB_SID, HB_NOW));
-        // empty stdin session id never matches
-        assert!(!read_mod_heartbeat(base, "", HB_NOW));
-    }
-
-    #[test]
-    fn heartbeat_extreme_timestamps_never_compact_or_panic() {
-        let dir = tempfile::tempdir().unwrap();
-        for w in [i64::MIN, i64::MAX] {
-            write_heartbeat(dir.path(), HB_SID, &heartbeat(HB_SID, w, true));
-            assert!(
-                !read_mod_heartbeat(dir.path(), HB_SID, HB_NOW),
-                "written_at_ms {w}"
-            );
-        }
-    }
-
-    #[test]
-    fn heartbeat_found_under_sanitized_name() {
-        let dir = tempfile::tempdir().unwrap();
-        let raw = "a/b:c d";
-        write_heartbeat(dir.path(), "a_b_c_d", &heartbeat(raw, HB_NOW - 100, true));
-        assert!(read_mod_heartbeat(dir.path(), raw, HB_NOW));
-    }
-
-    #[test]
-    fn compact_form_is_two_lines_without_frame_or_hint() {
-        let data = StatusInput {
-            model: Some("Opus 5.5".into()),
-            context_pct: Some(0.45),
-            five_hour_pct: Some(0.32),
-            ..Default::default()
-        };
-        let mut buf = Vec::new();
-        render_compact(&mut buf, &data, 100).unwrap();
-        let text = strip_ansi(&String::from_utf8(buf).unwrap());
-        let lines: Vec<&str> = text.lines().collect();
-        assert!(
-            lines.len() <= 2,
-            "compact form must be at most 2 lines: {lines:?}"
-        );
-        assert!(
-            !text.contains('╭') && !text.contains('│'),
-            "no box frame: {text}"
-        );
-        // the hint itself, not the word: the line also shows the git branch, which may contain "adopt"
-        assert!(
-            !text.contains("→ adopt") && !text.contains("→ codeforge adopt"),
-            "no adopt hint: {text}"
-        );
-        assert!(text.contains("ctx"), "usage row kept: {text}");
-    }
 
     #[test]
     fn width_is_codeforge_width_else_columns_minus_4_else_100() {
@@ -2612,7 +1448,7 @@ mod tests {
 
     fn compact_lines(data: &StatusInput, width: usize) -> Vec<String> {
         let mut buf = Vec::new();
-        render_compact(&mut buf, data, width).unwrap();
+        render_line(&mut buf, data, width).unwrap();
         strip_ansi(&String::from_utf8(buf).unwrap())
             .lines()
             .map(str::to_string)
@@ -2644,7 +1480,6 @@ mod tests {
         // the version is the last field, flush right; the two-line form's first row too
         assert!(line.ends_with("v2.1.318"), "{line:?}");
         assert!(line.find("ctx") < line.find("v2.1.318"));
-        assert!(compact_lines(&data, 80)[0].ends_with("v2.1.318"));
         // the threshold is the content: identity + 2 spaces + version and usage
         let pad = {
             let mut best = 0;
@@ -2659,14 +1494,18 @@ mod tests {
         let at = compact_lines(&data, need);
         assert_eq!(at.len(), 1, "at the threshold {need}: {at:?}");
         assert!(vis(&at[0]) <= need);
+        // one column short: still one line; the version goes first, the usage stays
         let below = compact_lines(&data, need - 1);
-        assert_eq!(below.len(), 2, "one column short of {need}: {below:?}");
-        for l in &below {
-            assert!(vis(l) < need, "{l:?}");
+        assert_eq!(below.len(), 1, "one column short of {need}: {below:?}");
+        assert!(vis(&below[0]) < need, "{below:?}");
+        assert!(!below[0].contains("v2.1.318"), "{below:?}");
+        assert!(below[0].contains("ctx"), "{below:?}");
+        // narrow and tiny terminals: still one line, never wider than the width
+        for w in [80, 40, 10, 0] {
+            let l = compact_lines(&data, w);
+            assert_eq!(l.len(), 1, "width {w}: {l:?}");
+            assert!(vis(&l[0]) <= w, "width {w}: {l:?}");
         }
-        // narrow: the two-line form as before; a tiny terminal still draws
-        assert_eq!(compact_lines(&data, 80).len(), 2);
-        assert_eq!(compact_lines(&data, 0).len(), 2);
     }
 
     /// (g) statusline fixture from p0/statusline.json ⇒ main file matches
@@ -2752,236 +1591,6 @@ mod tests {
     }
 
     // ── Task 13: bottom_border tests ─────────────────────────────────────────
-
-    fn bh(
-        l: crate::mnemos::health::LocalLight,
-        c: crate::mnemos::health::CentralLight,
-    ) -> crate::mnemos::health::BrainHealth {
-        crate::mnemos::health::BrainHealth {
-            local: l,
-            central: c,
-        }
-    }
-
-    #[test]
-    fn bottom_border_wide_shows_both() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        // Use no_color=true so output is predictable regardless of terminal
-        let s = bottom_border(
-            80,
-            DELIM,
-            String::new(),
-            0,
-            &bh(LocalLight::Active, CentralLight::Ok),
-            true,
-        );
-        assert!(
-            s.contains("memory"),
-            "should contain 'memory', got: {:?}",
-            s
-        );
-        assert!(
-            s.contains("mnemos"),
-            "should contain 'mnemos', got: {:?}",
-            s
-        );
-        assert!(
-            ansi_vis(&s) <= 80,
-            "不可溢出 panel_w=80，actual={}",
-            ansi_vis(&s)
-        );
-    }
-
-    #[test]
-    fn bottom_border_hidden_central_omits_mnemos() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        let s = bottom_border(
-            80,
-            DELIM,
-            String::new(),
-            0,
-            &bh(LocalLight::Active, CentralLight::Hidden),
-            true,
-        );
-        assert!(s.contains("memory"), "should contain 'memory'");
-        assert!(
-            !s.contains("mnemos"),
-            "Hidden central should not show 'mnemos', got: {:?}",
-            s
-        );
-    }
-
-    #[test]
-    fn bottom_border_narrow_no_overflow() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        for w in [20usize, 30, 40, 60] {
-            let s = bottom_border(
-                w,
-                DELIM,
-                "v0.0.5".into(),
-                6,
-                &bh(LocalLight::Active, CentralLight::Degraded),
-                true,
-            );
-            let actual = ansi_vis(&s);
-            assert!(actual <= w, "w={w} 溢出：actual={actual}, content={:?}", s);
-        }
-    }
-
-    /// Every width from 0 to past the widest level, for every light combination, with and
-    /// without colour and version chip — so each ladder breakpoint is hit exactly and at ±1.
-    #[test]
-    fn bottom_border_never_overflows_at_any_width() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        let locals = [LocalLight::Hidden, LocalLight::Active, LocalLight::Empty];
-        let centrals = [
-            CentralLight::Hidden,
-            CentralLight::Ok,
-            CentralLight::Degraded,
-            CentralLight::Offline,
-            CentralLight::Pending,
-        ];
-        for no_color in [true, false] {
-            for (ver, ver_vis) in [("v0.0.5", 6usize), ("", 0)] {
-                for &l in &locals {
-                    for &c in &centrals {
-                        for w in 0..=120usize {
-                            let s =
-                                bottom_border(w, DELIM, ver.into(), ver_vis, &bh(l, c), no_color);
-                            let actual = ansi_vis(&s);
-                            assert!(
-                                actual <= w,
-                                "w={w} no_color={no_color} ver={ver:?} local={l:?} central={c:?} \
-                                 溢出：actual={actual}, content={s:?}"
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn bottom_border_colored_wide_shows_both() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        // Test with colors forced on
-        let _g = ENV_LOCK.lock().unwrap();
-        owo_colors::set_override(true);
-        let s = bottom_border(
-            80,
-            DELIM,
-            String::new(),
-            0,
-            &bh(LocalLight::Active, CentralLight::Ok),
-            false, // colored path
-        );
-        // strip ANSI to check content
-        let plain = strip_ansi(&s);
-        assert!(
-            plain.contains("memory"),
-            "colored path should contain 'memory', plain={:?}",
-            plain
-        );
-        assert!(
-            plain.contains("mnemos"),
-            "colored path should contain 'mnemos', plain={:?}",
-            plain
-        );
-        assert!(ansi_vis(&s) <= 80, "不可溢出 panel_w=80");
-        owo_colors::unset_override();
-    }
-
-    #[test]
-    fn bottom_border_local_empty_word() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        // LocalLight::Empty means store exists but active=0 — must show "empty", NOT "offline"
-        let s = bottom_border(
-            80,
-            DELIM,
-            String::new(),
-            0,
-            &bh(LocalLight::Empty, CentralLight::Hidden),
-            true, // no_color=true for deterministic plain output
-        );
-        assert!(
-            s.contains("empty"),
-            "LocalLight::Empty 應輸出 'empty'，got: {:?}",
-            s
-        );
-        assert!(
-            !s.contains("offline"),
-            "LocalLight::Empty 不應輸出 'offline'，got: {:?}",
-            s
-        );
-    }
-
-    /// hue_rgb 純函式:三原色錨點 + 越界折回(rem_euclid)。
-    #[test]
-    fn hue_rgb_primary_anchors() {
-        assert_eq!(hue_rgb(0.0), (255, 0, 0)); // 紅
-        assert_eq!(hue_rgb(120.0), (0, 255, 0)); // 綠
-        assert_eq!(hue_rgb(240.0), (0, 0, 255)); // 藍
-        assert_eq!(hue_rgb(360.0), (255, 0, 0)); // 折回紅
-        assert_eq!(hue_rgb(-120.0), (0, 0, 255)); // 負值折回藍
-    }
-
-    /// rainbow:NO_COLOR 下回純文字;有色時含 ANSI 但 vis() 寬度不變(只改色不改字)。
-    #[test]
-    fn rainbow_respects_no_color_and_preserves_width() {
-        let _g = ENV_LOCK.lock().unwrap();
-        std::env::set_var("NO_COLOR", "1");
-        assert_eq!(rainbow("mnemos"), "mnemos");
-        std::env::remove_var("NO_COLOR");
-        let colored = rainbow("mnemos");
-        assert!(
-            colored.contains('\u{1b}'),
-            "有色時應含 ANSI escape: {colored:?}"
-        );
-        // 剝掉 ESC...m 序列後應還原成原字 → 彩虹只改色、不動字元(layout 不變)。
-        let mut stripped = String::new();
-        let mut chars = colored.chars();
-        while let Some(c) = chars.next() {
-            if c == '\u{1b}' {
-                for d in chars.by_ref() {
-                    if d == 'm' {
-                        break;
-                    }
-                }
-            } else {
-                stripped.push(c);
-            }
-        }
-        assert_eq!(stripped, "mnemos", "剝色後應還原原字");
-    }
-
-    /// 版號右對齊:寬版有版號時,strip 後是 `…mnemos… ─fill─ v0.0.5 ──╯`(版號在 fill 之後、
-    /// 靠右),而非黏在 mnemos 左側。防「版號回到左邊」的 layout regression。
-    #[test]
-    fn bottom_border_version_right_aligned() {
-        use crate::mnemos::health::{CentralLight, LocalLight};
-        let _g = ENV_LOCK.lock().unwrap();
-        std::env::set_var("NO_COLOR", "1"); // 純文字、好斷言位置
-        let s = bottom_border(
-            80,
-            DELIM,
-            "v0.0.5".to_string(),
-            6,
-            &bh(LocalLight::Active, CentralLight::Ok),
-            true,
-        );
-        std::env::remove_var("NO_COLOR");
-        assert!(
-            s.trim_end().ends_with("v0.0.5 ──╯"),
-            "版號應靠右收尾,got: {s:?}"
-        );
-        let mpos = s.find("mnemos").expect("應含 mnemos");
-        let vpos = s.find("v0.0.5").expect("應含版號");
-        assert!(vpos > mpos, "版號應在 mnemos 之後,got: {s:?}");
-        assert!(
-            s[mpos..vpos].contains('─'),
-            "mnemos 與版號之間應有 fill dash(證明版號在 fill 右側),got: {s:?}"
-        );
-    }
 
     // ── G36 per-account quota ───────────────────────────────────────────────
 
@@ -3624,29 +2233,6 @@ mod tests {
     }
 
     #[test]
-    fn both_layouts_show_the_other_accounts() {
-        let data = StatusInput {
-            model: Some("Opus 5.5".into()),
-            seven_day_pct: Some(0.75),
-            seven_day_resets_at: Some(chrono::Utc::now().timestamp() + 86400),
-            others: vec![quota_snap(
-                "acct-b",
-                0.97,
-                chrono::Utc::now().timestamp() + 3 * 86400,
-            )],
-            ..Default::default()
-        };
-        let mut buf = Vec::new();
-        render_compact(&mut buf, &data, 100).unwrap();
-        let text = strip_ansi(&String::from_utf8(buf).unwrap());
-        assert!(text.contains("· ▲ b ") && text.contains(" 97%"), "{text}");
-        assert!(!text.contains("acct-"), "{text}");
-        for line in text.lines() {
-            assert!(vis(line) <= 100, "{line:?}");
-        }
-    }
-
-    #[test]
     fn one_yellow_per_row_counts_this_sessions_own_bars() {
         // other tests set NO_COLOR under ENV_LOCK; colour assertions must not race them
         let _g = ENV_LOCK.lock().unwrap();
@@ -3665,7 +2251,7 @@ mod tests {
                 ..Default::default()
             };
             let mut buf = Vec::new();
-            render_compact(&mut buf, &data, 100).unwrap();
+            render_line(&mut buf, &data, 100).unwrap();
             let text = String::from_utf8(buf).unwrap();
             text.lines()
                 .find(|l| l.contains("▲ b"))
@@ -3979,17 +2565,11 @@ mod tests {
             );
         }
 
-        // Two-line compact width: top row holds all progress + spend pieces
-        let two_line = compact_lines(&with_facts, 130);
-        assert_eq!(two_line.len(), 2, "{two_line:?}");
-        for expected in ["● 2", "M·finish", "3/3", "↺ R2", "◆ 1", "$271"] {
-            assert!(
-                two_line[0].contains(expected),
-                "missing {expected} in top row {:?}",
-                two_line[0]
-            );
-        }
-        assert!(vis(&two_line[0]) <= 130, "{:?}", two_line[0]);
+        // Narrower: still one line; band-facts shrink to fit
+        let mid = compact_lines(&with_facts, 130);
+        assert_eq!(mid.len(), 1, "{mid:?}");
+        assert!(vis(&mid[0]) <= 130, "{:?}", mid[0]);
+        assert!(mid[0].contains("● 2"), "{:?}", mid[0]);
 
         // Narrow width: spend & open decisions drop in reverse order before model/path
         let narrow = compact_lines(&with_facts, 50);
