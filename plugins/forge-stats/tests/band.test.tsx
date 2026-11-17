@@ -289,9 +289,15 @@ test('the band colours by meaning: the pet in its village colour, lights by stat
 async function summaryText(ui: { findAll: (q: { type: string }) => Promise<{ props: { key?: string } }[]>; find: (q: { type: string }) => Promise<unknown> }) {
   expect(await ui.find({ type: 'Raster' })).toBe(undefined)
   const boxes = (await ui.findAll({ type: 'Box' })).map(b => b.props.key)
-  if (boxes.includes('beneath')) return undefined
-  expect(boxes).toEqual(['summary'])
+  // The engine composes plugin parts in an unkeyed Box, including the empty test part beneath.
+  if (boxes[0] === undefined) boxes.shift()
   const texts = (await ui.findAll({ type: 'Text' })) as unknown as { text: string }[]
+  if (!boxes.includes('summary')) {
+    expect(boxes).toEqual(['beneath'])
+    expect(texts).toEqual([])
+    return undefined
+  }
+  expect(boxes.filter(k => k !== 'beneath')).toEqual(['summary'])
   return texts.map(t => t.text).join('')
 }
 
