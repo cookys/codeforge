@@ -1,0 +1,23 @@
+{
+  "phase": "candidate; final re-run follows independent review",
+  "checks": [
+    {
+      "command": "claude plugin test plugins/forge-stats",
+      "exit_code": 0,
+      "log": "/tmp/forge-stats-pane-v2-evidence/05-controls-boundaries.log",
+      "sha256": "50e915b4e34ca66ec16add972aa4f1d7aff7eb4a3989c9df7daef85ecef2a08f"
+    },
+    {
+      "command": "env -u NO_COLOR ./scripts/check-all.sh",
+      "exit_code": 0,
+      "log": "/tmp/forge-stats-pane-v2-evidence/check-all-with-color.log",
+      "sha256": "52aaf891606ff6d982bb28e4664054831e9c2ce8baa4110f265866d1170befde"
+    },
+    {
+      "command": "python3 scripts/check-doc-drift.py",
+      "exit_code": 0,
+      "log": "/tmp/forge-stats-pane-v2-evidence/05-doc-drift.log",
+      "sha256": "dfe6be0718f9a2234cc8558b40bf382c2e3515f15bedf6fc140b563cfd919849"
+    }
+  ]
+}

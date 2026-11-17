@@ -1,0 +1,30 @@
+狀態   │ ⋯10 · $36.00 · ⓘ 摘要 0m · 各池 0m
+待決   │ 待決 3 bridge（host-b）：正式站要不要先切到新版結帳流程？合… · 5d0h
+卡住   │ ⊘ 主機 host-f         整台主機              gamma 2 分鐘前仍有回報：…
+       │ ⊘ 主機 host-g         整台主機              主機離線 · 3h0m
+       │ ⊘ delta（host-c）     換池規則：只重用該…   任務逾時沒回報進度 · 5h0m
+       │ ⊘ cobalt（host-b）    跑完 nightly 基準並…  任務逾時沒回報進度 · 3h0m
+       │ ↓ 還有 3
+各池   │ pool-0      Max 20x ▰▰▰▰▰▱  99%  週1d0h · 不夠，預估 2h0m 耗盡
+       │ ↓ 還有 5
+       │ 另 6 池無來源：缺權杖 ×2 · 僅網頁 ×4
+交辦   │ 交辦線-0            核對交辦進度             ▲ 等操作員 · 3h0m
+       │ ↓ 還有 2
+分頁   │ ▸總覽  寵物
+按鍵   │ d 開啟方式  j 下列  u 捲各池  a 捲交辦  i 說明  p 換頁 · Esc 回輸入框
+
+語意色
+[inactive]狀態   [/][subtle]│ [/][inactive]⋯10[/][subtle] · [/][inactive]$36.00[/][subtle] · [/][inactive]ⓘ [/][inactive]摘要 0m[/][inactive] · 各池 0m[/]
+[warning]待決   [/][subtle]│ [/][warning]待決 3 bridge（host-b）：正式站要不要先切到新版結帳流程？合… · 5d0h[/]
+[error]卡住   [/][subtle]│ [/][error]⊘ 主機 host-f         [/][inactive]整台主機              [/][error]gamma 2 分鐘前仍有回報：…[/]
+[error]       [/][subtle]│ [/][error]⊘ 主機 host-g         [/][inactive]整台主機              [/][error]主機離線 · 3h0m[/]
+[error]       [/][subtle]│ [/][error]⊘ delta（host-c）     [/][inactive]換池規則：只重用該…   [/][error]任務逾時沒回報進度 · 5h0m[/]
+[error]       [/][subtle]│ [/][error]⊘ cobalt（host-b）    [/][inactive]跑完 nightly 基準並…  [/][error]任務逾時沒回報進度 · 3h0m[/]
+[inactive]       [/][subtle]│ [/][merged]↓ 還有 3[/]
+[inactive]各池   [/][subtle]│ [/][inactive]pool-0      Max 20x [/][error]▰▰▰▰▰▱  99%  [/][error]週1d0h · 不夠，預估 2h0m 耗盡[/]
+[inactive]       [/][subtle]│ [/][merged]↓ 還有 5[/]
+[inactive]       [/][subtle]│ [/][inactive]另 6 池無來源：[/][warning]缺權杖 ×2[/][inactive] · 僅網頁 ×4[/]
+[inactive]交辦   [/][subtle]│ [/][inactive]交辦線-0            [/][inactive]核對交辦進度             [/][warning]▲ 等操作員 · 3h0m[/]
+[inactive]       [/][subtle]│ [/][merged]↓ 還有 2[/]
+[merged]分頁   [/][subtle]│ [/][merged]▸總覽[/][inactive]  [/][merged]寵物[/]
+[merged]按鍵   [/][subtle]│ [/][merged]d 開啟方式[/][inactive]  [/][merged]j 下列[/][inactive]  [/][merged]u 捲各池[/][inactive]  [/][merged]a 捲交辦[/][inactive]  [/][merged]i 說明[/][inactive]  [/][merged]p 換頁 · Esc 回輸入框[/]

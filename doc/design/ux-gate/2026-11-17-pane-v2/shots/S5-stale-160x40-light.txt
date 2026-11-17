@@ -1,0 +1,44 @@
+狀態   │ ⋯10 · $36.00 · ⓘ 舊資料 6m · 各池 0m
+待決   │ 待決 3 bridge（host-b）：正式站要不要先切到新版結帳流程？合進 release 分支後由 bridge 線直接切換上線，可以嗎？ · 5d0h
+卡住   │ ⊘ 主機 host-f           整台主機                                         gamma 2 分鐘前仍有回報：疑似 cour…  → 建議：先查主機 host-f 的 courier 連線…
+       │ ⊘ 主機 host-g           整台主機                                         主機離線 · 3h0m                     → 建議：確認主機 host-g 是否開機／連網…
+       │ ⊘ delta（host-c）       換池規則：只重用該主機上已有的登入，不複製憑證…  任務逾時沒回報進度 · 5h0m           → 查看這條線的任務
+       │ ⊘ cobalt（host-b）      跑完 nightly 基準並把結果寫進報告                任務逾時沒回報進度 · 3h0m           → 向對方追問進度，或改派
+       │ ⊘ ember（host-d）       跑完 nightly 基準並把結果寫進報告                任務逾時沒回報進度 · 3h0m           → 向對方追問進度，或改派
+       │ ⊘ falcon（host-e）      整理這週的待辦並派工                             任務逾時沒回報進度 · 2h0m           → 向對方追問進度，或改派
+       │ ⊘ kilo（host-d）        [atlas 排程] 把舊版匯入器全部改成串流寫入，並…   任務逾時沒回報進度 · 1h30m          → 向對方追問進度，或改派
+各池   │ pool-0          Max 20x ▰▰▰▰▰▰▰▰▰▱  99%  週重置 1d0h · 不夠，預估 2h0m 耗盡              5h 23% 重置 1h0m        操作員原始備註
+       │ pool-1          Max 20x ▰▰▰▰▰▰▰▰▱▱  84%  週重置 1d0h · 不夠，預估 2h0m 耗盡              5h 23% 重置 1h0m        
+       │ pool-5          Max 20x ▰▰▱▱▱▱▱▱▱▱  24%  週重置 1d0h · 用不完                            5h 23% 重置 1h0m        
+       │ pool-2          Max 20x ▰▰▰▰▰▰▱▱▱▱  69%  週重置 1d0h                                     5h 23% 重置 1h0m        
+       │ pool-3          Max 20x ▰▰▰▰▰▱▱▱▱▱  54%  週重置 1d0h                                     5h 23% 重置 1h0m        
+       │ pool-4          Max 20x ▰▰▰▱▱▱▱▱▱▱  39%  週重置 1d0h                                     5h 23% 重置 1h0m        
+       │ 另 6 池無來源：缺權杖 ×2 · 僅網頁 ×4
+交辦   │ 交辦線-0                核對交辦進度                                                                                         ▲ 等操作員 · 3h0m
+       │ 交辦線-1                核對交辦進度                                                                                         等回報 · 2h0m
+       │ 交辦線-2                核對交辦進度                                                                                         進行中 · 1h0m
+分頁   │ ▸總覽  寵物
+按鍵   │ d 開啟方式  i 說明  p 換頁 · Esc 回輸入框
+
+語意色
+[inactive]狀態   [/][subtle]│ [/][inactive]⋯10[/][subtle] · [/][inactive]$36.00[/][subtle] · [/][inactive]ⓘ [/][warning]舊資料 6m[/][inactive] · 各池 0m[/]
+[warning]待決   [/][subtle]│ [/][warning]待決 3 bridge（host-b）：正式站要不要先切到新版結帳流程？合進 release 分支後由 bridge 線直接切換上線，可以嗎？ · 5d0h[/]
+[error]卡住   [/][subtle]│ [/][error]⊘ 主機 host-f           [/][inactive]整台主機                                         [/][error]gamma 2 分鐘前仍有回報：疑似 cour…  [/][inactive]→ 建議：先查主機 host-f 的 courier 連線…[/]
+[error]       [/][subtle]│ [/][error]⊘ 主機 host-g           [/][inactive]整台主機                                         [/][error]主機離線 · 3h0m                     [/][inactive]→ 建議：確認主機 host-g 是否開機／連網…[/]
+[error]       [/][subtle]│ [/][error]⊘ delta（host-c）       [/][inactive]換池規則：只重用該主機上已有的登入，不複製憑證…  [/][error]任務逾時沒回報進度 · 5h0m           [/][inactive]→ 查看這條線的任務[/]
+[error]       [/][subtle]│ [/][error]⊘ cobalt（host-b）      [/][inactive]跑完 nightly 基準並把結果寫進報告                [/][error]任務逾時沒回報進度 · 3h0m           [/][inactive]→ 向對方追問進度，或改派[/]
+[error]       [/][subtle]│ [/][error]⊘ ember（host-d）       [/][inactive]跑完 nightly 基準並把結果寫進報告                [/][error]任務逾時沒回報進度 · 3h0m           [/][inactive]→ 向對方追問進度，或改派[/]
+[error]       [/][subtle]│ [/][error]⊘ falcon（host-e）      [/][inactive]整理這週的待辦並派工                             [/][error]任務逾時沒回報進度 · 2h0m           [/][inactive]→ 向對方追問進度，或改派[/]
+[error]       [/][subtle]│ [/][error]⊘ kilo（host-d）        [/][inactive][atlas 排程] 把舊版匯入器全部改成串流寫入，並…   [/][error]任務逾時沒回報進度 · 1h30m          [/][inactive]→ 向對方追問進度，或改派[/]
+[inactive]各池   [/][subtle]│ [/][inactive]pool-0          Max 20x [/][error]▰▰▰▰▰▰▰▰▰▱  99%  [/][error]週重置 1d0h · 不夠，預估 2h0m 耗盡              [/][inactive]5h 23% 重置 1h0m        [/][inactive]操作員原始備註[/]
+[inactive]       [/][subtle]│ [/][inactive]pool-1          Max 20x [/][inactive]▰▰▰▰▰▰▰▰▱▱  84%  [/][inactive]週重置 1d0h · 不夠，預估 2h0m 耗盡              [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]pool-5          Max 20x [/][inactive]▰▰▱▱▱▱▱▱▱▱  24%  [/][inactive]週重置 1d0h · 用不完                            [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]pool-2          Max 20x [/][inactive]▰▰▰▰▰▰▱▱▱▱  69%  [/][inactive]週重置 1d0h                                     [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]pool-3          Max 20x [/][inactive]▰▰▰▰▰▱▱▱▱▱  54%  [/][inactive]週重置 1d0h                                     [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]pool-4          Max 20x [/][inactive]▰▰▰▱▱▱▱▱▱▱  39%  [/][inactive]週重置 1d0h                                     [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]另 6 池無來源：[/][warning]缺權杖 ×2[/][inactive] · 僅網頁 ×4[/]
+[inactive]交辦   [/][subtle]│ [/][inactive]交辦線-0                [/][inactive]核對交辦進度                                                                                         [/][warning]▲ 等操作員 · 3h0m[/]
+[inactive]       [/][subtle]│ [/][inactive]交辦線-1                [/][inactive]核對交辦進度                                                                                         [/][inactive]等回報 · 2h0m[/]
+[inactive]       [/][subtle]│ [/][inactive]交辦線-2                [/][inactive]核對交辦進度                                                                                         [/][inactive]進行中 · 1h0m[/]
+[merged]分頁   [/][subtle]│ [/][merged]▸總覽[/][inactive]  [/][merged]寵物[/]
+[merged]按鍵   [/][subtle]│ [/][merged]d 開啟方式[/][inactive]  [/][merged]i 說明[/][inactive]  [/][merged]p 換頁 · Esc 回輸入框[/]

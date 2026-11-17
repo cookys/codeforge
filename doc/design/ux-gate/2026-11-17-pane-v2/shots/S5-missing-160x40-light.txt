@@ -1,0 +1,30 @@
+狀態   │ $36.00 · ⓘ 各池 0m
+待決   │ fleet 摘要檔還沒出現
+各池   │ pool-0          Max 20x ▰▰▰▰▰▰▰▰▰▱  99%  週重置 1d0h · 不夠，預估 2h0m 耗盡              5h 23% 重置 1h0m        操作員原始備註
+       │ pool-1          Max 20x ▰▰▰▰▰▰▰▰▱▱  84%  週重置 1d0h · 不夠，預估 2h0m 耗盡              5h 23% 重置 1h0m        
+       │ pool-5          Max 20x ▰▰▱▱▱▱▱▱▱▱  24%  週重置 1d0h · 用不完                            5h 23% 重置 1h0m        
+       │ pool-2          Max 20x ▰▰▰▰▰▰▱▱▱▱  69%  週重置 1d0h                                     5h 23% 重置 1h0m        
+       │ pool-3          Max 20x ▰▰▰▰▰▱▱▱▱▱  54%  週重置 1d0h                                     5h 23% 重置 1h0m        
+       │ pool-4          Max 20x ▰▰▰▱▱▱▱▱▱▱  39%  週重置 1d0h                                     5h 23% 重置 1h0m        
+       │ 另 6 池無來源：缺權杖 ×2 · 僅網頁 ×4
+交辦   │ 交辦線-0                核對交辦進度                                                                                         ▲ 等操作員 · 3h0m
+       │ 交辦線-1                核對交辦進度                                                                                         等回報 · 2h0m
+       │ 交辦線-2                核對交辦進度                                                                                         進行中 · 1h0m
+分頁   │ ▸總覽  寵物
+按鍵   │ i 說明  p 換頁 · Esc 回輸入框
+
+語意色
+[inactive]狀態   [/][subtle]│ [/][inactive]$36.00[/][subtle] · [/][inactive]ⓘ [/][inactive]各池 0m[/]
+[warning]待決   [/][subtle]│ [/][warning]fleet 摘要檔還沒出現[/]
+[inactive]各池   [/][subtle]│ [/][inactive]pool-0          Max 20x [/][error]▰▰▰▰▰▰▰▰▰▱  99%  [/][error]週重置 1d0h · 不夠，預估 2h0m 耗盡              [/][inactive]5h 23% 重置 1h0m        [/][inactive]操作員原始備註[/]
+[inactive]       [/][subtle]│ [/][inactive]pool-1          Max 20x [/][inactive]▰▰▰▰▰▰▰▰▱▱  84%  [/][inactive]週重置 1d0h · 不夠，預估 2h0m 耗盡              [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]pool-5          Max 20x [/][inactive]▰▰▱▱▱▱▱▱▱▱  24%  [/][inactive]週重置 1d0h · 用不完                            [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]pool-2          Max 20x [/][inactive]▰▰▰▰▰▰▱▱▱▱  69%  [/][inactive]週重置 1d0h                                     [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]pool-3          Max 20x [/][inactive]▰▰▰▰▰▱▱▱▱▱  54%  [/][inactive]週重置 1d0h                                     [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]pool-4          Max 20x [/][inactive]▰▰▰▱▱▱▱▱▱▱  39%  [/][inactive]週重置 1d0h                                     [/][inactive]5h 23% 重置 1h0m        [/]
+[inactive]       [/][subtle]│ [/][inactive]另 6 池無來源：[/][warning]缺權杖 ×2[/][inactive] · 僅網頁 ×4[/]
+[inactive]交辦   [/][subtle]│ [/][inactive]交辦線-0                [/][inactive]核對交辦進度                                                                                         [/][warning]▲ 等操作員 · 3h0m[/]
+[inactive]       [/][subtle]│ [/][inactive]交辦線-1                [/][inactive]核對交辦進度                                                                                         [/][inactive]等回報 · 2h0m[/]
+[inactive]       [/][subtle]│ [/][inactive]交辦線-2                [/][inactive]核對交辦進度                                                                                         [/][inactive]進行中 · 1h0m[/]
+[merged]分頁   [/][subtle]│ [/][merged]▸總覽[/][inactive]  [/][merged]寵物[/]
+[merged]按鍵   [/][subtle]│ [/][merged]i 說明[/][inactive]  [/][merged]p 換頁 · Esc 回輸入框[/]

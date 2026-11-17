@@ -1,19 +1,19 @@
-// The chat-style pane window (TUI guideline §13): the operation area (tab strip + key hint) is the last CONTROL_ROWS rows of the tree, the content above it is a window the mod
-// cuts itself, anchored at the bottom. Pure arithmetic, apart from the drawing in register.tsx.
+// Content window for the pane: the last two rows are controls. No padding is synthesized.
+// Snapshots start at the top; End enables following the bottom through subsequent refreshes.
 import { displayWidth } from './model'
 
 export const CONTROL_ROWS = 2
 
 // per tab: stuck to the newest row, or standing at row `top` of the content
 export type PaneScroll = { bottom: boolean; top: number }
-export const newPaneScroll = (): PaneScroll => ({ bottom: true, top: 0 })
+export const newPaneScroll = (): PaneScroll => ({ bottom: false, top: 0 })
 
 export type PaneWindow = {
   // content rows drawn (the indicator row not counted)
   area: number
   // first content row shown
   top: number
-  // blank rows above the content (dock, short content only)
+  // Legacy field, always zero: pane v2 never pads.
   pad: number
   // the content overflows (the mod windows it and the tree carries the spare row)
   overflow: boolean
@@ -26,9 +26,9 @@ export type PaneWindow = {
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n))
 const roomOf = (bodyRows: number) => Math.max(0, bodyRows - CONTROL_ROWS)
 
-export function windowOf(total: number, bodyRows: number, dock: boolean, st: PaneScroll): PaneWindow {
+export function windowOf(total: number, bodyRows: number, _dock: boolean, st: PaneScroll): PaneWindow {
   const room = roomOf(bodyRows)
-  if (total <= room) return { area: total, top: 0, pad: dock ? room - total : 0, overflow: false, indicator: false, above: 0, below: 0 }
+  if (total <= room) return { area: total, top: 0, pad: 0, overflow: false, indicator: false, above: 0, below: 0 }
   // the operation area always fits: below two rows of room the indicator goes, below one the content too
   const indicator = room >= 2
   const area = indicator ? room - 1 : room

@@ -37,12 +37,18 @@ import type { UsageView } from './model'
 import { NO_QUOTA, parseQuotaNs, pickProviders, pickViews, quotaBand, quotaBandForms, quotaEntries, quotaLiveCandidates, quotaLiveDir, quotaPaneLines, QUOTA_NS_MAX_BYTES } from './quota-view'
 import type { DirEntry, QuotaState } from './quota-view'
 import { byteLength, parseQuotaView, QUOTA_CONTRACT } from './quota'
-import { CONTROL_ROWS, clipCells, newPaneScroll, scrolled, windowOf } from './pane-view'
+import { clipCells, newPaneScroll, scrolled, windowOf } from './pane-view'
 import type { PaneScroll } from './pane-view'
 import { PANEL_REFRESH_MS, panelState, panelTiers } from './panel'
 import { sideState } from './side'
-import { FLEET_MAX_BYTES, fleetLines, fleetQuotaPath, parseFleetQuota } from './fleet-view'
+import { FLEET_MAX_BYTES, fleetQuotaPath, parseFleetQuota } from './fleet-view'
 import type { FleetQuotaView } from './fleet-view'
+import { BRIEF_MAX_BYTES, briefPath, parseBrief } from './brief-view'
+import type { BriefView } from './brief-view'
+import { cut, fitSegs, gutter, overviewPlan, paneCap, s as ps } from './overview-view'
+import type { Group, GroupWindow, PaneRow, PaneSeg } from './overview-view'
+import { paneSpriteFrame, petPaneRows } from './pet-pane'
+import { paneChrome } from './pane-controls'
 import { localeFrom, makeT } from './strings'
 import type { Locale, T } from './strings'
 
@@ -137,8 +143,9 @@ async function stepSprite($: EngineInterface) {
   const sprite = view.status === 'ok' ? (view.village?.sprite ?? null) : null
   if (sprite === null) return
   spriteFrame = (spriteFrame + 1) % sprite.frames.length
-  const { cells } = halfBlockCells(sprite, spriteFrame)
-  if (paneTab === 'pet' && cells !== lastCells) {
+  const paneFrame = paneTab === 'pet' ? paneSpriteFrame(sprite, spriteFrame) : null
+  const cells = paneFrame?.cells ?? ''
+  if (paneFrame !== null && paneTab === 'pet' && cells !== lastCells) {
     lastCells = cells
     // literal routing at the call site (pixel-pet plan §2.5); must match PANE and SPRITE_KEY
     await $.ui.blit({ requestId: 'forge-stats', key: 'pet-sprite', cells })
@@ -221,13 +228,6 @@ const OK = 'success'
 
 const seg = (text: string, role?: Role, color?: string): Seg => ({ text, ...(role ? { role } : {}), ...(color ? { color } : {}) })
 
-function rule(title: string, cols: number, note?: string): Line {
-  const head = `${GLYPH.open} ${title}`
-  const tail = note ? `  ${note} ` : ' '
-  const fill = Math.max(2, cols - displayWidth(head) - displayWidth(tail))
-  return [seg(GLYPH.open + ' ', 'structure'), seg(title, 'bold'), seg(tail, 'dim'), seg(GLYPH.rule.repeat(fill), 'structure')]
-}
-
 const kv = (key: string, ...value: Seg[]): Line => [seg(padRight(key, KEY_W), 'dim'), ...value]
 
 function petLines(view: PetView, cols: number, tr: T, now: number, withArt = true): Line[] {
@@ -260,12 +260,28 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
   return out
 }
 
-// ---- the 用量 / usage tab (PM G36 phase 4): accounts, then today's models, read from codeforge's summary.json ----
-type PaneTab = 'pet' | 'usage' | 'fleet'
-let paneTab: PaneTab = 'pet'
-// the chat-style window (guideline §13), per tab: stuck to the newest row or standing at a row; the content rows the last draw had (what ui.scroll clamps against)
-const paneScroll: Record<PaneTab, PaneScroll> = { pet: newPaneScroll(), usage: newPaneScroll(), fleet: newPaneScroll() }
-const paneTotal: Record<PaneTab, number> = { pet: 0, usage: 0, fleet: 0 }
+// The pane has exactly two tabs; snapshots start at the highest priority row.
+type PaneTab = 'overview' | 'pet'
+let paneTab: PaneTab = 'overview'
+let petScroll: PaneScroll = newPaneScroll()
+let petTotal = 0
+let paneRows = 0
+let infoOpen = false
+let autopilotHint = false
+let activeGroup: Group = 'blocked'
+let groupWindows: Record<Group, GroupWindow> = { blocked: { total: 0, visible: 0, top: 0, above: 0, below: 0 }, pools: { total: 0, visible: 0, top: 0, above: 0, below: 0 }, assignments: { total: 0, visible: 0, top: 0, above: 0, below: 0 } }
+const offsets: Record<Group, number> = { blocked: 0, pools: 0, assignments: 0 }
+
+async function readBrief($: EngineInterface): Promise<BriefView> {
+  const home = (await $.env.get('HOME').catch(() => undefined)) || undefined
+  if (!home) return parseBrief(null)
+  const path = briefPath(home)
+  const st = await $.fs.stat(path).catch(() => undefined)
+  if (st === undefined) return parseBrief(null)
+  if (st.isLink || st.kind !== 'file' || st.size > BRIEF_MAX_BYTES) return parseBrief('{')
+  const got = await readChecked($, path, st.size, BRIEF_MAX_BYTES)
+  return parseBrief(got.text ?? '{')
+}
 
 // Bounded: a regular file that is not a link and at most USAGE_MAX_BYTES, checked before the read and again on the text. Never spawns codeforge.
 async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
@@ -287,25 +303,9 @@ async function readUsage($: EngineInterface, now: number): Promise<UsageView> {
   return parseUsage(null, now)
 }
 
-// ---- the 全部帳號 tab: `<base>/codeforge/usage/fleet-quota.json`, written by `codeforge usage collect` when CODEFORGE_FLEET_USAGE_DIR is set ----
-// The tab exists only while that file does. `fleetPresent` is found by a stat outside any render (session start, command, the 15 s timer while drawn); the file itself
-// is read in the render of that tab only, bounded the way the usage summary is. Never spawns codeforge.
-let fleetPresent = false
+// Fleet quota is always part of the overview, read using the existing parser.
 async function fleetBases($: EngineInterface): Promise<string[]> {
   return [...new Set([...(liveBase !== null ? [liveBase] : []), ...(await liveBases($))])]
-}
-async function refreshFleetPresent($: EngineInterface) {
-  let found = false
-  for (const b of await fleetBases($)) {
-    if ((await $.fs.stat(fleetQuotaPath(b)).catch(() => undefined)) !== undefined) {
-      found = true
-      break
-    }
-  }
-  if (found !== fleetPresent) {
-    fleetPresent = found
-    void $.ui.invalidate('ui.render')
-  }
 }
 async function readFleetQuota($: EngineInterface): Promise<FleetQuotaView> {
   for (const b of await fleetBases($)) {
@@ -333,13 +333,9 @@ const QUOTA_WATCH_MS = 60_000
 
 async function quotaUid($: EngineInterface): Promise<number | null> {
   if (uidCache !== undefined) return uidCache
-  try {
-    const r = await $.process.run(['id', '-u'])
-    const n = Number(r.stdout.trim())
-    uidCache = r.exitCode === 0 && Number.isInteger(n) && n >= 0 ? n : null
-  } catch {
-    uidCache = null
-  }
+  const uid = await $.env.get('UID').catch(() => undefined)
+  const n = uid === undefined || uid === '' ? NaN : Number(uid)
+  uidCache = Number.isSafeInteger(n) && n >= 0 ? n : null
   return uidCache
 }
 
@@ -606,6 +602,11 @@ function bandMemoryLines(lights: SessionView | null, tr: T): Line[] {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     locale = await resolveLocale($)
+    paneTab = 'overview'
+    petScroll = newPaneScroll()
+    infoOpen = false
+    autopilotHint = false
+    offsets.blocked = offsets.pools = offsets.assignments = 0
     // a new session starts its animation from frame 0 with nothing sent yet
     spriteFrame = 0
     lastCells = null
@@ -614,12 +615,11 @@ export const register: Register = on => {
     sid = await $.session.id().catch(() => '')
     const stored = await $.store.get('layout').catch(() => undefined)
     layout = stored === 'pane' ? 'pane' : 'band'
-    await $.command.register({ name: 'forge-stats', description: t()('cmdDesc') })
+    await $.command.register({ name: 'forge-stats', description: makeT('zh-TW')('cmdDesc') })
     // the band layout draws above the prompt instead of opening the pane (plan KR5)
     if (layout === 'pane') void $.ui.open({ id: PANE, title: t()('title') })
     await refreshPet($)
     await refreshQuota($, true)
-    await refreshFleetPresent($)
     // first heartbeat before any timer (plan §2.5), then every 2 s
     await writeHeartbeat($)
     // statusline rewrites the snapshot every render; a slow poll keeps the pane current
@@ -627,8 +627,8 @@ export const register: Register = on => {
     $.clock.every(15_000, () => void refreshPet($))
     // the quota mirror: every 15 s, and only while the band or pane was drawn in the last minute (never read in a render)
     $.clock.every(15_000, () => void refreshQuota($))
-    // the 全部帳號 tab's file: same rule, only while something was drawn in the last minute
-    $.clock.every(15_000, () => void (Date.now() - drawnAt < QUOTA_WATCH_MS ? refreshFleetPresent($) : undefined))
+    // The overview reads snapshots on redraw, including the case where the brief first appears.
+    $.clock.every(15_000, () => void (Date.now() - drawnAt < QUOTA_WATCH_MS ? $.ui.invalidate('ui.render') : undefined))
     // idle animation: 2 fps, interval written as a literal (pixel-pet plan §2.5)
     $.clock.every(500, () => void stepSprite($))
     $.clock.every(2000, () => void writeHeartbeat($))
@@ -639,30 +639,32 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'forge-stats' }, async ($, e) => {
+    const tr = makeT('zh-TW')
     const [verb, arg] = e.args.trim().split(/\s+/)
     if (verb === 'layout') {
-      if (arg !== 'band' && arg !== 'pane') return { text: t()('layoutUsage', { layout }) }
+      if (arg !== 'band' && arg !== 'pane') return { text: tr('layoutUsage', { layout }) }
       layout = arg
       // the open asks for the keys before any wait (§13 rule 7)
-      if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title'), focus: true })
+      if (arg === 'pane') await $.ui.open({ id: PANE, title: tr('title'), focus: true })
       await $.store.set('layout', arg)
       bandLastCells = null
       $.ui.invalidate('ui.render')
       await writeHeartbeat($)
-      return { text: t()('layoutSet', { layout: arg }) }
+      return { text: tr('layoutSet', { layout: arg }) }
     }
-    // `/forge-stats usage` / `/forge-stats pet` open the pane on that tab (a path that needs no pointer)
+    // Legacy usage opens the overview; only pet explicitly opens the secondary tab.
     if (verb === 'usage' || verb === 'pet') {
-      paneTab = verb
+      paneTab = verb === 'pet' ? 'pet' : 'overview'
       if (verb === 'pet') lastCells = null
     }
     // ask for the keys first, while the composer the command came from is still empty (§13 rule 7:
     // the arrows and page keys only reach a pane that holds the keyboard; the wheel needs no focus)
-    await $.ui.open({ id: PANE, title: t()('title'), focus: true })
+    await $.ui.open({ id: PANE, title: tr('title'), focus: true })
     if (verb === 'usage') await refreshQuota($, true)
+    if (verb !== 'pet') paneTab = 'overview'
     if (verb === 'usage' || verb === 'pet') void $.ui.invalidate('ui.render')
     void refreshPet($)
-    return { text: t()('opened') }
+    return { text: tr('opened') }
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -673,152 +675,91 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const els = $.ui.resolve(e)
     const { Box, Text } = els
-    // Raster paints only in the terminal (other surfaces have no cell grid): draw ASCII there
-    const Raster = e.surface === 'terminal' && 'Raster' in els ? els.Raster : undefined
-    const tr = t()
-    const p = await read($, pet)
-    // bodyColumns may run ~2 cells wider than what draws; keep a margin.
-    const cols = Math.max(30, (e.props?.bodyColumns ?? 44) - 2)
-
-    // the operation area (tab strip + key hint) is the last CONTROL_ROWS rows; the content above it keeps the rest of bodyRows
-    const bodyRows = e.props.scroll.bodyRows
-    const dock = e.props.placement === 'dock'
-    const room = Math.max(1, bodyRows - CONTROL_ROWS)
-
-    let sprite = p.status === 'ok' && Raster !== undefined && paneTab === 'pet' ? (p.village?.sprite ?? null) : null
-    // sprite beside the stats when both fit (sprite + 2 gap + 28 text), else stacked
-    const side = sprite !== null && cols >= sprite.width + 2 + 28
-    let petPart = sprite === null ? petLines(p, cols, tr, Date.now()) : petLines(p, side ? cols - sprite.width - 2 : cols, tr, Date.now(), false)
-    // the Raster is atomic (rule row + sprite block): when it does not fit the content area the text-only pet lines are drawn instead of a sliced Raster
-    const spriteFrame0 = sprite === null ? null : halfBlockCells(sprite, spriteFrame)
-    const blockRows = spriteFrame0 === null ? 0 : side ? Math.max(spriteFrame0.rows, petPart.length) : spriteFrame0.rows + 1 + petPart.length
-    // not whole with the rule row: drop the rule (the tab strip names the tab) and keep the Raster; still not: the stats alone, no art
-    let withRule = true
-    if (sprite !== null && 1 + blockRows > room) {
-      withRule = false
-      if (blockRows > room) {
-        sprite = null
-        petPart = petLines(p, cols, tr, Date.now(), false)
-      }
-    } else if (sprite === null && paneTab === 'pet' && 1 + petPart.length > room) withRule = false
-
-    const now = Date.now()
-    const clockMs = Date.now()
-    drawnAt = clockMs
-    // a tab whose file went away is not kept: back to the pet
-    if (paneTab === 'fleet' && !fleetPresent) paneTab = 'pet'
-    const usage = paneTab === 'usage' ? await readUsage($, now) : null
-    const fleetView = paneTab === 'fleet' ? await readFleetQuota($) : null
-    const lines: Line[] = []
-    if (usage !== null) {
-      const age = usage.generatedAt === null ? null : Math.floor((now - usage.generatedAt) / 60_000)
-      lines.push(rule(tr('usage'), cols, age === null ? undefined : tr('usageAge', { n: age })), ...usageLines(usage, cols, tr, now, { state: quotaState, nowMs: clockMs }))
-    } else if (fleetView !== null) {
-      const gen = fleetView.status === 'ok' ? fleetView.generatedAt : null
-      lines.push(rule(tr('fleetTitle'), cols, gen === null ? undefined : tr('fleetAge', { n: Math.max(0, Math.floor((now - gen) / 60_000)) })), ...fleetLines(fleetView, cols, tr, now))
-    } else {
-      if (withRule) lines.push(rule(tr('pet'), cols))
-      if (sprite === null) lines.push(...petPart)
-    }
-
-    const draw = (s: Seg, i: number) => {
-      const k = "s" + i
-      switch (s.role) {
-        case 'structure':
-          return <Text key={k} color="subtle" wrap="truncate">{s.text}</Text>
-        case 'idle':
-          return <Text key={k} color="inactive" wrap="truncate">{s.text}</Text>
-        case 'dim':
-          return <Text key={k} dimColor wrap="truncate">{s.text}</Text>
-        case 'bold':
-          return <Text key={k} bold wrap="truncate">{s.text}</Text>
-        case 'mono':
-          return <Text key={k} mono wrap="truncate">{s.text}</Text>
-        default:
-          return <Text key={k} wrap="truncate">{s.text}</Text>
-      }
-    }
-
-    const row = (l: Line, k: string) => (
-      <Box key={k} flexDirection="row">
-        {l.map(draw)}
-      </Box>
-    )
-    // the tab strip: Buttons where the surface has them (a press switches the tab), plain Text otherwise; the active tab bold, the other dim
     const Button = 'Button' in els ? els.Button : undefined
-    const tabs: [PaneTab, string][] = [['pet', tr('tabPet')], ['usage', tr('tabUsage')], ...(fleetPresent ? [['fleet', tr('tabFleet')] as [PaneTab, string]] : [])]
-    const select = (id: PaneTab) => {
-      if (paneTab === id) return
-      paneTab = id
-      if (id === 'pet') lastCells = null
-      if (id === 'usage') void refreshQuota($, true)
-      void $.ui.invalidate('ui.render')
+    const Raster = e.surface === 'terminal' && 'Raster' in els ? els.Raster : undefined
+    const cols = Math.max(1, (e.props.bodyColumns ?? e.viewport?.columns ?? 44) - 2)
+    const terminalRows = e.viewport?.rows ?? e.props.scroll.bodyRows
+    const cap = paneCap(terminalRows, e.props.scroll.bodyRows)
+    paneRows = cap
+    const now = await $.clock.now().catch(() => Date.now())
+    drawnAt = Date.now()
+    const p = await read($, pet)
+    const usage = await readUsage($, now)
+    const draw = (seg: PaneSeg, i: number) => <Text key={'s' + i} color={seg.color ?? 'inactive'} {...(seg.bold ? { bold: true } : {})} wrap="truncate">{seg.text}</Text>
+    const line = (r: PaneRow) => <Box key={r.key} flexDirection="row">{r.segs.map(draw)}</Box>
+    const redraw = () => { void $.ui.invalidate('ui.render') }
+    const move = (group: Group, by: number, cycle = false) => {
+      activeGroup = group
+      const w = groupWindows[group]
+      offsets[group] = cycle && w.below === 0 ? 0 : Math.max(0, Math.min(w.total - w.visible, w.top + by))
+      redraw()
     }
-    const strip = (
-      <Box key="tabs" flexDirection="row" gap={2}>
-        {tabs.map(([id, label]) => {
-          const text = id === paneTab ? <Text bold>{label}</Text> : <Text dimColor>{label}</Text>
-          return Button !== undefined ? (
-            <Button key={'tab-' + id} onPress={() => select(id)}>
-              {text}
-            </Button>
-          ) : (
-            <Box key={'tab-' + id}>{text}</Box>
-          )
-        })}
-      </Box>
-    )
-    let petBlock = null
-    if (usage === null && sprite !== null && Raster !== undefined && spriteFrame0 !== null) {
-      const frame = spriteFrame0
-      lastCells = frame.cells
-      const art = <Raster key={SPRITE_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
-      const stats = <Box flexDirection="column">{petPart.map((l, i) => row(l, 'p' + i))}</Box>
-      petBlock = side ? (
-        <Box flexDirection="row" gap={2}>
-          {art}
-          {stats}
-        </Box>
-      ) : (
-        <Box flexDirection="column" gap={1}>
-          {art}
-          {stats}
-        </Box>
-      )
+    let body: unknown[] = []
+    let statusTail: PaneSeg[] = []
+    let decisions = 0
+    let petWindow: { above: number; below: number } | undefined
+    if (paneTab === 'overview') {
+      // Connect operator-origin assignments after fleet feat/operator-origin merges.
+      const plan = overviewPlan({ cols, rows: terminalRows, maxRows: e.props.scroll.bodyRows, now, brief: await readBrief($), fleet: await readFleetQuota($), usage, assignments: [], offsets, info: infoOpen })
+      groupWindows = plan.groups
+      statusTail = plan.statusTail
+      decisions = plan.decisions
+      body = plan.lines.map(r => r.more && r.group && Button !== undefined ? <Button key={r.key} plain onPress={() => move(r.group as Group, 1, true)}>{r.segs.map(draw)}</Button> : line(r))
+    } else {
+      let sprite = p.status === 'ok' && Raster !== undefined ? p.village?.sprite ?? null : null
+      const side = sprite !== null && cols >= sprite.width + 36
+      let petRows = petPaneRows(p, usage, sprite && side ? cols - sprite.width - 2 : cols, now)
+      let frame = sprite === null ? null : paneSpriteFrame(sprite, spriteFrame)
+      let blockHeight = frame === null ? 0 : side ? Math.max(frame.rows, petRows.stats.length) : frame.rows + petRows.stats.length
+      if (frame !== null && blockHeight + petRows.models.length > cap - 2) {
+        sprite = null
+        frame = null
+        petRows = petPaneRows(p, usage, cols, now)
+        blockHeight = 0
+      }
+      if (frame !== null && Raster !== undefined) {
+        lastCells = frame.cells
+        const art = <Raster key={SPRITE_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
+        const stats = <Box flexDirection="column">{petRows.stats.map(line)}</Box>
+        body = [side ? <Box key="pet-block" flexDirection="row" gap={2}>{art}{stats}</Box> : <Box key="pet-block" flexDirection="column">{art}{stats}</Box>, ...petRows.models.map(line)]
+        petTotal = blockHeight + petRows.models.length
+      } else {
+        const art = p.village && (e.surface !== 'terminal' || p.village.sprite === null) ? p.village.art_full.filter(a => a.trim() !== '').map((text, i) => ({ key: 'pet-art-' + i, segs: fitSegs([...gutter(i ? '' : '寵物'), ps(text)], cols) })) : []
+        const rows = [...art, ...petRows.stats, ...petRows.models]
+        petTotal = rows.length
+        const win = windowOf(rows.length, cap, false, petScroll)
+        if (win.overflow) petWindow = win
+        body = rows.slice(win.top, win.top + win.area).map(line)
+        if (win.indicator) body.push(line({ key: 'pet-more', segs: [...gutter(''), ps([win.above ? `↑ 還有 ${win.above}` : '', win.below ? `↓ 還有 ${win.below}` : ''].filter(Boolean).join(' · '), 'merged')] }))
+      }
     }
-
-    // the content window: the sprite block fits whole (checked above), so only text lines ever scroll
-    const total = lines.length + (petBlock === null ? 0 : blockRows)
-    paneTotal[paneTab] = total
-    const win = windowOf(total, bodyRows, dock, paneScroll[paneTab])
-    const shown = petBlock === null ? lines.slice(win.top, win.top + win.area) : lines
-    const more = [win.above > 0 ? tr('paneMore', { n: win.above }) : '', win.below > 0 ? '↓ ' + win.below : ''].filter(x => x !== '').join(' · ')
-
-    // top to bottom: blank pad (dock, short content), the "n more" row, the content, then the operation area. An overflowing tree carries one spare row under it so the engine
-    // still has a row to scroll and raises ui.scroll for the arrows (UiScrollInput.by: "an arrow a row while the engine has rows to scroll"); the hook never lets it move.
-    return (
-      <Box flexDirection="column">
-        {Array.from({ length: win.pad }, (_, i) => <Text key={'pad' + i}> </Text>)}
-        {win.indicator ? <Text key="more" dimColor wrap="truncate">{clipCells(more, cols)}</Text> : null}
-        {shown.map((l, i) => row(l, 'l' + (win.top + i)))}
-        {petBlock}
-        {strip}
-        <Text key="hint" dimColor wrap="truncate">{clipCells(tr('paneHint'), cols)}</Text>
-        {win.overflow ? <Text key="spare"> </Text> : null}
-      </Box>
-    )
+    const select = (tab: PaneTab) => { paneTab = tab; infoOpen = false; lastCells = null; redraw() }
+    const action = (id: string) => {
+      if (id === 'overview' || id === 'pet') return select(id)
+      if (id === 'd') { autopilotHint = true; redraw(); return }
+      if (id === 'i') { infoOpen = !infoOpen; redraw(); return }
+      const [group, direction] = id.split(':')
+      if (group === 'pet') {
+        petScroll = scrolled(petScroll, petTotal, { by: direction === 'up' ? -1 : 1, bodyRows: cap, contentRows: petTotal })
+        redraw()
+      } else move(group as Group, direction === 'up' ? -1 : 1, direction === 'cycle')
+    }
+    const chrome = paneChrome({ cols, tab: paneTab, statusTail, groups: groupWindows, decisions, info: infoOpen, autopilotHint, buttons: Button !== undefined, petWindow })
+    const chromeRow = (key: string, segs: typeof chrome.tabs) => <Box key={key} flexDirection="row">{segs.map((seg, i) => seg.action && Button !== undefined ? <Button key={seg.key} plain hotkey={seg.hotkey} onPress={() => action(seg.action as string)}>{draw(seg, i)}</Button> : draw(seg, i))}</Box>
+    const strip = chromeRow('tabs', chrome.tabs)
+    const hint = chromeRow('hint', chrome.hint)
+    // The host owns dock bodyRows. Return only actual rows, without padding or an overflow spare.
+    return <Box flexDirection="column">{body}{cap >= 2 ? strip : null}{cap >= 1 ? hint : null}</Box>
   })
 
-  // The pane draws its own window over the content (guideline §13.3), so the person's wheel and scroll keys move the mod's offset and the engine's window stays at 0. A plugin's own
-  // move (`$.ui.scroll`) is the engine's.
   on('ui.scroll', { component: 'Pane', requestId: PANE }, ($, e, next) => {
     if (e.origin.kind !== 'person') return next(e)
-    const was = paneScroll[paneTab]
-    const now = scrolled(was, paneTotal[paneTab], e)
-    if (now.top !== was.top || now.bottom !== was.bottom) {
-      paneScroll[paneTab] = now
-      void $.ui.invalidate('ui.render')
-    }
+    if (paneTab === 'overview') {
+      const w = groupWindows[activeGroup]
+      if (w.total <= w.visible) return next(e)
+      offsets[activeGroup] = Math.max(0, Math.min(w.total - w.visible, Math.abs(e.by) >= e.contentRows ? e.by < 0 ? 0 : w.total - w.visible : w.top + Math.max(-w.visible, Math.min(w.visible, e.by))))
+    } else petScroll = scrolled(petScroll, petTotal, { ...e, bodyRows: paneRows })
+    void $.ui.invalidate('ui.render')
     return {}
   })
   // The band above the prompt: Ferris | pet | memory and brain (statusline-band plan §2.5; speed is autopilot's, B32).

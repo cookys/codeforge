@@ -1,0 +1,8 @@
+
+tests/probe.test.tsx:
+(fail) probe [2.44ms]
+  Error: {"globals":["then","Error","AbortSignal","AbortController","TextEncoder","TextDecoder","URL","URLSearchParams","atob","btoa","structuredClone","crypto","performance","h","Fragment","console","setTimeout","setInterval","clearTimeout","clearInterval","undefined","NaN","Infinity","Object","Function","Array","RegExp","Iterator","SuppressedError","DisposableStack","AsyncDisposableStack","String","Promise","BigInt","Symbol","Intl","Temporal","Reflect","globalThis","EvalError","RangeError","ReferenceError","SyntaxError","TypeError","URIError","AggregateError","Boolean","Date","Map","Set","WeakMap","WeakSet","Number","ArrayBuffer","DataView","Int8Array","Uint8Array","Uint8ClampedArray","Int16Array","Uint16Array","Int32Array","Uint32Array","Float32Array","Float64Array","BigInt64Array","BigUint64Array","JSON","Math","Proxy","isNaN","isFinite","escape","unescape","decodeURI","decodeURIComponent","encodeURI","encodeURIComponent","eval","parseInt","parseFloat","Float16Array"],"classic":["PostToolUse","PostToolUseFailure","PostToolBatch","Notification","UserPromptSubmit","UserPromptExpansion","SessionStart","SessionEnd","Stop","StopFailure","SubagentStart","SubagentStop","PreCompact","PostCompact","PreModelSwitch","PostModelSwitch","PermissionRequest","PermissionDenied","Setup","TeammateIdle","TaskCreated","TaskCompleted","Elicitation","ElicitationResult","ConfigChange","WorktreeCreate","WorktreeRemove","InstructionsLoaded","CwdChanged","FileChanged","DirectoryAdded","MessageDisplay"],"tool":["call","check","judge","run","describe"]}
+
+ 0 pass
+ 1 fail
+Ran 1 test across 1 file. [0.20s]

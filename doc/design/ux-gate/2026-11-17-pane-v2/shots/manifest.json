@@ -1,0 +1,82 @@
+{
+  "command": [
+    "claude",
+    "plugin",
+    "test",
+    "plugins/forge-stats"
+  ],
+  "exit_code": 0,
+  "fixture_sha256": "3ef42796e47fb5e7f0c0af0f6877da1cf6cc8cc1a96b6c8fd9e64783e9ebf08c",
+  "shots": [
+    {
+      "path": "S1-160x40-dark.txt",
+      "rows": 21,
+      "sha256": "18936fd5d519d5eb933a15bf1bac9bb67dd04c512d344af4dbcdd2eb06928018"
+    },
+    {
+      "path": "S2-120x30-dark.txt",
+      "rows": 18,
+      "sha256": "68b9bcb1b2f6e50a60840be41e137b2535ef3c5a784b312ec61f0efe4d1f2182"
+    },
+    {
+      "path": "S3-80x24-dark.txt",
+      "rows": 14,
+      "sha256": "1299575ad314a045bd927ce3039ee48a1edace0033a2a63e00930caef5eaf5a6"
+    },
+    {
+      "path": "S4-160x40-dark.txt",
+      "rows": 8,
+      "sha256": "02f57da3bb62c4af5c498accfb4f3d6adebe46a8383c6276213c78fa73d44ca7"
+    },
+    {
+      "path": "S5-missing-160x40-dark.txt",
+      "rows": 14,
+      "sha256": "2d7f3b76f8117a1145ee1e2a55b4a3d7a2b1ec001d953b4584b0f9efe7910029"
+    },
+    {
+      "path": "S5-stale-160x40-dark.txt",
+      "rows": 21,
+      "sha256": "89961ae2f25d69a67f28d31dedb179e9b0615611406661f910fc11307b55658e"
+    },
+    {
+      "path": "S6-160x40-dark.txt",
+      "rows": 18,
+      "sha256": "c587d64856eed2a2e5b90b4e79bedbfb090476ab118c9e6ecfe3a4cbb0224f12"
+    },
+    {
+      "path": "S1-160x40-light.txt",
+      "rows": 21,
+      "sha256": "18936fd5d519d5eb933a15bf1bac9bb67dd04c512d344af4dbcdd2eb06928018"
+    },
+    {
+      "path": "S2-120x30-light.txt",
+      "rows": 18,
+      "sha256": "68b9bcb1b2f6e50a60840be41e137b2535ef3c5a784b312ec61f0efe4d1f2182"
+    },
+    {
+      "path": "S3-80x24-light.txt",
+      "rows": 14,
+      "sha256": "1299575ad314a045bd927ce3039ee48a1edace0033a2a63e00930caef5eaf5a6"
+    },
+    {
+      "path": "S4-160x40-light.txt",
+      "rows": 8,
+      "sha256": "02f57da3bb62c4af5c498accfb4f3d6adebe46a8383c6276213c78fa73d44ca7"
+    },
+    {
+      "path": "S5-missing-160x40-light.txt",
+      "rows": 14,
+      "sha256": "2d7f3b76f8117a1145ee1e2a55b4a3d7a2b1ec001d953b4584b0f9efe7910029"
+    },
+    {
+      "path": "S5-stale-160x40-light.txt",
+      "rows": 21,
+      "sha256": "89961ae2f25d69a67f28d31dedb179e9b0615611406661f910fc11307b55658e"
+    },
+    {
+      "path": "S6-160x40-light.txt",
+      "rows": 18,
+      "sha256": "c587d64856eed2a2e5b90b4e79bedbfb090476ab118c9e6ecfe3a4cbb0224f12"
+    }
+  ]
+}

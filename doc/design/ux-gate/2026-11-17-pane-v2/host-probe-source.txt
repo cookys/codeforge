@@ -1,0 +1,5 @@
+export const register = on => {on('command.run',{command:'probe'},async $ => {let focus,open;try{focus=await $.ui.focus({plugin:'autopilot',requestId:'autopilot-live',key:'decision'})}catch(e){focus=String(e)};try{open=await $.ui.open({plugin:'autopilot',id:'autopilot-live',title:'決策卡',focus:true})}catch(e){open=String(e)};return {text:JSON.stringify({focus,open})}})}
+
+import {test} from 'claude-code/testing'
+test('cross plugin focus/open', async ($,on) => {on('ui.open',(_,e)=>{console.log('OPEN='+JSON.stringify(e));return {value:{isPlaced:true}}});console.log('RESULT='+JSON.stringify(await $.command.run({command:'probe',args:'',origin:{kind:'composer'}})))})
+
