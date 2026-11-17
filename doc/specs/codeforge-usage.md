@@ -63,7 +63,7 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
 - 登入檔：`$CLAUDE_CONFIG_DIR/.claude.json`（有設且非空），否則 `$HOME/.claude.json`（在 `~/.claude/` 之外）。
   只讀 `oauthAccount` 底下三個欄位：`organizationUuid`、`organizationName`、`emailAddress`（operator 授權的範圍），
   用只命名這三欄的型別化 serde 結構解析，其餘欄位（token、accountUuid…）由 serde 忽略，不留、不記錄、不複製；
-  從不寫這個檔。org uuid 不離開本機：快照、summary、`fleet-quota.json` 只有別名（hash）、org 顯示名與登入 email。
+  從不寫這個檔。org uuid 只以 `org_id` 欄位原字串寫進本機配額快照（見下）；summary、`fleet-quota.json`、`usage push` 不帶它，只有別名（hash）、org 顯示名與登入 email。
   email 只出現在本機 0600 的快照、身分快取與 summary／`fleet-quota.json` 檔，**不進 repo、不進日誌、不進 fleet 訊息與 blob（`usage push` 上傳前拿掉 email）、
   不進錯誤訊息**（`Identity` 的 `Debug` 也不印它；測試與 fixture 只用 `@example.com`）。
 - 快取（statusline 每次刷新都跑，登入檔可能數 MB）：`<live_base>/codeforge/usage/identity-<config dir 8 碼>.json`
@@ -75,6 +75,7 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   不存在 = 未知，舊 summary 仍合格；1..=40 字元、無控制字元、無 `@`）與 `fleet-quota.json`（字串或 null）。
   文字表頭在別名後顯示（`personal` 顯示為「個人」／personal），順序：別名、org、provider、主機。
   主機太多放不下時，保留放得下的標籤並以「等 N 台」／「+N more」收尾，不會整段拿掉。
+- `org_id`（選填，`codeforge.quota/1` 的加法欄位，schema 名稱不變）：`oauthAccount.organizationUuid` 原字串，給 fleet courier 比對 hangar seat-pool 的 pool_key（完整 orgId）。沒有 uuid 或空字串就整個欄位省略；舊快照沒有這欄，讀成未知。合併規則照舊（同一帳號寫同一個檔，以最新寫入者為準，同 `org`）。pin 住的 token lane（覆寫別名、不取登入檔）不寫它。身分快取也存它；舊快取（有別名、沒有 org_id）視為未命中，重新解析一次。不進 summary、`fleet-quota.json`、`usage push`。
 - `email`：`emailAddress` 去頭尾空白後 3..=254 字元、恰一個 `@` 且兩邊都有字、無空白與控制字元，否則視為未知（None，
   不是錯誤、不拒收快照）。有 `AUTOPILOT_ACCOUNT` 時別名仍用它，但 email 與 org 照樣取自登入檔。`email` 放在本機快照
   （壞值丟掉、數字照留）、summary 帳號（**選填**，驗證規則同上，壞值整份 summary 不合格，訊息不含該值；契約的

@@ -607,6 +607,7 @@ mod tests {
         let snap = Snapshot {
             alias: "acct-a".into(),
             org: None,
+            org_id: None,
             email: None,
             root: Some("1a2b3c4d".into()),
             written_at_ms: 5,
@@ -647,6 +648,7 @@ mod tests {
             let snap = Snapshot {
                 alias: "acct-a".into(),
                 org: None,
+                org_id: None,
                 email: None,
                 root: None,
                 written_at_ms: 5,
@@ -728,6 +730,7 @@ mod tests {
         let snap = Snapshot {
             alias: "acct-a".into(),
             org: None,
+            org_id: None,
             email: Some("me@example.com".into()),
             root: None,
             written_at_ms: 5,
@@ -1017,6 +1020,7 @@ mod tests {
         Snapshot {
             alias: alias.into(),
             org: None,
+            org_id: None,
             email: None,
             root: None,
             written_at_ms,

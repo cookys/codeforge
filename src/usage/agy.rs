@@ -125,6 +125,7 @@ pub fn parse(text: &str, observed_ms: i64, key_hash: &str) -> Vec<quota::Snapsho
         .map(|p| quota::Snapshot {
             alias: p.alias,
             org: None,
+            org_id: None,
             email: None,
             root: None,
             written_at_ms: observed_ms,

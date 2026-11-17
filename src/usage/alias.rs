@@ -121,6 +121,8 @@ pub fn valid_email(s: &str) -> bool {
 pub struct Identity {
     pub alias: String,
     pub org: Option<String>,
+    /// `organizationUuid` verbatim (never shown; written to the quota snapshot as `org_id`).
+    pub org_id: Option<String>,
     pub email: Option<String>,
 }
 
@@ -130,6 +132,7 @@ impl std::fmt::Debug for Identity {
         f.debug_struct("Identity")
             .field("alias", &self.alias)
             .field("org", &self.org)
+            .field("org_id", &self.org_id.as_ref().map(|_| "<hidden>"))
             .field("email", &self.email.as_ref().map(|_| "<hidden>"))
             .finish()
     }
@@ -180,6 +183,7 @@ fn derive(bytes: &[u8]) -> Option<Identity> {
     Some(Identity {
         alias: format!("acct-{hex}"),
         org: acct.org_name.as_deref().and_then(org_display),
+        org_id: Some(uuid),
         email: email_shown,
     })
 }
@@ -217,6 +221,8 @@ struct Cached {
     size: u64,
     alias: Option<String>,
     org: Option<String>,
+    #[serde(default)]
+    org_id: Option<String>,
     #[serde(default)]
     email: Option<String>,
 }
@@ -273,12 +279,15 @@ fn login_identity_with(
         c.alias.filter(|a| valid_alias(a)).map(|alias| Identity {
             alias,
             org: c.org.filter(|o| valid_org(o)),
+            org_id: c.org_id.filter(|i| !i.is_empty()),
             email: c.email.filter(|e| valid_email(e)),
         })
     };
     if let Some(c) = read_small(cache, 4096).and_then(|b| serde_json::from_slice::<Cached>(&b).ok())
     {
-        if c.mtime_ns == mtime_ns && c.size == meta.len() {
+        // a cache from before `org_id` (alias set, no org id) is a miss: re-derive once
+        let has_id = c.alias.is_none() || c.org_id.is_some();
+        if c.mtime_ns == mtime_ns && c.size == meta.len() && has_id {
             return from(c);
         }
     }
@@ -290,6 +299,7 @@ fn login_identity_with(
             size: meta.len(),
             alias: id.as_ref().map(|i| i.alias.clone()),
             org: id.as_ref().and_then(|i| i.org.clone()),
+            org_id: id.as_ref().and_then(|i| i.org_id.clone()),
             email: id.as_ref().and_then(|i| i.email.clone()),
         },
     );
@@ -308,6 +318,7 @@ pub fn account_from(env_account: Option<&str>, login: Option<Identity>) -> Optio
         (Some(a), login) if valid_alias(a) => Some(Identity {
             alias: a.to_string(),
             org: login.as_ref().and_then(|i| i.org.clone()),
+            org_id: login.as_ref().and_then(|i| i.org_id.clone()),
             email: login.and_then(|i| i.email),
         }),
         (_, login) => login,
@@ -331,6 +342,7 @@ pub fn current_claude_account(live_base: &Path) -> (PathBuf, Option<Identity>) {
             Some(Identity {
                 alias,
                 org: None,
+                org_id: None,
                 email: None,
             }),
         );
@@ -569,7 +581,7 @@ mod tests {
         std::fs::write(
             &cache,
             format!(
-                r#"{{"mtime_ns":{mtime},"size":{},"alias":"acct-1a2b3c4d","org":"Acme"}}"#,
+                r#"{{"mtime_ns":{mtime},"size":{},"alias":"acct-1a2b3c4d","org":"Acme","org_id":"o"}}"#,
                 meta.len()
             ),
         )
@@ -590,8 +602,12 @@ mod tests {
         // the email is the one login field the cache keeps (0600); the Debug form hides it
         assert!(cached.contains("me@example.com"), "{cached}");
         assert_eq!(id.email.as_deref(), Some("me@example.com"));
+        // the org uuid is kept (as `org_id`) in the cache; the Debug form hides it
+        assert!(cached.contains("\"org_id\":\"o\""), "{cached}");
+        assert_eq!(id.org_id.as_deref(), Some("o"));
+        assert!(!out.contains("\"o\""), "{out}");
         for text in [out, cached.clone()] {
-            for secret in ["FAKE-TOKEN", "ACCT-SECRET", "ORGTYPE-SECRET", "\"o\""] {
+            for secret in ["FAKE-TOKEN", "ACCT-SECRET", "ORGTYPE-SECRET"] {
                 assert!(!text.contains(secret), "{secret} in {text}");
             }
         }
@@ -604,6 +620,23 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    #[test]
+    fn a_cache_from_before_org_id_is_re_derived_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join(".claude.json");
+        std::fs::write(&f, login("org-uuid-1", "me@example.com", "Acme")).unwrap();
+        let cache = dir.path().join("identity.json");
+        let first = login_identity(&f, &cache).unwrap();
+        // rewrite the cache as the old writer did: same mtime/size, alias set, no org_id
+        let mut c: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&cache).unwrap()).unwrap();
+        c.as_object_mut().unwrap().remove("org_id");
+        std::fs::write(&cache, c.to_string()).unwrap();
+        let again = login_identity(&f, &cache).unwrap();
+        assert_eq!(again.org_id.as_deref(), Some("org-uuid-1"));
+        assert_eq!(again, first);
     }
 
     #[test]

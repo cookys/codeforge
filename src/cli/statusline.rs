@@ -39,6 +39,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
                 .map(|alias| crate::usage::alias::Identity {
                     alias: alias.clone(),
                     org: None,
+                    org_id: None,
                     email: None,
                 });
             (lane.config_dir.clone(), acct)
@@ -462,6 +463,7 @@ fn record_quota_with(
             Identity {
                 alias: a.alias.clone(),
                 org: None,
+                org_id: None,
                 email: None,
             }
         } else {
@@ -493,6 +495,7 @@ fn record_quota_with(
     let snap = Snapshot {
         alias: acct.alias.clone(),
         org: acct.org.clone(),
+        org_id: acct.org_id.clone(),
         email: acct.email.clone(),
         root: if pin {
             None
@@ -1599,6 +1602,7 @@ mod tests {
         crate::usage::quota::Snapshot {
             alias: alias.into(),
             org: Some(alias.trim_start_matches("acct-").to_string()),
+            org_id: None,
             email: None,
             root: None,
             written_at_ms: 0,
@@ -1811,6 +1815,7 @@ mod tests {
         crate::usage::alias::Identity {
             alias: alias.into(),
             org: None,
+            org_id: None,
             email: email.map(str::to_string),
         }
     }

@@ -555,6 +555,7 @@ pub fn codex_snapshots(conn: &Connection, now_ms: i64) -> Result<Vec<quota::Snap
         Ok(quota::Snapshot {
             alias: r.get(0)?,
             org: None,
+            org_id: None,
             email: None,
             root: None,
             written_at_ms: at,
