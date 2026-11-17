@@ -155,7 +155,10 @@ AP 現有 `forge` 分頁（`tabs.ts:84,95`；`band.tsx:108`：開 forge-stats �
   4. codeforge `tux-lock` 對照 fleet 釘的 sha，不同時印差異（不擋，那是 fleet 的 repo）。
 - **機械檢查不到（明寫）：** hex 值本身與終端機／網頁色看起來是否一致；網頁 CSS（版面、字級、間距）；未入 `terms` 的自由文字；兩 repo 升版間的非同步落差（只靠 sha 釘住與通知）。
 - **locale**（P4b，擁有者 autopilot）：AP `locales.ts` 是產生檔（`gen-locales.js --check` 已在 `mods/live/run-tests.sh`）。共用用語的 key 改由 `tokens.json.terms` 產生，擴充 `gen-locales.js`／`locales.ts`，`--check` 不符就紅。P4a 不碰。
-- fleet 回覆（01M7ME32）：01M7M7Y7 未定版（設計系統計畫 11-19 12:00 交）；過渡主控台只有色名（fleet develop e8c67ba2 `console_brief.rs`），沒有用語表。fleet 決定**以 `tokens.json` 的 roles/terms 為唯一來源**，網頁只定 hex。缺的角色（如 stale、overdue、waiting_on）由 fleet 提供**角色名與對應的 CC 主題鍵**，P4a 定版前記進本節（目前待 fleet 提供，§9），不在網頁自加。
+- fleet 回覆（01M7ME32）：01M7M7Y7 未定版（設計系統計畫 11-19 12:00 交）；過渡主控台只有色名（fleet develop e8c67ba2 `console_brief.rs`），沒有用語表。fleet 決定**以 `tokens.json` 的 roles/terms 為唯一來源**，網頁只定 hex。缺的角色由 fleet 提供（01M7MHMP），P4a 照此寫入：
+  - **新增五個角色**：`stale`→inactive、`overdue`→error、`waiting_on`→subtle、`needs_human`→merged、`link`→suggestion。
+  - **fleet 用名對到既有角色，不另開名字**：ok=`done`、warn=`attention`、fail=`broken`、text_muted=`structure`；`running`、`idle` 同名。網頁一律用 tokens 名。
+  - 同鍵角色（overdue/broken 皆 error，stale/idle 皆 inactive，needs_human/action 皆 merged）靠文字標籤＋圖形分開，不靠顏色（逾期用 ◈，網頁側）。
 - 定版時由 AP 通知 fleet `tokens.json@<sha>`。第一版須在 11-19 12:00 前存在，故 P4 拆成 P4a（11-18）與 P4b（11-19）。
 
 ## 6. 寵物分頁（點 6）
@@ -213,7 +216,7 @@ P1–P3 不依賴 P4a 以後：寵物分頁先用 AP 現有 `GLYPHS`/`cellWidth`
 ## 9. 待決（交 PM）
 
 1. §3.2 選 A（併入），並把 01M7KRP3 的範圍改成「v2 內容進 autopilot-live 分頁」。建議：A。
-2. fleet 提供補充角色名與對應的 CC 主題鍵（§5），P4a 定版前。
+2. ~~fleet 補充角色~~ 已結（01M7MHMP，§5）。
 3. 寵物圖示三選一（操作員從截圖頁挑）。建議：cat（:3 後備最好認）。
 
 ## 10. 不做的事
