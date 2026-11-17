@@ -124,6 +124,7 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 | `doc/specs/codeforge-agent-coupling.md` | **ADR** — codeforge↔coding-agent 耦合接縫（4 surface：transcript→signal / hook wiring / session 事件 / statusline）。決策 *A-with-seam*：先綁 CC、命名守住接縫、不過早抽象，留多-agent（B）路 |
 | `doc/specs/codeforge-usage.md` | **用量（G36）** — 每帳號配額快照 + statusline 用量列、轉錄檔收集器（只存數字）、成本估算、`summary.json` 契約與 `usage push` |
 | `doc/specs/codeforge-mod-ui.md` | **開發依據** — Claude Code mod UI 能力與限制（已覆核，CC 2.1.314）、owner 終端實測（mod `Image` 在 Windows 終端不可用 → 像素走 Raster 半格）、codeforge↔mod 分工（`pet.json` 契約） |
+| `doc/specs/forge-stats-ux-gate.md` | **UX 閘門** — forge-stats 畫面改動上線前必過：carbon-high + astra 皆 ≥8/10 且無 Critical、最多 3 輪；評分項目（好用／fancy）、必交截圖 S1–S6 |
 | `.claude/rpg-engine-spec.md` | Phase 1 architectural decisions (daemon model, write ownership) |
 | `.claude/i18n-spec.md` | i18n two-layer design (compile-time UI + runtime content) |
 
@@ -131,7 +132,7 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 
 ## forge-stats mod
 
-The **forge-stats mod** lives in `plugins/forge-stats/` and is a global plugin, installed from the repo's directory marketplace (`.claude-plugin/marketplace.json`; `claude plugin marketplace add <codeforge>` + `claude plugin install forge-stats@codeforge`), so every project's session loads it (PM G33). It reads `pet.json` and autopilot's `autopilot.fleet` state and never spawns codeforge. Test: `claude plugin test plugins/forge-stats`. Specs: `doc/specs/codeforge-mod-ui.md`, `doc/specs/tui-guideline.md`.
+The **forge-stats mod** lives in `plugins/forge-stats/` and is a global plugin, installed from the repo's directory marketplace (`.claude-plugin/marketplace.json`; `claude plugin marketplace add <codeforge>` + `claude plugin install forge-stats@codeforge`), so every project's session loads it (PM G33). It reads `pet.json` and autopilot's `autopilot.fleet` state and never spawns codeforge. Test: `claude plugin test plugins/forge-stats`. Any change to what it draws passes the UX gate first (`doc/specs/forge-stats-ux-gate.md`). Specs: `doc/specs/codeforge-mod-ui.md`, `doc/specs/tui-guideline.md`.
 
 ## Knowledge Management
 
