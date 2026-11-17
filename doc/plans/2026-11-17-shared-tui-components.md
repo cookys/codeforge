@@ -33,7 +33,7 @@ FS = `plugins/forge-stats`（pet-tab 分支），AP = autopilot `mods/live`（b2
 | # | 發現 | 證據 | 會造成的錯 | 落點 |
 |---|---|---|---|---|
 | F1 | 寬度函式是手抄的，只差 ANSI 剝除 | FS `model.ts:8-25`、AP `ui.ts:18-52` | autopilot 加一個寬字區段，forge-stats 沒跟上，同一列兩邊算出不同寬度而錯位 | P4/P5 第一個抽出 |
-| F2 | 百分比取整三種：FS pane 四捨五入、FS panel 無條件捨去、AP 一律捨去 | FS `quota-view.ts:166`、`side.ts:44`、AP `ui.ts:204` | 用量 89.6% 在 pane 畫 90%、在 panel／autopilot 畫 89% | tux 定一個 `pct()`：捨去（AP 現行與 band 契約） |
+| F2 | 百分比取整三種：FS pane 四捨五入、FS panel 無條件捨去、AP 一律捨去 | FS `quota-view.ts:166`、`side.ts:44`、AP `ui.ts:204`、`band-contract.ts:57` | 用量 89.6% 在 pane 畫 90%、在 panel／autopilot 畫 89% | tux 定一個 `pct()`：`Math.floor(ratio*100 + 1e-9)`（照抄 AP 的 epsilon，防 0.29*100 掉成 28）；golden `width-cases.json` 旁加 `pct-cases.json`，含 0.29 → 29、0.896 → 89 |
 | F3 | 警告門檻兩套：FS `tight` 0.9、band 契約 80/100 | FS `quota.ts:20`、AP `band-statusline-contract.json:2-4` | 同一池在帶上已黃、在 pane 仍白 | tokens.json 一份門檻 |
 | F4 | FS 直接寫 theme key，AP 只准語意角色（lint L8）；FS 也直接寫符號字面（L2） | FS `model.ts:337`、`quota-view.ts:190`、v2 `overview-view.ts:9`；AP `ui-lint.test.js:179-233, 326` | vendor 進來後套 AP lint，FS 現有原始碼全紅 | P5 先改 FS 用 `PALETTE`/`GLYPHS`，再開 lint |
 | F5 | `●` 在 FS 是「最新」，在 AP 是「執行中」 | FS `model.ts:35`、AP `ui.ts:67` | 操作員在兩處看到同一符號兩種意思（tux 一符一義） | FS 改用 vendor 的語意符號 |
@@ -54,7 +54,8 @@ FS = `plugins/forge-stats`（pet-tab 分支），AP = autopilot `mods/live`（b2
 - 位置：autopilot `mods/tux/`，從 `mods/live/ui.ts` 抽出：`GLYPHS`（含 verified 註記）、`PALETTE`（8 theme key）、`cellWidth`/`displayWidth`、`strip()` 分頁列、`cutProse`、寬度退讓表，以及 `tokens.json`（§5）與 `golden/`（§4）。
 - 為什麼不是第三個 repo：mod 執行期不能跨 plugin import，兩邊本來就要各帶一份檔案；多一個 repo 只多一個發版點，不少一次複製。autopilot 已經有 tux 準則、lint I5/L1–L18 和 glyph-check，來源放在規則旁邊，改規則和改元件是同一個 commit。
 - 為什麼不是 codeforge 當來源：autopilot-live 是畫面主體（§3），forge-stats 併入後只剩資料和單機後備，畫得少的一邊不該擁有元件。
-- 發版：autopilot 每次改 `mods/tux/` 就在 `mods/tux/VERSION` 加一（整數），同 commit 更新 `golden/`。
+- autopilot 接受當擁有者（autopilot 01M7ME34，develop 33ca95225），條件照抄：抽出後 `ui.ts` 改從 `mods/tux/` import，不留第二份；`ui-lint`（含 `glyph-check.js`）改掃 `mods/tux/`。
+- 發版：autopilot 每次改 `mods/tux/` 就在 `mods/tux/VERSION` 加一（整數），同 commit 更新 `golden/`；golden 測試鎖住 VERSION（改了內容沒加版號 → 紅）。
 - 釘版本：codeforge `plugins/forge-stats/vendor/tux/` + `VENDOR.lock`：`{autopilot_sha, tux_version, files: {path: sha256}}`。
   - `scripts/tux-sync.sh <autopilot-sha>`：從 autopilot（本機 clone 或 GitHub）取該 sha 的 `mods/tux/`，寫檔、寫 lock，冪等。
   - check-all 加 `tux-lock`：vendor 檔的 sha256 必須等於 lock；手改 vendor 就紅。
@@ -112,7 +113,9 @@ v2 的分支保留不刪。v2 的內容（overview-first、fleet.brief/1）在 A
   - `terms`：用語表（zh-TW / en）：`待決`、`派工`、`審查`、`用量`、`寵物`、`陳舊`、`過期`、`無來源`……
 - 網頁那邊用同一份 `tokens.json` 的 `roles` 與 `terms`；hex 色值由 fleet 網頁自己定（終端機沒有 hex），但**語意名必須一一對到**。
 - 機械檢查：fleet 網頁 repo 也釘 `tokens.json` 的 sha256；兩邊的 lock 不同時，codeforge 的 `tux-lock` 印出差異（不擋，因為那是 fleet 的 repo）。
-- 待問 fleet：01M7M7Y7 目前的色名與用語表，第一代審查前拿到並併入 `terms`。
+- fleet 的回覆（01M7ME32）：01M7M7Y7 還沒定版（設計系統計畫 11-19 12:00 交）；過渡主控台只有一組**色名**（bg、fg、card、line、muted、link、red、amber、blue、grey、slate、down、bar、chipline、shadow，fleet develop e8c67ba2 `console_brief.rs`），沒有用語表。fleet 決定**以 `tokens.json` 的 roles/terms 為唯一來源**，網頁只定 hex；缺的角色（例如 stale、overdue、waiting_on）由 fleet 在本計畫審查裡提出，不在網頁自加。
+- fleet 的機械檢查：主控台 HTML 編進 Rust binary，所以 fleet 複製 `tokens.json` 進 fleet repo，加一個 sha256 等於釘住值的測試，執行期不抓；升版 = 換檔、換 sha、重跑 gate。定版時由 autopilot 通知 fleet `mods/tux/tokens.json@<sha>`。
+- 時程含意：`tokens.json` 的 roles/terms 第一版要在 11-19 12:00（fleet 設計系統交件）之前存在，所以 P4 拆成 P4a（tokens.json，11-18）與 P4b（其餘抽出，11-19）。
 
 ## 6. 寵物分頁（點 6）
 
@@ -123,7 +126,10 @@ v2 的分支保留不刪。v2 的內容（overview-first、fleet.brief/1）在 A
   - autopilot 只畫 `pet.icon.text`，畫之前用 vendor `displayWidth` 驗是不是正好 2 格，不是就不開這個分頁（不畫壞的）。
 - **glyph lint 白名單**：emoji 在 lint I5 / `EMOJI_BANNED` 是禁止的。例外寫成 `GLYPHS.pet.icons`（三個候選，`verified: owner-11-18`），lint 只對這一個 key 放行，且斷言每個都是單一 Emoji_Presentation 碼位、無 U+FE0F、`cellWidth === 2`。分頁標籤來自資料，不在原始碼字面裡；白名單的作用是讓 golden 和 reader 的寬度驗證有一份可查的清單。
   - 實測：patch 在 autopilot b28dbc5e6 上跑完整測試，glyph lint（L3、M7）綠；唯一紅的是 `parsePanel` 的形狀斷言，已修。
-- **與 tux §6.2 / L19 的衝突**：L19 禁止「額度繪製模組」出現 `codeforge.panel`。寵物不是額度，所以寵物分頁放在獨立模組 `mods/live/pettab.ts`，L19 的掃描範圍不含它；`shell.ts` 的 `usageRows` 讀 panel/1 的現況則照 §6.2 改讀 fleet.console/1（autopilot 側工作，不在 11-18 範圍）。
+- **與 tux §6.2 / L19 的衝突**：L19 禁止「額度繪製模組」出現 `codeforge.panel`。寵物不是額度，所以寵物分頁放在獨立模組 `mods/live/pettab.ts`。L19 目前只是準則條文、還沒接進 lint（tux-guidelines.md:607），所以例外要先寫下來，免得接 lint 時變成漏洞：
+  - tux-guidelines L19 那一列補一句：「`pettab.ts` 例外，只准讀 `codeforge.panel/1` 的 `pet` 欄位」；
+  - 反向檢查（同時進 lint）：`pettab.ts` 不得出現 `pace.v1`、`quota`、`usage` 字樣，也不得讀 panel/1 的 `pet` 以外欄位；負向控制：在 `pettab.ts` 植入 `panel.usage` → 紅。
+  - `shell.ts` 的 `usageRows` 讀 panel/1 的現況照 §6.2 改讀 fleet.console/1（autopilot 側工作，不在 11-18 範圍）。
 
 ## 7. 操作員 clone 回到發版節奏（點 7）
 
@@ -131,21 +137,22 @@ v2 的分支保留不刪。v2 的內容（overview-first、fleet.brief/1）在 A
 - 規則：操作員的 clone 只停在 **live tag**（`live-YYYY-MM-DD[-n]`），不跟 develop 的 tip。
   - 每次上線：PM go → 打 tag → hangar 的 live pin 腳本在各主機 `git fetch --tags && git checkout <tag>`，記 sha16、舊 tag（回滾指令 `git checkout <舊 tag>`）。
   - autopilot 同樣以 tag 釘；兩個 tag 一起寫進上線紀錄（`tux_version` 必須相同，否則不上）。
-- 11-18 的第一個 tag：`live-2026-11-18`，內容 = develop 上 a70f8fd（pet.icon）合入後的 sha；操作員 clone 從 47a2cf2 移到這個 tag。之後就是正常節奏。
+- 11-18 的第一個 tag：`live-2026-11-18`，內容 ≥ develop 1c630a4（pet.icon 已合入）；操作員 clone 從 47a2cf2 移到這個 tag。之後就是正常節奏。
 
 ## 8. 實作分工與時程（點 3 的「並行」）
 
 | 序 | 項目 | 誰 | 依賴 | 時程 |
 |---|---|---|---|---|
-| P1 | `pet.icon` 合入 develop（a70f8fd，已有測試） | codeforge | 無 | 11-18 上午 |
+| P1 | `pet.icon` 合入 develop | codeforge | 無 | **已完成**：develop 1c630a4（11-17，check-all 綠） |
 | P2 | 寵物分頁（patch → autopilot 正式 PR，含白名單與 reader 寬度驗證） | autopilot | 21:30 貼底版 | 11-18 |
 | P3 | 11-18 上線：codeforge `live-2026-11-18` + autopilot tag，同 `tux_version` | PM go，hangar 執行 | P1、P2 | 11-18 晚 |
-| P4 | 抽出 `mods/tux/` + `VERSION` + golden + tokens | autopilot | 計畫凍結 | 11-19 |
-| P5 | `tux-sync.sh`、`VENDOR.lock`、`tux-lock`/`tux-cross` 進 check-all；刪 forge-stats 自己的寬度與符號 | codeforge | P4 | 11-19～20 |
-| P6 | forge-stats v2 pane 退場；內容改成 autopilot-live 分頁的資料；重跑 UX 閘門 | codeforge + autopilot | P4、P5、PM 對 §3.4 點頭 | 11-20 起 |
-| P7 | fleet 網頁對 tokens.json | fleet | P4 | 依 fleet 排程 |
+| P4a | `mods/tux/tokens.json` 第一版（roles 沿用 `ui.ts:79-86` 八語意 + fleet 審查補的角色；terms zh-TW/en），通知 fleet path@sha | autopilot | 計畫凍結 | 11-18 |
+| P4b | 抽出 `mods/tux/` 其餘（GLYPHS、PALETTE、寬度、strip、cutProse、pct、dur）+ `VERSION` + golden；`ui.ts` 改 import | autopilot | P4a | 11-19 |
+| P5 | `tux-sync.sh`、`VENDOR.lock`、`tux-lock`/`tux-cross` 進 check-all；刪 forge-stats 自己的寬度與符號 | codeforge | P4b | 11-19～20 |
+| P6 | forge-stats v2 pane 退場；內容改成 autopilot-live 分頁的資料；重跑 UX 閘門 | codeforge + autopilot | P4b、P5、PM 對 §3.4 點頭 | 11-20 起 |
+| P7 | fleet 網頁釘 tokens.json（sha256 測試） | fleet | P4a | 11-19 |
 
-P1–P3 不依賴 P4 以後的任何東西：寵物分頁先用 autopilot 現有的 `GLYPHS`/`cellWidth`，P5 時再換成 vendor。
+P1–P3 不依賴 P4a 以後的任何東西：寵物分頁先用 autopilot 現有的 `GLYPHS`/`cellWidth`，P5 時再換成 vendor。
 
 ## 9. 待決（交 PM）
 
