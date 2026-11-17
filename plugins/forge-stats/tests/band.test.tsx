@@ -178,38 +178,6 @@ test('the stored pane layout opens the pane at session start', async ($, on) => 
   expect(w.opened).toBe(1)
 })
 
-test('the band draws 1 to 3 columns by width: Ferris, pet, memory; never speed or requests (B32)', async ($, on) => {
-  world(on)
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const cells0 = halfBlockCells(parseSprite(FERRIS)!, 0).cells
-  // one marker Text per column; speed and the request table must never show
-  const MARK = { pet: /^Ferris$/, memory: /^memory/, speed: /Speed|tok\/s|ϟ/, recent: /^Recent requests$/ } as const
-  const shows = async (cols: number) => {
-    const m = await $.ui.mount(band(cols))
-    const r = await m.find({ type: 'Raster' })
-    expect(r?.props.columns).toBe(24)
-    expect(r?.props.rows).toBe(12)
-    expect(r?.props.cells).toBe(cells0)
-    const seen: string[] = []
-    for (const [k, re] of Object.entries(MARK)) if ((await m.find({ type: 'Text', text: re })) !== undefined) seen.push(k)
-    await m.unmount()
-    return seen.join(' ')
-  }
-  expect(await shows(200)).toBe('pet memory')
-  expect(await shows(90)).toBe('pet memory')
-  expect(await shows(60)).toBe('pet')
-  expect(await shows(30)).toBe('')
-})
-
-test('the pet column carries all five stats and the memory column the session lights', async ($, on) => {
-  world(on)
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const m = await $.ui.mount(band(170))
-  for (const k of ['ATK ', 'DEF ', 'HP ', 'SUP ', 'VER ']) expect((await m.find({ type: 'Text', text: k })) !== undefined).toBe(true)
-  expect((await m.find({ type: 'Text', text: /^12$/ })) !== undefined).toBe(true)
-  await m.unmount()
-})
-
 test('the band passes on a survey, desktop, or the pane layout', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
@@ -222,19 +190,6 @@ test('the band passes on a survey, desktop, or the pane layout', async ($, on) =
   await $.command.run(cmd('layout pane'))
   const ui = await $.ui.mount(band(100))
   expect(await ui.find({ type: 'Raster' })).toBe(undefined)
-  await ui.unmount()
-})
-
-test('band blits go to the band instance', async ($, on) => {
-  const w = world(on)
-  const clock = mock.clock(on, { now: 1_000_000 })
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await clock.settle()
-  const ui = await $.ui.mount(band(100))
-  await clock.advance(2000)
-  const bandBlits = w.blits.filter(b => b.key === 'pet-band')
-  expect(bandBlits.length > 0).toBe(true)
-  expect(bandBlits.every(b => b.requestId === 'band-1')).toBe(true)
   await ui.unmount()
 })
 
@@ -272,17 +227,6 @@ test('rgbHex turns the village colour into #rrggbb and refuses anything else', (
   expect(rgbHex([256, 0, 0])).toBe(null)
   expect(rgbHex([1.5, 0, 0])).toBe(null)
   expect(rgbHex([1, 2])).toBe(null)
-})
-
-test('the band colours by meaning: the pet in its village colour, lights by state', async ($, on) => {
-  world(on)
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const m = await $.ui.mount(band(170))
-  expect((await m.find({ type: 'Text', text: /^Ferris$/ }))?.props.color).toBe('#d75f00')
-  // memory active and brain ok: both lights green
-  const lights = await m.findAll({ type: 'Text', text: /^● $/ })
-  expect(lights.map(t => t.props.color)).toEqual(['success', 'success'])
-  await m.unmount()
 })
 
 // the summary row's text (TUI guideline §2.2): the Texts of the Box keyed `summary`; undefined when forge-stats passed the row on
@@ -398,58 +342,6 @@ test('parseFleet takes autopilot.fleet v 1 only; summaryParts gives the widest f
   expect(summaryParts(null, null, 40, 'fleet')).toBe(null)
 })
 
-test('with autopilot\'s summary the one-row band draws the fleet counts before the pet (PM G33)', { plugins: [AUTOPILOT_V1] }, async ($, on) => {
-  world(on)
-  mock.clock(on, { now: 1_000_000 })
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  for (const [cols, want] of [[60, 'fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11 · Ferris Lv.3'], [28, 'fleet ▲ 1  ✗ 1  ⊘ 2  ● 4'], [6, '▲ 1']] as const) {
-    const ui = await $.ui.mount(band(cols, { maxRows: 1 }))
-    expect(await summaryText(ui)).toBe(want)
-    await ui.unmount()
-  }
-})
-
-test('another summary version is no summary: the pet alone', { plugins: [AUTOPILOT_V2] }, async ($, on) => {
-  world(on)
-  mock.clock(on, { now: 1_000_000 })
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount(band(60, { maxRows: 1 }))
-  expect(await summaryText(ui)).toBe('Ferris Lv.3')
-  await ui.unmount()
-})
-
-test('mini and full tiers put the fleet row on top only with a row to spare above the tier minimum (mini >= 7, full >= 13)', { plugins: [AUTOPILOT_V1] }, async ($, on) => {
-  world(on)
-  const clock = mock.clock(on, { now: 1_000_000 })
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await clock.settle()
-  for (const [rows, top] of [[6, false], [7, true], [12, false], [13, true]] as const) {
-    const ui = await $.ui.mount(band(100, { maxRows: rows }))
-    expect(await ui.find({ type: 'Raster' }) !== undefined).toBe(true)
-    const keys = (await ui.findAll({ type: 'Box' })).map(b => b.props.key)
-    expect(keys.includes('fleet')).toBe(top)
-    await ui.unmount()
-  }
-})
-
-test('six to eleven rows draw the 16x6 mini Ferris, and its blits are mini-sized', async ($, on) => {
-  const w = world(on)
-  const clock = mock.clock(on, { now: 1_000_000 })
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await clock.settle()
-  const mini = parseSprite(FERRIS_MINI, 16, 12)!
-  const ui = await $.ui.mount(band(100, { maxRows: 8 }))
-  const r = await ui.find({ type: 'Raster' })
-  expect(r?.props.columns).toBe(16)
-  expect(r?.props.rows).toBe(6)
-  expect(r?.props.cells).toBe(halfBlockCells(mini, 0).cells)
-  await clock.advance(2000)
-  const bandBlits = w.blits.filter(b => b.key === 'pet-band')
-  expect(bandBlits.length > 0).toBe(true)
-  expect(bandBlits.every(b => b.cells.length === halfBlockCells(mini, 0).cells.length)).toBe(true)
-  await ui.unmount()
-})
-
 test('a label alone never blits the band', async ($, on) => {
   const w = world(on)
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -459,22 +351,6 @@ test('a label alone never blits the band', async ($, on) => {
   await clock.advance(2000)
   expect(w.blits.filter(b => b.key === 'pet-band').length).toBe(0)
   await ui.unmount()
-})
-
-test('label then expanded in one render: the expanded call decides the band blits', async ($, on) => {
-  const w = world(on)
-  const clock = mock.clock(on, { now: 1_000_000 })
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await clock.settle()
-  // the engine runs both calls under the one band instance; the harness mounts one at a time
-  const label = await $.ui.mount(band(16, { maxRows: 1 }))
-  await label.unmount()
-  const full = await $.ui.mount(band(100, { maxRows: 12 }))
-  await clock.advance(2000)
-  const bandBlits = w.blits.filter(b => b.key === 'pet-band')
-  expect(bandBlits.length > 0).toBe(true)
-  expect(bandBlits.every(b => b.requestId === 'band-1' && b.cells.length === halfBlockCells(parseSprite(FERRIS)!, 0).cells.length)).toBe(true)
-  await full.unmount()
 })
 
 test('after a model step the band and the summary show no speed (B32)', async ($, on) => {
@@ -545,4 +421,78 @@ test('a tail a plugin above already set stays, forge-stats\' lights follow it', 
   const ui = await $.ui.mount({ ...HINT, props: { ...HINT.props, tail: 'other plugin' } })
   await ui.unmount()
   expect(seen.at(-1)).toEqual({ hint: '? for shortcuts', tail: 'other plugin · memory 12 entries · brain connected' })
+})
+
+// ---- 01M7MBV76H: the band never takes rows from autopilot-live ----
+// Since Claude Code 2.1.326 the engine composes every plugin's AbovePrompt part in one column, so forge-stats is no longer asked only from inside autopilot's forge
+// tab: its part stacks under autopilot-live's band. A 13-row Ferris there pushed the decision cards and the send row out of view (operator, 11-17).
+
+test('without autopilot the band is one summary row at every height and width: never a Raster, never a band blit', async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  for (const rows of [1, 3, 6, 7, 12, 13, 20, 40]) {
+    for (const cols of [40, 80, 120, 160]) {
+      const ui = await $.ui.mount(band(cols, { maxRows: rows }))
+      expect(await summaryText(ui)).toBe('Ferris Lv.3')
+      await clock.advance(1000)
+      await ui.unmount()
+    }
+  }
+  expect(w.blits.filter(b => b.key === 'pet-band')).toEqual([])
+})
+
+// autopilot-live as the operator's terminal composes it: the band row, a decision card and the send row at the bottom, then whatever the plugins below add
+const DECIDE_ROWS = ['ⓘ autopilot · 待決 1', '待決 d-1234abcd：要不要上線？ [A] 上線 [B] 等等', '送出 ⏎']
+const AUTOPILOT_LIVE = {
+  name: 'autopilot',
+  register: ((on: any) => {
+    on('session.start', async ($: any, e: any, next: any) => {
+      await $.state.set({ plugin: 'autopilot', key: 'fleet' }, { v: 1, fetchedMs: 999000, error: null, capped: 0, totals: { needYou: 1, failed: 0, stuck: 0, running: 0, waiting: 0 }, lanes: [], topStuck: null })
+      return next(e)
+    })
+    on('ui.render', { component: 'AbovePrompt' }, async ($: any, e: any, next: any) => {
+      const { Box, Text } = $.ui.resolve(e)
+      const below = await next(e)
+      return (
+        <Box key="autopilot-live" flexDirection="column">
+          <Text key="ap-0">{'ⓘ autopilot · 待決 1'}</Text>
+          <Text key="ap-1">{'待決 d-1234abcd：要不要上線？ [A] 上線 [B] 等等'}</Text>
+          <Text key="ap-send">{'送出 ⏎'}</Text>
+          {below}
+        </Box>
+      )
+    })
+  }) as never,
+}
+
+// golden: with autopilot-live loaded, its decision card and send row are the last rows drawn above the prompt, so they stay in view without scrolling
+test('golden: with autopilot-live loaded the decision card and the send row stay at the bottom; forge-stats adds no row and no Raster (160x40, 80x24)', { plugins: [AUTOPILOT_LIVE] }, async ($, on) => {
+  const w = world(on)
+  const clock = mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  // the rows the engine leaves above the prompt in a 160x40 and an 80x24 terminal
+  for (const [cols, rows] of [[160, 20], [80, 12]] as const) {
+    const ui = await $.ui.mount(band(cols, { maxRows: rows, scroll: { offset: 0, bodyRows: rows - 1 } }))
+    expect(await ui.find({ type: 'Raster' })).toBe(undefined)
+    const texts = ((await ui.findAll({ type: 'Text' })) as unknown as { text: string }[]).map(t => t.text)
+    expect(texts).toEqual(DECIDE_ROWS)
+    expect(texts[texts.length - 1]).toBe('送出 ⏎')
+    await clock.advance(1000)
+    await ui.unmount()
+  }
+  expect(w.blits.filter(b => b.key === 'pet-band')).toEqual([])
+})
+
+test('any autopilot (another summary version too) makes the band pass at every height', { plugins: [AUTOPILOT_V2] }, async ($, on) => {
+  world(on)
+  mock.clock(on, { now: 1_000_000 })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  for (const rows of [1, 6, 13, 20]) {
+    const ui = await $.ui.mount(band(120, { maxRows: rows }))
+    expect(await summaryText(ui)).toBe(undefined)
+    await ui.unmount()
+  }
 })

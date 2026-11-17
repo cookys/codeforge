@@ -9,6 +9,11 @@ hook=${HOOK:-$root/.githooks/post-checkout}
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/checkout-guard.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+# Run from a git hook (pre-push runs check-all), git exports GIT_DIR, GIT_INDEX_FILE and the like for the repo being pushed: left set, every
+# `git init`, `git config` and commit below lands in THAT repo (11-17: core.bare=true, a hooksPath into this temp dir and an "init" commit
+# deleting every file on the pushed branch). Clear them so the throwaway repo is the only one touched.
+mapfile -t git_local_env < <(git rev-parse --local-env-vars)
+unset "${git_local_env[@]}"
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid
 
 fails=0
