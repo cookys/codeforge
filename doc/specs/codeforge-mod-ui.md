@@ -165,7 +165,8 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   測試宿主 `ui.focus` 回報 no implementation，`ui.open` 不保留外加 plugin 參數；未證實跨 mod 聚焦，
   因此 `d` 在按鍵列顯示「輸入 /autopilot 開決策卡」，不另外建立同名空 pane。
   截圖：`UX_SHOTS_DIR=<目錄> python3 plugins/forge-stats/tests/export-ux-shots.py`。
-  測試 sandbox 不能讀程序環境或寫實體檔案，因此匯出腳本執行同一份 `ux-shots.test.tsx` 斷言再寫文字與語意色；未設目錄不寫檔。
+  測試 sandbox 不能讀程序環境或寫實體檔案，因此匯出腳本執行同一份 `ux-shots.test.tsx` 斷言再寫文字、語意色與宿主預設 light/dark 前景／參考底色；未設目錄不寫檔。
+  匯出時比對已安裝宿主的色盤與 fixture；一般文字參考底色對比 ≥4.5，僅結構線 ≥2。自訂主題與實體終端仍須目視檢查。
   UX 閘門與評分依 [forge-stats-ux-gate.md](forge-stats-ux-gate.md)，這次證據在
   [pane v2 評審包](../design/ux-gate/2026-11-17-pane-v2/README.md)。
 - **TUI**：mod pane 放一眼看懂的 widget（寵物、縮圖；tok/s 歸 autopilot）；需要操作的完整介面留給 `codeforge attach`

@@ -1,23 +1,41 @@
 {
-  "phase": "candidate; final re-run follows independent review",
+  "phase": "final",
   "checks": [
     {
-      "command": "claude plugin test plugins/forge-stats",
+      "command": [
+        "claude",
+        "plugin",
+        "test",
+        "plugins/forge-stats"
+      ],
       "exit_code": 0,
-      "log": "/tmp/forge-stats-pane-v2-evidence/05-controls-boundaries.log",
-      "sha256": "50e915b4e34ca66ec16add972aa4f1d7aff7eb4a3989c9df7daef85ecef2a08f"
+      "seconds": 4.45,
+      "log": "/tmp/forge-stats-pane-v2-evidence/r2-final-plugin.log",
+      "sha256": "f59f0e9b41f5aa5c8365d83ba985931845fbba2eeabbf6947f09ad2ec134b657"
     },
     {
-      "command": "env -u NO_COLOR ./scripts/check-all.sh",
+      "command": [
+        "env",
+        "-u",
+        "NO_COLOR",
+        "./scripts/check-all.sh"
+      ],
       "exit_code": 0,
-      "log": "/tmp/forge-stats-pane-v2-evidence/check-all-with-color.log",
-      "sha256": "52aaf891606ff6d982bb28e4664054831e9c2ce8baa4110f265866d1170befde"
+      "seconds": 14.69,
+      "log": "/tmp/forge-stats-pane-v2-evidence/r2-final-check-all.log",
+      "sha256": "b0bcdd6cc8b977207e4435873dc516522eaa4a5601a0215c538ee67473956bf7"
     },
     {
-      "command": "python3 scripts/check-doc-drift.py",
+      "command": [
+        "python3",
+        "plugins/forge-stats/tests/export-ux-shots.py"
+      ],
+      "environment": {
+        "UX_SHOTS_DIR": "doc/design/ux-gate/2026-11-17-pane-v2/shots"
+      },
       "exit_code": 0,
-      "log": "/tmp/forge-stats-pane-v2-evidence/05-doc-drift.log",
-      "sha256": "dfe6be0718f9a2234cc8558b40bf382c2e3515f15bedf6fc140b563cfd919849"
+      "log": "/tmp/forge-stats-pane-v2-evidence/r2-shots-final.log",
+      "sha256": "17ad7312b81fcecccc713dca3a7c192c9fa95c25f6a115197ff8ffb577d30f91"
     }
   ]
 }

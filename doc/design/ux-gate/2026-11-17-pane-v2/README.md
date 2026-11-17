@@ -55,3 +55,17 @@
 沒有部署、合併或推送；PM 的 160x40 上線放行尚未要求。沒有改 band 畫法、Rust、autopilot repo 或使用者的 .claude；沒有讓 mod 啟動行程。operator-origin 正式來源尚未存在，正式交辦固定空陣列；速度來源未提供，因此不顯示 tok/s。未另外讀真實 fleet 資料。
 
 逐檔變更原因見 `changed-files.md`。兩家 UX 評審的原始 JSON 與分數存於各輪檔案，最多三輪；本文不先宣稱評審已通過。
+
+## 第一輪後的修正
+
+Astra 第一輪 7/10，沒有 Critical；原始評審在 round-1-astra.json。
+
+| 發現 | 處理 | 驗證 |
+|---|---|---|
+| M1：窄畫面會移除 u/a/i 綁定 | 依寬度切換完整／精簡鍵帽，保留每個有效動作；換頁清除 d 提示 | r2-navigation-red exit 1；r2-actions-verified 中此項通過；r2-navigation-green exit 0 |
+| M2：無 need_you 的交辦縮為零筆 | 非空交辦至少保留一筆，逐一捲動可到全部交辦 | r2-navigation-red exit 1；r2-navigation-green exit 0，198 通過 |
+| M3：主題只驗名稱 | 從已安裝宿主內建表取 light/dark 色盤，解析每段前景／背景；本文 ≥4.5、僅結構線 ≥2 的參考底色對比斷言；匯出時比對原宿主色盤 | r2-theme-red exit 1；r2-theme-green / r2-theme-export exit 0，199 通過 |
+| m1：六列明細未說有省略 | 首列標「前 6/8」等實際模型數，仍最多六筆成本列 | r2-model-subset-red exit 1；r2-model-subset-green exit 0 |
+
+色盤事實來源與解析器雜湊見 shots/host-theme-provenance.json；fixture 是宿主 2.1.326 的預設非 ANSI light/dark，黑／白是明示的參考畫布。使用者自訂主題、終端色彩夾制與實體對比仍未聲稱通過。
+Carbon 初次工具讀檔遭 headless command 權限拒絕，其後大包 Read 達時限；這些未產生分數，不算已完成的評審。以 106388-byte 內嵌完整來源 diff、所有截圖（相同位元組以 SHA256 去重）重試，未提高工具權限。

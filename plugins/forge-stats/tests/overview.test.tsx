@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { overviewPlan } from '../hooks/overview-view'
+import { paneChrome } from '../hooks/pane-controls'
 import { parseBrief } from '../hooks/brief-view'
 import { displayWidth } from '../hooks/model'
 import type { FleetAccount } from '../hooks/fleet-view'
@@ -19,6 +20,27 @@ test('overview stays within 60%, has no blank rows, decisions first and one no-s
     expect(p.groups.blocked.visible).toBeGreaterThanOrEqual(3)
     expect(ls.join('\n')).not.toMatch(/優先派工|停派新工|池 \d+\//)
   }
+})
+
+test('every nonempty assignment group keeps a real scrollable row even with no need_you state', () => {
+  const inp = input(80, 24)
+  inp.assignments = assignments().map(a => ({ ...a, state: 'waiting' }))
+  const p = overviewPlan(inp)
+  expect(p.groups.assignments.visible).toBeGreaterThanOrEqual(1)
+  const reached = new Set<string>()
+  for (let top = 0; top < inp.assignments.length; top++) {
+    const view = overviewPlan({ ...inp, offsets: { ...inp.offsets, assignments: top } })
+    for (const a of inp.assignments) if (text(view).some(l => l.includes(a.who))) reached.add(a.who)
+  }
+  expect(reached.size).toBe(inp.assignments.length)
+})
+
+test('80-column chrome retains every live action after scrolling and the autopilot explanation', () => {
+  const p = overviewPlan({ ...input(80, 24), offsets: { blocked: 1, pools: 0, assignments: 0 } })
+  const chrome = paneChrome({ cols: 78, tab: 'overview', statusTail: p.statusTail, groups: p.groups, decisions: 3, info: false, autopilotHint: true, buttons: true })
+  expect(displayWidth(chrome.hint.map(s => s.text).join(''))).toBeLessThanOrEqual(78)
+  for (const key of ['j', 'k', 'u', 'a', 'i']) expect(chrome.hint.some(s => s.hotkey === key)).toBe(true)
+  expect(chrome.hint.map(s => s.text).join('')).toContain('輸入 /autopilot 開決策卡')
 })
 
 test('short overview is at most ten rows; missing and stale brief are explicit warning states', () => {

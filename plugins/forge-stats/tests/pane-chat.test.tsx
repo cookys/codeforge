@@ -32,6 +32,12 @@ test('scrolling blocked and pools keeps both control rows on their rows; Home/En
     expect(rows[at]).toContain('分頁')
     expect(rows[at + 1]).toContain('Esc 回輸入框')
   }
+  await ui.press({ key: 'key-d' })
+  for (const key of ['key-j', 'key-k', 'key-u', 'key-i']) expect(await ui.find({ type: 'Button', key })).not.toBe(undefined)
+  expect(topRows(await ui.drawn()).slice(-1)[0]).toContain('輸入 /autopilot 開決策卡')
+  await ui.press({ key: 'key-i' })
+  await ui.press({ key: 'key-i' })
+  await ui.press({ key: 'key-u' })
   for (const by of [-1000, 1000, -1]) {
     await $.ui.scroll({ component: 'Pane', requestId: 'forge-stats', offset: 0, by, bodyRows: 12, contentRows: 100, origin: { kind: 'person' } })
     expect(topRows(await ui.drawn()).length - 2).toBe(at)
@@ -54,6 +60,7 @@ test('legacy usage opens overview; pet costs have at most six rows; focus is req
   expect(topRows(await ui.drawn()).join('')).toContain('▸寵物')
   const models = (await ui.findAll({ type: 'Text' })).filter(n => /model-/.test(n.text))
   expect(models).toHaveLength(6)
+  expect(models[0].text).toContain('前 6/8')
   expect(await ui.find({ type: 'Raster' })).not.toBe(undefined)
   expect(topRows(await ui.drawn()).join('')).not.toMatch(/待決|pool-0|⋯10/)
 })

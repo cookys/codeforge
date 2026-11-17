@@ -733,7 +733,7 @@ export const register: Register = on => {
         if (win.indicator) body.push(line({ key: 'pet-more', segs: [...gutter(''), ps([win.above ? `↑ 還有 ${win.above}` : '', win.below ? `↓ 還有 ${win.below}` : ''].filter(Boolean).join(' · '), 'merged')] }))
       }
     }
-    const select = (tab: PaneTab) => { paneTab = tab; infoOpen = false; lastCells = null; redraw() }
+    const select = (tab: PaneTab) => { paneTab = tab; infoOpen = false; autopilotHint = false; lastCells = null; redraw() }
     const action = (id: string) => {
       if (id === 'overview' || id === 'pet') return select(id)
       if (id === 'd') { autopilotHint = true; redraw(); return }

@@ -5,6 +5,8 @@
 - `doc/design/ux-gate/2026-11-17-pane-v2/focus-api-probe.txt` — 逐步驗證、宿主限制或評審的可重現證據。
 - `doc/design/ux-gate/2026-11-17-pane-v2/harness-capability-probe.txt` — 逐步驗證、宿主限制或評審的可重現證據。
 - `doc/design/ux-gate/2026-11-17-pane-v2/host-probe-source.txt` — 逐步驗證、宿主限制或評審的可重現證據。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-astra.json` — Astra 第一輪獨立原始 JSON 與分數。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-responses.json` — 逐項評審回應與紅綠驗證紀錄。
 - `doc/design/ux-gate/2026-11-17-pane-v2/shots/S1-160x40-dark.txt` — 畫面文字與語意色證據。
 - `doc/design/ux-gate/2026-11-17-pane-v2/shots/S1-160x40-light.txt` — 畫面文字與語意色證據。
 - `doc/design/ux-gate/2026-11-17-pane-v2/shots/S2-120x30-dark.txt` — 畫面文字與語意色證據。
@@ -19,6 +21,7 @@
 - `doc/design/ux-gate/2026-11-17-pane-v2/shots/S5-stale-160x40-light.txt` — 畫面文字與語意色證據。
 - `doc/design/ux-gate/2026-11-17-pane-v2/shots/S6-160x40-dark.txt` — 畫面文字與語意色證據。
 - `doc/design/ux-gate/2026-11-17-pane-v2/shots/S6-160x40-light.txt` — 畫面文字與語意色證據。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/host-theme-provenance.json` — 實際宿主色盤、參考畫布與原始表雜湊。
 - `doc/design/ux-gate/2026-11-17-pane-v2/shots/manifest.json` — 畫面數量與內容雜湊。
 - `doc/design/ux-gate/2026-11-17-pane-v2/test-migrations.md` — 逐步驗證、宿主限制或評審的可重現證據。
 - `doc/design/ux-gate/2026-11-17-pane-v2/verification.json` — 逐步驗證、宿主限制或評審的可重現證據。
@@ -35,6 +38,7 @@
 - `plugins/forge-stats/tests/brief.test.tsx` — brief 邊界、未知 kind、去重與排序回歸。
 - `plugins/forge-stats/tests/export-ux-shots.py` — 在測試 sandbox 外依 UX_SHOTS_DIR 匯出同一份畫面。
 - `plugins/forge-stats/tests/fixtures/brief-sample.ts` — 測試 sandbox 可匯入的原始假資料鏡像，匯出時比對 JSON。
+- `plugins/forge-stats/tests/fixtures/host-themes.ts` — 宿主預設 light/dark 色盤的可比對測試 fixture。
 - `plugins/forge-stats/tests/fixtures/pane-runtime.ts` — 有固定時鐘的假資料宿主與 pane 掛載工具。
 - `plugins/forge-stats/tests/fixtures/pane-sample.ts` — 總覽與交辦的型別化假資料。
 - `plugins/forge-stats/tests/fleet-tab.test.tsx` — 保留 fleet parser，移除第三頁的舊畫面斷言。

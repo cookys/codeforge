@@ -6,6 +6,7 @@ import { displayWidth, parseUsage } from '../hooks/model'
 import { overviewPlan } from '../hooks/overview-view'
 import type { PaneSeg } from '../hooks/overview-view'
 import { paneChrome } from '../hooks/pane-controls'
+import { HOST_THEMES } from './fixtures/host-themes'
 import { BRIEF_SAMPLE } from './fixtures/brief-sample'
 import { NOW, assignments } from './fixtures/pane-sample'
 import { command, paneTarget, quotaFixture, runtimeWorld, start, textOf, usageFixture } from './fixtures/pane-runtime'
@@ -15,12 +16,29 @@ type ShotLine = PaneSeg[]
 const words = (l: ShotLine) => l.map(s => s.text).join('')
 const ROLES = ['inactive', 'subtle', 'merged', 'warning', 'error', 'success', 'pixel']
 
-// Resolve both terminal themes through semantic names; RGB belongs only to sprite content.
-const resolveTone = (tone: string | undefined, theme: 'dark' | 'light') => {
-  expect(['dark', 'light']).toContain(theme)
-  expect(ROLES).toContain(tone ?? 'inactive')
-  return tone ?? 'inactive'
+// Resolve the installed host palette on explicit black/white reference canvases.
+const luminance = (rgb: string) => {
+  const values = (rgb.match(/\d+/g) ?? []).map(v => Number(v) / 255).map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2]
 }
+const contrast = (fg: string, bg: string) => {
+  const a = luminance(fg), b = luminance(bg)
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+}
+const resolveTone = (tone: string | undefined, theme: 'dark' | 'light') => {
+  const role = tone ?? 'inactive'
+  expect(ROLES).toContain(role)
+  const palette = HOST_THEMES[theme]
+  if (role === 'pixel') return { role, foreground: 'source-sprite', background: palette.background, contrast: null }
+  const foreground = palette.foreground[role as keyof typeof palette.foreground]
+  const ratio = contrast(foreground, palette.background)
+  expect(ratio).toBeGreaterThanOrEqual(role === 'subtle' ? 2 : 4.5)
+  return { role, foreground, background: palette.background, contrast: Number(ratio.toFixed(3)) }
+}
+test('UX theme resolution distinguishes the installed host light and dark palettes', () => {
+  expect(resolveTone('warning', 'light')).not.toEqual(resolveTone('warning', 'dark'))
+  expect(resolveTone('inactive', 'light')).not.toEqual(resolveTone('inactive', 'dark'))
+})
 function receipt(name: string, cols: number, rows: number, lines: ShotLine[], overview: boolean, theme: 'dark' | 'light') {
   expect(lines.length).toBeLessThanOrEqual(Math.min(30, Math.floor(rows * 0.6)))
   for (const l of lines) {
@@ -34,8 +52,9 @@ function receipt(name: string, cols: number, rows: number, lines: ShotLine[], ov
   const plain = lines.map(words)
   expect(plain[plain.length - 2]).toContain('分頁')
   expect(plain[plain.length - 1]).toContain('Esc 回輸入框')
-  const semantic = lines.map(l => l.map(s => `[${resolveTone(s.color, theme)}]${s.text}[/]`).join(''))
-  console.log('UX_SHOT ' + JSON.stringify({ name: `${name}-${cols}x${rows}-${theme}.txt`, plain, semantic }))
+  const semantic = lines.map(l => l.map(s => `[${s.color ?? 'inactive'}]${s.text}[/]`).join(''))
+  const resolved = lines.map(l => l.map(s => ({ text: s.text, ...resolveTone(s.color, theme) })))
+  console.log('UX_SHOT ' + JSON.stringify({ name: `${name}-${cols}x${rows}-${theme}.txt`, plain, semantic, resolved, theme }))
 }
 
 function rasterRows(n: RenderNode): ShotLine[] {
@@ -105,5 +124,6 @@ for (const theme of ['dark', 'light'] as const) {
 }
 
 test('UX exporter fixture receipt: exact supplied brief data', () => {
+  console.log('UX_THEMES ' + JSON.stringify(HOST_THEMES))
   console.log('UX_BRIEF ' + JSON.stringify(BRIEF_SAMPLE))
 })

@@ -146,7 +146,7 @@ export function overviewPlan(inp: OverviewInput) {
   const assignmentRows = selected.assignments.map((a, i) => row('assignment-' + a.who, i ? '' : '交辦', [cell(a.who, cols >= 110 ? 24 : 20), cell(a.title, Math.max(8, cols - 9 - (cols >= 110 ? 24 : 20) - 24)), s((a.state === 'need_you' ? '▲ 等操作員' : a.state === 'waiting' ? '等回報' : '進行中') + ' · ' + elapsed(a.sinceMs, now), a.state === 'need_you' ? 'warning' : 'inactive')], cols, 'inactive', 'assignments'))
   const source = { blocked, pools, assignments: assignmentRows }
   const visible = { blocked: blocked.length, pools: pools.length, assignments: assignmentRows.length }
-  const minimum = { blocked: Math.min(3, blocked.length), pools: Math.min(1, pools.length), assignments: Math.min(selected.assignments.some(a => a.state === 'need_you') ? 1 : 0, assignmentRows.length) }
+  const minimum = { blocked: Math.min(3, blocked.length), pools: Math.min(1, pools.length), assignments: Math.min(1, assignmentRows.length) }
   const size = () => head.length + poolTail.length + (Object.keys(source) as Group[]).reduce((n, g) => n + sizeOf(source[g].length, visible[g]), 0) + 2
   for (const g of ['assignments', 'pools', 'blocked'] as Group[]) while (size() > cap && visible[g] > minimum[g]) visible[g]--
   const groups = {} as Record<Group, GroupWindow>

@@ -33,14 +33,24 @@ export function paneChrome(o: { cols: number; tab: 'overview' | 'pet'; statusTai
   }
   const end = (o.buttons ? 'p 換頁 · ' : '') + 'Esc 回輸入框'
   const fallback = o.tab === 'overview' && o.autopilotHint ? '輸入 /autopilot 開決策卡 · ' : ''
-  let room = o.cols - 9 - displayWidth(fallback + end)
-  const hint: ActionSeg[] = [...gutter('按鍵', 'merged')]
-  if (o.buttons) for (const c of controls) {
-    const cells = displayWidth(c.text) + 2
-    if (cells > room) continue
-    hint.push(c, s('  '))
-    room -= cells
+  const live = o.buttons ? controls : []
+  const size = (parts: ActionSeg[], gap: number, tail: string) => 9 + parts.reduce((n, c) => n + displayWidth(c.text) + gap, 0) + displayWidth(tail)
+  const short: Record<string, string> = { d: 'd決策', j: 'j↓', k: 'k↑', u: 'u池', a: 'a辦', i: o.info ? 'i返回' : 'i說明' }
+  let shown = live
+  let gap = 2
+  let tailText = fallback + end
+  if (size(shown, gap, tailText) > o.cols) {
+    shown = live.map(c => ({ ...c, text: short[c.hotkey as string] ?? c.text }))
+    gap = 1
+    tailText = (fallback ? '輸入 /autopilot 開決策卡 ' : '') + (o.buttons ? 'p換頁 ' : '') + 'Esc 回輸入框'
   }
-  hint.push(s(cut(fallback + end, Math.max(0, displayWidth(fallback + end) + room)), 'merged'))
+  if (size(shown, gap, tailText) > o.cols) {
+    // Keep every binding even when only keycaps fit. The supported 80-column layout uses the form above.
+    shown = live.map(c => ({ ...c, text: c.hotkey as string }))
+    tailText = (o.buttons ? 'p ' : '') + 'Esc 回輸入框'
+  }
+  const hint: ActionSeg[] = [...gutter('按鍵', 'merged')]
+  for (const c of shown) hint.push(c, s(' '.repeat(gap)))
+  hint.push(s(tailText, 'merged'))
   return { tabs, hint }
 }

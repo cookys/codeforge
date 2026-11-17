@@ -49,7 +49,8 @@ export function petPaneRows(view: PetView, usage: UsageView, cols: number, now: 
   if (usage.status !== 'ok') models.push(line('models-unavailable', '本機', usage.status === 'bad' ? '本機用量摘要無法讀取' : '本機用量摘要還沒出現', true))
   else for (const [i, model] of usage.models.slice(0, 6).entries()) {
     const tail = ` ${compactCount(model.tokens)} 詞元 · ${model.requests} 次 · ${model.cost === null ? '未定價' : (model.unpriced ? '≥' : '') + '$' + model.cost.toFixed(2)}`
-    models.push(line('model-' + model.model, i ? '' : '本機', padRight(cut(model.model, Math.max(4, cols - 9 - displayWidth(tail))), Math.max(4, cols - 9 - displayWidth(tail))) + tail))
+    const label = (i === 0 && usage.models.length > 6 ? `前 6/${usage.models.length} · ` : '') + model.model
+    models.push(line('model-' + model.model, i ? '' : '本機', padRight(cut(label, Math.max(4, cols - 9 - displayWidth(tail))), Math.max(4, cols - 9 - displayWidth(tail))) + tail))
   }
   return { stats, models }
 }
