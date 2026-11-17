@@ -143,6 +143,9 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   30 秒寫一次（讀的一方超過 60 秒沒更新就標「資料 N 分鐘前」）；`ui.render` 裡不能寫。autopilot 的面板開著時會寫
   `autopilot.panel_open_at_ms`，forge-stats 讀到最近一分鐘內的值，就照常更新配額鏡像，不需要自己的 band 或 pane 畫過。
   forge-stats 自己的 pane 等操作員看過整合面板的預覽、點頭後才退場。
+  `pet.icon`（選填，2026-11-17，PM 01M7MD5Z）：寵物分頁在 autopilot-live 分頁列上的圖示 `{id, emoji, fallback, text}`，`text` 恰好 2 格，
+  autopilot 只畫 `text`。emoji 或退回符號由 forge-stats 在 session 開始時依環境決定（`hooks/pet-icon.ts`）：`TERM` 是 linux／dumb／vt*／ansi／cons* 或
+  locale（LC_ALL > LC_CTYPE > LANG）不是 UTF-8 就退回兩個 ASCII 字元；`CODEFORGE_PET_ICON` 選候選（cat／chick／crab），`plain` 強制退回。
   O4 寬度分級（2026-11-06）另加選填的 `side`（右側摘要欄的用量、各模型比例、記憶），分工、欄寬和各級用法見
   [`panel-band-contract.md`](panel-band-contract.md)。
 - **prompt 提示行的尾巴（PromptHint tail，2026-11-05，PM 採用 slot 調查的建議）**：forge-stats 只設 `PromptHint` 的

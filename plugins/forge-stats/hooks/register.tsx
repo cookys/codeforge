@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Layout, PetView, SessionView } from '../types'
+import type { Layout, PetIcon, PetView, SessionView } from '../types'
 import {
   GLYPH,
   KEY_W,
@@ -34,6 +34,7 @@ import { CONTROL_ROWS, clipCells, newPaneScroll, scrolled, windowOf } from './pa
 import type { PaneScroll } from './pane-view'
 import { PANEL_REFRESH_MS, panelState, panelTiers } from './panel'
 import { sideState } from './side'
+import { petIcon } from './pet-icon'
 import { FLEET_MAX_BYTES, fleetLines, fleetQuotaPath, parseFleetQuota } from './fleet-view'
 import type { FleetQuotaView } from './fleet-view'
 import { localeFrom, makeT } from './strings'
@@ -79,6 +80,17 @@ let petNow: PetView = { status: 'missing', readAt: 0, writtenAt: null, path: nul
 let bandDrew = false
 let bandSeenAt: number | null = null
 const t = (): T => makeT(locale)
+
+// The pet tab's icon (pet-icon.ts), decided once per session from the env: literal names, one call each (a variable name breaks the module load).
+let iconNow: PetIcon = petIcon({ term: undefined, lcAll: undefined, lcCtype: undefined, lang: undefined, pick: undefined })
+async function resolveIcon($: EngineInterface): Promise<PetIcon> {
+  const term = await $.env.get('TERM').catch(() => undefined)
+  const lcAll = await $.env.get('LC_ALL').catch(() => undefined)
+  const lcCtype = await $.env.get('LC_CTYPE').catch(() => undefined)
+  const lang = await $.env.get('LANG').catch(() => undefined)
+  const pick = await $.env.get('CODEFORGE_PET_ICON').catch(() => undefined)
+  return petIcon({ term: term || undefined, lcAll: lcAll || undefined, lcCtype: lcCtype || undefined, lang: lang || undefined, pick: pick || undefined })
+}
 
 async function resolveLocale($: EngineInterface): Promise<Locale> {
   const env = await $.env.get('CODEFORGE_LOCALE').catch(() => undefined)
@@ -441,7 +453,7 @@ async function writePanel($: EngineInterface) {
   const quota = quotaState.present ? { state: quotaState, nowMs: now } : null
   const body = {
     usage: panelTiers(cols => usageLines(usage, cols, tr, now, quota)),
-    pet: { title: tr('tabPet'), sprite: petNow.village?.sprite ?? null, tiers: panelTiers(cols => petLines(petNow, cols, tr, now, false)) },
+    pet: { title: tr('tabPet'), sprite: petNow.village?.sprite ?? null, tiers: panelTiers(cols => petLines(petNow, cols, tr, now, false)), icon: iconNow },
     side: sideState(usage, quota === null ? null : quotaEntries(quotaState, Math.floor(now / 1000)), sessionNow, now, tr),
   }
   const text = JSON.stringify(body)
@@ -532,6 +544,7 @@ export function promptTail(lights: SessionView | null, tr: T): string | undefine
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     locale = await resolveLocale($)
+    iconNow = await resolveIcon($)
     // a new session starts its animation from frame 0 with nothing sent yet
     spriteFrame = 0
     lastCells = null
