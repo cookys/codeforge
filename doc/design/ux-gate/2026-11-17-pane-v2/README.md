@@ -77,7 +77,8 @@ Carbon 初次工具讀檔遭 headless command 權限拒絕，其後大包 Read �
 | R1 | 6 | 6 |
 | R2 | 7 | 8 |
 | R3 | 7 | 9（過） |
+| R4（PM 01M7M973，只重評 astra） | 8（過） | — |
 
 - 原文：`round-N-{astra,carbon}.json`。
 - astra 在 R3 唯一的 Critical：80x24 拿掉了「無來源」旗標。已在 R3 之後修正：放不下完整寫法時，改用短寫「無來源6」，並固定保留。測試是 `overview.test.tsx` R3-C1。
-- 依評分表，R3 不過時由 PM 裁決。
+- 依評分表，R3 不過時由 PM 裁決。PM 01M7M973 裁定：astra 照同一份評分表完整重評第 4 輪；這一輪 astra 給 8 分、沒有 Critical，閘門通過。
