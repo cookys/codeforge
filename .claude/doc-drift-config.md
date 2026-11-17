@@ -18,7 +18,7 @@ focus: XP values per event, leveling math, 4 stats, village count, daemon-write/
 ### install-hooks-statusline
 docs:  README.md (hook setup), doc/specs/codeforge-install-subcommand.md, doc/getting-started.md, src/cli/CLAUDE.md (Hook Path Note / Statusline) + root CLAUDE.md (forge-stats mod), .env.example
 code:  src/cli/install.rs, src/cli/statusline.rs, .claude/scripts/*.js, src/main.rs (env vars)
-focus: 3 global hook types (SessionStart recall + SessionEnd dream→ship + PreCompact), install flags shipped (not roadmap), uninstall is a top-level subcommand, statusline 5-line, CODEFORGE_LOCALE default (system→en)
+focus: 3 global hook types (SessionStart recall + SessionEnd dream→ship + PreCompact), install flags shipped (not roadmap), uninstall is a top-level subcommand, statusline one line, CODEFORGE_LOCALE default (system→en)
 
 ### cli-surface
 docs:  README.md quickstart, doc/getting-started.md, doc/concepts.md, CLAUDE.md Development Commands

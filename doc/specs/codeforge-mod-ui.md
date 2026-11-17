@@ -107,7 +107,7 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   `true`。B34 曾讓 statusline 在 `band_seen: false` 時恢復完整版（RPG 大塊）。但 autopilot 的 O4 外殼自己畫 band、不呼叫 `next(e)`，
   `/reload-plugins` 後 forge-stats 還沒畫過，於是操作員又看到整塊橫幅（PM 01M7E1M5）。這違反 owner 2026-10-31 的定案（卡 d-feb71b14 → A）：
   有 band 心跳就縮，不看畫面上實際畫了什麼。寵物標籤放在 autopilot 的 band（PM 01M78CB6）。所以 statusline 只看 `layout`；
-  `band_seen` 欄位仍照寫（舊版 statusline 讀它），之後再一起拿掉。紅測：`heartbeat_band_not_seen_still_compacts_no_rpg_panel_after_reload`。
+  `band_seen` 欄位仍照寫（舊版 statusline 讀它），之後再一起拿掉。紅測：`heartbeat_band_not_seen_still_compacts_no_rpg_panel_after_reload`。**2026-11-17 起（PM 01M7MEY1）statusline 不再讀心跳，任何狀態都只畫一行、不畫寵物**；本段留作歷史，golden 測試是 `tests/statusline_one_line.rs`。
   閒置時沒有重畫：超過半個視窗（15 秒）沒畫，心跳就請一次重畫，band 還在螢幕上的話會在下一拍更新。
   舊版 forge-stats 沒有 `band_seen` 欄位，statusline 照舊縮。
   - **autopilot band-facts 合約（2026-11，對照 autopilot 的 `mods/band-statusline-map.md`）**：精簡版另外讀
