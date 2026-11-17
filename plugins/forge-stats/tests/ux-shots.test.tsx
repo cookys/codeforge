@@ -96,15 +96,25 @@ for (const theme of ['dark', 'light'] as const) {
       const lines = [...plan.lines.map(l => l.segs), chrome.tabs, chrome.hint]
       if (name === 'S4') expect(lines.length).toBeLessThanOrEqual(10)
       if (name === 'S5-missing') expect(lines.some(l => words(l).includes('fleet 摘要檔還沒出現'))).toBe(true)
-      if (name === 'S5-stale') expect(lines.some(l => l.some(s => s.color === 'warning' && s.text.includes('摘要過舊 6m')))).toBe(true)
+      if (name === 'S5-stale') {
+        const decisions = plan.lines.find(l => l.key === 'decisions')!
+        expect(decisions.segs[decisions.segs.length - 1]).toEqual({ text: '（摘要過舊 6m）', color: 'warning' })
+      }
       if (['S1', 'S2', 'S3'].includes(name)) {
         expect(lines.some(l => words(l).includes('待決 3') && words(l).includes('bridge'))).toBe(true)
         expect(lines.some(l => words(l).includes('smith1'))).toBe(true)
+        // R2-C1: every tight pool remains identifiable without scrolling.
+        for (const reading of ['smith2 82%', 'codexseat 54%', 'xaiseat 39%', 'kimi 18%']) {
+          const [name, percentage] = reading.split(' ')
+          expect(lines.some(l => words(l).includes(name) && words(l).includes(percentage))).toBe(true)
+        }
         const note = plan.lines.find(l => l.key === 'pool-smith1')!.segs.find(s => s.text.startsWith('週五 17'))!
         expect(note).not.toBe(undefined)
         expect(displayWidth(note.text)).toBeGreaterThanOrEqual(8)
-        if (cols >= 120) expect(note.text).toBe('週五 17:00 前只派審查')
-        expect(lines.filter(l => words(l).includes('無來源 ×6'))).toHaveLength(1)
+        expect(note.text).toBe('週五 17:00 前只派審查')
+        expect(lines.filter(l => words(l).includes('無來源 ×6'))).toHaveLength(cols >= 120 ? 1 : 0)
+        if (cols >= 120) expect(lines.some(l => words(l).includes('無來源 ×6（缺權杖 2）'))).toBe(true)
+        expect(lines.some(l => words(l).includes('缺權杖 ×2'))).toBe(false)
         expect(plan.groups.blocked.visible).toBe(8)
         const courier = plan.lines.find(l => l.key === 'host:host-f')!
         expect(words(courier.segs)).toContain('疑似 courier 連線問題')
@@ -119,6 +129,11 @@ for (const theme of ['dark', 'light'] as const) {
           expect(lines.filter(l => words(l).includes(it.subject.display))).toHaveLength(1)
         }
         expect(lines.some(l => words(l).includes('PM') && l.some(s => s.color === 'warning'))).toBe(true)
+        if (name !== 'S1') {
+          const assigned = plan.lines.find(l => l.key === 'assignment-PM')!
+          expect(assigned.segs.find(s => s.text === ' · +2 件')?.color).toBe('inactive')
+          expect(assigned.segs.find(s => s.text === '（a）')?.color).toBe('merged')
+        }
       }
       receipt(name, cols, rows, lines, true, theme)
     })

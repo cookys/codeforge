@@ -75,14 +75,16 @@ function poolBody(a: FleetAccount, cols: number, now: number, noteReserve = 0): 
   let reset = w === null || w.reset ? '' : `${cols < 110 ? '週' : '週重置 '}${countdown(w.resetsAt * 1000, now)}`
   const state = a.state === 'stale' ? '舊讀數 · ' : a.state === 'expired' ? '過期 · ' : ''
   let five = a.fiveHour === null ? (a.fiveNoSource ? '5h 無來源' : '') : a.fiveHour.reset ? '5h 已重置' : `5h ${pct(a.fiveHour.pct)} 重置 ${countdown(a.fiveHour.resetsAt * 1000, now)}`
-  const noteW = Math.max(noteReserve, a.note ? Math.min(displayWidth(oneLine(a.note)), cols < 110 ? 18 : 32) : 0)
-  const fiveW = cols < 110 ? 0 : five !== '' || noteW > 0 ? 24 : 0
+  const noteW = Math.max(noteReserve, displayWidth(oneLine(a.note ?? '')))
+  let fiveW = cols < 110 ? 0 : five !== '' || noteW > 0 ? 24 : 0
   const need = () => nameW + barW + 7 + 48 + fiveW + noteW
   if (noteW && need() > inner) {
     nameW = cols >= 110 ? 16 : 12
     plan = ''
   }
-  if (noteW && need() > inner) barW = Math.max(4, barW - (need() - inner))
+  if (noteW && need() > inner) barW = cols < 110 ? 0 : Math.max(4, barW - (need() - inner))
+  if (noteW && nameW + barW + 7 + fiveW + noteW > inner) barW = 0
+  if (noteW && nameW + barW + 7 + fiveW + noteW > inner) fiveW = 0
   if (noteW && need() > inner) {
     reset = reset.replace('週重置 ', '週')
     five = five.replace(' 重置 ', ' ')
@@ -102,11 +104,12 @@ function poolBody(a: FleetAccount, cols: number, now: number, noteReserve = 0): 
   return fields
 }
 
-function compactPoolBody(a: FleetAccount, cells: number): PaneSeg[] {
+function compactPoolBody(a: FleetAccount, cells: number, noteCells = 8): PaneSeg[] {
   const w = a.weekly
   const reading = w !== null && !w.reset ? pct(w.pct) : w?.reset ? '已重置' : '週 —'
-  const bar = w !== null && !w.reset ? meter(w.pct, 4) : null
-  const note = a.note ? cut(a.note, 8) : ''
+  let bar = w !== null && !w.reset ? meter(w.pct, 4) : null
+  const note = a.note ? cut(a.note, noteCells) : ''
+  if (displayWidth(oneLine(a.name) + reading + note) + 7 > cells) bar = null
   const tone = attention(a) ? 'warning' : 'inactive'
   const nameW = Math.max(1, cells - displayWidth(reading + note) - (bar ? 4 : 0) - 3)
   return [s(cut(a.name, nameW), 'inactive', true), s(' '), ...(bar ? [s(bar.on, tone), s(bar.off, 'subtle')] : []), s(' ' + reading + ' ', tone), s(note)]
@@ -158,8 +161,9 @@ export function overviewPlan(inp: OverviewInput) {
     const count = brief.counts.needs_human
     const lead = `待決 ${count}`
     const tail = oldest ? ` · ${elapsed(oldest.since_ms, now)}` : ''
-    const budget = cols - 9 - displayWidth(lead + tail) - 3
-    head.push(row('decisions', '待決', [s(lead + (oldest ? ' ' + cut(`${oldest.subject.display}：${oldest.title}`, budget) + tail : count > 0 ? ' · 決策明細尚未提供' : ' · 目前沒有待決'), count > 0 ? 'warning' : 'inactive')], cols, count > 0 ? 'warning' : 'inactive'))
+    const stale = now - brief.generatedAt > BRIEF_STALE_MS ? `（摘要過舊 ${Math.floor((now - brief.generatedAt) / 60000)}m）` : ''
+    const budget = cols - 9 - displayWidth(lead + tail + stale) - 3
+    head.push(row('decisions', '待決', [s(lead + (oldest ? ' ' + cut(`${oldest.subject.display}：${oldest.title}`, budget) + tail : count > 0 ? ' · 決策明細尚未提供' : ' · 目前沒有待決'), count > 0 ? 'warning' : 'inactive'), ...(stale ? [s(' '), s(stale, 'warning')] : [])], cols, count > 0 ? 'warning' : 'inactive'))
     if (brief.degraded) head.push(row('brief-degraded', '來源', [s('fleet 摘要部分來源無法讀取', 'warning')], cols, 'warning'))
   }
   const accounts = fleet.status === 'ok' ? fleet.accounts : []
@@ -191,23 +195,30 @@ export function overviewPlan(inp: OverviewInput) {
     out.push({ ...row(it.id, index ? '' : '卡住', more ? withTail(body, tail, cols - 9) : body, cols, 'error', 'blocked'), ...(more ? { more: true } : {}) })
   }
 
-  const poolNoteW = Math.max(0, ...pools.map(a => Math.min(displayWidth(oneLine(a.note ?? '')), cols < 110 ? 18 : 32)))
+  const poolNoteW = Math.max(0, ...pools.map(a => displayWidth(oneLine(a.note ?? ''))))
   const pw = groups.pools
   const hiddenPools = pools.filter((_, i) => i < pw.top || i >= pw.top + pw.visible)
   const poolSummary: PaneSeg[] = []
-  const add = (text: string, tone: Tone = 'inactive') => { if (poolSummary.length) poolSummary.push(s(' · ', 'subtle')); poolSummary.push(s(text, tone)) }
-  const tight = hiddenPools.filter(attention).length
+  const leadReserve = slots.pools === 1 && pools.length ? cols >= 110 ? displayWidth(oneLine(pools[pw.top].name)) + 7 + displayWidth(oneLine(pools[pw.top].note ?? '')) : 24 : 0
+  const summaryBudget = cols - 9 - (leadReserve ? leadReserve + 2 : 0) - (pw.total > pw.visible ? displayWidth(' · （u）') : 0)
+  const add = (text: string, tone: Tone = 'inactive', optional = false) => {
+    if (optional && width(poolSummary) + (poolSummary.length ? 3 : 0) + displayWidth(text) > summaryBudget) return
+    if (poolSummary.length) poolSummary.push(s(' · ', 'subtle'))
+    poolSummary.push(s(text, tone))
+  }
+  const tightPools = hiddenPools.filter(attention)
+  const tight = tightPools.length
   const waste = hiddenPools.filter(a => !attention(a) && a.weekly?.warn === 'waste').length
   const normal = hiddenPools.length - tight - waste
-  if (tight) add(`另 ${tight} 池吃緊`, 'warning')
-  if (waste) add(`用不完 ×${waste}`)
-  if (noSource.length) add(`無來源 ×${noSource.length}`)
-  if (normal) add(`正常 ×${normal}`)
   const tokens = noSource.filter(a => a.sourceNote === 'needs_token').length
-  if (tokens && (slots.pools > 1 || !pools.length)) add(`缺權杖 ×${tokens}`, 'warning')
+  if (slots.pools > 1 || cols >= 110) for (const a of tightPools) add(`${oneLine(a.name)} ${pct(a.weekly!.pct)}`, 'warning')
+  else if (tight) add(`另 ${tight} 池吃緊`, 'warning')
+  if (noSource.length) add(`無來源 ×${noSource.length}${tokens ? `（缺權杖 ${tokens}）` : ''}`, 'inactive', true)
+  if (waste) add(`用不完 ×${waste}`, 'inactive', true)
+  if (normal) add(`正常 ×${normal}`, 'inactive', true)
   if (pw.total > pw.visible) add('（u）', actionTone)
   for (const [index, account] of pools.slice(pw.top, pw.top + pw.visible).entries()) {
-    const body = slots.pools === 1 && poolSummary.length ? compactPoolBody(account, cols - 9 - width(poolSummary) - 2) : poolBody(account, cols, now, poolNoteW)
+    const body = slots.pools === 1 && poolSummary.length ? compactPoolBody(account, cols - 9 - width(poolSummary) - 2, cols >= 110 ? displayWidth(oneLine(account.note ?? '')) : 8) : poolBody(account, cols, now, poolNoteW)
     out.push({ ...row('pool-' + account.alias, index ? '' : '各池', slots.pools === 1 && poolSummary.length ? withTail(body, poolSummary, cols - 9) : body, cols, 'inactive', 'pools'), ...(slots.pools === 1 && pw.total > pw.visible ? { more: true } : {}) })
   }
   if (poolSummary.length && (slots.pools > 1 || !pools.length)) out.push({ ...row('pool-summary', pools.length ? '' : '各池', poolSummary, cols, 'inactive', 'pools'), ...(pw.total > pw.visible ? { more: true } : {}) })
@@ -216,10 +227,10 @@ export function overviewPlan(inp: OverviewInput) {
 
   const aw = groups.assignments
   for (const [index, a] of assignments.slice(aw.top, aw.top + aw.visible).entries()) {
-    const tail = index === aw.visible - 1 && aw.total > aw.visible ? ` +${aw.total - aw.visible} 件（a）` : ''
-    const state = (a.state === 'need_you' ? '▲ 等操作員' : a.state === 'waiting' ? '等回報' : '進行中') + ' · ' + elapsed(a.sinceMs, now) + tail
+    const tail = index === aw.visible - 1 && aw.total > aw.visible ? [s(` · +${aw.total - aw.visible} 件`), s('（a）', actionTone)] : []
+    const state = (a.state === 'need_you' ? '▲ 等操作員' : a.state === 'waiting' ? '等回報' : '進行中') + ' · ' + elapsed(a.sinceMs, now)
     const nameW = cols >= 110 ? 24 : 20
-    out.push({ ...row('assignment-' + a.who, index ? '' : '交辦', [{ ...cell(a.who, nameW), bold: true }, cell(a.title, Math.max(0, cols - 9 - nameW - displayWidth(state))), s(state, a.state === 'need_you' ? 'warning' : 'inactive')], cols, 'inactive', 'assignments'), ...(tail ? { more: true } : {}) })
+    out.push({ ...row('assignment-' + a.who, index ? '' : '交辦', [{ ...cell(a.who, nameW), bold: true }, cell(a.title, Math.max(0, cols - 9 - nameW - displayWidth(state) - width(tail))), s(state, a.state === 'need_you' ? 'warning' : 'inactive'), ...tail], cols, 'inactive', 'assignments'), ...(tail.length ? { more: true } : {}) })
   }
   // A host may allocate fewer rows than the supported terminal minimum. Never overrun it.
   return { lines: out.slice(0, Math.max(0, cap - 2)), statusTail, groups, decisions: brief.status === 'ok' ? brief.counts.needs_human : 0 }
