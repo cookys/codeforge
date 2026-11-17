@@ -159,6 +159,7 @@ AP 現有 `forge` 分頁（`tabs.ts:84,95`；`band.tsx:108`：開 forge-stats �
   - **新增五個角色**：`stale`→inactive、`overdue`→error、`waiting_on`→subtle、`needs_human`→merged、`link`→suggestion。
   - **fleet 用名對到既有角色，不另開名字**：ok=`done`、warn=`attention`、fail=`broken`、text_muted=`structure`；`running`、`idle` 同名。網頁一律用 tokens 名。
   - 同鍵角色（overdue/broken 皆 error，stale/idle 皆 inactive，needs_human/action 皆 merged）靠文字標籤＋圖形分開，不靠顏色（逾期用 ◈，網頁側）。
+  - `offline`（fleet cb5bef5e §2.6，01M7MK4H）：色彩用既有 `broken`，`terms` 加 `offline`（離線），P4a 寫入。符號放 `GLYPHS.state.offline`，不放 tokens.json；⊘ 已是 `stalled`（`ui.ts:67`），不可重用，由 autopilot 另選過 lint 的符號並通知 fleet（P2 或 P4b）。
 - 定版時由 AP 通知 fleet `tokens.json@<sha>`。第一版須在 11-19 12:00 前存在，故 P4 拆成 P4a（11-18）與 P4b（11-19）。
 
 ## 6. 寵物分頁（點 6）
