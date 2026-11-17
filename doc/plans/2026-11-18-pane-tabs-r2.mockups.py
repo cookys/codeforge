@@ -4,7 +4,7 @@
 Every frame is composed from the fixed layout of §3 and checked: exactly H rows, every row exactly W cells,
 header = row 1, body <= H-2-A, actions occupy only the A rows directly above the strip (bottom-anchored),
 strip = last row. A page that passes more than A actions fails here. Body overflow: the last body row is
-the hint "↓ 還有 N 列（PgDn）". Run: python3 doc/plans/2026-11-18-pane-tabs-r2.mockups.py > out.md
+the hint "↓ 還有 N 列（↓）". Run: python3 doc/plans/2026-11-18-pane-tabs-r2.mockups.py > out.md
 Rows are printed right-trimmed to keep the file small; the asserts check the padded width.
 Role glyphs (colour = CC theme key of plan 1fba336 §5): ✖ broken/error  ◈ overdue/error  ▲ warning
 ● running  ⋯ waiting_on  ✓ ok  ○ idle  ★ recommended  ▸ focused row.
@@ -16,7 +16,7 @@ import unicodedata
 SIZES = {"160x40": (160, 40), "120x30": (120, 30), "80x24": (80, 24)}
 TABS = ["現況", "待決", "艦隊", "額度", "派工", "審查", "花費", "殘留"]
 NONE = "沒有要你處理的事"
-EXTRA = [("9", "寵物"), ("0", "forge"), ("?", "說明")]
+EXTRA = [("9", "寵物"), ("0", "forge"), ("i", "說明")]
 
 
 def cells(s):
@@ -86,7 +86,7 @@ def frame(size, active, header, body, actions, badges):
     for r in body + actions:
         assert cells(r) <= w, (active, size, r)
     if len(body) > nb:
-        body = body[: nb - 1] + [f"↓ 還有 {len(body) - (nb - 1)} 列（PgDn）"]
+        body = body[: nb - 1] + [f"↓ 還有 {len(body) - (nb - 1)} 列（↓）"]
     acts = actions or [NONE]
     rows = [fit(header, w)] + [fit(r, w) for r in body] + [" " * w] * (nb - len(body))
     rows += [" " * w] * (a - len(acts)) + [fit(r, w) for r in acts]
@@ -149,7 +149,7 @@ P["現況"] = {
          lr("  autopilot 01M7N30R 已開工 feat/console-source", "18 分前", 120)],
         ["→ 待決 3 張卡等你（最舊 40 分）                                  [2]",
          "→ 殘留 2 項可清                                                  [8]",
-         "[Enter] 看焦點項"],
+         "[o] 看焦點項"],
     ),
     "120x30": (
         ["── 全艦隊 ──────────────────────────────────────────────",
@@ -172,7 +172,7 @@ P["現況"] = {
          lr("  autopilot 01M7N30R 已開工 feat/console-source", "18 分前", 118)],
         ["→ 待決 3 張卡等你（最舊 40 分）                       [2]",
          "→ 殘留 2 項可清                                       [8]",
-         "[Enter] 看焦點項"],
+         "[o] 看焦點項"],
     ),
     "80x24": (
         ["產線 51 ●6 ⋯40 ✖5 · 主機 17/18 · 額度 ✖ personal 已用完",
@@ -186,7 +186,7 @@ P["現況"] = {
          "── 最近 ──",
          "PM 01M7N33J 三條硬規定 15 分前",
          "autopilot 01M7N30R 已開工 18 分前"],
-        ["→ 待決 3 張（最舊 40 分）     [2]", "→ 殘留 2 項               [8]", "[Enter] 看焦點項"],
+        ["→ 待決 3 張（最舊 40 分）     [2]", "→ 殘留 2 項               [8]", "[o] 看焦點項"],
     ),
 }
 OVERFLOW80 = [
@@ -227,7 +227,7 @@ P["待決"] = {
          "  [a] 可以 ★    [b] 先不要",
          "  補充   （按 n 寫補充，會跟答案一起送）",
          "",
-         "── 其他待決 2（Space 收合）──────────────────────────────",
+         "── 其他待決 2（z 收合）──────────────────────────────",
          "  d-fb890f48  [測試卡] carddispatch 真 courier 紅綠，請勿在面板作答                       PM · 2 時",
          "  d-fd51ee8d  下次到 308 現場時量 30 格（要你到場，只能回報）                             308 · 1 天",
          "── 別台的卡（唯讀，到那一席答）────────────────────────────",
@@ -236,8 +236,8 @@ P["待決"] = {
          "  步驟  01M7N2TZ 上線後看 pane 截圖"],
         ["已選 a 可以（尚未送出）",
          "[a]–[b] 選項（每張卡最多 5 個選項 a–e）   [n] 補充（輸入中數字字母都是文字，Enter/Esc 結束）",
-         "[Enter] 送出焦點卡   [u] 送出後 10 秒內撤回",
-         "「[」上一張  「]」下一張  [Space] 收合其他待決",
+         "[s] 送出焦點卡   [u] 送出後 10 秒內撤回",
+         "[h] 上一張  [l] 下一張  [z] 收合其他待決",
          "[f] 回報填入提示列（不送出）"],
     ),
     "80x24": (
@@ -246,42 +246,28 @@ P["待決"] = {
          "背景 兩支都過審，順序影響 migration",
          "建議 可以：先 payment 再 social",
          "[a] 可以 ★   [b] 先不要",
-         "── 其他待決 2（Space 收合）──",
+         "── 其他待決 2（z 收合）──",
          "d-fb890f48 [測試卡] 請勿作答 · 2時",
          "d-fd51ee8d 308 現場量 30 格 · 1天",
          "── 別台（唯讀）──",
          "d-1c0a77e2 h6：GPU 重排 → 到該席答",
          "── 要你做或看 ──",
          "01M7N2TZ 上線後看截圖"],
-        ["已選 a（尚未送出） [n] 補充", "[Enter] 送出  [u] 10 秒內撤回", "「[」上張 「]」下張 [f] 填入提示列"],
+        ["已選 a（尚未送出） [n] 補充", "[s] 送出  [u] 10 秒內撤回", "[h] 上張 [l] 下張 [f] 填入提示列"],
     ),
 }
 HOLD80 = (
     ["▸ d-89fe394f 1/3 · game-lead · 40 分",
      "payment 和 social-login 依序 --no-ff 合進 legacy？",
      "已送出：[b] 先不要",
-     "── 其他待決 2（Space 收合）──",
+     "── 其他待決 2（z 收合）──",
      "d-fb890f48 [測試卡] 請勿作答 · 2時",
      "d-fd51ee8d 308 現場量 30 格 · 1天",
      "── 別台（唯讀）──",
      "d-1c0a77e2 h6：GPU 重排 → 到該席答"],
-    ["已送出 b，8 秒內按 u 撤回", "「[」上張 「]」下張（可先看別張）"],
+    ["已送出 b，8 秒內按 u 撤回", "[h] 上張 [l] 下張（可先看別張）"],
 )
 EMPTY_CARDS80 = (["○ 目前沒有待決卡", "── 別台的卡（唯讀）──", "○ 沒有"], [])
-LEGACY6_80 = (
-    ["▸ d-2b7710cc 1/1 · game-lead · 3 時（舊卡，6 個選項）",
-     "六條合併策略選哪一條？",
-     "[a] 全合  [b] 依序  [c] 兩批",
-     "[d] 前兩支  [e] 先不要",
-     "[f6] 第 6 項：只合 hotfix",
-     "▸ 焦點在第 6 項",
-     "",
-     "第 6 項不能用 a–e 選：",
-     "按 j/k 把焦點移到第 6 項，",
-     "再按 Enter 選它（不用滑鼠）",
-     "── 其他待決 0 ──"],
-    ["已選 第 6 項 只合 hotfix（尚未送出）", "[Enter] 選／送出焦點項   [u] 10 秒內撤回", "j/k 移焦點   [n] 補充"],
-)
 CARD5_120 = (
     ["▸ d-4c2e19a0 2/3  馬拉松分支 5 支怎麼合進 release？                       執行者 game-lead · 2 時",
      "  背景   五支分支互相有衝突，合併順序決定誰要 rebase",
@@ -294,23 +280,23 @@ CARD5_120 = (
      "  [e] 先不要",
      "  補充   （按 n 寫補充，會跟答案一起送）",
      "",
-     "── 其他待決 2（Space 收合）───────────────────────────────",
+     "── 其他待決 2（z 收合）───────────────────────────────",
      "  d-fb890f48  [測試卡] carddispatch 真 courier 紅綠，請勿在面板作答               PM · 2 時",
      "  d-fd51ee8d  下次到 308 現場時量 30 格（要你到場，只能回報）                     308 · 1 天"],
     ["已選 c 拆兩批，每批 2–3 支（尚未送出）",
      "[a]–[e] 選項（卡上限 5 個）   [n] 補充（輸入中數字字母都是文字，Enter/Esc 結束）",
-     "[Enter] 送出焦點卡   [u] 送出後 10 秒內撤回   [f] 回報填入提示列（不送出）",
-     "「[」上一張  「]」下一張  [Space] 收合其他待決"],
+     "[s] 送出焦點卡   [u] 送出後 10 秒內撤回   [f] 回報填入提示列（不送出）",
+     "[h] 上一張  [l] 下一張  [z] 收合其他待決"],
 )
 P["待決"]["120x30"] = CARD5_120
 # fold pair at 80x24 (same rows): the 其他待決 group
 PENDING_CLOSED80 = (
-    P["待決"]["80x24"][0][:5] + ["── 其他待決 2（Space 展開）──", "── 別台（唯讀）──",
+    P["待決"]["80x24"][0][:5] + ["── 其他待決 2（z 展開）──", "── 別台（唯讀）──",
      "d-1c0a77e2 h6：GPU 重排 → 到該席答", "── 要你做或看 ──", "01M7N2TZ 上線後看截圖"],
-    ["已選 a（尚未送出） [n] 補充", "[Enter] 送出  [u] 10 秒內撤回", "「[」上張 「]」下張 [Space] 展開其他"],
+    ["已選 a（尚未送出） [n] 補充", "[s] 送出  [u] 10 秒內撤回", "[h] 上張 [l] 下張 [z] 展開其他"],
 )
 
-# ---------------------------------------------------------------- 艦隊 (A5: fold = Space, Enter = 看; A11: shown + folded = 51)
+# ---------------------------------------------------------------- 艦隊 (A5: fold = z, o = 看; A11: shown + folded = 51)
 W_L = [22, 8, 14, 44, 8]
 W_L2 = [20, 7, 12, 40, 6]
 STUCK = ["lab · h3", "pinball · h4", "revival · h5"]
@@ -334,7 +320,7 @@ LANES160 = [
     cols(["  ● fleet · h2", "執行", "PM", "console.json 快照 04:00", "3 分"], W_L),
     cols(["  ⋯ 308 · h1", "等待", "game-lead", "等操作員到現場", "1 天"], W_L),
     cols(["  ⋯ alfred · h1", "等待", "PM", "waiting_on task:01M7…", "4 時"], W_L),
-    "  ○ 另 44 條已折疊（顯示 7 + 折疊 44 = 51）· Space 展開",
+    "  ○ 另 44 條已折疊（顯示 7 + 折疊 44 = 51）· z 展開",
 ]
 LANES120 = [cols([a for a in (r[0], r[1], r[2], r[3], r[4])], W_L2) for r in (
     ["  產線", "狀態", "負責", "任務 / 證據", "上次"],
@@ -345,11 +331,11 @@ LANES120 = [cols([a for a in (r[0], r[1], r[2], r[3], r[4])], W_L2) for r in (
     ["  ● fleet · h2", "執行", "PM", "console.json 快照 04:00", "3 分"],
     ["  ⋯ 308 · h1", "等待", "game-lead", "等操作員到現場", "1 天"],
     ["  ⋯ alfred · h1", "等待", "PM", "waiting_on task:01M7…", "4 時"],
-)] + ["  ○ 另 44 條已折疊（顯示 7 + 折疊 44 = 51）· Space 展開"]
+)] + ["  ○ 另 44 條已折疊（顯示 7 + 折疊 44 = 51）· z 展開"]
 HOSTS = ["", "── 主機 17/18 在線 ─────────────────────────────────────",
          "  ● h1 6 席   ● h2 4 席   ● h3 GPU 0/2   ● h4 2 席   ● h5 1 席   ✖ h6 離線 12 分   … 另 12 台 ●"]
-FLEET_ACTS = ["▸ 焦點 capacity · h1：等待沒寫等誰（wait_untyped）", "[Enter] 看 capacity",
-              "[Space] 展開／收合其他 44 條", "[f] 催辦填入提示列（不送出）"]
+FLEET_ACTS = ["▸ 焦點 capacity · h1：等待沒寫等誰（wait_untyped）", "[o] 看 capacity",
+              "[z] 展開／收合其他 44 條", "[f] 催辦填入提示列（不送出）"]
 P["艦隊"] = {
     "160x40": (["── 產線 51：● 執行 6  ⋯ 等待 40  ✖ 卡住 5 ─────────────────"] + LANES160 + HOSTS, FLEET_ACTS),
     "120x30": (["── 產線 51：● 執行 6  ⋯ 等待 40  ✖ 卡住 5 ───────────"] + LANES120 + HOSTS[:2]
@@ -362,15 +348,15 @@ P["艦隊"] = {
          " ● codeforge 執行 r2 草稿        0分",
          " ● fleet     執行 console.json  3分",
          " ⋯ 308       等待 操作員到場     1天",
-         " ○ 另 45 條折疊（6+45=51）Space 展開",
+         " ○ 另 45 條折疊（6+45=51）z 展開",
          "── 主機 17/18 ──",
          "●h1 ●h2 ●h3 ●h4",
          "✖ h6 離線 12 分 · 另 12 台 ●"],
-        ["[Enter] 看 capacity", "[Space] 展開／收合其他 45 條", "[f] 催辦填入提示列（不送出）"],
+        ["[o] 看 capacity", "[z] 展開／收合其他 45 條", "[f] 催辦填入提示列（不送出）"],
     ),
 }
 FLEET_OPEN80 = (P["艦隊"]["80x24"][0][:7]
-                + [" ○ 已展開 45 條（6+45=51）Space 收合"]
+                + [" ○ 已展開 45 條（6+45=51）z 收合"]
                 + [r.rstrip() for r in [
                     f" {m} {n}  {st}" for m, n, st in
                     [("✖", "lab", "卡住 6時"), ("✖", "pinball", "卡住 5時"), ("✖", "revival", "卡住 3時"),
@@ -384,11 +370,11 @@ STALE80 = (
      " ● codeforge 執行 r2 草稿        ✖0分",
      " ● fleet     執行 console.json  ✖3分",
      " ⋯ 308       等待 操作員到場     ✖1天",
-     " ○ 另 45 條折疊 ✖（6+45=51）Space 展開",
+     " ○ 另 45 條折疊 ✖（6+45=51）z 展開",
      "── 主機 ✖17/18（6 分前）──",
      "●h1✖ ●h2✖ ●h3✖ ●h4✖",
      "✖ h6 離線 ✖12 分 · 另 12 台 ●✖"],
-    ["[Enter] 看 capacity（舊資料）", "[Space] 展開／收合其他 45 條", "[f] 催辦填入提示列（不送出）"],
+    ["[o] 看 capacity（舊資料）", "[z] 展開／收合其他 45 條", "[f] 催辦填入提示列（不送出）"],
 )
 # A10: at 80x24 the healthy fields shrink first, the whole 「門檻；原因」 stays
 STALE_HDR = "✖ fleet 6 分未更新（>5 分；console 逾時）· 額度 40 秒"
@@ -415,7 +401,7 @@ Q160 = [
     qrow("  ▲ lab", "22%", "4%", "11-22 週日 10:00", "+0.2/h", "43%", "—", "2 席", "約剩 57% 會浪費"),
     qrow("  ✓ codex", "80%", "12%", "11-19 週四 21:00", "+0.4/h", "98%", "—", "2 席", "會用到 98%"),
     "",
-    "── 焦點池 personal（Enter 展開各席）──────────────",
+    "── 焦點池 personal（o 展開各席）──────────────",
     "  席      capacity--claude · hangar--claude · … 共 5 席（seats --quota 40 秒前，都在 10 分鐘內）",
     "  換池    stranded_seats、switched 都是 null（capacity r5 之前沒有來源）",
     "  判定    紅：limit_hit 為真，已用完，換池資料無來源",
@@ -440,7 +426,7 @@ Q120 = [
     qrow120("  ▲ lab", "22%", "4%", "週日 10:00", "+0.2/h", "43%", "約剩 57% 會浪費"),
     qrow120("  ✓ codex", "80%", "12%", "週四 21:00", "+0.4/h", "98%", "會用到 98%"),
     "",
-    "── 焦點池 personal（Enter 展開各席）──────────────────────",
+    "── 焦點池 personal（o 展開各席）──────────────────────",
     "  席    capacity--claude · hangar--claude · … 共 5 席（seats --quota 40 秒前）",
     "  換池  stranded_seats、switched 都是 null（capacity r5 之前沒有來源）",
     "  判定  紅：limit_hit 為真，已用完，換池資料無來源",
@@ -458,14 +444,14 @@ Q80 = [
     cols([" ✓ codex", "80%", "12%", "週四21", "+0.4", "98%", "綠 會用到98%"], WQ80),
     "✖ trinity 180 分未更新（>10 分；statusline 沒在跑）",
     "✖ twgame 席 twgame-2 過期 14 分，舊值 55% 較高",
-    "── 焦點 personal（Enter 展開各席）──",
+    "── 焦點 personal（o 展開各席）──",
     "席 capacity · hangar · … 共 5 席",
     "判定 紅：已用完，換池資料無來源",
 ]
 P["額度"] = {
-    "160x40": (Q160, ["[Enter] 展開焦點池各席（j/k 換池）", "[f] 把焦點池的換池建議填入提示列（不送出）"]),
-    "120x30": (Q120, ["[Enter] 展開焦點池各席（j/k 換池）", "[f] 換池建議填入提示列（不送出）"]),
-    "80x24": (Q80, ["[Enter] 展開焦點池", "[f] 換池建議填入提示列（不送出）"]),
+    "160x40": (Q160, ["[o] 展開焦點池各席（j/k 換池）", "[f] 把焦點池的換池建議填入提示列（不送出）"]),
+    "120x30": (Q120, ["[o] 展開焦點池各席（j/k 換池）", "[f] 換池建議填入提示列（不送出）"]),
+    "80x24": (Q80, ["[o] 展開焦點池", "[f] 換池建議填入提示列（不送出）"]),
 }
 NP = "✖ 無來源：capacity pace 未接"
 W_N = [12, 5, 5, 8]
@@ -484,7 +470,7 @@ NOPACE80 = (
      "── 焦點 personal（逐席）──",
      "capacity 100%/100% · hangar 100%/100% · … 共 5 席",
      "limit_hit 為真，所以判定仍是紅：已用完"],
-    ["[Enter] 展開焦點池逐席", "（沒有 pace，就沒有換池建議）"],
+    ["[o] 展開焦點池逐席", "（沒有 pace，就沒有換池建議）"],
 )
 NOPACE_HDR = "pm 席 · fleet 12 秒前 · 額度 40 秒前（seats --quota 逐席）"
 
@@ -496,7 +482,7 @@ P["派工"] = {
          "▸ ● console-source            hand        sonnet           23 分    1 分前",
          "── foreman ──",
          "  ○ 無",
-         "── 已完成 3（Space 收合）───────────────────────────────",
+         "── 已完成 3（z 收合）───────────────────────────────",
          "  ✓ plan-review astra g1      reviewer    codex/astra      18 分    5 時前",
          "  ✓ plan-review carbon g1     reviewer    agy/carbon       21 分    5 時前",
          "  ✓ inventory                 explore     sonnet           1 分     4 分前"],
@@ -505,17 +491,17 @@ P["派工"] = {
     "80x24": (
         ["── 執行中 1 ──",
          "▸● console-source hand sonnet 23分",
-         "── 已完成 3（Space 收合）──",
+         "── 已完成 3（z 收合）──",
          " ✓ astra g1 reviewer 18分 5時前",
          " ✓ carbon g1 reviewer 21分 5時前",
          " ✓ inventory explore 1分 4分前"],
-        ["[Space] 收合已完成"],
+        ["[z] 收合已完成"],
     ),
 }
 P["派工"]["120x30"] = P["派工"]["160x40"]
 DISPATCH_CLOSED80 = (
-    ["── 執行中 1 ──", "▸● console-source hand sonnet 23分", "── 已完成 3（Space 展開）──"],
-    ["[Space] 展開已完成"],
+    ["── 執行中 1 ──", "▸● console-source hand sonnet 23分", "── 已完成 3（z 展開）──"],
+    ["[z] 展開已完成"],
 )
 P["審查"] = {
     "160x40": (
@@ -523,7 +509,7 @@ P["審查"] = {
          lr("▸ 第 1 代 f55289ca · google SHIP-AS-IS · xai SHIP-AS-IS", "▲ 135 時前，HEAD 已不同", 120),
          "── 推送前檢查 ──",
          "  ✓ check-all 綠 · 627114b",
-         "── 替你決定的事 2（Space 收合）─────────────────────────",
+         "── 替你決定的事 2（z 收合）─────────────────────────",
          lr("  01M7N33J 分頁列放最下一列，不另起一行", "15 分前", 120),
          lr("  01M7N2YJ 退回讀 console.json 快照，不轉 brief", "1 時前", 120),
          "── plan review ──",
@@ -534,18 +520,18 @@ P["審查"] = {
         ["── 程式碼 ──",
          "▸g1 f55289ca google✓ xai✓ ▲HEAD 不同",
          "── 推送前 ── ✓ 627114b",
-         "── 替你決定 2（Space 收合）──",
+         "── 替你決定 2（z 收合）──",
          "01M7N33J 分頁列放最下列 15分",
          "01M7N2YJ 退回讀快照 1時",
          "── plan ── 1fba336 凍結 8/8"],
-        ["[Space] 收合替你決定"],
+        ["[z] 收合替你決定"],
     ),
 }
 P["審查"]["120x30"] = P["審查"]["160x40"]
 REVIEW_CLOSED80 = (
     ["── 程式碼 ──", "▸g1 f55289ca google✓ xai✓ ▲HEAD 不同", "── 推送前 ── ✓ 627114b",
-     "── 替你決定 2（Space 展開）──", "── plan ── 1fba336 凍結 8/8"],
-    ["[Space] 展開替你決定"],
+     "── 替你決定 2（z 展開）──", "── plan ── 1fba336 凍結 8/8"],
+    ["[z] 展開替你決定"],
 )
 BAR = lambda p, n=20: "█" * round(p * n / 100) + "░" * (n - round(p * n / 100))
 # 花費 = seats --quota row of this seat (pool team 68%/17%) = the same value 額度 shows for team
@@ -586,11 +572,11 @@ P["殘留"] = {
          "── 可清除 2 ──",
          "▸ ○ /dev/shm/petshot-1001 寵物截圖沙盒（重拍後）",
          "  ○ target/flaky-tests.log 7 天前",
-         "── 自動清理紀錄 4 項（Space 收合）──────────────────────",
+         "── 自動清理紀錄 4 項（z 收合）──────────────────────",
          "  3 時前 · 清掉 4 項：build 暫存 2、舊 worktree 1、log 1",
          "── 外掛來源 ── ✓ autopilot 從主 clone develop 載入"],
         ["▸ 焦點：/dev/shm/petshot-1001",
-         "[Enter] 清掉焦點這項",
+         "[o] 清掉焦點這項",
          "[x] 全部清除（可清除 2 項）"],
     ),
     "80x24": (
@@ -599,17 +585,17 @@ P["殘留"] = {
          "── 可清除 2 ──",
          "▸○ petshot-1001 沙盒",
          " ○ flaky-tests.log",
-         "── 自動清理 4 項（Space 收合）──",
+         "── 自動清理 4 項（z 收合）──",
          " 3 時前 · build 暫存 2、worktree 1、log 1",
          "── 外掛 ✓ develop"],
-        ["[Enter] 清掉焦點這項", "[x] 全部清除 2 項", "[Space] 收合自動清理"],
+        ["[o] 清掉焦點這項", "[x] 全部清除 2 項", "[z] 收合自動清理"],
     ),
 }
 P["殘留"]["120x30"] = P["殘留"]["160x40"]
 RESIDUE_CLOSED80 = (
     ["── 要你處理 ──", " ▲ worktree c1mhR9 已併入，可移除", "── 可清除 2 ──", "▸○ petshot-1001 沙盒",
-     " ○ flaky-tests.log", "── 自動清理 4 項（Space 展開）──", "── 外掛 ✓ develop"],
-    ["[Enter] 清掉焦點這項", "[x] 全部清除 2 項", "[Space] 展開自動清理"],
+     " ○ flaky-tests.log", "── 自動清理 4 項（z 展開）──", "── 外掛 ✓ develop"],
+    ["[o] 清掉焦點這項", "[x] 全部清除 2 項", "[z] 展開自動清理"],
 )
 EMPTY80 = {
     "派工": (["○ 沒有執行中的派工，也沒有最近完成的"], []),
@@ -622,18 +608,17 @@ P["寵物"] = {"80x24": (["", "  寵物分頁還沒上線", "", "  （P2 之後 
 P["forge"] = {"80x24": (["── forge ──", "  forge 欄位沿用現有內容（P6 才改版）", "  目前只有狀態列，沒有可操作項目"], [])}
 P["說明"] = {"80x24": (
     ["── 鍵位 ──",
-     "1–8 切分頁  9 寵物  0 forge  ? 說明",
+     "1–8 切分頁  9 寵物  0 forge  i 說明",
      "Esc 收起（輸入補充時 Esc 只離開輸入）",
-     "j/k 或上下方向鍵 移動焦點列（行首 ▸）",
-     "Enter 只對焦點列動作  Space 折疊／展開",
-     "PgUp/PgDn 捲動  f 填入提示列（不送出）",
-     "── 各頁的 Enter ──",
+     "j/k 移動焦點列（行首 ▸）↑↓ 捲動",
+     "o 對焦點列動作  z 折疊／展開",
+     "↑↓ 捲動  f 填入提示列（不送出）",
+     "── 各頁的 o ──",
      "1 現況、3 艦隊：看焦點項",
      "4 額度：展開各席   8 殘留：清掉這一項",
-     "2 待決：送出（焦點在按鈕上只按那顆）",
+     "2 待決：s 送出；Enter 只按 host 焦點按鈕",
      "待決 a–e 選項  n 補充  u 10 秒內撤回",
-     "      「[」「]」上一張／下一張",
-     "舊 6 選項卡：j/k 移到第 6 項，按 Enter",
+     "      h/l 上一張／下一張",
      "── 從提示列進來 ──",
      "Ctrl+x Tab 或用滑鼠點分頁；",
      "焦點在提示列時熱鍵不處理"],
@@ -641,13 +626,12 @@ P["說明"] = {"80x24": (
 KEYS = """### 鍵位（一張表，沒有一個鍵兩種意思）
 
 ```
-1–8 切分頁   9 寵物   0 forge   ? 說明   Esc 收起（輸入補充時 Esc 只離開輸入）
-j/k 或上下方向鍵移動焦點列（行首 ▸）   Enter 只對焦點列動作   Space 折疊/展開（艦隊的 Enter 是「看」，不是展開）
+1–8 切分頁   9 寵物   0 forge   i 說明   Esc 收起（輸入補充時 Esc 只離開輸入）
+j/k 移動焦點列（行首 ▸）   o 對焦點列動作   z 折疊/展開   ↑↓ 捲動   Enter 只按 host 焦點所在的按鈕
 待決  a–e 選項（每張卡最多 5 個，autopilot 的上限）  n 補充（輸入中數字字母是文字，Enter/Esc 結束）
-      Enter 送出  u 10 秒內撤回  「[」「]」上一張/下一張  f 填入提示列（不送出）
-      舊的 6 選項卡：j/k 把焦點移到第 6 項，按 Enter 選它（不用滑鼠）
-艦隊  Enter 看焦點產線  Space 展開/收合  f 催辦填入提示列      額度  Enter 展開焦點池各席  f 換池建議填入提示列
-殘留  Enter 清焦點這項  x 全部清除             表列本身沒有按鈕，按鈕都在動作區
+      s 送出  u 10 秒內撤回  h/l 上一張/下一張  f 填入提示列（不送出）
+艦隊  o 看焦點產線  z 展開/收合  f 催辦填入提示列      額度  o 展開焦點池各席  f 換池建議填入提示列
+殘留  o 清焦點這項  x 全部清除             表列本身沒有按鈕，按鈕都在動作區
 從提示列進 band/pane：Ctrl+x Tab 或滑鼠點分頁；焦點在提示列時，pane 和 band 的熱鍵一律不處理
 ```
 """
@@ -689,7 +673,7 @@ def main():
         if page == "艦隊":
             var(f"{page}：折疊關（顯示 6 + 折疊 45 = 51）", page, HDR[s], closed)
             var(f"{page}：折疊開（{what}全展開，超出的用「↓ 還有 N 列」）", page, HDR[s],
-                (opened, ["[Enter] 看 capacity", "[Space] 展開／收合其他 45 條", "[f] 催辦填入提示列（不送出）"]))
+                (opened, ["[o] 看 capacity", "[z] 展開／收合其他 45 條", "[f] 催辦填入提示列（不送出）"]))
         else:
             var(f"{page}：折疊關（{what}）", page, HDR[s], closed)
             var(f"{page}：折疊開（{what}）", page, HDR[s], opened)
@@ -699,7 +683,6 @@ def main():
         "快照 2 分前（console.json）· seats --quota 40 秒前", P["現況"][s])
     var("待決：送出後 10 秒撤回倒數", "待決", HDR[s], HOLD80)
     var("待決：0 張卡", "待決", HDR[s], EMPTY_CARDS80, {})
-    var("待決：舊的 6 選項卡（j/k 到第 6 項再 Enter）", "待決", HDR[s], LEGACY6_80)
     var("艦隊：fleet 資料過期（數字標 ✖；完整「門檻；原因」不截斷）", "艦隊", STALE_HDR, STALE80)
     o("\n### 額度：沒有 pace（Day-1 真實形狀，console quota.pools 為空）與同狀態的 band\n\n")
     o(block(band(s, BAND_L[s], "✖ personal 已用完", BADGES)))
