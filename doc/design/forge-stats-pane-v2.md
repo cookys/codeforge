@@ -33,7 +33,7 @@
 | **頂列** | `狀態` | `inactive` | `brief.counts`、`fleet-quota` 摘要、本機 `$ / tok/s`、Ferris 等級、資料新鮮度 | 固定順序：`▲待決` → `艦隊 ⊘ ⋯` → `池警訊` → `$ bar` → `ϟ tok/s sparkline` → `Ferris` → `ⓘ 新鮮度`（窄視窗依宣告順序丟棄次要項） |
 | **(a)** | `待決` | `warning`（0 筆時 `inactive`） | `fleet.brief/1` 中 `kind == "needs_human"` 之項目 | 固定只佔 **1 列**。顯示待決總數 `N`，並取 `since_ms` **最舊（等最久）** 一張卡的 `subject.display`、截斷標題、`text` 與等待時間；右側顯示 `[d] 跳 autopilot`。決策卡全文只在 autopilot pane 繪製。 |
 | **(b)** | `卡住` | `error` | `fleet.brief/1` 中 `kind` 屬於 `{offline, stuck, waiting_pm, high_context}` 且未在其他高優先區出現之項目 | 1. 先依 `level`：`red` 在 `amber` 前面。<br>2. 同 `level` 依 `kind` 嚴重度：`offline`（整機離線）> `stuck`（逾時無回報）> `waiting_pm`（等 PM）> `high_context`（高上下文）。<br>3. 同 `kind` 依 `since_ms` **越舊越前面**（卡最久的排最頂端）。<br>4. 若全區為 0 筆，整區收起佔 **0 列**。 |
-| **(c)** | `各池` | `inactive` | `codeforge.fleet-quota/1` 之所有帳號列（含 `weekly`、`fiveHour`、`warn`、`state`、`sourceNote`） | 1. **有實測資料且 `warn == "short"`**（額度吃緊／將耗盡）：依 `weekly.pct` **由高到低**排序（`smith1 99%` → `smith2 82%` → `codexseat 54%` → `grokbot 39%` → `kimi 18%`）。<br>2. **有實測資料且 `warn == "waste"`**（重置前用不到目標 `useTarget=85%`）：依距離 `resetsAt` 由近到遠排序（`team-a 9.6%`）。<br>3. **有實測資料且 `warn == null`**：依 `weekly.pct` 由高到低排序。<br>4. **無自動來源（`state == "no_source"`）**：先排需操作員介入的 `needs_token`（2 列），最後排僅網頁無 API 的 `web_only`（4 列）。在 120/80 窄高度下自動將 `no_source` 合併為 1 列摘要。 |
+| **(c)** | `各池` | `inactive` | `codeforge.fleet-quota/1` 之所有帳號列（含 `weekly`、`fiveHour`、`warn`、`state`、`sourceNote`） | 1. **有實測資料且 `warn == "short"`**（額度吃緊／將耗盡）：依 `weekly.pct` **由高到低**排序（`smith1 99%` → `smith2 82%` → `codexseat 54%` → `xaiseat 39%` → `kimi 18%`）。<br>2. **有實測資料且 `warn == "waste"`**（重置前用不到目標 `useTarget=85%`）：依距離 `resetsAt` 由近到遠排序（`team-a 9.6%`）。<br>3. **有實測資料且 `warn == null`**：依 `weekly.pct` 由高到低排序。<br>4. **無自動來源（`state == "no_source"`）**：先排需操作員介入的 `needs_token`（2 列），最後排僅網頁無 API 的 `web_only`（4 列）。在 120/80 窄高度下自動將 `no_source` 合併為 1 列摘要。 |
 | **(d)** | `交辦` | `inactive` | 操作員直接交辦事項（`origin == "operator"`） | 1. 先依狀態急迫度：**等操作員**（需操作員動作，標 `warning` 黃）> **等回報** > **進行中**。<br>2. 同狀態依經過時間 **越久越前面**（`2d` > `5h` > `2h`）。<br>3. 每列固定顯示：負責線（誰）、交辦標題（做什麼）、狀態、經過時間（多久了）。 |
 | **底 1** | `分頁` | `merged` | 頁籤切換器（`▸總覽` / `寵物`） | 固定倒數第 2 列。頁籤徽章只重複狀態帶符號（`▲`、`⊘`、`Ferris · $ ϟ`），不重複印數字。 |
 | **底 2** | `按鍵` | `merged` | 當前畫面有效按鍵提示 | 固定最後第 1 列。只顯示當前狀態下可按的活鍵（live keys）。 |
@@ -100,7 +100,7 @@
 {inactive}各池{/}   {subtle}│{/} {inactive}smith1      max20{/}   {error}▰▰▰▰▰▰▰▰▰▰   99%{/}          {error}週重置 2d04h · 不夠（預估 2h 耗盡）{/}   {inactive}5h    —{/}                     {inactive}已達 85% 目標，優先停派新工{/}          
        {subtle}│{/} {inactive}smith2      max20{/}   {inactive}▰▰▰▰▰▰▰▰▱▱   82%{/}          {inactive}週重置 3d11h · 不夠（預估 1d 耗盡）{/}   {inactive}5h   0%（重置 4h50m）{/}       {inactive}接近 85% 目標線{/}                      
        {subtle}│{/} {inactive}codexseat   pro{/}     {inactive}▰▰▰▰▰▱▱▱▱▱   54%{/}          {inactive}週重置 4d08h · 不夠（預估 2d 耗盡）{/}   {inactive}5h  23%（重置 2h15m）{/}       {inactive}消耗偏快，留意短窗{/}                   
-       {subtle}│{/} {inactive}grokbot     pro{/}     {inactive}▰▰▰▰▱▱▱▱▱▱   39%{/}          {inactive}週重置 5d02h · 不夠（預估 3d 耗盡）{/}   {inactive}5h  32%（重置 1h40m）{/}       {inactive}消耗偏快，短窗正常{/}                   
+       {subtle}│{/} {inactive}xaiseat     pro{/}     {inactive}▰▰▰▰▱▱▱▱▱▱   39%{/}          {inactive}週重置 5d02h · 不夠（預估 3d 耗盡）{/}   {inactive}5h  32%（重置 1h40m）{/}       {inactive}消耗偏快，短窗正常{/}                   
        {subtle}│{/} {inactive}kimi        pro{/}     {inactive}▰▰▱▱▱▱▱▱▱▱   18%{/}          {inactive}週重置 5d18h · 不夠（預估 4d 耗盡）{/}   {inactive}5h    —{/}                     {inactive}無 5h 視窗限制{/}                       
        {subtle}│{/} {inactive}team-a      max20{/}   {inactive}▰▱▱▱▱▱▱▱▱▱  9.6%{/}          {inactive}週重置   18h · 閒置（低於 85% 目標）{/}  {inactive}5h    —{/}                     {inactive}重置前用不完，建議優先派工{/}           
        {subtle}│{/} {inactive}tok-echo    max5{/}    {inactive}▱▱▱▱▱▱▱▱▱▱    —{/}           {warning}▲ 無來源（needs_token · 需你重登）{/}    {inactive}5h    —{/}                     {warning}權杖過期，請重新登入該帳號{/}           
@@ -131,7 +131,7 @@
 各池   │ smith1      max20   ▰▰▰▰▰▰▰▰▰▰   99%          週重置 2d04h · 不夠（預估 2h 耗盡）   5h    —                     已達 85% 目標，優先停派新工          
        │ smith2      max20   ▰▰▰▰▰▰▰▰▱▱   82%          週重置 3d11h · 不夠（預估 1d 耗盡）   5h   0%（重置 4h50m）       接近 85% 目標線                      
        │ codexseat   pro     ▰▰▰▰▰▱▱▱▱▱   54%          週重置 4d08h · 不夠（預估 2d 耗盡）   5h  23%（重置 2h15m）       消耗偏快，留意短窗                   
-       │ grokbot     pro     ▰▰▰▰▱▱▱▱▱▱   39%          週重置 5d02h · 不夠（預估 3d 耗盡）   5h  32%（重置 1h40m）       消耗偏快，短窗正常                   
+       │ xaiseat     pro     ▰▰▰▰▱▱▱▱▱▱   39%          週重置 5d02h · 不夠（預估 3d 耗盡）   5h  32%（重置 1h40m）       消耗偏快，短窗正常                   
        │ kimi        pro     ▰▰▱▱▱▱▱▱▱▱   18%          週重置 5d18h · 不夠（預估 4d 耗盡）   5h    —                     無 5h 視窗限制                       
        │ team-a      max20   ▰▱▱▱▱▱▱▱▱▱  9.6%          週重置   18h · 閒置（低於 85% 目標）  5h    —                     重置前用不完，建議優先派工           
        │ tok-echo    max5    ▱▱▱▱▱▱▱▱▱▱    —           ▲ 無來源（needs_token · 需你重登）    5h    —                     權杖過期，請重新登入該帳號           
@@ -161,7 +161,7 @@
 | **R08** | `各池   │ ` (`9`) | 欄1 `smith1      max20   `(**20**) + 欄2 `▰▰▰▰▰▰▰▰▰▰   99%`(16+10空白=**26**) + 欄3 `週重置 2d04h · 不夠（預估 2h 耗盡）`(35+3空白=**38**) + 欄4 `5h    —`(7+21空白=**28**) + 欄5 `已達 85% 目標，優先停派新工`(27+12空白=**39**) = **151 格** | **160** |
 | **R09** | `       │ ` (`9`) | 欄1 `smith2      max20   `(**20**) + 欄2 `▰▰▰▰▰▰▰▰▱▱   82%`(**26**) + 欄3 `週重置 3d11h · 不夠（預估 1d 耗盡）`(**38**) + 欄4 `5h   0%（重置 4h50m）`(21+7空白=**28**) + 欄5 `接近 85% 目標線`(15+24空白=**39**) = **151 格** | **160** |
 | **R10** | `       │ ` (`9`) | 欄1 `codexseat   pro     `(**20**) + 欄2 `▰▰▰▰▰▱▱▱▱▱   54%`(**26**) + 欄3 `週重置 4d08h · 不夠（預估 2d 耗盡）`(**38**) + 欄4 `5h  23%（重置 2h15m）`(21+7空白=**28**) + 欄5 `消耗偏快，留意短窗`(18+21空白=**39**) = **151 格** | **160** |
-| **R11** | `       │ ` (`9`) | 欄1 `grokbot     pro     `(**20**) + 欄2 `▰▰▰▰▱▱▱▱▱▱   39%`(**26**) + 欄3 `週重置 5d02h · 不夠（預估 3d 耗盡）`(**38**) + 欄4 `5h  32%（重置 1h40m）`(21+7空白=**28**) + 欄5 `消耗偏快，短窗正常`(18+21空白=**39**) = **151 格** | **160** |
+| **R11** | `       │ ` (`9`) | 欄1 `xaiseat     pro     `(**20**) + 欄2 `▰▰▰▰▱▱▱▱▱▱   39%`(**26**) + 欄3 `週重置 5d02h · 不夠（預估 3d 耗盡）`(**38**) + 欄4 `5h  32%（重置 1h40m）`(21+7空白=**28**) + 欄5 `消耗偏快，短窗正常`(18+21空白=**39**) = **151 格** | **160** |
 | **R12** | `       │ ` (`9`) | 欄1 `kimi        pro     `(**20**) + 欄2 `▰▰▱▱▱▱▱▱▱▱   18%`(**26**) + 欄3 `週重置 5d18h · 不夠（預估 4d 耗盡）`(**38**) + 欄4 `5h    —`(7+21空白=**28**) + 欄5 `無 5h 視窗限制`(14+25空白=**39**) = **151 格** | **160** |
 | **R13** | `       │ ` (`9`) | 欄1 `team-a      max20   `(**20**) + 欄2 `▰▱▱▱▱▱▱▱▱▱  9.6%`(**26**) + 欄3 `週重置   18h · 閒置（低於 85% 目標）`(36+2空白=**38**) + 欄4 `5h    —`(**28**) + 欄5 `重置前用不完，建議優先派工`(26+13空白=**39**) = **151 格** | **160** |
 | **R14–15** | `       │ ` (`9`) | 欄1 `tok-echo`/`tok-foxtrot`(**20**) + 欄2 `▱▱▱▱▱▱▱▱▱▱    —`(15+11空白=**26**) + 欄3 `▲ 無來源（needs_token · 需你重登）`(34+4空白=**38**) + 欄4 `5h    —`(**28**) + 欄5 `權杖過期，請重新登入該帳號`(26+13空白=**39**) = **151 格** | **160** |
@@ -199,7 +199,7 @@
 {inactive}各池{/}   {subtle}│{/} {inactive}smith1{/}      {error}▰▰▰▰▰▰▰▰▰▰   99%{/}      {error}週重置 2d04h · 不夠（預估 2h 耗盡）{/}         {inactive}5h    —{/}                          
        {subtle}│{/} {inactive}smith2{/}      {inactive}▰▰▰▰▰▰▰▰▱▱   82%{/}      {inactive}週重置 3d11h · 不夠（預估 1d 耗盡）{/}         {inactive}5h   0%（重置 4h50m）{/}            
        {subtle}│{/} {inactive}codexseat{/}   {inactive}▰▰▰▰▰▱▱▱▱▱   54%{/}      {inactive}週重置 4d08h · 不夠（預估 2d 耗盡）{/}         {inactive}5h  23%（重置 2h15m）{/}            
-       {subtle}│{/} {inactive}grokbot{/}     {inactive}▰▰▰▰▱▱▱▱▱▱   39%{/}      {inactive}週重置 5d02h · 不夠（預估 3d 耗盡）{/}         {inactive}5h  32%（重置 1h40m）{/}            
+       {subtle}│{/} {inactive}xaiseat{/}     {inactive}▰▰▰▰▱▱▱▱▱▱   39%{/}      {inactive}週重置 5d02h · 不夠（預估 3d 耗盡）{/}         {inactive}5h  32%（重置 1h40m）{/}            
        {subtle}│{/} {inactive}kimi{/}        {inactive}▰▰▱▱▱▱▱▱▱▱   18%{/}      {inactive}週重置 5d18h · 不夠（預估 4d 耗盡）{/}         {inactive}5h    —{/}                          
        {subtle}│{/} {inactive}team-a{/}      {inactive}▰▱▱▱▱▱▱▱▱▱  9.6%{/}      {inactive}週重置   18h · 閒置（低於 85% 目標）{/}        {inactive}5h    —{/}                          
        {subtle}│{/} {warning}▲ 無來源 ×6：needs_token ×2（tok-echo、tok-foxtrot 需你重登）{/} {inactive}· web_only ×4（web-alpha…）{/}            {merged}[u]{/} {inactive}展開 6 池{/}
@@ -224,7 +224,7 @@
 各池   │ smith1      ▰▰▰▰▰▰▰▰▰▰   99%      週重置 2d04h · 不夠（預估 2h 耗盡）         5h    —                          
        │ smith2      ▰▰▰▰▰▰▰▰▱▱   82%      週重置 3d11h · 不夠（預估 1d 耗盡）         5h   0%（重置 4h50m）            
        │ codexseat   ▰▰▰▰▰▱▱▱▱▱   54%      週重置 4d08h · 不夠（預估 2d 耗盡）         5h  23%（重置 2h15m）            
-       │ grokbot     ▰▰▰▰▱▱▱▱▱▱   39%      週重置 5d02h · 不夠（預估 3d 耗盡）         5h  32%（重置 1h40m）            
+       │ xaiseat     ▰▰▰▰▱▱▱▱▱▱   39%      週重置 5d02h · 不夠（預估 3d 耗盡）         5h  32%（重置 1h40m）            
        │ kimi        ▰▰▱▱▱▱▱▱▱▱   18%      週重置 5d18h · 不夠（預估 4d 耗盡）         5h    —                          
        │ team-a      ▰▱▱▱▱▱▱▱▱▱  9.6%      週重置   18h · 閒置（低於 85% 目標）        5h    —                          
        │ ▲ 無來源 ×6：needs_token ×2（tok-echo、tok-foxtrot 需你重登） · web_only ×4（web-alpha…）            [u] 展開 6 池
@@ -327,7 +327,7 @@
        {subtle}│{/} {inactive}smith2{/}    {inactive}▰▰▰▰▰▱  82%{/}  {inactive}週 3d11h · 不夠（1d 耗盡）{/} {inactive}5h   0%（4h50m）{/}      
        {subtle}│{/} {inactive}codexseat{/} {inactive}▰▰▰▱▱▱  54%{/}  {inactive}週 4d08h · 不夠（2d 耗盡）{/} {inactive}5h  23%（2h15m）{/}      
        {subtle}│{/} {inactive}team-a{/}    {inactive}▰▱▱▱▱▱ 9.6%{/}  {inactive}週   18h · 閒置（<85%）{/}    {inactive}5h    —{/}               
-       {subtle}│{/} {inactive}另 2 池（grokbot 39%、kimi 18%）{/} {warning}▲缺權杖 ×2{/} {inactive}· 僅網頁 ×4{/}        {merged}[u]{/} {inactive}展開{/}
+       {subtle}│{/} {inactive}另 2 池（xaiseat 39%、kimi 18%）{/} {warning}▲缺權杖 ×2{/} {inactive}· 僅網頁 ×4{/}        {merged}[u]{/} {inactive}展開{/}
 {inactive}交辦{/}   {subtle}│{/} {inactive}PM{/}        {inactive}「twgame 新帳號註冊」{/}           {warning}▲ 等操作員{/}        {inactive}2d{/}         
        {subtle}│{/} {inactive}gpu-lead{/}  {inactive}「gpu-host-1 換 live 版」{/}            {inactive}· 等回報{/}          {inactive}5h{/}    {subtle}↓還有1{/}
 {merged}分頁{/}   {subtle}│{/} {merged}Tab{/} 換頁   {claude}▸總覽{/} {warning}▲{/}{error}⊘{/}   寵物 {inactive}Ferris · $ ϟ{/}                                
@@ -348,7 +348,7 @@
        │ smith2    ▰▰▰▰▰▱  82%  週 3d11h · 不夠（1d 耗盡） 5h   0%（4h50m）      
        │ codexseat ▰▰▰▱▱▱  54%  週 4d08h · 不夠（2d 耗盡） 5h  23%（2h15m）      
        │ team-a    ▰▱▱▱▱▱ 9.6%  週   18h · 閒置（<85%）    5h    —               
-       │ 另 2 池（grokbot 39%、kimi 18%） ▲缺權杖 ×2 · 僅網頁 ×4        [u] 展開
+       │ 另 2 池（xaiseat 39%、kimi 18%） ▲缺權杖 ×2 · 僅網頁 ×4        [u] 展開
 交辦   │ PM        「twgame 新帳號註冊」           ▲ 等操作員        2d         
        │ gpu-lead  「gpu-host-1 換 live 版」            · 等回報          5h    ↓還有1
 分頁   │ Tab 換頁   ▸總覽 ▲⊘   寵物 Ferris · $ ϟ                                
@@ -365,7 +365,7 @@
 | **R04** | `       │ ` (`9`) | 欄1 `⊘ 主機 host-f`(**16**) + 欄2 `整台主機`(**28**) + 欄3 `疑似 courier 斷線 · 2m`(22+5空白=**27**) = **71 格** | **80** |
 | **R05** | `       │ ` (`9`) | 欄1 `⊘ delta(host-c)`(15+1空白=**16**) + 欄2 `換池規則：只重用該主機上…`(25+3空白=**28**) + 欄3 `逾時沒回報 · 3h`(15) + 空白(5) + `↓還有4`(7) (**27**) = **71 格** | **80** |
 | **R06–09** | `各池   │ ` (`9`) | 欄1(**10**) + 欄2 `▰▰▰▰▰▰  99%`(11+2空白=**13**) + 欄3(**26**) + 欄4(**22**) = **71 格** | **80** |
-| **R10** | `       │ ` (`9`) | `另 2 池（grokbot 39%、kimi 18%）`(32) + ` ▲缺權杖 ×2`(11) + ` · 僅網頁 ×4`(12) + 空白(8) + `[u] 展開`(8) = **71 格** | **80** |
+| **R10** | `       │ ` (`9`) | `另 2 池（xaiseat 39%、kimi 18%）`(32) + ` ▲缺權杖 ×2`(11) + ` · 僅網頁 ×4`(12) + 空白(8) + `[u] 展開`(8) = **71 格** | **80** |
 | **R11** | `交辦   │ ` (`9`) | 欄1 `PM`(**10**) + 欄2 `「twgame 新帳號註冊」`(21+11空白=**32**) + 欄3 `▲ 等操作員`(**18**) + 欄4 `2d`(2+9空白=**11**) = **71 格** | **80** |
 | **R12** | `       │ ` (`9`) | 欄1 `gpu-lead`(**10**) + 欄2 `「gpu-host-1 換 live 版」`(20+12空白=**32**) + 欄3 `· 等回報`(**18**) + 欄4 `5h`(2) + 空白(2) + `↓還有1`(7) (**11**) = **71 格** | **80** |
 | **R13** | `分頁   │ ` (`9`) | `Tab 換頁   ▸總覽 ▲⊘   寵物 Ferris · $ ϟ`(39) + 尾空白(32) = **71 格** | **80** |
@@ -389,7 +389,7 @@ mod 受限於不可 spawn 子行程、只能讀檔，因此對 `~/.local/state/f
 {inactive}各池{/}   {subtle}│{/} {inactive}smith1      max20{/}   {error}▰▰▰▰▰▰▰▰▰▰   99%{/}          {error}週重置 2d04h · 不夠（預估 2h 耗盡）{/}   {inactive}5h    —{/}                     {inactive}已達 85% 目標，優先停派新工{/}          
        {subtle}│{/} {inactive}smith2      max20{/}   {inactive}▰▰▰▰▰▰▰▰▱▱   82%{/}          {inactive}週重置 3d11h · 不夠（預估 1d 耗盡）{/}   {inactive}5h   0%（重置 4h50m）{/}       {inactive}接近 85% 目標線{/}                      
        {subtle}│{/} {inactive}codexseat   pro{/}     {inactive}▰▰▰▰▰▱▱▱▱▱   54%{/}          {inactive}週重置 4d08h · 不夠（預估 2d 耗盡）{/}   {inactive}5h  23%（重置 2h15m）{/}       {inactive}消耗偏快，留意短窗{/}                   
-       {subtle}│{/} {inactive}grokbot     pro{/}     {inactive}▰▰▰▰▱▱▱▱▱▱   39%{/}          {inactive}週重置 5d02h · 不夠（預估 3d 耗盡）{/}   {inactive}5h  32%（重置 1h40m）{/}       {inactive}消耗偏快，短窗正常{/}                   
+       {subtle}│{/} {inactive}xaiseat     pro{/}     {inactive}▰▰▰▰▱▱▱▱▱▱   39%{/}          {inactive}週重置 5d02h · 不夠（預估 3d 耗盡）{/}   {inactive}5h  32%（重置 1h40m）{/}       {inactive}消耗偏快，短窗正常{/}                   
        {subtle}│{/} {inactive}kimi        pro{/}     {inactive}▰▰▱▱▱▱▱▱▱▱   18%{/}          {inactive}週重置 5d18h · 不夠（預估 4d 耗盡）{/}   {inactive}5h    —{/}                     {inactive}無 5h 視窗限制{/}                       
        {subtle}│{/} {inactive}team-a      max20{/}   {inactive}▰▱▱▱▱▱▱▱▱▱  9.6%{/}          {inactive}週重置   18h · 閒置（低於 85% 目標）{/}  {inactive}5h    —{/}                     {inactive}重置前用不完，建議優先派工{/}           
        {subtle}│{/} {warning}▲ 無來源 ×6：needs_token ×2（tok-echo、tok-foxtrot 需你重登）{/} {inactive}· web_only ×4（web-alpha、web-beta、web-gamma、web-delta）{/}            {merged}[u]{/} {inactive}展開 6 池{/}

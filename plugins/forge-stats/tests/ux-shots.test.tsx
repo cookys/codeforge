@@ -99,10 +99,10 @@ for (const theme of ['dark', 'light'] as const) {
       if (name === 'S5-stale') expect(lines.some(l => l.some(s => s.color === 'warning' && s.text.includes('舊資料 6m')))).toBe(true)
       if (['S1', 'S2', 'S3'].includes(name)) {
         expect(lines.some(l => words(l).includes('待決 3') && words(l).includes('bridge'))).toBe(true)
-        expect(lines.some(l => words(l).includes('pool-0'))).toBe(true)
+        expect(lines.some(l => words(l).includes('smith1'))).toBe(true)
         expect(lines.filter(l => words(l).includes('另 6 池無來源'))).toHaveLength(1)
         expect(plan.groups.blocked.visible).toBeGreaterThanOrEqual(3)
-        expect(lines.some(l => words(l).includes('交辦線-0') && l.some(s => s.color === 'warning'))).toBe(true)
+        expect(lines.some(l => words(l).includes('PM') && l.some(s => s.color === 'warning'))).toBe(true)
       }
       receipt(name, cols, rows, lines, true, theme)
     })
@@ -115,7 +115,7 @@ for (const theme of ['dark', 'light'] as const) {
     const tree = await ui.drawn() as RenderNode
     const lines = drawnRows(tree)
     const all = lines.map(words).join('\n')
-    expect(all).not.toMatch(/待決|卡住|pool-0|⋯10/)
+    expect(all).not.toMatch(/待決|卡住|smith1|⋯10/)
     expect(lines.filter(l => /model-/.test(words(l)))).toHaveLength(6)
     expect(all).toContain('▸寵物')
     receipt('S6', 160, 40, lines, false, theme)

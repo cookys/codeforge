@@ -62,7 +62,7 @@ test('legacy usage opens overview; pet costs have at most six rows; focus is req
   expect(models).toHaveLength(6)
   expect(models[0].text).toContain('前 6/8')
   expect(await ui.find({ type: 'Raster' })).not.toBe(undefined)
-  expect(topRows(await ui.drawn()).join('')).not.toMatch(/待決|pool-0|⋯10/)
+  expect(topRows(await ui.drawn()).join('')).not.toMatch(/待決|smith1|⋯10/)
 })
 
 test('brief boundary rejects links and oversize before reading; malformed and missing data keep quota visible', async ($, on) => {
@@ -71,7 +71,7 @@ test('brief boundary rejects links and oversize before reading; malformed and mi
   const ui = await $.ui.mount(paneTarget())
   expect(w.log.includes('read:' + BRIEF)).toBe(false)
   expect(topRows(await ui.drawn()).join('')).toContain('fleet 摘要檔無法讀取')
-  expect(topRows(await ui.drawn()).join('')).toContain('pool-0')
+  expect(topRows(await ui.drawn()).join('')).toContain('smith1')
 })
 
 test('pane window starts at the highest priority row, clamps scroll, and never pads dock or inline', () => {

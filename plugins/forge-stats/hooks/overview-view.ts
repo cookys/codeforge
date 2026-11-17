@@ -57,7 +57,7 @@ const pct = (value: number) => `${Math.round(value * 100)}%`
 function poolBody(a: FleetAccount, cols: number, now: number): PaneSeg[] {
   const inner = cols - 9
   const nameW = cols >= 110 ? 24 : 20
-  const plan = a.plan === null ? '方案未知' : PLAN[a.plan]
+  const plan = a.plan === null ? '' : PLAN[a.plan]
   const name = s(padRight(cut(a.name, Math.max(4, nameW - displayWidth(plan) - 3)), nameW - displayWidth(plan) - 1) + plan + ' ')
   const w = a.weekly
   const tone: Tone = a.state === 'stale' || a.state === 'expired' ? 'warning' : w !== null && !w.reset && w.pct >= 0.95 ? 'error' : 'inactive'
@@ -71,9 +71,11 @@ function poolBody(a: FleetAccount, cols: number, now: number): PaneSeg[] {
   const lead = [name, bar]
   const rest = inner - width(lead)
   if (cols < 110) return [...lead, s(cut(detail, rest), tone)]
-  const detailW = Math.min(48, rest - (five ? 24 : 0))
+  // the 5h column is reserved whenever something follows it, so a note never slides into it
+  const fiveCol = five !== '' || a.note !== null
+  const detailW = Math.min(48, rest - (fiveCol ? 24 : 0))
   const fields = [...lead, cell(detail, detailW, tone)]
-  if (five) fields.push(cell(five, 24))
+  if (fiveCol) fields.push(cell(five, 24))
   if (a.note && inner > width(fields)) fields.push(s(cut(a.note, inner - width(fields))))
   return fields
 }

@@ -41,9 +41,9 @@ test('brief size and missing states preserve quota', async ($, on) => {
   const ui = await $.ui.mount(paneTarget())
   expect(w.log.includes('read:' + BRIEF)).toBe(false)
   expect(topRows(await ui.drawn()).join('')).toContain('fleet 摘要檔無法讀取')
-  expect(topRows(await ui.drawn()).join('')).toContain('pool-0')
+  expect(topRows(await ui.drawn()).join('')).toContain('smith1')
   delete w.files[BRIEF]
   await ui.redraw()
   expect(topRows(await ui.drawn()).join('')).toContain('fleet 摘要檔還沒出現')
-  expect(topRows(await ui.drawn()).join('')).toContain('pool-0')
+  expect(topRows(await ui.drawn()).join('')).toContain('smith1')
 })

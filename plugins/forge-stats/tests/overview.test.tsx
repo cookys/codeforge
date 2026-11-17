@@ -16,7 +16,7 @@ test('overview stays within 60%, has no blank rows, decisions first and one no-s
     expect(ls.every(l => l.trim() !== '' && displayWidth(l) <= cols)).toBe(true)
     expect(ls.filter(l => l.includes('另 6 池無來源'))).toHaveLength(1)
     expect(ls.some(l => l.includes('待決 3'))).toBe(true)
-    expect(ls.some(l => l.includes('pool-0'))).toBe(true)
+    expect(ls.some(l => l.includes('smith1'))).toBe(true)
     expect(p.groups.blocked.visible).toBeGreaterThanOrEqual(3)
     expect(ls.join('\n')).not.toMatch(/優先派工|停派新工|池 \d+\//)
   }
