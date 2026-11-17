@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `codeforge.quota/1` snapshot gains an optional `org_id` (the login's `organizationUuid` verbatim, omitted when absent; schema name unchanged) so the fleet courier can match a seat to a hangar pool key (fleet 01M7MMSB). Not in the summary, `fleet-quota.json` or `usage push`.
+
 ### Changed
 - **The statusline is always exactly one line and never draws the pet** (operator via PM 01M7MEY1). It used to draw a
   5-line RPG box (pet sprite, ATK/DEF) whenever no fresh forge-stats `layout: band` heartbeat existed for the session,

@@ -225,6 +225,7 @@ fn usage_export_prints_the_validated_email_free_summary() {
     let snap = Snapshot {
         alias: "acct-1a2b3c4d".into(),
         org: None,
+        org_id: None,
         email: Some("me@example.com".into()),
         root: None,
         written_at_ms: now_ms,
@@ -277,6 +278,7 @@ fn usage_export_hourly_prints_the_hourly_document_and_plain_export_stays_the_sum
     let snap = Snapshot {
         alias: "acct-1a2b3c4d".into(),
         org: None,
+        org_id: None,
         email: Some("me@example.com".into()),
         root: None,
         written_at_ms: now_ms,
@@ -1181,6 +1183,7 @@ fn a_root_takes_the_alias_of_the_snapshot_naming_it() {
     let snap = |alias: &str, root: Option<&str>, at: i64| Snapshot {
         alias: alias.into(),
         org: None,
+        org_id: None,
         email: None,
         root: root.map(String::from),
         written_at_ms: at,
@@ -1909,6 +1912,7 @@ fn collect_observes_the_login_not_a_fresh_snapshot_of_the_previous_account() {
     let a_snap = Snapshot {
         alias: "acct-aaaaaaaa".into(),
         org: None,
+        org_id: None,
         email: None,
         root: Some(hash.clone()),
         written_at_ms: NOW - 60_000,

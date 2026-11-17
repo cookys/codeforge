@@ -59,6 +59,9 @@ pub struct Snapshot {
     pub alias: String,
     /// The org display (`personal` or a sanitized name); `None` = unknown (an old writer).
     pub org: Option<String>,
+    /// `oauthAccount.organizationUuid` verbatim (the full org id; fleet couriers match it to a seat
+    /// pool key). `None` = unknown (an old writer, no uuid); omitted from the JSON then.
+    pub org_id: Option<String>,
     /// The login email (local 0600 file only); `None` = unknown (an old writer or a bad value).
     pub email: Option<String>,
     /// sha8 of the canonical config dir this account's sessions run in (`None` from a
@@ -167,7 +170,7 @@ fn same_value(a: &Option<Window>, b: &Option<Window>) -> bool {
 
 impl Snapshot {
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut v = json!({
             "schema": SCHEMA,
             "alias": self.alias,
             "org": self.org,
@@ -176,7 +179,11 @@ impl Snapshot {
             "written_at_ms": self.written_at_ms,
             "five_hour": window_json(&self.five_hour),
             "seven_day": window_json(&self.seven_day),
-        })
+        });
+        if let Some(id) = self.org_id.as_ref().filter(|i| !i.is_empty()) {
+            v["org_id"] = json!(id);
+        }
+        v
     }
 
     /// The right schema and a valid alias, or nothing.
@@ -198,6 +205,10 @@ impl Snapshot {
             .as_str()
             .filter(|o| valid_org(o))
             .map(str::to_string);
+        let org_id = v["org_id"]
+            .as_str()
+            .filter(|i| !i.is_empty())
+            .map(str::to_string);
         let email = v["email"]
             .as_str()
             .filter(|e| valid_email(e))
@@ -205,6 +216,7 @@ impl Snapshot {
         Some(Snapshot {
             alias: alias.to_string(),
             org,
+            org_id,
             email,
             root,
             written_at_ms: v["written_at_ms"].as_i64()?,
@@ -311,6 +323,7 @@ pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot,
             Snapshot {
                 alias: snap.alias.clone(),
                 org: snap.org.clone(),
+                org_id: snap.org_id.clone(),
                 email: snap.email.clone(),
                 root: snap.root.clone().or_else(|| old.root.clone()),
                 written_at_ms: if taken {
@@ -420,6 +433,7 @@ mod tests {
         Snapshot {
             alias: alias.into(),
             org: None,
+            org_id: None,
             email: None,
             root: None,
             written_at_ms: at_ms,
@@ -502,6 +516,32 @@ mod tests {
         let mut v = s.to_json();
         v["five_hour"]["pct"] = json!(f64::NAN.to_string());
         assert_eq!(Snapshot::from_json(&v).unwrap().five_hour, None);
+    }
+
+    #[test]
+    fn org_id_is_written_verbatim_and_omitted_when_absent_or_empty() {
+        let mut s = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
+        assert!(s.to_json().get("org_id").is_none());
+        s.org_id = Some(String::new());
+        assert!(s.to_json().get("org_id").is_none());
+        s.org_id = Some("0f3c2a1e-aaaa-bbbb-cccc-1234567890ab".into());
+        let dir = tempfile::tempdir().unwrap();
+        merge_snapshot(dir.path(), &s).unwrap();
+        let raw = std::fs::read_to_string(dir.path().join("acct-a.json")).unwrap();
+        let v: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(v["org_id"], "0f3c2a1e-aaaa-bbbb-cccc-1234567890ab");
+        assert_eq!(v["schema"], SCHEMA);
+        assert_eq!(Snapshot::from_json(&v), Some(s));
+    }
+
+    #[test]
+    fn a_snapshot_file_without_org_id_still_reads_back() {
+        let s = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
+        let mut v = s.to_json();
+        v.as_object_mut().unwrap().remove("org_id");
+        let back = Snapshot::from_json(&v).unwrap();
+        assert_eq!(back.org_id, None);
+        assert_eq!(back, s);
     }
 
     #[test]

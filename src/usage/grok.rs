@@ -124,6 +124,7 @@ fn weekly_snapshot(alias: String, pct: f64, resets_at: i64, observed_ms: i64) ->
     quota::Snapshot {
         alias,
         org: None,
+        org_id: None,
         email: None,
         root: None,
         written_at_ms: observed_ms,

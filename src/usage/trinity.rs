@@ -219,6 +219,7 @@ pub fn snapshots(summary_dir: &Path, now_ms: i64) -> Vec<quota::Snapshot> {
     vec![quota::Snapshot {
         alias: account_key(),
         org: None,
+        org_id: None,
         email: None,
         root: None,
         written_at_ms: q.observed_ms,

@@ -147,6 +147,7 @@ pub fn parse_usages(body: &Value, observed_ms: i64, key_hash: &str) -> Option<qu
     Some(quota::Snapshot {
         alias: format!("kimi-{key_hash}"),
         org: None,
+        org_id: None,
         email: None,
         root: None,
         written_at_ms: observed_ms,
@@ -205,6 +206,7 @@ fn snapshot_from_cache(c: &Cache, key_hash: &str) -> Option<quota::Snapshot> {
     Some(quota::Snapshot {
         alias: format!("kimi-{key_hash}"),
         org: None,
+        org_id: None,
         email: None,
         root: None,
         written_at_ms: c.observed_ms,
