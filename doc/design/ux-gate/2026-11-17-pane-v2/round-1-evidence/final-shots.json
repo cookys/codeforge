@@ -1,0 +1,12 @@
+{
+  "command": [
+    "env",
+    "UX_SHOTS_DIR=<repo>/doc/design/ux-gate/2026-11-17-pane-v2/shots",
+    "python3",
+    "plugins/forge-stats/tests/export-ux-shots.py"
+  ],
+  "exit_code": 0,
+  "log": "final-shots.log",
+  "full_log_sha256": "7c22b9792328736fede5f7377f530c7af39751b7a48cb464036459282f9242b9",
+  "stored_log_sha256": "6d2224f62131760d8cc3181969a9df25d371bd819e00d020d8bf76fa37cb2e6b"
+}

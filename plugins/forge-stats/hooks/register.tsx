@@ -700,7 +700,7 @@ export const register: Register = on => {
     let petWindow: { above: number; below: number } | undefined
     if (paneTab === 'overview') {
       // Connect operator-origin assignments after fleet feat/operator-origin merges.
-      const plan = overviewPlan({ cols, rows: terminalRows, maxRows: e.props.scroll.bodyRows, now, brief: await readBrief($), fleet: await readFleetQuota($), usage, assignments: [], offsets, info: infoOpen })
+      const plan = overviewPlan({ cols, rows: terminalRows, maxRows: e.props.scroll.bodyRows, now, brief: await readBrief($), fleet: await readFleetQuota($), usage, assignments: [], offsets, info: infoOpen, buttons: Button !== undefined })
       groupWindows = plan.groups
       statusTail = plan.statusTail
       decisions = plan.decisions
@@ -730,7 +730,7 @@ export const register: Register = on => {
         const win = windowOf(rows.length, cap, false, petScroll)
         if (win.overflow) petWindow = win
         body = rows.slice(win.top, win.top + win.area).map(line)
-        if (win.indicator) body.push(line({ key: 'pet-more', segs: [...gutter(''), ps([win.above ? `↑ 還有 ${win.above}` : '', win.below ? `↓ 還有 ${win.below}` : ''].filter(Boolean).join(' · '), 'merged')] }))
+        if (win.indicator) body.push(line({ key: 'pet-more', segs: [...gutter(''), ps([win.above ? `↑ 還有 ${win.above}` : '', win.below ? `↓ 還有 ${win.below}` : ''].filter(Boolean).join(' · '), 'subtle')] }))
       }
     }
     const select = (tab: PaneTab) => { paneTab = tab; infoOpen = false; autopilotHint = false; lastCells = null; redraw() }

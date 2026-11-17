@@ -1,0 +1,12 @@
+{
+  "command": [
+    "claude",
+    "plugin",
+    "test",
+    "plugins/forge-stats"
+  ],
+  "exit_code": 1,
+  "log": "13-c1-overflow-green.log",
+  "full_log_sha256": "1ff9c2190ad54e6a10728e709f74d26efcac7bda5b672537c8dd9e8e39552803",
+  "stored_log_sha256": "2828ff6a84d1ac66e16a893ca3abd6eb909cb1a79ed9987e891bc54d87bc052a"
+}

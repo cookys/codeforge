@@ -11,72 +11,72 @@
     {
       "path": "S1-160x40-dark.txt",
       "rows": 21,
-      "sha256": "6228cb632cb309b824593603426b2d4ff485cd6d9ce5fa0fc2881416e347316b"
+      "sha256": "2a0d16aef2a4cb53f6d9490ef705b15c24aa389ad3cecbf8c32fd1b762711776"
     },
     {
       "path": "S2-120x30-dark.txt",
       "rows": 18,
-      "sha256": "4283aa530f9b0dda29efd340a90b5c417c0202183df6b6174436c6cde1b7dda6"
+      "sha256": "db540d95173a2b0ce956a2a1250fab2ea16299cd86949bee18a8fb5e3239c8e5"
     },
     {
       "path": "S3-80x24-dark.txt",
       "rows": 14,
-      "sha256": "1254f570e7234363fe43f66a9651633f2c9e7cd69447f606aa9d8e568916e273"
+      "sha256": "099b9e798f7c643f1b82b208cd83ab18b1eb5e17c74f05aa1791522564e397aa"
     },
     {
       "path": "S4-160x40-dark.txt",
-      "rows": 8,
-      "sha256": "6b785d867e75b022ee09ddcfd865513e02f7881012eb8624cbe0cc2547c41716"
+      "rows": 7,
+      "sha256": "d49eff9da5bb7c2c28d824ae0d53461123ef042d3f299920b894806d1bee8415"
     },
     {
       "path": "S5-missing-160x40-dark.txt",
-      "rows": 14,
-      "sha256": "f1b618f5d52d7e8c0cb8e384eb9fae7aba9c57c583ef04ea5c6e21118849057a"
+      "rows": 13,
+      "sha256": "38578173705e339ff9ed0e0c2b8a33e44956df82705fe21ed907bc9155db46f3"
     },
     {
       "path": "S5-stale-160x40-dark.txt",
       "rows": 21,
-      "sha256": "2155935ee3cf3f1c7d1f1e5f6c338e52a31d3928e704a4cc64f0eff485e412dd"
+      "sha256": "209747f34249cf6001ebc7edb80bad4c8b7f658767ffba793e1b98d6f116a135"
     },
     {
       "path": "S6-160x40-dark.txt",
       "rows": 18,
-      "sha256": "926df5eacfd8cb1b0f3ae44a7009834b698f89d4f464c9a55355d785b41ead6d"
+      "sha256": "0aa804fe330ff8285947585c41888bbbb31354dd4ff0ffdd357a9a2aa4b17ca4"
     },
     {
       "path": "S1-160x40-light.txt",
       "rows": 21,
-      "sha256": "6d5c5ecd683401fd4fe86b4eb257da6048d0728292f8b78a302192e06a34516f"
+      "sha256": "af710429e8aa7db8b94efa88deedf9d188b1efce065c5c8c77a135af8dab9940"
     },
     {
       "path": "S2-120x30-light.txt",
       "rows": 18,
-      "sha256": "8a73d6b246b5eb1bd73035f81e17223006bcc2c50ada64bf6783c56b6b02ec41"
+      "sha256": "ef8219ed955ebe74fa351472a67f844a40c71db20a5c332a26d6fbd186603c31"
     },
     {
       "path": "S3-80x24-light.txt",
       "rows": 14,
-      "sha256": "eee7e6e7c1be7a002e7fd5d7f71763656002fb01cdec3838379ed5578513a415"
+      "sha256": "cdb490ac105c79a0e78e2e7392b9468b55914e561247676d685c98ef2927de43"
     },
     {
       "path": "S4-160x40-light.txt",
-      "rows": 8,
-      "sha256": "8e1459640bef11f73e78d51fe3cca20994674cad25903a0016a13988695b1fd5"
+      "rows": 7,
+      "sha256": "4b9368acc88a9fd07d234955cea7e062a213b05000342ce38d2927715dd87267"
     },
     {
       "path": "S5-missing-160x40-light.txt",
-      "rows": 14,
-      "sha256": "cc03e44de33a69fa4c993f84e49f1a1bef6df5fe801b8518519fa90f300318ce"
+      "rows": 13,
+      "sha256": "52da69557f1e5e09f30d3024b1a95afebd60931d3ad4ee40772befa10ae8060e"
     },
     {
       "path": "S5-stale-160x40-light.txt",
       "rows": 21,
-      "sha256": "8d5676b7bbdf2f522953d12492c4f94885ddad856145551137868b61a9c4c8f3"
+      "sha256": "8cb244908dd9d9a37f22ac1ec86ce0116149993e54c44c6a194f649e9472f647"
     },
     {
       "path": "S6-160x40-light.txt",
       "rows": 18,
-      "sha256": "eaa37484190c33d620df0529bc22e30362c632f3910d23a712df5934590b9a73"
+      "sha256": "7fddac84bfe3d31779d4c0877d40d38d0a9555fc17cd5158dc2aa98d465c55d6"
     }
   ]
 }

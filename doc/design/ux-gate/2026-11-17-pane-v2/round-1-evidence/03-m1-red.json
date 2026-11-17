@@ -1,0 +1,12 @@
+{
+  "command": [
+    "claude",
+    "plugin",
+    "test",
+    "plugins/forge-stats"
+  ],
+  "exit_code": 1,
+  "log": "03-m1-red.log",
+  "full_log_sha256": "d41509cc468c5653cdd2a48295b8e35b706d4456b2cd45c3d08dce8c33ea9f86",
+  "stored_log_sha256": "f62f04b4ddca0c38a4c9fa6c3d85fc9017716b141ae835358b85eba13887738a"
+}

@@ -45,23 +45,22 @@ const severity: Record<BriefKind, number> = { offline: 0, stuck: 1, waiting_pm: 
 const urgency = { need_you: 0, waiting: 1, running: 2 }
 
 export function selectBrief(view: BriefView, input: Assignment[]) {
-  const items = view.status === 'ok' ? view.items : []
-  const decisions = items.filter(i => i.kind === 'needs_human').sort(oldest)
-  const subjects = new Set(decisions.map(i => i.subject.display))
-  const tasks = new Set(decisions.map(i => i.ids.task_id).filter((x): x is string => x !== undefined))
-  const assignments = input.slice().sort((a, b) => urgency[a.state] - urgency[b.state] || a.sinceMs - b.sinceMs).filter(a => {
-    if (subjects.has(a.who)) return false
-    subjects.add(a.who)
+  const seen = new Set<string>()
+  const items = (view.status === 'ok' ? view.items : []).filter(i => {
+    if (seen.has(i.id)) return false
+    seen.add(i.id)
     return true
   })
-  const seen = new Set<string>()
+  const decisions = items.filter(i => i.kind === 'needs_human').sort(oldest)
+  const assignments = input.slice().sort((a, b) => urgency[a.state] - urgency[b.state] || a.sinceMs - b.sinceMs)
   const blocked = items.filter(i => ['offline', 'stuck', 'waiting_pm', 'high_context'].includes(i.kind))
     .sort((a, b) => Number(b.level === 'red') - Number(a.level === 'red') || severity[a.kind] - severity[b.kind] || oldest(a, b))
     .filter(i => {
-      // Distinct lanes on one task remain separate (design §1.3, cobalt/ember example).
-      if (subjects.has(i.subject.display) || (i.ids.task_id !== undefined && tasks.has(i.ids.task_id)) || seen.has(i.subject.display)) return false
-      seen.add(i.subject.display)
-      return true
+      // Only a card for the same thing on the same lane supersedes a blocked record.
+      return !decisions.some(d => d.subject.display === i.subject.display && (
+        (i.ids.task_id !== undefined && d.ids.task_id === i.ids.task_id) ||
+        (i.ids.card_id !== undefined && d.ids.card_id === i.ids.card_id)
+      ))
     })
   return { decisions, assignments, blocked, background: view.status === 'ok' ? view.counts.waiting + view.counts.info : 0 }
 }

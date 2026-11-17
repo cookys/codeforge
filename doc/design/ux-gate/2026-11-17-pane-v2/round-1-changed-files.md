@@ -1,0 +1,112 @@
+# 本輪逐檔變更原因
+
+每行一檔，路徑相對 repo 根目錄。包含產生的驗證證據與截圖；既有 fixture 原檔未改。
+
+- `doc/design/forge-stats-pane-v2.md` — 同步 §1.3 ID 去重裁定及本輪高度、配色優先規則。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-changed-files.md` — 列出本輪每個變更檔案與一行原因。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/01-c2-green.json` — 記錄 01-c2-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/01-c2-green.log` — 保留 01-c2-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/01-c2-red.json` — 記錄 01-c2-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/01-c2-red.log` — 保留 01-c2-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/02-c1-green.json` — 記錄 02-c1-green 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/02-c1-green.log` — 保留 02-c1-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/02-c1-red.json` — 記錄 02-c1-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/02-c1-red.log` — 保留 02-c1-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/02-c1-verified.json` — 記錄 02-c1-verified 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/02-c1-verified.log` — 保留 02-c1-verified 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/03-m1-green.json` — 記錄 03-m1-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/03-m1-green.log` — 保留 03-m1-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/03-m1-red.json` — 記錄 03-m1-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/03-m1-red.log` — 保留 03-m1-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/04-k1-green.json` — 記錄 04-k1-green 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/04-k1-green.log` — 保留 04-k1-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/04-k1-red.json` — 記錄 04-k1-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/04-k1-red.log` — 保留 04-k1-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/04-k1-verified.json` — 記錄 04-k1-verified 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/04-k1-verified.log` — 保留 04-k1-verified 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/05-m2-green.json` — 記錄 05-m2-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/05-m2-green.log` — 保留 05-m2-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/05-m2-red-isolated.json` — 記錄 05-m2-red-isolated 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/05-m2-red-isolated.log` — 保留 05-m2-red-isolated 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/05-m2-red.json` — 記錄 05-m2-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/05-m2-red.log` — 保留 05-m2-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/06-m3-green.json` — 記錄 06-m3-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/06-m3-green.log` — 保留 06-m3-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/06-m3-red.json` — 記錄 06-m3-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/06-m3-red.log` — 保留 06-m3-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/07-m4-green.json` — 記錄 07-m4-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/07-m4-green.log` — 保留 07-m4-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/07-m4-red.json` — 記錄 07-m4-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/07-m4-red.log` — 保留 07-m4-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/08-k2-green.json` — 記錄 08-k2-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/08-k2-green.log` — 保留 08-k2-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/08-k2-red.json` — 記錄 08-k2-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/08-k2-red.log` — 保留 08-k2-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/09-k3-green.json` — 記錄 09-k3-green 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/09-k3-green.log` — 保留 09-k3-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/09-k3-red.json` — 記錄 09-k3-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/09-k3-red.log` — 保留 09-k3-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/09-k3-verified.json` — 記錄 09-k3-verified 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/09-k3-verified.log` — 保留 09-k3-verified 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/10-k4-green.json` — 記錄 10-k4-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/10-k4-green.log` — 保留 10-k4-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/10-k4-red.json` — 記錄 10-k4-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/10-k4-red.log` — 保留 10-k4-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/11-shots.json` — 記錄 11-shots 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/11-shots.log` — 保留 11-shots 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/12-m2-alignment-green.json` — 記錄 12-m2-alignment-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/12-m2-alignment-green.log` — 保留 12-m2-alignment-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/12-m2-alignment-red.json` — 記錄 12-m2-alignment-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/12-m2-alignment-red.log` — 保留 12-m2-alignment-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/13-c1-overflow-green.json` — 記錄 13-c1-overflow-green 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/13-c1-overflow-green.log` — 保留 13-c1-overflow-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/13-c1-overflow-red-exact.json` — 記錄 13-c1-overflow-red-exact 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/13-c1-overflow-red-exact.log` — 保留 13-c1-overflow-red-exact 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/13-c1-overflow-red.json` — 記錄 13-c1-overflow-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/13-c1-overflow-red.log` — 保留 13-c1-overflow-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/13-c1-overflow-verified.json` — 記錄 13-c1-overflow-verified 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/13-c1-overflow-verified.log` — 保留 13-c1-overflow-verified 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/14-c1-single-pool-green.json` — 記錄 14-c1-single-pool-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/14-c1-single-pool-green.log` — 保留 14-c1-single-pool-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/14-c1-single-pool-red.json` — 記錄 14-c1-single-pool-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/14-c1-single-pool-red.log` — 保留 14-c1-single-pool-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/15-row-padding-green.json` — 記錄 15-row-padding-green 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/15-row-padding-green.log` — 保留 15-row-padding-green 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/15-row-padding-red.json` — 記錄 15-row-padding-red 的命令、exit 1 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/15-row-padding-red.log` — 保留 15-row-padding-red 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/final-check-all.json` — 記錄 final-check-all 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/final-check-all.log` — 保留 final-check-all 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/final-doc-drift.json` — 記錄 final-doc-drift 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/final-doc-drift.log` — 保留 final-doc-drift 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/final-plugin.json` — 記錄 final-plugin 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/final-plugin.log` — 保留 final-plugin 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/final-shots.json` — 記錄 final-shots 的命令、exit 0 與原始輸出 SHA256。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/final-shots.log` — 保留 final-shots 的驗證輸出及失敗原因，供 receipt 核對。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/index.md` — 索引逐項紅綠測與中途失敗的完整紀錄。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-evidence/scope.json` — 記錄基線、分支、程式 SHA256 與 band／Rust／專案設定未變的檢查。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-responses.md` — 逐條回應發現，引用程式行號、紅綠測與最終命令收據，記錄未做項目。
+- `doc/design/ux-gate/2026-11-17-pane-v2/round-1-verification.json` — 彙整三個指定命令 exit code、測試數量與截圖雜湊。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S1-160x40-dark.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S1-160x40-light.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S2-120x30-dark.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S2-120x30-light.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S3-80x24-dark.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S3-80x24-light.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S4-160x40-dark.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S4-160x40-light.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S5-missing-160x40-dark.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S5-missing-160x40-light.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S5-stale-160x40-dark.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S5-stale-160x40-light.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S6-160x40-dark.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/S6-160x40-light.txt` — 重產此情境與主題的文字、語意色及宿主色盤解析截圖。
+- `doc/design/ux-gate/2026-11-17-pane-v2/shots/manifest.json` — 更新十四份截圖列數與 SHA256。
+- `plugins/forge-stats/hooks/brief-view.ts` — 以 item ID 去重，跨區只排除同線同事，交辦不再過濾卡住。
+- `plugins/forge-stats/hooks/overview-view.ts` — 卡住優先分配高度，保留原因、時長及備註，合併摘要並修正配色與欄位對齊。
+- `plugins/forge-stats/hooks/pane-controls.ts` — 更新決策卡提示、目前頁籤與可按配色，保留窄版有效動作。
+- `plugins/forge-stats/hooks/register.tsx` — 將 Button 能力傳給規劃器，無 action 的寵物捲動提示改用 subtle。
+- `plugins/forge-stats/tests/brief.test.tsx` — 新增 ID／跨線／交辦去重、指定路徑及未來未知欄位斷言。
+- `plugins/forge-stats/tests/overview.test.tsx` — 新增高度、壓縮摘要、備註、配色、缺檔、過舊與對齊紅測，保留有效鍵位斷言。
+- `plugins/forge-stats/tests/pane-chat.test.tsx` — 增加假名溢位資料，保留上下捲動、尺寸改變與底部列驗證，更新指定提示。
+- `plugins/forge-stats/tests/pane-v2.test.tsx` — 驗證決策卡按鍵新文案、缺檔診斷與 HOME 讀取路徑。
+- `plugins/forge-stats/tests/ux-shots.test.tsx` — S1–S3 明確驗全部八筆、每筆完整時長、courier 原因與必留備註。

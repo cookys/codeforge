@@ -1,0 +1,12 @@
+{
+  "command": [
+    "claude",
+    "plugin",
+    "test",
+    "plugins/forge-stats"
+  ],
+  "exit_code": 0,
+  "log": "14-c1-single-pool-green.log",
+  "full_log_sha256": "3f98f4a046d1da40f111a99ac3c677c8eaebf7970f78fbe50087141575ef1e7b",
+  "stored_log_sha256": "1d735ad464b905d46be8386a98dfff4243e6fc6f693a8b685e93d70e6dbdf586"
+}

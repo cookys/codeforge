@@ -2,7 +2,7 @@
 import { expect, test } from 'claude-code/testing'
 import { parseBrief } from '../hooks/brief-view'
 import { parseFleetQuota } from '../hooks/fleet-view'
-import { displayWidth, parseUsage } from '../hooks/model'
+import { countdown, displayWidth, parseUsage } from '../hooks/model'
 import { overviewPlan } from '../hooks/overview-view'
 import type { PaneSeg } from '../hooks/overview-view'
 import { paneChrome } from '../hooks/pane-controls'
@@ -96,12 +96,28 @@ for (const theme of ['dark', 'light'] as const) {
       const lines = [...plan.lines.map(l => l.segs), chrome.tabs, chrome.hint]
       if (name === 'S4') expect(lines.length).toBeLessThanOrEqual(10)
       if (name === 'S5-missing') expect(lines.some(l => words(l).includes('fleet 摘要檔還沒出現'))).toBe(true)
-      if (name === 'S5-stale') expect(lines.some(l => l.some(s => s.color === 'warning' && s.text.includes('舊資料 6m')))).toBe(true)
+      if (name === 'S5-stale') expect(lines.some(l => l.some(s => s.color === 'warning' && s.text.includes('摘要過舊 6m')))).toBe(true)
       if (['S1', 'S2', 'S3'].includes(name)) {
         expect(lines.some(l => words(l).includes('待決 3') && words(l).includes('bridge'))).toBe(true)
         expect(lines.some(l => words(l).includes('smith1'))).toBe(true)
-        expect(lines.filter(l => words(l).includes('另 6 池無來源'))).toHaveLength(1)
-        expect(plan.groups.blocked.visible).toBeGreaterThanOrEqual(3)
+        const note = plan.lines.find(l => l.key === 'pool-smith1')!.segs.find(s => s.text.startsWith('週五 17'))!
+        expect(note).not.toBe(undefined)
+        expect(displayWidth(note.text)).toBeGreaterThanOrEqual(8)
+        if (cols >= 120) expect(note.text).toBe('週五 17:00 前只派審查')
+        expect(lines.filter(l => words(l).includes('無來源 ×6'))).toHaveLength(1)
+        expect(plan.groups.blocked.visible).toBe(8)
+        const courier = plan.lines.find(l => l.key === 'host:host-f')!
+        expect(words(courier.segs)).toContain('疑似 courier 連線問題')
+        expect(words(courier.segs)).not.toContain('整台主機')
+        expect(words(plan.lines.find(l => l.key === 'host:host-g')!.segs)).toContain('主機離線')
+        const blocked = BRIEF_SAMPLE.items.filter(i => i.kind === 'stuck' || i.kind === 'offline')
+        expect(blocked).toHaveLength(8)
+        for (const it of blocked) {
+          expect(plan.lines.filter(l => l.group === 'blocked' && l.key === it.id)).toHaveLength(1)
+          const duration = countdown(NOW + Math.max(0, NOW - it.since_ms), NOW)
+          expect(words(plan.lines.find(l => l.key === it.id)!.segs)).toContain(' · ' + duration)
+          expect(lines.filter(l => words(l).includes(it.subject.display))).toHaveLength(1)
+        }
         expect(lines.some(l => words(l).includes('PM') && l.some(s => s.color === 'warning'))).toBe(true)
       }
       receipt(name, cols, rows, lines, true, theme)

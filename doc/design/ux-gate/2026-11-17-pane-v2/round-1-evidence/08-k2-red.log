@@ -1,0 +1,265 @@
+
+tests/band.test.tsx:
+(pass) sanitizeSessionId matches codeforge on the shared vectors [3.77ms]
+(pass) bandLayout adds columns in priority order as the width allows, 1 to 3: no speed or request table (B32) [1.75ms]
+(pass) parseSessionView reads this session only [0.93ms]
+(pass) the heartbeat is written at session start, before any tick, and every 2 s [193.25ms]
+(pass) band_seen: true while the band is on screen and drawing; false within 32 s once its hook stops being called (B34) [365.15ms]
+(pass) a band hook never called (a plugin above draws its own band: autopilot's O4 shell) never says band_seen; layout stays band (B34) [160.52ms]
+(pass) the band layout is the default and does not open the pane [97.72ms]
+(pass) the stored pane layout opens the pane at session start [99.72ms]
+(pass) the band draws 1 to 3 columns by width: Ferris, pet, memory; never speed or requests (B32) [127.22ms]
+(pass) the pet column carries all five stats and the memory column the session lights [102.47ms]
+(pass) the band passes on a survey, desktop, or the pane layout [95.69ms]
+(pass) band blits go to the band instance [103.83ms]
+(pass) /forge-stats layout switches, persists, and the beat follows [91.28ms]
+(pass) rgbHex turns the village colour into #rrggbb and refuses anything else [0.44ms]
+(pass) the band colours by meaning: the pet in its village colour, lights by state [83.11ms]
+(pass) one row is the summary row (autopilot hands it down under its tab row, summary_row in the heartbeat): the pet when it fits, else passed on (PM G33) [111.46ms]
+(pass) two to five rows, or a thin column, is the same one-row summary [95.69ms]
+(pass) parseFleet takes autopilot.fleet v 1 only; summaryParts gives the widest form that fits, dropping from the end and keeping the most severe count [7.55ms]
+(pass) with autopilot's summary the one-row band draws the fleet counts before the pet (PM G33) [124.62ms]
+(pass) another summary version is no summary: the pet alone [96.38ms]
+(pass) mini and full tiers put the fleet row on top only with a row to spare above the tier minimum (mini >= 7, full >= 13) [131.30ms]
+(pass) six to eleven rows draw the 16x6 mini Ferris, and its blits are mini-sized [87.32ms]
+(pass) a label alone never blits the band [90.46ms]
+(pass) label then expanded in one render: the expanded call decides the band blits [96.93ms]
+(pass) after a model step the band and the summary show no speed (B32) [101.32ms]
+(pass) the prompt hint keeps the engine's text and gets the memory and brain lights as its tail [107.42ms]
+(pass) hidden lights are left out of the tail; with both hidden the hint passes unchanged [84.78ms]
+(pass) a tail a plugin above already set stays, forge-stats' lights follow it [94.74ms]
+
+tests/brief.test.tsx:
+(pass) brief rejects bad schema, malformed known items and UTF-8 bytes over 512 KiB; unknown kinds are skipped [6.17ms]
+(pass) brief dedup uses item IDs; cards suppress only the same subject and same task or card [1.25ms]
+(pass) blocked sort is level, offline/stuck/waiting_pm/high_context, then oldest; decisions show the oldest [0.36ms]
+(pass) same item ID dedups, different IDs on one lane remain, assignments never suppress blocked [0.47ms]
+(pass) brief path is HOME state fleet; future top-level, count and item keys are ignored [0.46ms]
+
+tests/fleet-tab.test.tsx:
+(pass) parseFleetQuota reads old_hosts and reset, and refuses a bad one [4.87ms]
+(pass) parseFleetQuota reads a window with age_s and stale (codeforge 2-hour mark); without them it still parses; a half or bad pair is refused [0.80ms]
+(pass) parseFleetQuota never throws and refuses what is not the schema [0.72ms]
+(pass) parseFleetQuota reads source_note and note; an old file without them still parses; bad ones are refused [1.61ms]
+(pass) parseFleetQuota reads note_resets_at and note_reset_rule; old files parse; half or bad pairs are refused [2.08ms]
+(pass) parseFleetQuota reads a valid plan, and treats an invalid or absent one as unknown (not bad) [0.50ms]
+(pass) parseFleetQuota reads five_hour_state no_source only with a null five_hour [0.53ms]
+
+tests/forge-stats.test.tsx:
+(pass) parseSnapshot reads pet and village, and names each failure [3.88ms]
+(pass) a snapshot older than ten minutes reports its age [0.64ms]
+(pass) the pane draws the pet and no speed or request table (B32) [211.40ms]
+(pass) a snapshot with no pet says so, dim [130.80ms]
+(pass) no snapshot file at all is shown as no snapshot yet [116.67ms]
+(pass) parseSprite takes the Ferris sprite and refuses each contract break [1.67ms]
+(pass) a frame becomes half-block cells with the right colours [13.60ms]
+(pass) the pane draws the sprite as a Raster in the terminal, ASCII elsewhere [114.69ms]
+(pass) a snapshot without a sprite key stays ok and draws ASCII [100.62ms]
+(pass) the idle animation blits the next frame every 500 ms, and only on change [138.49ms]
+(pass) a new session starts the animation over from frame 0 [158.18ms]
+
+tests/overview.test.tsx:
+(pass) overview stays within 60%, has no blank rows, decisions first and one no-source row at every width [10.42ms]
+(pass) every nonempty assignment group keeps a real scrollable row even with no need_you state [3.88ms]
+(pass) 80-column chrome retains every live action after scrolling and the autopilot explanation [1.83ms]
+(pass) short overview is at most ten rows; missing and stale brief are explicit warning states [1.69ms]
+(pass) row allocation gives blocked all spare rows before pools and assignments, including one-row summaries [3.79ms]
+(pass) pool notes retain at least eight cells and explicit ellipses at 80 and 120 columns [3.00ms]
+(pass) pool bars and short warnings use warning, waste and reading text use inactive, never error [1.95ms]
+(fail) missing and damaged brief use a summary diagnosis, never zero decisions or zero blocked [1.01ms]
+  AssertionError: expect(received).toBe()
+
+  Expected: "摘要"
+  Received: "待決"
+
+tests/pane-chat.test.tsx:
+(pass) content height 12: dock and inline have no padding and keep the controls last [218.06ms]
+(pass) content height 18: dock and inline have no padding and keep the controls last [185.09ms]
+(pass) content height 30: dock and inline have no padding and keep the controls last [140.07ms]
+(pass) scrolling blocked and pools keeps both control rows on their rows; Home/End clamp, resize stays bounded [207.52ms]
+(pass) legacy usage opens overview; pet costs have at most six rows; focus is requested before reads [123.30ms]
+(fail) brief boundary rejects links and oversize before reading; malformed and missing data keep quota visible [117.42ms]
+  AssertionError: expect(received).toContain()
+
+  Expected: containing "fleet 摘要檔還沒出現（待決、卡住無法顯示）"
+  Received: "待決   │ fleet 摘要檔無法讀取各池   │ smith1          Max 20x ▰▰▰▰▰▰▰▰▰▱  99%  週重置 2d4h · 不夠，預估 2h0m 耗盡                                      週五 17:00 前只派審查       │ smith2          Max 20x ▰▰▰▰▰▰▰▰▱▱  82%  週重置 3d11h · 不夠，預估 1d2h 耗盡             5h 0% 重置 4h50m               │ codexseat           Pro ▰▰▰▰▰▱▱▱▱▱  54%  週重置 4d8h · 不夠，預估 2d2h 耗盡              5h 23% 重置 2h15m              │ xaiseat                 ▰▰▰▱▱▱▱▱▱▱  39%  週重置 5d2h · 不夠，預估 3d2h 耗盡              5h 32% 重置 1h40m              │ kimi                    ▰▱▱▱▱▱▱▱▱▱  18%  週重置 5d18h · 不夠，預估 4d2h 耗盡                    │ team-a             Team ▱▱▱▱▱▱▱▱▱▱  10%  週重置 18h0m · 用不完                                  │ 無來源 ×6 · 缺權杖 ×2分頁   │ ▸總覽  寵物                                                                                                                        $36.00 · ⓘ 各池 0m按鍵   │ i 說明  p 換頁 · Esc 回輸入框"
+
+  the engine reported:
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.stat hook was skipped: test: ENOENT
+    test's fs.stat hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+(pass) pane window starts at the highest priority row, clamps scroll, and never pads dock or inline [1.54ms]
+
+tests/pane-v2.test.tsx:
+(pass) pane v2 defaults to overview, has two Traditional Chinese tabs and no blank padding [206.28ms]
+(pass) d explains the supported autopilot command in the last row; i opens and closes source help [210.07ms]
+(fail) brief size and missing states preserve quota [123.06ms]
+  AssertionError: expect(received).toContain()
+
+  Expected: containing "fleet 摘要檔還沒出現（待決、卡住無法顯示）"
+  Received: "待決   │ fleet 摘要檔無法讀取各池   │ smith1          Max 20x ▰▰▰▰▰▰▰▰▰▱  99%  週重置 2d4h · 不夠，預估 2h0m 耗盡                                      週五 17:00 前只派審查       │ smith2          Max 20x ▰▰▰▰▰▰▰▰▱▱  82%  週重置 3d11h · 不夠，預估 1d2h 耗盡             5h 0% 重置 4h50m               │ codexseat           Pro ▰▰▰▰▰▱▱▱▱▱  54%  週重置 4d8h · 不夠，預估 2d2h 耗盡              5h 23% 重置 2h15m              │ xaiseat                 ▰▰▰▱▱▱▱▱▱▱  39%  週重置 5d2h · 不夠，預估 3d2h 耗盡              5h 32% 重置 1h40m              │ kimi                    ▰▱▱▱▱▱▱▱▱▱  18%  週重置 5d18h · 不夠，預估 4d2h 耗盡                    │ team-a             Team ▱▱▱▱▱▱▱▱▱▱  10%  週重置 18h0m · 用不完                                  │ 無來源 ×6 · 缺權杖 ×2分頁   │ ▸總覽  寵物                                                                                                                        $36.00 · ⓘ 各池 0m按鍵   │ i 說明  p 換頁 · Esc 回輸入框"
+
+  the engine reported:
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.stat hook was skipped: test: ENOENT
+    test's fs.stat hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+    test's fs.read hook was skipped: test: ENOENT
+
+tests/quota-ui.test.tsx:
+(pass) quotaLiveDir follows the contract order: override, xdg, xdg-inferred, shm, fallback; never /tmp [3.54ms]
+(pass) pickViews skips lock and non-json files silently and counts links, non-regular files, oversize and off-pattern names; pickProviders caps at 64 [1.60ms]
+(pass) pane at 100: every state, in the §6.2 order (▲, tight, 429, the rest alphabetical, L0 and dropped last) [4.80ms]
+(pass) pane in English, and the empty / unreadable footers [1.24ms]
+(pass) pane narrows by dropping the age, then 後重置, then the meter; below 60 a block is one line [3.81ms]
+(pass) a peer row counts only past the namespace guard; with no guard the local row is all there is [0.67ms]
+(pass) band group: order ▲, tight, 429, the rest by utilization, then 無資料 N; the drop order of §6.1 [2.99ms]
+(pass) band chips: remaining-only credits, rpm and an invalid token draw no usage chip; 無資料 counts placeholders and dropped aliases only [0.72ms]
+(pass) band chip colours: ▲ warning (the only yellow), 429 and 無資料 inactive, tight and 估 none [0.66ms]
+(pass) band spacing invariants hold at every width 0..160, with and without fleet and pet (§3.5) [640.28ms]
+(pass) the quota group sits after the fleet part and before the pet; the pet goes first, the fleet counts only after the whole group [1.16ms]
+(pass) a hub clock ahead or behind shifts the reset countdown to the local clock, in the pane and in the band [0.75ms]
+(pass) band credits: amounts show what is left, a bare utilization shows what is used, remaining-only stays on the pane [0.66ms]
+(pass) band: provider prefixes drop before any chip does, but only where the alias is unique; a collision keeps its prefix [0.80ms]
+(pass) the reader skips links, non-regular files, oversize files and lock files without reading them, counts the bad, never reads a path twice in one refresh (session start and `/forge-stats usage` each refresh once) [210.30ms]
+(pass) the reader caps views at 256 and counts the rest without reading them [549.70ms]
+(pass) the band: chips after the fleet counts and before the pet, nothing without the mirror, today's row with an empty one [130.33ms]
+(pass) the band keeps today's row when the quota directory is absent [96.39ms]
+(pass) the band with an empty mirror directory draws today's row too [100.02ms]
+(pass) the timer re-reads the mirror every 15 s while the band is drawn, and a view that appears shows up [151.44ms]
+(pass) namespace.json inside a provider directory is the alias `namespace` [128.17ms]
+(pass) the reader rejects a view that grew past the cap, or changed size, or turned into a link between the listing and the read, and counts it [123.88ms]
+(pass) the reader rejects a namespace file that changed after the listing, and a provider directory that turned into a link [109.57ms]
+(pass) B45 pane and band: a shape-c record shows the neutral no-usage wording, an aged-out record keeps quotaDropped [1.12ms]
+(pass) panel state: the schema, one set of lines per tier width, the pane's own lines and tones, the sprite as pet.json has it [131.23ms]
+(pass) panel state: no pet.json yet, summary.json only under a later candidate (~/.autopilot): the first panel write already has today's model lines [103.67ms]
+(pass) panel state is written again only when it changed (or every 30 s): an unchanged 15 s tick leaves the version [134.27ms]
+(pass) the quota mirror keeps refreshing while autopilot's panel is open, with forge-stats' own band and pane never drawn [136.44ms]
+(pass) a panel_open_at_ms from the future counts as no panel: the undrawn 15 s tick reads no quota mirror [145.22ms]
+(pass) without autopilot's panel and nothing drawn, the 15 s tick reads no quota mirror [119.71ms]
+
+tests/quota.test.tsx:
+(pass) D1 claude:work 5h + 7d is L3, aged from the local clock, token ok [5.41ms]
+(pass) D2 codex credits remaining-only: text only, L2, never the tightest window [1.40ms]
+(pass) D2 the contract spells `remaining` in the record (parse accepts the full used/limit/remaining shape and checks the sum) [0.47ms]
+(pass) D3 placeholder: L0, placeholder, never observed, not retired by age [0.57ms]
+(pass) D4 a 7 h old window is dropped (observed, but nothing live); a variant with a passed resets_at is dropped too [0.48ms]
+(pass) D5 an estimated window alone is used and marked, L2 with no reset [0.30ms]
+(pass) D6 refusal-only: L1, end = retry_at, age from the refusal stamp; without retry_at +30 min; expiry clears it [0.78ms]
+(pass) D7 token near expiry warns urgent at 6 days; D7b invalid beats fresh low windows (windows stay, state is invalid) [0.39ms]
+(pass) an invalid token is not retired by age; a newer ok state change clears it [0.25ms]
+(pass) D8 two hosts: local wins by age (hub_offset 3), both hosts listed, multiHost [0.71ms]
+(pass) exact age tie: local wins; two peers tie: higher utilization [0.31ms]
+(pass) N80 windows: the newer peer window (age 30) beats the older local one (age 120) under hub_offset 600 [0.26ms]
+(pass) N80 refusals: the peer refusal (age 30, 1200 s left) beats the local one (age 600, 60 s left) under hub_offset 600 [0.21ms]
+(pass) N80 resets_at is judged against now + hub_offset for both rows (offset 600) [0.33ms]
+(pass) N80 windows: the newer peer window (age 30) beats the older local one (age 120) under hub_offset -600 [0.17ms]
+(pass) N80 refusals: the peer refusal (age 30, 1200 s left) beats the local one (age 600, 60 s left) under hub_offset -600 [0.23ms]
+(pass) N80 resets_at is judged against now + hub_offset for both rows (offset -600) [0.39ms]
+(pass) N80 the planted raw-t comparator picks the WRONG row under hub_offset -600 (so these tests can fail) [1.48ms]
+(pass) age 21600 s is kept, 21601 s dropped; observed 300 s in the future is kept, 301 s dropped [0.48ms]
+(pass) a window with resets_at == now + hub_offset is dropped; one second later it lives; null never expires by the clock [0.36ms]
+(pass) an estimate never lowers or replaces a measured window; it can only raise [0.59ms]
+(pass) namespace mismatch (or a null side) ignores peer rows and keeps the local row [0.87ms]
+(pass) tokenWarn: 30 d notice, 7 d urgent, past expired, null null [0.50ms]
+(pass) tightest takes the largest utilization over 5h/weekly/daily/monthly/credits, never rpm/tpm or null credits [0.35ms]
+(pass) a merged window carries resets_at on the LOCAL clock (resets_at minus hub_offset) [0.33ms]
+(pass) reject: drift pct in a window [0.24ms]
+(pass) reject: drift resetsAt in a window [0.16ms]
+(pass) reject: drift five_hour in the record [0.13ms]
+(pass) reject: drift seven_day in the record [0.13ms]
+(pass) reject: an *_ms key in the record [0.17ms]
+(pass) reject: an *_ms key in a window [0.18ms]
+(pass) reject: utilization above 1 [0.18ms]
+(pass) reject: utilization below 0 [0.18ms]
+(pass) reject: null utilization on a non-credits window [0.20ms]
+(pass) reject: null utilization on credits without remaining [0.20ms]
+(pass) reject: a millisecond-sized observed_at [0.20ms]
+(pass) reject: a millisecond-sized resets_at [0.14ms]
+(pass) reject: a fractional observed_at [0.14ms]
+(pass) reject: provider mismatch [0.14ms]
+(pass) reject: alias mismatch [0.14ms]
+(pass) reject: a duplicate kind [0.15ms]
+(pass) reject: an unknown kind [0.29ms]
+(pass) reject: window source 429 [0.13ms]
+(pass) reject: window source statusline [0.12ms]
+(pass) reject: used without limit [0.12ms]
+(pass) reject: limit without used [0.16ms]
+(pass) reject: used and limit without unit [0.13ms]
+(pass) reject: a unit outside the enum [0.16ms]
+(pass) reject: remaining on a non-credits window [0.14ms]
+(pass) reject: more than 7 windows [0.13ms]
+(pass) reject: a record carrying writer_courier [0.12ms]
+(pass) reject: a record carrying namespace [0.12ms]
+(pass) reject: a record carrying sent_at [0.11ms]
+(pass) reject: a bad visibility [0.11ms]
+(pass) reject: windows with visibility L0 (§20.4: nothing visible) [0.12ms]
+(pass) reject: windows with visibility L1 (§20.4: only a refusal visible) [0.12ms]
+(pass) reject: a bad schema [0.11ms]
+(pass) reject: a bad refusal reason [0.13ms]
+(pass) reject: a refusal with an extra key [0.14ms]
+(pass) reject: a refusal with L0 [0.11ms]
+(pass) reject: a bad token_state [0.11ms]
+(pass) reject: token_state_at set while unknown [0.12ms]
+(pass) reject: token_state ok without token_state_at [0.11ms]
+(pass) reject: record source on a record with windows [0.32ms]
+(pass) reject: an unknown record source [0.12ms]
+(pass) reject: L3 with no windows [0.11ms]
+(pass) reject: empty windows with no placeholder source, refusal or state [0.12ms]
+(pass) reject: a refusal-only record that also carries a source [0.11ms]
+(pass) reject: an unknown extra record key [0.11ms]
+(pass) reject: a row with a bad observed_at_hub [0.10ms]
+(pass) reject: a row with a non-boolean skewed [0.14ms]
+(pass) a bad row is dropped and counted; the good row beside it survives; a repeated writer_courier is a bad row [0.29ms]
+(pass) absent optional fields read as null; absent token_state reads as unknown [0.26ms]
+(pass) a bad view wrapper is bad: not JSON, wrong schema, extra key, rows not an array, oversize, bad path [0.52ms]
+(pass) B45 shape c (token state only, never any window) says it never had a window; a record whose windows all aged out had one [0.47ms]
+
+tests/side.test.ts:
+(pass) every line fits its key; the keys are the contract widths [5.75ms]
+(pass) usage shows the most constrained account, then the others; the reset only where it fits [0.83ms]
+(pass) usage_full: the windows, a blank line, the top three models by share; a long name is cut with … [1.48ms]
+(pass) no money and no ● anywhere; a stray $ refuses the whole side [1.02ms]
+(pass) the mirror is the only source when present: its 5h / weekly windows, the summary accounts ignored [0.44ms]
+(pass) fallbacks: no usage data, no models today, no session lights, hidden lights [1.09ms]
+
+tests/usage.test.tsx:
+(pass) parseUsage takes today, sums per model, priced first, and refuses each contract break [5.37ms]
+(pass) parseUsage takes a Claude day row with no account (no login, unattributed) into today's models [0.50ms]
+(pass) parseUsage accepts the optional dropped_accounts record (closed reasons, uint counts) and refuses a malformed one [0.61ms]
+(pass) parseUsage accepts the optional codex_sessions array (sorted rollout ids, null cache_write) and refuses a malformed one [0.80ms]
+(pass) countdown reads minutes, hours and days, and a dash once past [0.45ms]
+(pass) parseUsage takes an optional account email by the same rule as the writer [0.76ms]
+(pass) parseUsage draws the account by name; an acct- hash with no name, email or org is not drawn; a bad name refuses the summary [1.40ms]
+(pass) parseUsage takes an optional window seen_at_ms: a uint, at most 10 min after generated_at_ms [0.74ms]
+(pass) parseUsage accepts a codex account entry with rollout windows; a note never belongs in a summary [0.25ms]
+
+tests/ux-shots.test.tsx:
+(pass) UX theme resolution distinguishes the installed host light and dark palettes [3.19ms]
+(pass) UX S1 160x40 dark [19.71ms]
+(pass) UX S2 120x30 dark [12.86ms]
+(pass) UX S3 80x24 dark [6.12ms]
+(pass) UX S4 160x40 dark [3.16ms]
+(pass) UX S5-missing 160x40 dark [4.93ms]
+(pass) UX S5-stale 160x40 dark [6.91ms]
+(pass) UX S6 160x40 dark: actual mounted pet tree, six cost rows and no overview facts [221.25ms]
+(pass) UX S1 160x40 light [13.41ms]
+(pass) UX S2 120x30 light [9.73ms]
+(pass) UX S3 80x24 light [8.17ms]
+(pass) UX S4 160x40 light [4.17ms]
+(pass) UX S5-missing 160x40 light [6.14ms]
+(pass) UX S5-stale 160x40 light [9.32ms]
+(pass) UX S6 160x40 light: actual mounted pet tree, six cost rows and no overview facts [152.10ms]
+(pass) UX exporter fixture receipt: exact supplied brief data [2.29ms]
+
+ 202 pass
+ 3 fail
+Ran 205 tests across 12 files. [3.30s]

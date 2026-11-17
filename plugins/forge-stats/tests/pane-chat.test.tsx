@@ -20,7 +20,12 @@ for (const bodyRows of runCases) test(`content height ${bodyRows}: dock and inli
 })
 
 test('scrolling blocked and pools keeps both control rows on their rows; Home/End clamp, resize stays bounded', async ($, on) => {
-  runtimeWorld(on)
+  const w = runtimeWorld(on)
+  const raw = JSON.parse(w.files[BRIEF])
+  const source = raw.items.find((i: { kind: string }) => i.kind === 'stuck')
+  for (let i = 0; i < 4; i++) raw.items.push({ ...source, id: 'overflow-' + i, subject: { display: `測試線-${i}（host-z）` } })
+  raw.counts.stuck += 4
+  w.files[BRIEF] = JSON.stringify(raw)
   await start($)
   const ui = await $.ui.mount(paneTarget(80, 24, 12))
   const before = topRows(await ui.drawn())
@@ -34,7 +39,7 @@ test('scrolling blocked and pools keeps both control rows on their rows; Home/En
   }
   await ui.press({ key: 'key-d' })
   for (const key of ['key-j', 'key-k', 'key-u', 'key-i']) expect(await ui.find({ type: 'Button', key })).not.toBe(undefined)
-  expect(topRows(await ui.drawn()).slice(-1)[0]).toContain('輸入 /autopilot 開決策卡')
+  expect(topRows(await ui.drawn()).slice(-1)[0]).toContain('待決卡在 autopilot pane：輸入 /autopilot')
   await ui.press({ key: 'key-i' })
   await ui.press({ key: 'key-i' })
   await ui.press({ key: 'key-u' })
@@ -70,7 +75,7 @@ test('brief boundary rejects links and oversize before reading; malformed and mi
   await start($)
   const ui = await $.ui.mount(paneTarget())
   expect(w.log.includes('read:' + BRIEF)).toBe(false)
-  expect(topRows(await ui.drawn()).join('')).toContain('fleet 摘要檔無法讀取')
+  expect(topRows(await ui.drawn()).join('')).toContain('fleet 摘要檔還沒出現（待決、卡住無法顯示）')
   expect(topRows(await ui.drawn()).join('')).toContain('smith1')
 })
 

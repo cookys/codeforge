@@ -1,0 +1,12 @@
+{
+  "command": [
+    "claude",
+    "plugin",
+    "test",
+    "plugins/forge-stats"
+  ],
+  "exit_code": 0,
+  "log": "15-row-padding-green.log",
+  "full_log_sha256": "12647de21306b9a54707a8a042dfea704b218c41144f1878f9b93d5d514e69b8",
+  "stored_log_sha256": "7d2869343c280f9ca24ad4dc027cb3f7dac6e4d0fbad7d445c33253d2f4da914"
+}
