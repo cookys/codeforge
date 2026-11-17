@@ -1,9 +1,0 @@
-doc-drift deterministic gate
-================================
-[PASS] links
-[PASS] fences
-[PASS] version-sync
-[PASS] cli-surface
-[PASS] roadmap-consistency
-================================
-all deterministic checks green
