@@ -4,7 +4,7 @@
 Every frame is composed from the fixed-height layout of §3 and checked: exactly H rows, every row
 exactly W cells. A frame that grows or shrinks by one row fails here, the same rule the golden
 of §5 enforces in autopilot. Run: python3 doc/plans/2026-11-18-pane-tabs-r2.mockups.py > out.md
-Each row ends with │ at column W+1 so the width is visible.
+Rows are printed right-trimmed to keep the file small; the asserts above check the padded width.
 Role glyphs (colour is the CC theme key of plan 1fba336 §5): ✖ broken/error  ◈ overdue/error
 ▲ warning  ● running/suggestion  ⋯ waiting_on/subtle  ✓ ok/success  ○ idle/inactive  ★ recommended.
 """
@@ -319,15 +319,15 @@ def main():
         w, h, a = SIZES[size]
         out.write(f"\n## {size}（body {h - 2 - a} 列 + 預留動作 {a} 列 + 頁首 1 + 分頁列 1 = {h}）\n")
         out.write("\n### band（主畫面上方，永遠 2 列；按分頁鍵開 pane，沒有「開面板」那一列）\n\n```\n")
-        out.write("\n".join(r + "│" for r in band(size, "現況", "  ✖ capacity 卡住 2 時 · 待決 3 張（最舊 40 分）                額度 ✖ 團隊 68%↑ 約 11-19 用完" if w >= 160 else "✖capacity 卡住 · 待決3   ✖團隊68%↑ 11-19用完", BADGES)) + "\n```\n")
+        out.write("\n".join(r.rstrip() for r in band(size, "現況", "  ✖ capacity 卡住 2 時 · 待決 3 張（最舊 40 分）                額度 ✖ 團隊 68%↑ 約 11-19 用完" if w >= 160 else "✖capacity 卡住 · 待決3   ✖團隊68%↑ 11-19用完", BADGES)) + "\n```\n")
         for page in TABS:
             body, acts = P[page][size]
-            out.write(f"\n### {page}\n\n```\n" + "\n".join(r + "│" for r in frame(size, page, HDR[size], body, acts, BADGES)) + "\n```\n")
+            out.write(f"\n### {page}\n\n```\n" + "\n".join(r.rstrip() for r in frame(size, page, HDR[size], body, acts, BADGES)) + "\n```\n")
         out.write("\n### 狀態變化：艦隊，資料過期＋額度無來源（列數不變）\n\n```\n")
         body, acts = P["艦隊"][size]
-        out.write("\n".join(r + "│" for r in frame(size, "艦隊", HDR_STALE[size], body, acts, BADGES)) + "\n```\n")
+        out.write("\n".join(r.rstrip() for r in frame(size, "艦隊", HDR_STALE[size], body, acts, BADGES)) + "\n```\n")
         out.write("\n### 狀態變化：待決，0 張卡（列數不變）\n\n```\n")
-        out.write("\n".join(r + "│" for r in frame(size, "待決", HDR[size], ["  ○ 目前沒有待決卡"], [NONE], {})) + "\n```\n")
+        out.write("\n".join(r.rstrip() for r in frame(size, "待決", HDR[size], ["  ○ 目前沒有待決卡"], [NONE], {})) + "\n```\n")
 
 
 if __name__ == "__main__":
