@@ -16,6 +16,7 @@
 
 use anyhow::Result;
 use rusqlite::Connection;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -241,7 +242,8 @@ fn collect_source_files(root: &Path, cap: usize) -> std::io::Result<Vec<PathBuf>
             break;
         }
         if p.is_dir() {
-            if should_skip_dir(&p) {
+            // Never skip the scan root itself (the root repo has `.git`).
+            if p != root && should_skip_dir(&p) {
                 continue;
             }
             let mut children: Vec<PathBuf> = match fs::read_dir(&p) {
@@ -259,7 +261,7 @@ fn collect_source_files(root: &Path, cap: usize) -> std::io::Result<Vec<PathBuf>
 
 fn should_skip_dir(p: &Path) -> bool {
     let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    matches!(
+    let by_name = matches!(
         name,
         "target"
             | "node_modules"
@@ -271,7 +273,21 @@ fn should_skip_dir(p: &Path) -> bool {
             | "venv"
             | ".codeforge"
             | ".next"
-    )
+    );
+    if by_name || is_claude_worktrees_dir(p, name) {
+        return true;
+    }
+    // Skip any subdirectory that is a git worktree (`.git` file) or nested
+    // checkout (`.git` directory). Caller guards `p != root` so the scan root
+    // itself is not skipped.
+    p.join(".git").exists()
+}
+
+fn is_claude_worktrees_dir(p: &Path, name: &str) -> bool {
+    if name != "worktrees" {
+        return false;
+    }
+    p.parent().and_then(|parent| parent.file_name()) == Some(OsStr::new(".claude"))
 }
 
 fn has_source_ext(p: &Path) -> bool {
@@ -628,6 +644,67 @@ fn big() {\n    a;\n    b;\n    c;\n    d;\n    e;\n    f;\n    g;\n}\n";
             specs.is_empty(),
             "skip-dirs should suppress all files under target/ and node_modules/, got: {specs:?}"
         );
+    }
+
+    #[test]
+    fn scan_skips_claude_worktree_with_git_file_and_keeps_root() {
+        let dir = tempdir().unwrap();
+        let body = "// TODO: a\n// TODO: b\n// TODO: c\n// TODO: d\n// TODO: e\nfn f() {}\n";
+        // Root repo has a `.git` dir — must still be scanned.
+        write(&dir.path().join(".git/HEAD"), "ref: refs/heads/main\n");
+        write(&dir.path().join("src/a.rs"), body);
+        // Worktree inside `.claude/worktrees/x` has a `.git` file + duplicate file.
+        write(
+            &dir.path().join(".claude/worktrees/x/.git"),
+            "gitdir: ../../.git/worktrees/x\n",
+        );
+        write(&dir.path().join(".claude/worktrees/x/src/a.rs"), body);
+
+        let files = collect_source_files(dir.path(), MAX_FILES_TO_SCAN).unwrap();
+        assert_eq!(files, vec![dir.path().join("src/a.rs")]);
+
+        let specs = scan_dir(dir.path(), "rust").unwrap();
+        assert_eq!(specs.len(), 1, "expected only root MOB, got: {specs:?}");
+        assert_eq!(specs[0].origin_path.as_deref(), Some("src/a.rs"));
+    }
+
+    #[test]
+    fn collect_skips_claude_worktrees_dir_without_git_file() {
+        let dir = tempdir().unwrap();
+        write(&dir.path().join("src/a.rs"), "fn main() {}\n");
+        write(
+            &dir.path().join(".claude/worktrees/orphan/src/a.rs"),
+            "fn main() {}\n",
+        );
+        // A `worktrees` directory not directly under `.claude` is not skipped.
+        write(&dir.path().join("other/worktrees/b.rs"), "fn b() {}\n");
+
+        let files = collect_source_files(dir.path(), MAX_FILES_TO_SCAN).unwrap();
+        assert_eq!(
+            files,
+            vec![
+                dir.path().join("other/worktrees/b.rs"),
+                dir.path().join("src/a.rs"),
+            ]
+        );
+    }
+
+    #[test]
+    fn collect_skips_nested_checkout_with_git_dir_but_scans_root() {
+        let dir = tempdir().unwrap();
+        write(&dir.path().join(".git/HEAD"), "ref: refs/heads/main\n");
+        write(&dir.path().join("src/a.rs"), "fn main() {}\n");
+        write(
+            &dir.path().join("vendor/subrepo/.git/HEAD"),
+            "ref: refs/heads/main\n",
+        );
+        write(
+            &dir.path().join("vendor/subrepo/src/lib.rs"),
+            "fn sub() {}\n",
+        );
+
+        let files = collect_source_files(dir.path(), MAX_FILES_TO_SCAN).unwrap();
+        assert_eq!(files, vec![dir.path().join("src/a.rs")]);
     }
 
     // ─── Persistence ───────────────────────────────────────────
