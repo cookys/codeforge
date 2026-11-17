@@ -213,7 +213,12 @@ export function overviewPlan(inp: OverviewInput) {
   const tokens = noSource.filter(a => a.sourceNote === 'needs_token').length
   if (slots.pools > 1 || cols >= 110) for (const a of tightPools) add(`${oneLine(a.name)} ${pct(a.weekly!.pct)}`, 'warning')
   else if (tight) add(`另 ${tight} 池吃緊`, 'warning')
-  if (noSource.length) add(`無來源 ×${noSource.length}${tokens ? `（缺權杖 ${tokens}）` : ''}`, 'inactive', true)
+  // R3-C1: missing data never vanishes — when the full flag does not fit, a short one is mandatory.
+  if (noSource.length) {
+    const full = `無來源 ×${noSource.length}${tokens ? `（缺權杖 ${tokens}）` : ''}`
+    if (width(poolSummary) + (poolSummary.length ? 3 : 0) + displayWidth(full) <= summaryBudget) add(full)
+    else add(`無來源${noSource.length}`)
+  }
   if (waste) add(`用不完 ×${waste}`, 'inactive', true)
   if (normal) add(`正常 ×${normal}`, 'inactive', true)
   if (pw.total > pw.visible) add('（u）', actionTone)

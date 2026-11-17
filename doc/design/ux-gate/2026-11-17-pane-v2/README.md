@@ -69,3 +69,15 @@ Astra 第一輪 7/10，沒有 Critical；原始評審在 round-1-astra.json。
 
 色盤事實來源與解析器雜湊見 shots/host-theme-provenance.json；fixture 是宿主 2.1.326 的預設非 ANSI light/dark，黑／白是明示的參考畫布。使用者自訂主題、終端色彩夾制與實體對比仍未聲稱通過。
 Carbon 初次工具讀檔遭 headless command 權限拒絕，其後大包 Read 達時限；這些未產生分數，不算已完成的評審。以 106388-byte 內嵌完整來源 diff、所有截圖（相同位元組以 SHA256 去重）重試，未提高工具權限。
+
+## 閘門結果（2026-11-17）
+
+| 輪次 | astra（gpt-6-astra） | carbon（gemini-4-carbon-high） |
+|---|---|---|
+| R1 | 6 | 6 |
+| R2 | 7 | 8 |
+| R3 | 7 | 9（過） |
+
+- 原文：`round-N-{astra,carbon}.json`。
+- astra 在 R3 唯一的 Critical：80x24 拿掉了「無來源」旗標。已在 R3 之後修正：放不下完整寫法時，改用短寫「無來源6」，並固定保留。測試是 `overview.test.tsx` R3-C1。
+- 依評分表，R3 不過時由 PM 裁決。

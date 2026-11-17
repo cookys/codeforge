@@ -21,7 +21,7 @@
     {
       "path": "S3-80x24-dark.txt",
       "rows": 14,
-      "sha256": "664ebae54f64e3d0d53d95041797e1c2d6c8d3fba6a72b1467e4dce1e6b9b9cc"
+      "sha256": "2d97675d80457ea38ef52d9839fdc83f1cbb770408cf8bbfa8078c27578a3afb"
     },
     {
       "path": "S4-160x40-dark.txt",
@@ -56,7 +56,7 @@
     {
       "path": "S3-80x24-light.txt",
       "rows": 14,
-      "sha256": "1e1a4768eed0ba14a5856685dde720cae83f902d15d36bc4a7ead9cb77e86bf3"
+      "sha256": "f7602d35f70e36d57457a885108b850a076edade77da226f18647beb349d25a5"
     },
     {
       "path": "S4-160x40-light.txt",

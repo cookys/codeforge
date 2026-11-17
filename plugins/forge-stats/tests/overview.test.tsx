@@ -20,6 +20,16 @@ test('R2-C1: compact tight pools take priority over summaries at every terminal 
   }
 })
 
+test('R3-C1: the no-source flag survives at every width, short form when tight names fill the row', () => {
+  for (const [cols, rows] of [[78, 24], [118, 24], [158, 24], [118, 30], [158, 40]]) {
+    const p = overviewPlan(input(cols, rows))
+    const pools = text({ ...p, lines: p.lines.filter(l => l.group === 'pools') }).join('\n')
+    expect(pools).toMatch(/無來源 ?×?6/)
+    expect(pools).toContain('kimi')
+    for (const l of text(p)) expect(displayWidth(l)).toBeLessThanOrEqual(cols)
+  }
+})
+
 test('R2-C1: a single pool row at wider widths keeps every tight name and the full lead note', () => {
   for (const cols of [118, 158]) {
     const p = overviewPlan(input(cols, 23))
