@@ -2,11 +2,9 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
 import { DEFAULT_COLOR, halfBlockCells, LOWER_HALF, parseSnapshot, parseSprite, SPACE, staleMinutes, UPPER_HALF } from '../hooks/model'
-import { paneSpriteFrame } from '../hooks/pet-pane'
 import { FERRIS } from './ferris-sprite'
 
 const PANE = {
-  viewport: { columns: 100, rows: 60, isFullscreen: true },
   plugin: 'forge-stats',
   component: 'Pane',
   requestId: 'forge-stats',
@@ -73,15 +71,14 @@ test('a snapshot older than ten minutes reports its age', () => {
 test('the pane draws the pet and no speed or request table (B32)', async ($, on) => {
   base(on, SNAP)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'forge-stats', args: 'pet', origin: { kind: 'composer' } } as never)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...PANE, surface })
     expect(await ui.find({ type: 'Text', text: /tok\/s|Speed|Recent requests/ })).toBe(undefined)
     const name = await ui.find({ type: 'Text', text: /^Ferris$/ })
     expect(name?.props.bold).toBe(true)
-    expect((await ui.find({ type: 'Text', text: /等級 3/ })) !== undefined).toBe(true)
+    expect((await ui.find({ type: 'Text', text: /Lv\.3/ })) !== undefined).toBe(true)
     // XP meter: 25% of the bar on, the rest drawn in the idle colour
-    const off = await ui.find({ type: 'Text', text: /▰+▱+/ })
+    const off = await ui.find({ type: 'Text', text: /^▱+$/ })
     expect(off?.props.color).toBe('inactive')
     await ui.unmount()
   }
@@ -91,20 +88,18 @@ test('a snapshot with no pet says so, dim', async ($, on) => {
   base(on, NO_PET)
 
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'forge-stats', args: 'pet', origin: { kind: 'composer' } } as never)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.find({ type: 'Text', text: /no pet yet|還沒有寵物/ })) !== undefined).toBe(true)
   const err = await ui.find({ type: 'Text', text: /codeforge adopt/ })
-  expect(err?.props.color).toBe('inactive')
+  expect(err?.props.dimColor).toBe(true)
   await ui.unmount()
 })
 
 test('no snapshot file at all is shown as no snapshot yet', async ($, on) => {
   base(on, null)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'forge-stats', args: 'pet', origin: { kind: 'composer' } } as never)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Text', text: /statusline/ }))?.props.color).toBe('inactive')
+  expect((await ui.find({ type: 'Text', text: /statusline/ }))?.props.dimColor).toBe(true)
   await ui.unmount()
 })
 
@@ -172,12 +167,11 @@ test('a frame becomes half-block cells with the right colours', () => {
 test('the pane draws the sprite as a Raster in the terminal, ASCII elsewhere', async ($, on) => {
   base(on, SPRITE_SNAP)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'forge-stats', args: 'pet', origin: { kind: 'composer' } } as never)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const r = await ui.find({ type: 'Raster' })
   expect(r?.props.columns).toBe(24)
-  expect(r?.props.rows).toBe(10)
-  expect(r?.props.cells).toBe(paneSpriteFrame(parseSprite(FERRIS)!, 0)!.cells)
+  expect(r?.props.rows).toBe(12)
+  expect(r?.props.cells).toBe(halfBlockCells(parseSprite(FERRIS)!, 0).cells)
   expect(await ui.find({ type: 'Text', text: /_~\^~\^~_/ })).toBe(undefined)
   expect((await ui.find({ type: 'Text', text: /^Ferris$/ }))?.props.bold).toBe(true)
   await ui.unmount()
@@ -194,7 +188,6 @@ test('a snapshot without a sprite key stays ok and draws ASCII', async ($, on) =
   expect(parseSnapshot(JSON.stringify(broken), 'p', Date.now()).status).toBe('ok')
   base(on, SNAP)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'forge-stats', args: 'pet', origin: { kind: 'composer' } } as never)
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await ui.find({ type: 'Raster' })).toBe(undefined)
   expect((await ui.find({ type: 'Text', text: /_~\^~\^~_/ })) !== undefined).toBe(true)
@@ -210,14 +203,13 @@ test('the idle animation blits the next frame every 500 ms, and only on change',
   })
   const clock = mock.clock(on)
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'forge-stats', args: 'pet', origin: { kind: 'composer' } } as never)
   await clock.settle()
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   const sprite = parseSprite(FERRIS)!
-  const first = paneSpriteFrame(sprite, 0)!.cells
+  const first = halfBlockCells(sprite, 0).cells
   await clock.advance(500)
   expect(blits.length).toBe(1)
-  expect(blits[0]).toBe(paneSpriteFrame(sprite, 1)!.cells)
+  expect(blits[0]).toBe(halfBlockCells(sprite, 1).cells)
   expect(blits[0] !== first).toBe(true)
   await clock.advance(500)
   expect(blits.length).toBe(2)
@@ -235,13 +227,11 @@ test('a new session starts the animation over from frame 0', async ($, on) => {
   const clock = mock.clock(on)
   const sprite = parseSprite(FERRIS)!
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'forge-stats', args: 'pet', origin: { kind: 'composer' } } as never)
   await clock.settle()
   await clock.advance(500) // first session leaves the animation on frame 1
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await $.command.run({ command: 'forge-stats', args: 'pet', origin: { kind: 'composer' } } as never)
   await clock.settle()
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await ui.find({ type: 'Raster' }))?.props.cells).toBe(paneSpriteFrame(sprite, 0)!.cells)
+  expect((await ui.find({ type: 'Raster' }))?.props.cells).toBe(halfBlockCells(sprite, 0).cells)
   await ui.unmount()
 })

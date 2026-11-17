@@ -396,12 +396,11 @@ const USAGE = JSON.stringify({
   days: [{ day: new Date().toISOString().slice(0, 10), source: 'claude', account: 'acct-a', model: 'claude-opus-5-5', speed: 'standard', input: 100, output: 50, cache_write_5m: 0, cache_write_1h: 0, cache_read: 850, requests: 3, cost_usd: 1.5 }],
 })
 
-type Fake = { panel?: any; files: Record<string, string>; over: Record<string, Partial<DirEntry>>; reads: string[]; lists: string[]; onRead?: (path: string) => void; onList?: (path: string) => void; afterList?: (path: string) => void }
+type Fake = { files: Record<string, string>; over: Record<string, Partial<DirEntry>>; reads: string[]; lists: string[]; onRead?: (path: string) => void; onList?: (path: string) => void; afterList?: (path: string) => void }
 // a virtual file system: `files` by absolute path; a directory exists when a file lies under it or `dirs` names it
 function mirror(on: Parameters<TestBody>[1], files: Record<string, string>, dirs: string[] = [], zhLocale = true): Fake {
   const f: Fake = { files: { [LIVE + '/codeforge/pet.json']: JSON.stringify(PETSNAP), [LIVE + '/codeforge/usage/summary.json']: USAGE, ...files }, over: {}, reads: [], lists: [] }
   const isDir = (p: string) => dirs.includes(p) || Object.keys(f.files).some(k => k.startsWith(p + '/'))
-  on('state.set', (_, e, next) => { if (e.key === 'panel') f.panel = e.value; return next(e) })
   on('command.register', () => ({ value: { command: 'forge-stats' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -461,6 +460,44 @@ const openUsage = async ($: Parameters<TestBody>[0], cols = 102) => {
   return $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: cols } })
 }
 
+test('the usage tab draws the mirror blocks and keeps the models; the G36 accounts rows are gone once the mirror exists', async ($, on) => {
+  const f = mirror(on, { ...viewFiles(['claude:work', 'claude:home', 'kimi:main', 'agy:main']), ...NS })
+  const ui = await openUsage($)
+  const text = await flat(ui)
+  expect(text).toContain('claude:work')
+  expect(text).toContain('L3')
+  expect(text).toContain('▲ token 到期 6 天')
+  expect(text).toContain('429 冷卻')
+  expect(text).toContain('從未觀察')
+  expect(text).not.toContain('smith1')
+  expect(text).toContain('claude-opus-5-5')
+  // never a read outside the mirror's own paths; only regular `.json` views and the namespace file
+  expect([...new Set(f.reads.filter(p => p.includes('/quota/')))].sort()).toEqual(
+    [...Object.keys(viewFiles(['claude:work', 'claude:home', 'kimi:main', 'agy:main'])), LIVE + '/quota/namespace.json'].sort(),
+  )
+  await ui.unmount()
+})
+
+test('rule 7: no quota directory keeps today\'s pane (the accounts rows); an empty one says nothing has arrived', async ($, on) => {
+  mirror(on, {}, [], false)
+  const old = await openUsage($)
+  const text = await flat(old)
+  expect(text).toContain('smith1')
+  expect(text).not.toContain('配額')
+  expect(text).not.toContain('quota')
+  await old.unmount()
+})
+
+test('rule 7: the mirror directory exists but holds nothing', async ($, on) => {
+  mirror(on, {}, [LIVE + '/quota'])
+  const ui = await openUsage($)
+  const text = await flat(ui)
+  expect(text).toContain('尚未收到配額資料（由 autopilot 的 reporter／wrapper 寫入）')
+  expect(text).not.toContain('smith1')
+  expect(text).toContain('claude-opus-5-5')
+  await ui.unmount()
+})
+
 test('the reader skips links, non-regular files, oversize files and lock files without reading them, counts the bad, never reads a path twice in one refresh (session start and `/forge-stats usage` each refresh once)', async ($, on) => {
   const files = {
     ...viewFiles(['claude:work']),
@@ -476,7 +513,7 @@ test('the reader skips links, non-regular files, oversize files and lock files w
   f.over[LIVE + '/quota/claude/linked.json'] = { isLink: true, kind: 'other' }
   f.over[LIVE + '/quota/claude/huge.json'] = { size: 40000 }
   const ui = await openUsage($)
-  const text = f.panel.usage.tiers['100'].map((l: any[]) => l.map(s => s.text).join('')).join('')
+  const text = await flat(ui)
   const q = f.reads.filter(p => p.includes('/quota/'))
   expect(q.includes(LIVE + '/quota/claude/linked.json')).toBe(false)
   expect(q.includes(LIVE + '/quota/claude/huge.json')).toBe(false)
@@ -499,7 +536,7 @@ test('the reader caps views at 256 and counts the rest without reading them', as
   }
   const f = mirror(on, files)
   const ui = await openUsage($, 42)
-  const text = f.panel.usage.tiers['100'].map((l: any[]) => l.map(s => s.text).join('')).join('')
+  const text = await flat(ui)
   const viewReads = f.reads.filter(p => /\/quota\/claude\/a\d+\.json$/.test(p))
   expect(new Set(viewReads).size).toBe(256)
   expect(viewReads).toHaveLength(512) // two refreshes (session start, the usage command), 256 each
@@ -569,9 +606,9 @@ test('namespace.json inside a provider directory is the alias `namespace`', asyn
   const fx = mkFX(SESSION_NOW)
   const rec = JSON.parse(JSON.stringify(fx['claude:work'])) as O[]
   ;((rec[0] as O).record as O).alias = 'namespace'
-  const f = mirror(on, { ...viewFiles(['claude:home']), [`${LIVE}/quota/claude/namespace.json`]: view(rec), ...NS })
+  mirror(on, { ...viewFiles(['claude:home']), [`${LIVE}/quota/claude/namespace.json`]: view(rec), ...NS })
   const ui = await openUsage($)
-  const text = f.panel.usage.tiers['100'].map((l: any[]) => l.map(s => s.text).join('')).join('')
+  const text = await flat(ui)
   expect(text).toContain('claude:namespace')
   expect(text).toContain('claude:home')
   expect(text).not.toContain('筆無法讀取')
@@ -601,7 +638,7 @@ test('the reader rejects a view that grew past the cap, or changed size, or turn
     if (p.endsWith('/claude/pad.json')) f.files[p] = (f.files[p] as string) + ' '
   }
   const ui = await openUsage($)
-  const text = f.panel.usage.tiers['100'].map((l: any[]) => l.map(s => s.text).join('')).join('')
+  const text = await flat(ui)
   expect(text).toContain('claude:work')
   expect(text).not.toContain('claude:grow')
   expect(text).not.toContain('claude:swap')
@@ -623,7 +660,7 @@ test('the reader rejects a namespace file that changed after the listing, and a 
     if (d === LIVE + '/quota') f.over[LIVE + '/quota/kimi'] = { isLink: true, kind: 'other' }
   }
   const ui = await openUsage($)
-  const text = f.panel.usage.tiers['100'].map((l: any[]) => l.map(s => s.text).join('')).join('')
+  const text = await flat(ui)
   // the namespace is not trusted, the swapped provider is not listed
   expect(text).toContain('2 筆無法讀取')
   expect(text).toContain('claude:work')
