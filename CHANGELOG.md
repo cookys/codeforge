@@ -10,7 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `codeforge.quota/1` snapshot gains an optional `org_id` (the login's `organizationUuid` verbatim, omitted when absent; schema name unchanged) so the fleet courier can match a seat to a hangar pool key (fleet 01M7MMSB). Not in the summary, `fleet-quota.json` or `usage push`.
 
+- `codeforge usage` grew since 0.0.9: `export` (usage-sessions/1 per-session export), `fleet` and the all-accounts view, `plan` and `note` (monthly and one-shot resets), kimi, grok and agy collectors, and a Trinity quota import (`trinity-import`, run by a 15-minute timer).
+- `codeforge.panel/1` carries an optional `pet.icon` for the forge-stats pet tab.
+- Release tarballs are reproducible (`scripts/package.sh`, `scripts/repro-check.sh`, B43).
+
 ### Changed
+- The MOB scanner skips git worktrees and nested checkouts (B38).
 - **The statusline is always exactly one line and never draws the pet** (operator via PM 01M7MEY1). It used to draw a
   5-line RPG box (pet sprite, ATK/DEF) whenever no fresh forge-stats `layout: band` heartbeat existed for the session,
   e.g. with an empty stdin or in a session without forge-stats. The box, the welcome-back lines and the commentary
