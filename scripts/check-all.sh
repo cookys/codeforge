@@ -22,6 +22,12 @@
 #   CODEFORGE_WSL_DISTRO  WSL distro for the Linux pass (default: the WSL default distro)
 set -euo pipefail
 
+# As the pre-push hook this runs with GIT_DIR (and in a worktree GIT_INDEX_FILE) pointing at the
+# real repo; the tests' `git init`/`git add` in temp dirs then hit it instead (it set core.bare=true
+# on the main clone and staged 502 deletions in a worktree, 2026-11-19). Test: hook-env.test.sh.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars)
+
 cd "$(dirname "$0")/.."
 
 WITH_WSL=1
@@ -103,7 +109,7 @@ step "shellcheck install.sh + checkout guard"
 shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh scripts/checkout-guard.test.sh \
   scripts/g40-real-data/check.sh scripts/g40-real-data/check.test.sh scripts/g40-real-data/scan-statusline.test.sh \
   scripts/trinity-import/trinity-import.sh scripts/trinity-import/trinity-import.test.sh \
-  scripts/check-private-leaks.sh scripts/check-private-leaks.test.sh
+  scripts/check-private-leaks.sh scripts/check-private-leaks.test.sh scripts/hook-env.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh
@@ -114,6 +120,7 @@ step "trinity quota import (fake fleet, tmpfs live dir)"
 
 step "checkout guard (the main clone stays on develop)"
 ./scripts/checkout-guard.test.sh
+./scripts/hook-env.test.sh
 
 step "release archive hermetic (B43)"
 ./scripts/test-archive-hermetic.sh
