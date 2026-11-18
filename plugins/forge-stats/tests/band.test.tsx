@@ -162,8 +162,8 @@ test('a band hook never called (a plugin above draws its own band: autopilot\'s 
     await clock.advance(2000)
     expect(lastBeat(w)).toMatchObject({ layout: 'band', summary_row: true, band_seen: false })
   }
-  // and it keeps asking for a render, so a band that does come back is seen within one beat
-  expect(w.invalidates >= 20).toBe(true)
+  // the heartbeat never forces a render: nothing reads band_seen any more, and an invalidate every 2 s redraws the whole UI for nothing
+  expect(w.invalidates).toBe(0)
 })
 
 test('the band layout is the default and does not open the pane', async ($, on) => {

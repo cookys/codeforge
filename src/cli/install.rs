@@ -655,8 +655,8 @@ fn statusline_owned(v: &Value, sub: &str) -> bool {
 /// Seconds between idle re-runs of the statusLine command. Claude Code re-runs it only on events
 /// (a new assistant message, /compact, a mode change…) unless `refreshInterval` is set
 /// (code.claude.com/docs/en/statusline, "When the status line updates"). Without it an idle
-/// session keeps the first render: forge-stats' heartbeat (`band_seen`, B34) can change and the
-/// statusline never compacts or expands. 10 matches the heartbeat's 10 s freshness window.
+/// session keeps the first render: the usage bars and quota chips it read go stale until the
+/// next event. 10 s keeps an idle session's usage and quota current.
 /// Operator card d-f6e451d2.
 const STATUSLINE_REFRESH_S: u64 = 10;
 
