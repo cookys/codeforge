@@ -6,7 +6,8 @@ set -uo pipefail
 S=$(cd "$(dirname "$0")" && pwd); ap=$(cd "$1" && pwd); sha=$(git -C "$ap" rev-parse --short=9 HEAD); label=b2-$sha
 cd "$S"
 bash gate-shots/run.sh "$ap" "$label" > "shots-$label.log" 2>&1; echo "shots rc=$? ($(command ls gate-shots/out/$label | wc -l) files)"
-KEYS="2 3 9 1 0 4" timeout 300 bash gate-shots/keyprobe.sh "$ap" "$label" > "keyprobe-$label.log" 2>&1; echo "keyprobe: $(grep -c "composer=\[\]" "keyprobe-$label.log")/6 clean"
+bash gate-shots/owncard.sh "$ap" "$label" >> "shots-$label.log" 2>&1; tail -1 "shots-$label.log"
+KEYS="2 3 9 1 0 4" timeout 300 bash gate-shots/keyprobe.sh "$ap" "$label" > "keyprobe-$label.log" 2>&1; echo "keyprobe: $(grep -c ' ok$' "keyprobe-$label.log")/6 ok"
 python3 -I build-b2.py "$sha" "$label" || exit 1
 D=${AUTOPILOT_DIR:-$HOME/projects/autopilot}/scripts/dispatch-author.sh
 bash $D --runner agy --model gemini-4-carbon-high --timeout 20m --prompt-file "$S/gate-b2.md" > gate-b2-carbon.out 2> gate-b2-carbon.err &

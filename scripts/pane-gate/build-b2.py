@@ -7,19 +7,24 @@ from importlib.machinery import SourceFileLoader
 nj = SourceFileLoader("nj", f"{S}/nojump-check.py").load_module()
 r3 = open(f"{S}/gate-b1-r3.md", encoding="utf-8").read()
 head = r3.split("## 第 2 輪結果與處置", 1)[0]
-head = head.replace("第 1 批 — UX 閘門第 3 輪（最後一輪）", "第 2 批 — UX 閘門第 1 輪").replace("第 3 輪起適用", "第 1 批第 3 輪起適用")
+ROUND = int(os.environ.get("GATE_ROUND", "1"))  # 2nd/3rd round: the packet carries the previous round's dispositions (doc/design/ux-gate/pane-batch2/r<n-1>-dispositions.md)
+head = head.replace("第 1 批 — UX 閘門第 3 輪（最後一輪）", f"第 2 批 — UX 閘門第 {ROUND} 輪" + ("（最後一輪）" if ROUND == 3 else "")).replace("第 3 輪起適用", "第 1 批第 3 輪起適用")
 head = re.sub(r"受測版本是 autopilot feat/pane-batch1 @ \w+，base 是 \w+。", f"受測版本是 autopilot @ {SHA}，base 是第 1 批上線版 083cf2e91。", head)
 head = head.replace("這一批交 1–4 頁。", "第 1 批（1–4 頁）已經上線；這一批交第 1 批評審發現的修正，範圍還是 1–4 頁和 band。")
 assert SHA in head, "sha line not replaced"
 insert = open(f"{S}/gate-b2-insert.md", encoding="utf-8").read()
 O = f"{G}/out/{LABEL}"
-order = [f"S1-full-p{p}-{sz}" for sz in ("160x40", "120x30", "80x24") for p in (1, 2, 3, 4)] + \
-        [f"S1-light-p{p}-160x40" for p in (1, 4)] + [f"S4-small-p{p}-160x40" for p in (1, 4)] + \
+order = [f"S1-full-p{p}-{sz}" for sz in ("160x40", "120x30", "80x24", "80x20", "80x16") for p in (1, 2, 3, 4)] + \
+        [f"S1-light-p{p}-{sz}" for sz in ("160x40", "80x24") for p in (1, 4)] + [f"S6-own-p2-{sz}" for sz in ("160x40", "80x24")] + [f"S4-small-p{p}-160x40" for p in (1, 4)] + \
         [f"S5-stale-10min-p{p}-160x40" for p in (1, 4)] + [f"S5-console-exit1-nofile-p{p}-160x40" for p in (1, 4)]
 order = [k for k in order if os.path.exists(f"{O}/{k}.txt")]
-missing = [k for k in ("S1-full-p1-80x24", "S1-full-p3-80x24", "S1-full-p4-80x24", "S1-full-p2-80x24") if k not in order]
+missing = [k for k in ("S1-full-p1-80x24", "S1-full-p3-80x24", "S1-full-p4-80x24", "S1-full-p2-80x24", "S1-full-p1-80x16", "S1-light-p1-160x40") if k not in order]
 assert not missing, f"missing must-have 80x24 shots: {missing}"
 parts = [head, insert]
+if ROUND > 1:
+    prev = f"{S}/../../doc/design/ux-gate/pane-batch2/r{ROUND - 1}-dispositions.md"
+    parts.append(f"## 第 {ROUND - 1} 輪的發現與處置（這一輪請逐條判定：修好／部分／未修，未修的照原嚴重度再列一次）\n\n" + open(prev, encoding="utf-8").read().split("\n", 1)[1].replace("\n## ", "\n### "))
+    parts.append("## 這一輪新增的截圖\n\n- S1-full-*-80x20、80x16：pane 只剩 2 列、1 列內容時，至少要露出最嚴重的一類（PM 01M7PMAN 說的「80x3」就是這個狀況）。\n- S1-light-*：Claude Code 淺色主題（白底）。" + ("\n- S6-own-p2-*：本席可答的卡（對照 S1-full-p2 的不可答卡）。" if any(k.startswith("S6-") for k in order) else "") + "\n- keyprobe 改看分頁列選中哪一頁（tab=），不再看 pane 第一列。")
 if NJ:
     ND = f"{G}/out/{NJ}"; rows = []
     for n in sorted(x for x in os.listdir(ND) if x.endswith(".txt")):
@@ -42,7 +47,7 @@ for k in order:
 parts.append("\n".join(shots))
 kp = f"{S}/keyprobe-{sys.argv[2]}.log"
 assert os.path.exists(kp), f"missing B56 keyprobe log: {kp}"
-parts.append("## keyprobe（B56 真機按鍵驗收）\n\n160x40 開 pane，縮到 80x24，依序按下列鍵；每鍵之後記頁首和提示列內容。pass = 每一鍵頁首換成對應分頁、提示列是空的。\n\n```\n" + open(kp, encoding="utf-8").read().strip() + "\n```")
+parts.append("## keyprobe（B56 真機按鍵驗收）\n\n160x40 開 pane，縮到 80x24，依序按下列鍵；每鍵之後記錄三件事：分頁列選中哪一頁（tab，從分頁列顏色判斷）、pane 第一列（page，頁面捲動時會是「上面還有 N 行」，只供參考）、提示列內容（composer）。每一列最後的 ok 表示提示列是空的，而且分頁列選中的就是按下的那一鍵；BAD 表示其中一項不符。\n\n```\n" + open(kp, encoding="utf-8").read().strip() + "\n```")
 out = "\n\n".join(parts) + "\n"
 bad = re.findall(r"(?i)cookys|host-console|stranity|singular|host-infra|gpu-host-1|host-recovery", out)
 open(f"{S}/gate-b2.md", "w", encoding="utf-8").write(out)
