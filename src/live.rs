@@ -25,6 +25,11 @@ pub enum LiveBaseSource {
     Override,
     /// `$XDG_RUNTIME_DIR/autopilot`, verified tmpfs/ramfs.
     XdgRuntime,
+    /// `/run/user/<uid>/autopilot` when `XDG_RUNTIME_DIR` is unset or empty and `/run/user/<uid>`
+    /// is already a directory, verified tmpfs/ramfs. The readers (autopilot `live-state-dir.js`,
+    /// forge-stats `quotaLiveDir`) try this before `/dev/shm`; without it a session started with no
+    /// XDG wrote where no reader looked (fleet 01M7PF0A).
+    XdgInferred,
     /// `/dev/shm/autopilot-<uid>`, verified tmpfs/ramfs.
     DevShm,
     /// `/tmp/autopilot-<uid>`, verified tmpfs/ramfs.
@@ -62,6 +67,8 @@ struct LiveEnv {
     proc_mounts: Option<PathBuf>,
     /// The program run as `findmnt` (production: the bare name, PATH-searched).
     findmnt: PathBuf,
+    /// The parent of `<uid>` for the inferred XDG dir (production: `/run/user`).
+    run_user_root: PathBuf,
 }
 
 impl LiveEnv {
@@ -73,6 +80,7 @@ impl LiveEnv {
                 .ok()
                 .map(PathBuf::from),
             findmnt: PathBuf::from("findmnt"),
+            run_user_root: PathBuf::from("/run/user"),
         }
     }
 }
@@ -86,12 +94,17 @@ fn resolve_live_base_with(env: &LiveEnv) -> (PathBuf, LiveBaseSource) {
             candidates.push((PathBuf::from(over), LiveBaseSource::Override));
         }
     }
-    if let Some(xdg) = &env.xdg_runtime_dir {
-        if !xdg.is_empty() {
-            candidates.push((
-                PathBuf::from(xdg).join("autopilot"),
-                LiveBaseSource::XdgRuntime,
-            ));
+    match env.xdg_runtime_dir.as_deref().filter(|x| !x.is_empty()) {
+        Some(xdg) => candidates.push((
+            PathBuf::from(xdg).join("autopilot"),
+            LiveBaseSource::XdgRuntime,
+        )),
+        None => {
+            // never created: only a /run/user/<uid> logind already made (a link is not taken)
+            let parent = env.run_user_root.join(uid.to_string());
+            if std::fs::symlink_metadata(&parent).is_ok_and(|m| m.is_dir()) {
+                candidates.push((parent.join("autopilot"), LiveBaseSource::XdgInferred));
+            }
         }
     }
     candidates.push((
@@ -348,6 +361,7 @@ mod tests {
             xdg_runtime_dir: Some(xdg_dir.path().to_string_lossy().into_owned()),
             proc_mounts: None,
             findmnt: bin_dir.path().join("findmnt"),
+            run_user_root: PathBuf::from("/nonexistent-run-user"),
         };
 
         let (base, source) = resolve_live_base_with(&env);
@@ -370,6 +384,7 @@ mod tests {
             xdg_runtime_dir: Some(xdg_dir.path().to_string_lossy().into_owned()),
             proc_mounts: None,
             findmnt: bin_dir.path().join("findmnt"),
+            run_user_root: PathBuf::from("/nonexistent-run-user"),
         };
         WARNED.store(false, Ordering::SeqCst);
 
@@ -408,6 +423,7 @@ mod tests {
             proc_mounts: Some(mounts.path().to_path_buf()),
             // An absolute path that does not exist: findmnt is missing.
             findmnt: empty_bin_dir.path().join("findmnt"),
+            run_user_root: PathBuf::from("/nonexistent-run-user"),
         };
 
         let (base, source) = resolve_live_base_with(&env);
@@ -445,12 +461,98 @@ mod tests {
             xdg_runtime_dir: Some(xdg_dir.path().to_string_lossy().into_owned()),
             proc_mounts: Some(mounts.path().to_path_buf()),
             findmnt: empty_bin_dir.path().join("findmnt"),
+            run_user_root: PathBuf::from("/nonexistent-run-user"),
         };
 
         let (base, source) = resolve_live_base_with(&env);
 
         assert_eq!(source, LiveBaseSource::XdgRuntime);
         assert_eq!(base, xdg_path);
+    }
+
+    /// A tmpfs `/run/user`-style root with `<uid>` already there, and every other path ext4.
+    #[cfg(unix)]
+    fn inferred_env(
+        xdg: Option<&str>,
+        make_parent: bool,
+    ) -> (
+        LiveEnv,
+        tempfile::TempDir,
+        tempfile::NamedTempFile,
+        tempfile::TempDir,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        if make_parent {
+            fs::create_dir(root.path().join(current_uid().to_string())).unwrap();
+        }
+        let mounts = tempfile::NamedTempFile::new().unwrap();
+        fs::write(
+            mounts.path(),
+            format!(
+                "tmpfs {} tmpfs rw 0 0\n/dev/sda1 / ext4 rw 0 0\n",
+                root.path().display()
+            ),
+        )
+        .unwrap();
+        let empty_bin_dir = tempfile::tempdir().unwrap();
+        let env = LiveEnv {
+            override_dir: None,
+            xdg_runtime_dir: xdg.map(str::to_string),
+            proc_mounts: Some(mounts.path().to_path_buf()),
+            findmnt: empty_bin_dir.path().join("findmnt"),
+            run_user_root: root.path().to_path_buf(),
+        };
+        (env, root, mounts, empty_bin_dir)
+    }
+
+    /// No XDG_RUNTIME_DIR (unset or empty) and `/run/user/<uid>` exists: the writer picks
+    /// `/run/user/<uid>/autopilot`, as autopilot and forge-stats read it (fleet 01M7PF0A).
+    #[cfg(unix)]
+    #[test]
+    fn no_xdg_infers_the_run_user_dir_the_readers_use() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        for xdg in [None, Some("")] {
+            let (env, root, _m, _b) = inferred_env(xdg, true);
+            let (base, source) = resolve_live_base_with(&env);
+            assert_eq!(source, LiveBaseSource::XdgInferred, "xdg {xdg:?}");
+            assert_eq!(
+                base,
+                root.path()
+                    .join(current_uid().to_string())
+                    .join("autopilot")
+            );
+        }
+    }
+
+    /// The inferred dir is never made up: a missing `<uid>` dir, or a link in its place, is skipped,
+    /// and a set XDG_RUNTIME_DIR wins over it.
+    #[cfg(unix)]
+    #[test]
+    fn the_inferred_dir_needs_a_real_run_user_dir_and_no_xdg() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (env, root, _m, _b) = inferred_env(None, false);
+        assert_ne!(resolve_live_base_with(&env).1, LiveBaseSource::XdgInferred);
+        assert!(
+            !root.path().join(current_uid().to_string()).exists(),
+            "nothing created"
+        );
+
+        let (env, root, _m, _b) = inferred_env(None, false);
+        let elsewhere = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(
+            elsewhere.path(),
+            root.path().join(current_uid().to_string()),
+        )
+        .unwrap();
+        assert_ne!(resolve_live_base_with(&env).1, LiveBaseSource::XdgInferred);
+
+        let (mut env, root, _m, _b) = inferred_env(None, true);
+        let xdg = root.path().join("xdg");
+        fs::create_dir(&xdg).unwrap();
+        env.xdg_runtime_dir = Some(xdg.to_string_lossy().into_owned());
+        let (base, source) = resolve_live_base_with(&env);
+        assert_eq!(source, LiveBaseSource::XdgRuntime);
+        assert_eq!(base, xdg.join("autopilot"));
     }
 
     /// (g) newly created ancestors are 0700 too, not just the leaf — the
