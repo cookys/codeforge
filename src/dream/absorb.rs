@@ -1,13 +1,13 @@
 use crate::db;
 use crate::memory::l0::{Signal, SignalSource, SignalWriter};
-/// Dream Absorb：掃描 .claude/memory/ 並收編為 L0 signals
+/// Dream Absorb：只收編「當前專案」自己的 Claude Code memory 目錄（projects/<slug>/memory/*.md）為 L0 signals
 use anyhow::Result;
 
 pub struct AbsorbResult {
     pub absorbed: usize,
 }
 
-/// The CWD project's root (the dir that holds `.codeforge`). With a shared store
+/// The project dream runs for: the dir that holds `.codeforge`. With a shared store
 /// (`CODEFORGE_DIR` not named `.codeforge`) the CWD itself is the project: never widened.
 fn project_root(ctx: &db::Context) -> std::path::PathBuf {
     match (ctx.project_dir.file_name(), ctx.project_dir.parent()) {
@@ -17,28 +17,31 @@ fn project_root(ctx: &db::Context) -> std::path::PathBuf {
 }
 
 pub fn run(ctx: &db::Context) -> Result<AbsorbResult> {
-    let home = dirs::home_dir().unwrap_or_default();
-    run_for(ctx, &home, &project_root(ctx))
+    let projects_root = dirs::home_dir()
+        .map(|h| h.join(".claude").join("projects"))
+        .unwrap_or_default();
+    run_from(ctx, &projects_root, &project_root(ctx))
 }
 
-/// Absorb ONLY this project's own Claude memory: `<home>/.claude/projects/<slug(root)>/memory/*.md`.
-/// Other projects' memory never enters this project's L0 (repo rule: memory stays per project).
-fn run_for(
+/// `projects_root` = the Claude projects dir; `cwd` = the project dream runs for
+/// (`project_root`: the store's repo, else the SessionEnd hook's CWD).
+pub fn run_from(
     ctx: &db::Context,
-    home: &std::path::Path,
-    project_root: &std::path::Path,
+    projects_root: &std::path::Path,
+    cwd: &std::path::Path,
 ) -> Result<AbsorbResult> {
-    let claude_memory = home
-        .join(".claude")
-        .join("projects")
-        .join(crate::mnemos::autocite::claude_project_slug(project_root))
+    // Only this project's own memory dir (PM 01M7QZ9Y): dream runs at SessionEnd
+    // in every project, so scanning all of `projects_root` copied every other
+    // project's memory into this one's L0 (and from there into LLM prompts).
+    let claude_memory = projects_root
+        .join(crate::mnemos::autocite::claude_project_slug(cwd))
         .join("memory");
 
     if !claude_memory.exists() {
         return Ok(AbsorbResult { absorbed: 0 });
     }
 
-    // 找出本專案 .claude/projects/<slug>/memory/*.md 檔案
+    // 只看當前專案的 memory/*.md（不遞迴、不碰其他專案）
     let mut absorbed = 0;
     let writer = SignalWriter::new(ctx);
 
@@ -51,7 +54,7 @@ fn run_for(
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s.trim()).ok())
         .map(|dt| dt.with_timezone(&chrono::Utc));
 
-    for proj_entry in walkdir_shallow(&claude_memory, 1) {
+    for proj_entry in walkdir_shallow(&claude_memory, 0) {
         if proj_entry.extension().map(|e| e == "md").unwrap_or(false) {
             // 檢查修改時間（只吸收新的）
             let modified = std::fs::metadata(&proj_entry)
@@ -116,56 +119,68 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn mem(home: &std::path::Path, root: &str, name: &str, body: &str) {
-        let d = home
-            .join(".claude/projects")
-            .join(crate::mnemos::autocite::claude_project_slug(
-                std::path::Path::new(root),
-            ))
-            .join("memory");
-        std::fs::create_dir_all(&d).unwrap();
-        std::fs::write(d.join(name), body).unwrap();
-    }
-
-    fn l0_text(ctx: &db::Context) -> String {
+    fn signals_text(ctx: &db::Context) -> String {
         let mut all = String::new();
-        if let Ok(rd) = std::fs::read_dir(ctx.project_dir.join("signals")) {
-            for e in rd.flatten() {
-                all.push_str(&std::fs::read_to_string(e.path()).unwrap());
-            }
+        for e in std::fs::read_dir(ctx.project_dir.join("signals")).unwrap() {
+            all.push_str(&std::fs::read_to_string(e.unwrap().path()).unwrap_or_default());
         }
         all
     }
 
-    /// R1: project A's dream must not absorb project B's Claude memory.
+    /// PM 01M7QZ9Y: dream runs at SessionEnd in every project; absorb must take
+    /// only the CWD project's own Claude memory, never another project's.
     #[test]
-    fn absorbs_only_current_projects_memory() {
-        let tmp = TempDir::new().unwrap();
-        let home = tmp.path().join("home");
-        mem(
-            &home,
-            "/w/proj-a",
-            "a.md",
-            "memory of project A: prefers tabs always",
-        );
-        mem(
-            &home,
-            "/w/proj-b",
-            "b.md",
-            "memory of project B: SECRET-B-CONTENT here",
-        );
+    fn absorb_takes_only_the_current_projects_memory() {
+        let temp = TempDir::new().unwrap();
+        let projects_root = temp.path().join("claude-projects");
+        let repo_a = temp.path().join("work").join("repo-a");
+        let repo_b = temp.path().join("work").join("repo-b");
+        for (repo, marker) in [(&repo_a, "MARKER_OWN_A"), (&repo_b, "MARKER_OTHER_B")] {
+            let mem = projects_root
+                .join(crate::mnemos::autocite::claude_project_slug(repo))
+                .join("memory");
+            std::fs::create_dir_all(&mem).unwrap();
+            std::fs::write(
+                mem.join("note.md"),
+                format!("{marker} a memory note long enough to absorb"),
+            )
+            .unwrap();
+        }
+        let project_dir = repo_a.join(".codeforge");
+        std::fs::create_dir_all(project_dir.join("signals")).unwrap();
         let ctx = db::Context {
-            project_dir: tmp.path().join("a-store"),
-            brain_dir: tmp.path().join("brain"),
-            db_path: tmp.path().join("state.db"),
+            project_dir,
+            brain_dir: temp.path().join("brain"),
+            db_path: temp.path().join("state.db"),
         };
-        let r = run_for(&ctx, &home, std::path::Path::new("/w/proj-a")).unwrap();
-        let l0 = l0_text(&ctx);
-        assert_eq!(r.absorbed, 1, "only A's own memory: {l0}");
-        assert!(l0.contains("project A"), "{l0}");
+
+        let r = run_from(&ctx, &projects_root, &repo_a).unwrap();
+
+        let text = signals_text(&ctx);
         assert!(
-            !l0.contains("SECRET-B-CONTENT"),
-            "B leaked into A's L0: {l0}"
+            !text.contains("MARKER_OTHER_B"),
+            "another project's memory leaked into this project's L0"
+        );
+        assert!(
+            text.contains("MARKER_OWN_A"),
+            "own memory must still be absorbed"
+        );
+        assert_eq!(r.absorbed, 1);
+    }
+    /// A `<repo>/.codeforge` store resolves to its repo even when the CWD is elsewhere;
+    /// a shared store (`CODEFORGE_DIR` not named `.codeforge`) falls back to the CWD.
+    #[test]
+    fn project_root_is_the_stores_repo() {
+        let mk = |pd: std::path::PathBuf| db::Context {
+            project_dir: pd,
+            brain_dir: "b".into(),
+            db_path: "d".into(),
+        };
+        let repo = std::path::Path::new("work/proj-a");
+        assert_eq!(project_root(&mk(repo.join(".codeforge"))), repo);
+        assert_eq!(
+            project_root(&mk("shared-store".into())),
+            std::env::current_dir().unwrap()
         );
     }
 }
