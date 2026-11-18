@@ -98,7 +98,7 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   G33 以前放在 `.claude/skills/forge-stats/`，只有 codeforge clone 會載入；搬走後 clone 裡不會重複載入。
   `CLAUDE_CODE_PLUGIN_DIRS` 不能寫在專案 settings；session 自己的 mods 資料夾綁 session id，`--resume` 後就不載入，不要放那裡。
   驗證：`claude plugin test plugins/forge-stats`。
-- **band 版面（statusline-band，2026-10-31）**：`/forge-stats layout band|pane`（存 `$.store`，預設 band）。band 畫在
+- **band 版面（statusline-band，2026-10-31；共用 TUI 計畫 P1b 起是唯一版面）**：`/forge-stats layout band`（存 `$.store`）；pane 版面已停用，舊存的 `layout: pane` 在 session.start 改成 band，`layout pane` 指令會被拒絕（`tests/no-top-tabrow.test.tsx`）。band 畫在
   prompt 正上方（AbovePrompt），分級與排欄見下面兩條；記憶與大腦讀 `codeforge/session/<sid>.json`。mod 每 2 秒寫
   `codeforge/mod-alive/<sid>.json` 心跳（`schema`、`session_id`、`written_at_ms`、`layout`、`summary_row`、`band_seen`）；
   statusline 讀到自己 session、未滿 10 秒、`layout: band` 的心跳就縮成 2 行：寵物歸 band

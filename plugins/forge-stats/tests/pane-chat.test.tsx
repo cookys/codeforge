@@ -281,13 +281,3 @@ test('a pane of three rows keeps the tab strip and the key hint in view: one con
   await ui.unmount()
 })
 
-test('/forge-stats layout pane opens the pane asking for the keyboard before it stores the layout', async ($, on) => {
-  const log: string[] = []
-  world(on, { log })
-  await start($)
-  log.length = 0
-  await $.command.run({ command: 'forge-stats', args: 'layout pane', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } } as never)
-  expect(log.slice(0, 2)).toEqual(['open focus=true', 'store set layout'])
-  const ui = await $.ui.mount(target(12))
-  await ui.unmount()
-})

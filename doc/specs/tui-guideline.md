@@ -17,7 +17,7 @@
 | AbovePrompt band | autopilot live mod，在上；forge-stats，在下 | autopilot 的 band 是 1 列（`BAND_ROWS = 1`），分頁打開時往下長；forge-stats 拿到的是 autopilot 傳下來的 `maxRows`／`bodyColumns` | live mod 是全域 plugin；forge-stats 在 G33 之後也改成全域 |
 | 提示列 | Claude Code | — | — |
 | statusline | codeforge statusline（Rust，一次性的行程） | 一行，任何狀態都一行、不畫寵物（golden：`tests/statusline_one_line.rs`；`statusline.rs` `render_line`） | 全域 settings.json，每個 session 都有 |
-| pane | live mod（`autopilot-live`）或 forge-stats（`/forge-stats layout pane`） | Claude Code 決定：寬終端時停靠在側邊（docked），否則疊在對話區上（inline）；兩種都經 `e.props.bodyColumns`／`scroll.bodyRows` 拿到尺寸 | live 在寬度 ≥144 且全螢幕時自動開；其餘手動 |
+| pane | live mod（`autopilot-live`）或 forge-stats（`/forge-stats` 手動開；pane 版面 P1b 起停用） | Claude Code 決定：寬終端時停靠在側邊（docked），否則疊在對話區上（inline）；兩種都經 `e.props.bodyColumns`／`scroll.bodyRows` 拿到尺寸 | live 在寬度 ≥144 且全螢幕時自動開；其餘手動 |
 
 規則：
 
