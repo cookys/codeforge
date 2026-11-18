@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# run-gate-b2.sh <autopilot-worktree-at-batch2-sha> — batch 2 UX gate end to end: real-terminal shots -> packet -> carbon + astra in parallel.
+# Run it from the Bash tool with run_in_background: true (the harness wakes the session on exit).
+# Output: gate-shots/out/b2-<sha9>/, gate-b2.md, gate-b2-{carbon,astra}.{out,err}. Prepared 11-18 (PM 01M7PM1D) so the gate starts minutes after the sha lands.
+set -uo pipefail
+S=$(cd "$(dirname "$0")" && pwd); ap=$(cd "$1" && pwd); sha=$(git -C "$ap" rev-parse --short=9 HEAD); label=b2-$sha
+cd "$S"
+bash gate-shots/run.sh "$ap" "$label" > "shots-$label.log" 2>&1; echo "shots rc=$? ($(command ls gate-shots/out/$label | wc -l) files)"
+KEYS="2 3 9 1 0 4" timeout 300 bash gate-shots/keyprobe.sh "$ap" "$label" > "keyprobe-$label.log" 2>&1; echo "keyprobe: $(grep -c "composer=\[\]" "keyprobe-$label.log")/6 clean"
+python3 -I build-b2.py "$sha" "$label" || exit 1
+D=${AUTOPILOT_DIR:-$HOME/projects/autopilot}/scripts/dispatch-author.sh
+bash $D --runner agy --model gemini-4-carbon-high --timeout 20m --prompt-file "$S/gate-b2.md" > gate-b2-carbon.out 2> gate-b2-carbon.err &
+pc=$!
+bash $D --runner codex --model gpt-6-astra --timeout 20m --prompt-file "$S/gate-b2.md" > gate-b2-astra.out 2> gate-b2-astra.err &
+pa=$!
+wait $pc; echo "carbon exit=$?"; wait $pa; echo "astra exit=$?"
