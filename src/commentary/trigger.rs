@@ -89,7 +89,7 @@ pub struct TickContext<'a> {
     pub level_after: u32,
     /// Unix seconds when the daemon started. Used for SessionLong.
     pub session_started_at: i64,
-    /// Unix seconds of last CLI interaction (`last_player_seen_at` in settings).
+    /// Unix seconds of last human interaction (`last_interaction_at` in settings).
     /// `None` on fresh install → LongIdle suppressed.
     pub last_seen_at: Option<i64>,
 }

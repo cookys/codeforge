@@ -72,7 +72,7 @@ pub fn decide_and_reserve(
     }
 
     // 2. Detect triggers (pure logic).
-    let last_seen_at = session::get_last_seen(tx)?;
+    let last_seen_at = session::get_last_interaction(tx)?;
     let trig_ctx = trigger::TickContext {
         now,
         defeats,
@@ -429,5 +429,18 @@ mod tests {
         let conn = Connection::open(&db_path).unwrap();
         let rows = repo::recent_feed(&conn, 5).unwrap();
         assert_eq!(rows[0].source, super::super::Source::Rule);
+    }
+
+    #[test]
+    fn long_idle_sees_last_interaction_not_statusline_seen() {
+        let conn = fresh_conn();
+        enable_opt_in(&conn);
+        let world = GameWorld::load_or_init(&conn).unwrap();
+        let now = 1_800_000_000;
+        session::update_last_seen(&conn, now - 5).unwrap();
+        session::update_last_interaction(&conn, now - 8 * 3600).unwrap();
+        let res = decide_and_reserve(&conn, &world, &[], 1, 1, now - 10, 1, now).unwrap();
+        let pending = res.expect("8 h absence must fire LongIdle");
+        assert_eq!(pending.kind, Kind::LongIdle);
     }
 }
