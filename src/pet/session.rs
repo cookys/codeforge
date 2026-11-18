@@ -3,7 +3,9 @@
 //! Two pieces glued together:
 //!   1. `last_player_seen_at` in the `settings` k/v — bumped on every CLI
 //!      entry point (`codeforge statusline`, `codeforge tui`). Used to
-//!      measure player absence between invocations.
+//!      measure player absence between invocations. NOTE: the statusline
+//!      bumps it every ~10 s, so it only means "a session was open"; real
+//!      absence (welcome-back, AI commentary) uses `last_interaction_at`.
 //!   2. `WelcomeBackSummary::build` — aggregate combat_log + loot_inventory
 //!      between last-seen and now, plus current HP%. Returns `None` if
 //!      absence is below the 10-minute threshold (intra-session noise).
@@ -30,6 +32,7 @@ pub const ABSENCE_THRESHOLD_SECS: i64 = 10 * 60;
 /// Read `last_player_seen_at` from settings. `None` on first-ever run
 /// (so callers show a neutral greeting rather than "you've been gone
 /// for eternity").
+#[allow(dead_code)] // statusline only bumps it; readers moved to `last_interaction_at`
 pub fn get_last_seen(conn: &Connection) -> Result<Option<i64>> {
     let row: Option<String> = conn
         .query_row(
@@ -50,6 +53,63 @@ pub fn update_last_seen(conn: &Connection, now_unix: i64) -> Result<()> {
         [now_unix.to_string()],
     )?;
     Ok(())
+}
+
+/// Read `last_interaction_at`: the last time the human used codeforge
+/// interactively (TUI). Unlike `last_player_seen_at` (bumped by every
+/// statusline run, i.e. "a session was open"), this one only moves on real
+/// interaction, so welcome-back and the AI-commentary absence trigger can
+/// see a real gap. `None` on first run.
+pub fn get_last_interaction(conn: &Connection) -> Result<Option<i64>> {
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'last_interaction_at'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(row.and_then(|s| s.parse::<i64>().ok()))
+}
+
+/// Upsert `last_interaction_at` to `now_unix`.
+pub fn update_last_interaction(conn: &Connection, now_unix: i64) -> Result<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES ('last_interaction_at', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                         updated_at = datetime('now')",
+        [now_unix.to_string()],
+    )?;
+    Ok(())
+}
+
+/// Settings key: the `last_interaction_at` value the TUI saw when it opened,
+/// handed to the daemon (a separate process) for its first commentary decision.
+const ABSENCE_FROM_KEY: &str = "commentary_absence_from";
+
+/// TUI open: remember when the human was last here (`prev`), unless an earlier
+/// open has not been consumed yet (keeps the longest absence).
+pub fn stash_absence_from(conn: &Connection, prev: i64) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, ?2)",
+        rusqlite::params![ABSENCE_FROM_KEY, prev.to_string()],
+    )?;
+    Ok(())
+}
+
+/// Commentary decision: take (read and clear) the stashed absence start. `Some`
+/// only for the first decision after a TUI open; later decisions get `None`.
+pub fn take_absence_from(conn: &Connection) -> Result<Option<i64>> {
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            [ABSENCE_FROM_KEY],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if row.is_some() {
+        conn.execute("DELETE FROM settings WHERE key = ?1", [ABSENCE_FROM_KEY])?;
+    }
+    Ok(row.and_then(|s| s.parse::<i64>().ok()))
 }
 
 /// Aggregated stats about what happened while the player was away.

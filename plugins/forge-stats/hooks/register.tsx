@@ -1,14 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Layout, PetView, SessionView, SpriteData } from '../types'
+import type { Layout, PetIcon, PetView, SessionView } from '../types'
 import {
-  BAND_GAP,
   GLYPH,
   KEY_W,
   displayWidth,
-  bandLayout,
-  bandTier,
   halfBlockCells,
   heartbeatPath,
   BAND_SEEN_MS,
@@ -20,11 +17,7 @@ import {
   parseSessionView,
   parseSnapshot,
   sessionViewPath,
-  rgbHex,
   staleMinutes,
-  BAND_MIN_ROWS,
-  MINI_MIN_ROWS,
-  parseFleet,
   summaryParts,
   USAGE_MAX_BYTES,
   USAGE_STALE_MS,
@@ -41,6 +34,7 @@ import { CONTROL_ROWS, clipCells, newPaneScroll, scrolled, windowOf } from './pa
 import type { PaneScroll } from './pane-view'
 import { PANEL_REFRESH_MS, panelState, panelTiers } from './panel'
 import { sideState } from './side'
+import { petIcon } from './pet-icon'
 import { FLEET_MAX_BYTES, fleetLines, fleetQuotaPath, parseFleetQuota } from './fleet-view'
 import type { FleetQuotaView } from './fleet-view'
 import { localeFrom, makeT } from './strings'
@@ -55,14 +49,13 @@ const pet = atom(
 )
 const session = atom({ plugin: 'forge-stats', key: 'session' } as const, null as SessionView | null, { shape: 'session-1' })
 
-// autopilot's fleet summary (its live mod writes `autopilot.fleet`; PM G33a). Read only, never written; no autopilot or another shape is no summary. Not declared as a
-// plugin dependency: forge-stats stands alone (B31), and a missing plugin must not keep it from loading.
-async function readFleet($: EngineInterface) {
+// Is autopilot loaded in this session? Its live mod declares the `autopilot.fleet` atom, so a read that returns any value means it is there (01M7MBV76H).
+async function autopilotLoaded($: EngineInterface) {
   try {
     const got = await ($.state.get as (ref: { plugin: string; key: string }) => Promise<{ value: unknown }>)({ plugin: 'autopilot', key: 'fleet' })
-    return parseFleet(got.value)
+    return got.value !== undefined && got.value !== null
   } catch (_e) {
-    return null
+    return false
   }
 }
 
@@ -82,17 +75,22 @@ let liveBase: string | null = null
 // the session lights refreshSession last read (the panel writer runs outside a render, where the atom is not read)
 let sessionNow: SessionView | null = null
 let petNow: PetView = { status: 'missing', readAt: 0, writtenAt: null, path: null, pet: null, village: null }
-// The band instance the AbovePrompt hook last drew (its `e.requestId`); null when it passed.
-let bandId: string | null = null
-let bandLastCells: string | null = null
-// The sprite the band drew last (full or mini): its blits must match the mounted Raster's size.
-let bandSprite: SpriteData | null = null
 // B34: the band drew itself (the summary row or the columns) since the last heartbeat; the heartbeat turns it into bandSeenAt on its own clock (a render
 // reads no clock). bandSeenAt is null before the first draw.
 let bandDrew = false
 let bandSeenAt: number | null = null
-const BAND_KEY = 'pet-band'
 const t = (): T => makeT(locale)
+
+// The pet tab's icon (pet-icon.ts), decided once per session from the env: literal names, one call each (a variable name breaks the module load).
+let iconNow: PetIcon = petIcon({ term: undefined, lcAll: undefined, lcCtype: undefined, lang: undefined, pick: undefined })
+async function resolveIcon($: EngineInterface): Promise<PetIcon> {
+  const term = await $.env.get('TERM').catch(() => undefined)
+  const lcAll = await $.env.get('LC_ALL').catch(() => undefined)
+  const lcCtype = await $.env.get('LC_CTYPE').catch(() => undefined)
+  const lang = await $.env.get('LANG').catch(() => undefined)
+  const pick = await $.env.get('CODEFORGE_PET_ICON').catch(() => undefined)
+  return petIcon({ term: term || undefined, lcAll: lcAll || undefined, lcCtype: lcCtype || undefined, lang: lang || undefined, pick: pick || undefined })
+}
 
 async function resolveLocale($: EngineInterface): Promise<Locale> {
   const env = await $.env.get('CODEFORGE_LOCALE').catch(() => undefined)
@@ -143,20 +141,10 @@ async function stepSprite($: EngineInterface) {
     // literal routing at the call site (pixel-pet plan §2.5); must match PANE and SPRITE_KEY
     await $.ui.blit({ requestId: 'forge-stats', key: 'pet-sprite', cells })
   }
-  // The band's Raster: its site is the band instance the render hook received (statusline-band
-  // plan §2.5), its size the sprite the band drew (forge-tabs plan §2.5).
-  const id = bandId
-  const drawn = bandSprite
-  if (layout !== 'band' || id === null || drawn === null) return
-  const bandCells = halfBlockCells(drawn, spriteFrame % drawn.frames.length).cells
-  if (bandCells === bandLastCells) return
-  bandLastCells = bandCells
-  const result = await $.ui.blit({ requestId: id, key: 'pet-band', cells: bandCells })
-  // denied (the band is not mounted right now): resend the frame on the next tick
-  if ('deny' in result) bandLastCells = null
 }
 
-// One line codeforge statusline reads: is forge-stats alive in this session, and in which layout?
+// The heartbeat: is forge-stats alive in this session, and in which layout? Autopilot reads `layout`/`summary_row`; the codeforge statusline no longer reads it.
+// It never asks for a render: an invalidate every 2 s redrew the whole UI for a `band_seen` nobody reads.
 async function writeHeartbeat($: EngineInterface) {
   if (liveBase === null || sid === '') return
   try {
@@ -167,10 +155,8 @@ async function writeHeartbeat($: EngineInterface) {
     }
     const age = bandSeenAt === null ? Infinity : now - bandSeenAt
     await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout, layout === 'band' && age < BAND_SEEN_MS))
-    // an idle session may not redraw: past half the window, ask for a render, so a band still on screen refreshes bandSeenAt before it ages out
-    if (layout === 'band' && age >= BAND_SEEN_MS / 2) void $.ui.invalidate('ui.render')
   } catch {
-    // best effort: no heartbeat means the statusline stays full
+    // best effort: a missed beat is retried at the next tick
   }
 }
 
@@ -214,10 +200,6 @@ async function refreshPet($: EngineInterface) {
 type Role = 'structure' | 'idle' | 'dim' | 'bold' | 'mono'
 type Seg = { text: string; role?: Role; color?: string }
 type Line = Seg[]
-
-// One colour per meaning in the band (forge-ux), the same roles as autopilot's palette: OK (green, `done`) for lights
-// that are fine; the pet in its village colour. Speed is autopilot's to measure and draw (B32).
-const OK = 'success'
 
 const seg = (text: string, role?: Role, color?: string): Seg => ({ text, ...(role ? { role } : {}), ...(color ? { color } : {}) })
 
@@ -470,7 +452,7 @@ async function writePanel($: EngineInterface) {
   const quota = quotaState.present ? { state: quotaState, nowMs: now } : null
   const body = {
     usage: panelTiers(cols => usageLines(usage, cols, tr, now, quota)),
-    pet: { title: tr('tabPet'), sprite: petNow.village?.sprite ?? null, tiers: panelTiers(cols => petLines(petNow, cols, tr, now, false)) },
+    pet: { title: tr('tabPet'), sprite: petNow.village?.sprite ?? null, tiers: panelTiers(cols => petLines(petNow, cols, tr, now, false)), icon: iconNow },
     side: sideState(usage, quota === null ? null : quotaEntries(quotaState, Math.floor(now / 1000)), sessionNow, now, tr),
   }
   const text = JSON.stringify(body)
@@ -545,25 +527,6 @@ function usageLines(view: UsageView, cols: number, tr: T, now: number, quota: { 
   return out
 }
 
-// band columns: at most 12 rows each, beside the 12-row Ferris
-
-function bandPetLines(view: PetView, width: number, tr: T, short = false): Line[] {
-  const { pet: p, village: v } = view
-  if (view.status !== 'ok' || p === null || v === null) return [[seg(`${GLYPH.empty} ${tr('noPet')}`, 'dim')]]
-  const accent = rgbHex(v.rgb) ?? undefined
-  const out: Line[] = [[seg(p.name, 'bold', accent), seg(`  Lv.${p.level}`, undefined, accent)], [seg(v.display_name, 'dim')]]
-  if (p.xp_to_next > 0) {
-    const m = meter(p.xp / p.xp_to_next, Math.max(6, Math.min(20, width - 12)))
-    out.push([seg(tr('xp') + ' ', 'dim'), seg(m.on, undefined, accent), seg(m.off, 'idle'), seg(padLeft(`${Math.floor((p.xp / p.xp_to_next) * 100)}%`, 5))])
-  }
-  const stat = (k: string, n: number) => [seg(k + ' ', 'dim'), seg(String(n))]
-  const sep = seg(' · ', 'structure')
-  out.push([...stat('ATK', p.atk), sep, ...stat('DEF', p.def), sep, ...stat('HP', p.hp)])
-  out.push([...stat('SUP', p.sup), sep, ...stat('VER', p.ver)])
-  if (p.message && !short) out.push([seg(' ')], [seg(p.message, 'dim')])
-  return out
-}
-
 // The dim tail of the prompt hint line (PM, after the prompt-slot probe): this session's memory and brain lights in one short string, the memory first. A hidden light
 // is left out; with both hidden there is no tail. The engine cuts it where the row ends and leaves it out under four columns.
 export function promptTail(lights: SessionView | null, tr: T): string | undefined {
@@ -575,42 +538,15 @@ export function promptTail(lights: SessionView | null, tr: T): string | undefine
   return parts.length === 0 ? undefined : parts.join(' · ')
 }
 
-function bandMemoryLines(lights: SessionView | null, tr: T): Line[] {
-  const out: Line[] = []
-  const brainWord: Record<SessionView['brain'], string> = {
-    ok: tr('brainOk'),
-    degraded: tr('brainDegraded'),
-    offline: tr('brainOffline'),
-    pending: tr('brainPending'),
-    hidden: GLYPH.empty,
-  }
-  // a light before each value: the colour says the state, the word says it again for whoever cannot tell the colour
-  const brainColor: Record<SessionView['brain'], string | undefined> = { ok: OK, degraded: 'warning', offline: 'error', pending: undefined, hidden: undefined }
-  if (lights === null || lights.memory === 'hidden') {
-    out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(GLYPH.empty, 'dim')])
-  } else {
-    const on = lights.memory === 'active'
-    out.push([seg(padRight(tr('memory'), 6), 'dim'), seg(GLYPH.latest + ' ', on ? undefined : 'idle', on ? OK : undefined), seg(String(lights.active)), seg(` ${tr('entries')}`, 'dim')])
-  }
-  if (lights === null || lights.brain === 'hidden') {
-    out.push([seg(padRight(tr('brain'), 6), 'dim'), seg(GLYPH.empty, 'dim')])
-  } else {
-    const c = brainColor[lights.brain]
-    out.push([seg(padRight(tr('brain'), 6), 'dim'), seg(GLYPH.latest + ' ', c ? undefined : 'idle', c), seg(brainWord[lights.brain], lights.brain === 'ok' ? undefined : 'dim')])
-  }
-  return out
-}
-
 // ---------------------------------------------------------------------------------------------
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     locale = await resolveLocale($)
+    iconNow = await resolveIcon($)
     // a new session starts its animation from frame 0 with nothing sent yet
     spriteFrame = 0
     lastCells = null
-    bandId = null
-    bandLastCells = null
     sid = await $.session.id().catch(() => '')
     const stored = await $.store.get('layout').catch(() => undefined)
     layout = stored === 'pane' ? 'pane' : 'band'
@@ -646,7 +582,6 @@ export const register: Register = on => {
       // the open asks for the keys before any wait (§13 rule 7)
       if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title'), focus: true })
       await $.store.set('layout', arg)
-      bandLastCells = null
       $.ui.invalidate('ui.render')
       await writeHeartbeat($)
       return { text: t()('layoutSet', { layout: arg }) }
@@ -834,97 +769,34 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const props = e.props
     if (e.surface !== 'terminal' || layout !== 'band' || props.hasSurvey || props.maxRows < 1) {
-      bandId = null
       return next(e)
     }
-    const els = $.ui.resolve(e)
-    const { Box, Text } = els
+    // 01M7MBV76H: the band is at most ONE row and never a sprite (the pet's art lives only in forge-stats' own pane). With autopilot loaded (its fleet atom is
+    // readable) the band draws nothing at all: autopilot-live owns the rows above the prompt, and anything drawn here would sit below its decision cards and send row
+    // and push them out of view (operator 11-17: cards could not be answered without scrolling).
+    if (await autopilotLoaded($)) {
+      return next(e)
+    }
+    const { Box, Text } = $.ui.resolve(e)
     const p = await read($, pet)
-    const full = p.status === 'ok' ? (p.village?.sprite ?? null) : null
-    const mini = p.status === 'ok' ? (p.village?.sprite_mini ?? null) : null
-    const Raster = 'Raster' in els ? els.Raster : undefined
-    let tier = bandTier(props.maxRows, props.bodyColumns, mini !== null)
-    if (tier === 'full' && (full === null || Raster === undefined)) tier = 'summary'
-    if (tier === 'mini' && (mini === null || Raster === undefined)) tier = 'summary'
-    const sprite = tier === 'full' ? full : tier === 'mini' ? mini : null
     const tr = t()
-    const fleet = await readFleet($)
     const clockMs = Date.now()
     drawnAt = clockMs
     // the quota chips (G40 §6.1): only once the mirror directory exists (design §7 rule 7), none when it holds nothing to draw
     const quotaForms = quotaState.present ? quotaBandForms(quotaBand(quotaEntries(quotaState, Math.floor(clockMs / 1000)), clockMs, tr)) : null
-    // the one-line summary (TUI guideline §2.2): fleet counts, then the pet; the widest form that fits, never wider than the row (bodyColumns may run ~2 wider)
-    const summaryRow = (k: string, withPet: boolean) => {
-      const petTag = withPet && p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
-      const parts = summaryParts(fleet, petTag, Math.max(0, props.bodyColumns - 2), tr('fleet'), quotaForms)
-      if (parts === null) return null
-      return (
-        <Box key={k} flexDirection="row">
-          {parts.map((s, i) => (
-            <Text key={'f' + i} {...(s.color ? { color: s.color } : {})} {...(s.dim ? { dimColor: true } : {})}>
-              {s.text}
-            </Text>
-          ))}
-        </Box>
-      )
-    }
-    if (sprite === null || Raster === undefined) {
-      bandId = null
-      bandSprite = null
-      // 1–5 rows (or no sprite): one summary row. With autopilot this is the row it hands down under its tab row (summary_row in the heartbeat); with nothing to
-      // draw the row is passed on, never left blank.
-      const row = summaryRow('summary', true)
-      if (row === null) return next(e)
-      bandDrew = true
-      return row
-    }
-    const lights = await read($, session)
-    const layoutCols = bandLayout(props.bodyColumns, sprite.width)
-    const frame = halfBlockCells(sprite, spriteFrame % sprite.frames.length)
-    bandId = e.requestId
-    bandSprite = sprite
+    // the one-line summary (TUI guideline §2.2): the pet and the quota chips; the widest form that fits, never wider than the row (bodyColumns may run ~2 wider)
+    const petTag = p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
+    const parts = summaryParts(null, petTag, Math.max(0, props.bodyColumns - 2), tr('fleet'), quotaForms)
+    // with nothing to draw the row is passed on, never left blank
+    if (parts === null) return next(e)
     bandDrew = true
-    bandLastCells = frame.cells
-
-    const draw = (s: Seg, i: number) => {
-      const k = 's' + i
-      const color = s.color ?? (s.role === 'structure' ? 'subtle' : s.role === 'idle' ? 'inactive' : undefined)
-      return (
-        <Text key={k} wrap="truncate" {...(color ? { color } : {})} {...(s.role === 'dim' ? { dimColor: true } : {})} {...(s.role === 'bold' ? { bold: true } : {})} {...(s.role === 'mono' ? { mono: true } : {})}>
-          {s.text}
-        </Text>
-      )
-    }
-    const column = (ls: Line[], width: number, k: string) => (
-      <Box key={k} flexDirection="column" width={width}>
-        {ls.slice(0, frame.rows).map((l, i) => (
-          <Box key={'r' + i} flexDirection="row">
-            {l.map(draw)}
-          </Box>
+    return (
+      <Box key="summary" flexDirection="row">
+        {parts.map((s, i) => (
+          <Text key={'f' + i} {...(s.color ? { color: s.color } : {})} {...(s.dim ? { dimColor: true } : {})}>
+            {s.text}
+          </Text>
         ))}
-      </Box>
-    )
-
-    // the fleet outranks the pet (guideline §2.1): a summary row on top when there is a summary and a row to spare above the tier's minimum (mini >= 7, full >= 13)
-    const top = (fleet !== null || (quotaForms !== null && quotaForms.length > 0)) && props.maxRows > (tier === 'mini' ? MINI_MIN_ROWS : BAND_MIN_ROWS) ? summaryRow('fleet', false) : null
-    const columns = (
-      <Box flexDirection="row" gap={BAND_GAP}>
-        {layoutCols.map(c => {
-          switch (c.id) {
-            case 'ferris':
-              return <Raster key={BAND_KEY} columns={frame.columns} rows={frame.rows} cells={frame.cells} />
-            case 'pet':
-              return column(bandPetLines(p, c.width, tr, tier === 'mini'), c.width, 'pet')
-            case 'memory':
-              return column(bandMemoryLines(lights, tr), c.width, 'memory')
-          }
-        })}
-      </Box>
-    )
-    return top === null ? columns : (
-      <Box flexDirection="column">
-        {top}
-        {columns}
       </Box>
     )
   })

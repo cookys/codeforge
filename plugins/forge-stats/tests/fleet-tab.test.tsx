@@ -185,16 +185,16 @@ const REAL = () =>
       alias: 'acct-65d2bffc',
       name: 'stranity',
       org: 'Stranity',
-      hosts: ['gpu-host-2', 'gpu-host-1'],
-      old_hosts: ['gpu-host-1'],
+      hosts: ['host-a', 'host-b'],
+      old_hosts: ['host-b'],
       weekly: { pct: 0.04, resets_at: s() - 360, projected: null, warn: null, exhaust_at: null, reset: true },
       five_hour: { pct: 0.25, resets_at: s() + 13000, reset: false },
     }),
   ])
 
 for (const [zh, reset, old, none] of [
-  [true, /週 已重置/, /gpu-host-2,gpu-host-1 舊/, '目前沒有會浪費或會不夠的帳號'],
-  [false, /week reset/, /gpu-host-2,gpu-host-1 old/, 'no account will waste or fall short'],
+  [true, /週 已重置/, /host-a,host-b 舊/, '目前沒有會浪費或會不夠的帳號'],
+  [false, /week reset/, /host-a,host-b old/, 'no account will waste or fall short'],
 ] as const) {
   test(`an old host and a reset window (${zh ? 'zh-TW' : 'en'}): 舊 / old and 已重置 / reset, never the old pct, no warning`, async ($, on) => {
     world(on, { fleet: JSON.stringify(REAL()), zh })
@@ -218,7 +218,7 @@ for (const [zh, reset, old, none] of [
 test('parseFleetQuota reads old_hosts and reset, and refuses a bad one', () => {
   const v = parseFleetQuota(JSON.stringify(REAL()))
   if (v.status !== 'ok') throw new Error('not ok')
-  expect(v.accounts[0]?.oldHosts).toEqual(['gpu-host-1'])
+  expect(v.accounts[0]?.oldHosts).toEqual(['host-b'])
   expect(v.accounts[0]?.weekly?.reset).toBe(true)
   expect(v.accounts[0]?.fiveHour?.reset).toBe(false)
   // absent from an older file: no old hosts, not reset
@@ -227,7 +227,7 @@ test('parseFleetQuota reads old_hosts and reset, and refuses a bad one', () => {
   expect(old.accounts[0]?.oldHosts).toEqual([])
   expect(old.accounts[0]?.weekly?.reset).toBe(false)
   for (const bad of [
-    acct({ alias: 'a', old_hosts: 'gpu-host-1' }),
+    acct({ alias: 'a', old_hosts: 'host-b' }),
     acct({ alias: 'a', old_hosts: ['nope'] }),
     acct({ alias: 'a', old_hosts: ['gpu-a\u0007'], hosts: ['gpu-a\u0007'] }),
     acct({ alias: 'a', weekly: wk({ reset: 'yes' }) }),

@@ -53,16 +53,6 @@ impl Strategy {
         })
     }
 
-    /// Short 3-letter tag for the statusline segment.
-    pub fn short_tag(self) -> &'static str {
-        match self {
-            Self::Aggressive => "agg",
-            Self::Defensive => "def",
-            Self::Explorer => "exp",
-            Self::Scholar => "sch",
-        }
-    }
-
     /// Damage multiplier applied to `pet.atk` before the 0.8..1.2 roll.
     pub fn atk_mult(self) -> f64 {
         match self {
@@ -156,6 +146,35 @@ impl Strategy {
 
 pub const DEFAULT_STRATEGY: Strategy = Strategy::Explorer;
 
+/// `settings` key holding the user-chosen strategy. The CLI writes this
+/// (it never writes `pet_snapshot`); the daemon copies it into
+/// `pet_snapshot.strategy` on each tick.
+pub const SETTING_KEY: &str = "pet_strategy";
+
+/// The user-chosen strategy from `settings`, if set and parseable.
+pub fn read_setting(conn: &rusqlite::Connection) -> rusqlite::Result<Option<Strategy>> {
+    use rusqlite::OptionalExtension;
+    let v: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            [SETTING_KEY],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(v.and_then(|s| Strategy::from_str(&s)))
+}
+
+/// Upsert the chosen strategy into `settings`.
+pub fn write_setting(conn: &rusqlite::Connection, s: Strategy) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                                         updated_at = datetime('now')",
+        rusqlite::params![SETTING_KEY, s.as_str()],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,16 +252,6 @@ mod tests {
             MobKind::Void,
         ] {
             assert_eq!(s.priority_order(kind), 0, "{kind:?} should be neutral");
-        }
-    }
-
-    #[test]
-    fn short_tags_are_unique_and_short() {
-        use std::collections::HashSet;
-        let tags: HashSet<_> = Strategy::ALL.iter().map(|s| s.short_tag()).collect();
-        assert_eq!(tags.len(), 4);
-        for s in Strategy::ALL {
-            assert!(s.short_tag().len() <= 8);
         }
     }
 

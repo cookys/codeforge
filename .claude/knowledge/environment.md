@@ -111,7 +111,7 @@ non-codeforge session.
 **Date**: 2026-04-14 | **Superseded**: 2026-06-22
 **Problem**: 第一次 clone 後 repo 無 `user.email`/`user.name`，`git commit` 報 `Author identity unknown`。
 **❌ 舊解（不要用）**: `git config user.email "..."` 改 repo config —— 會跨 session 持續、且 codeforge 需要 noreply email（非個人 email）。
-**✅ 現行解**: 用 per-command `-c` override，見下方「Per-command git identity override」條目。codeforge commit 一律 `git -c user.email=2537196+cookys@users.noreply.github.com -c user.name=cookys commit ...`（GitHub email privacy 會擋 gmail）。**不改 config。**
+**✅ 現行解**: 用 per-command `-c` override，見下方「Per-command git identity override」條目。codeforge commit 一律 `git -c user.email=<帳號的 GitHub noreply 位址> -c user.name=<GitHub 使用者名稱> commit ...`（GitHub email privacy 會擋操作員的個人信箱）。**不改 config。**
 
 ## `gh repo create --push` 含 GitHub Actions workflow 需要 `workflow` scope
 
@@ -136,17 +136,17 @@ git push -u origin main && git push origin <tag>
 ```
 fatal: unable to auto-detect email address (got 'codepower@hostname.(none)')
 ```
-傳統解法（修 repo-local config）違反 HARD RULE — config 一改就跨 session 持續，且不同 repo 該用不同 identity（PKB 用 `2537196+cookys@users.noreply.github.com`、codeforge 用 `2537196+cookys@users.noreply.github.com`）。
+傳統解法（修 repo-local config）違反 HARD RULE — config 一改就跨 session 持續，且不同 repo 該用不同 identity（PKB 用操作員的公司信箱、codeforge 用帳號的 GitHub noreply 位址）。
 **Solution**: 用 `-c` 在 commit 那條 command 上臨時 inject identity，不寫進 config：
 ```bash
-git -c user.name=cookys -c user.email=2537196+cookys@users.noreply.github.com commit -m "..."
+git -c user.name=<名稱> -c user.email=<公司信箱> commit -m "..."
 ```
 每次 commit 都帶 `-c`，hash 出來的 author 就是當下指定的 identity，repo config 始終保持原狀。
 **When this fires**:
 - 任何剛 clone / 剛 rename / 剛 init 的 repo，**第一次 commit 之前**
 - 多 repo 各自不同 identity 的場景（GitHub no-reply email vs personal email vs work email）
 - 若 user 明確要求 "set git config for this repo permanently"，才允許 modify config — 預設一律走 `-c` override
-**⚠ codeforge 必須用 noreply email**（2026-06-17 踩到）：codeforge push 到 `github.com/cookys/codeforge` 時，GitHub 開了 **email privacy**，用 `2537196+cookys@users.noreply.github.com` commit 會在 `git push` 被擋（`push declined due to email privacy restrictions`）。**commit 當下就要帶** `-c user.email=2537196+cookys@users.noreply.github.com`（origin 既有 commit 全用此 email，`git log origin/main --format=%ae` 可確認）。若已用 gmail commit 了才發現，補救：`FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --env-filter '...gmail→noreply...' origin/main..HEAD` 重寫該範圍 author/committer email 再 push。
+**⚠ codeforge 必須用 noreply email**（2026-06-17 踩到）：codeforge push 到 `github.com/cookys/codeforge` 時，GitHub 開了 **email privacy**，用操作員的個人信箱 commit 會在 `git push` 被擋（`push declined due to email privacy restrictions`）。**commit 當下就要帶** `-c user.email=<帳號的 GitHub noreply 位址>`（origin 既有 commit 全用此 email，`git log origin/main --format=%ae` 可確認）。若已用 gmail commit 了才發現，補救：`FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --env-filter '...gmail→noreply...' origin/main..HEAD` 重寫該範圍 author/committer email 再 push。
 **Related**: `codeforge git repo 需要獨立 git config` 條目歷史紀錄；MEMORY.md HARD RULE「NEVER update the git config」
 
 ## `git tag v*.*.*` 會觸發 release.yml 發布 pipeline（不可逆對外動作）

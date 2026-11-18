@@ -37,9 +37,10 @@ a few ways — see ⚠️ below. Audited: 2026-06-18.
 > canonical = `src/cli/install.rs`. Divergences from this spec's design:
 >
 > - **Hook types: 3, not 4.** Global `--hooks` writes across **SessionStart**
->   (emit-session + `codeforge memory context --hook` local-recall injector),
+>   (emit-session + `codeforge memory context --hook` local-recall injector +
+>   `codeforge mnemos-cli context --hook …` central-recall injector),
 >   **SessionEnd** (emit-session + session-digest + `codeforge dream --quiet`
->   → `codeforge ship --no-hook`), and **PreCompact** (session-digest). There
+>   → `codeforge ship --no-hook` → `codeforge usage collect --quiet`), and **PreCompact** (session-digest). There
 >   is no PreToolUse in the global set (that's `--project-hooks` only).
 > - **No `CODEFORGE_PROJECT_ROOT` patching.** §1 proposed string-replacing
 >   scripts to read that env var; the shipped approach uses
@@ -233,13 +234,19 @@ codeforge install [OPTIONS]
   --all              → statusline + hooks
   --dry-run          → print resulting settings.json + extraction plan,
                         no writes
-  --force            → overwrite non-codeforge entries (prompts unless
-                        --yes)
+  --force            → overwrite non-codeforge entries (requires --yes
+                        to skip the prompt)
   --replace-statusline → overwrite a non-codeforge statusLine /
                         subagentStatusLine only; hooks untouched (B28)
   --yes              → skip confirmation prompts
   --settings-path P  → target settings.json other than the default
   --quiet            → exit-code-only, no stdout
+  --subagent-statusline → also install subagentStatusLine (opt-in)
+  --project-hooks    → install the codeforge-clone-only dev hooks into
+                        $CWD/.claude/settings.json (clone only)
+  --cleanup-period-days D → write cleanupPeriodDays; a shared
+                        settings.json (symlink / git-tracked) only gets it
+                        with this flag
 
 codeforge uninstall [OPTIONS]
   (no flags)         → remove everything codeforge-tagged + extracted

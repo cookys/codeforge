@@ -225,7 +225,8 @@ export const sessionViewPath = (base: string, sid: string) => `${base}/codeforge
 // `summary_row: true` tells autopilot's band this forge-stats draws the one-line summary on the band's second row (PM G33; TUI guideline §1.1 rule 3). An older
 // forge-stats answered a one-row ask with a speed label, so autopilot hands that row only to a heartbeat that says so.
 // `band_seen` (B34): this forge-stats' band drew within BAND_SEEN_MS. A plugin above it on the AbovePrompt chain that draws its own band and never calls
-// `next(e)` (autopilot's O4 shell) leaves it false, so the statusline keeps the pet instead of compacting with the pet nowhere. `layout` stays the chosen
+// `next(e)` (autopilot's O4 shell) leaves it false. The codeforge statusline no longer reads it (always one line, no pet); the field is kept for any outside
+// reader. `layout` stays the chosen
 // layout: autopilot reads it to decide whether to hand forge-stats its row, and a `layout` that followed the drawing would never be handed one again.
 export const BAND_SEEN_MS = 30_000
 export function heartbeatText(sid: string, now: number, layout: Layout, bandSeen: boolean): string {

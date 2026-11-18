@@ -6,7 +6,7 @@
 ## 0. Context
 
 - v0.0.7（B35）讓 global install 寫出的指令不帶本機路徑與版號，但 settings.json 仍是跟著 dotfiles 走、全部機器共用的一份，各機 binary 版本不同步：寫進 `codeforge hook …` 後，PATH 上還是 0.0.6 的機器 exit 2 擋住 PreCompact，沒裝 codeforge 的機器每次 session 結束都報錯。
-- host-mini 驗過 0.0.7 的 dry-run 後，那邊的 owner 決定不跑 bootstrap，改請 codeforge 的 hooks 由 autopilot plugin 註冊（fleet 訊息 `01M6CDDP51EF708E14PQ4W2V4N`）。
+- host-a 驗過 0.0.7 的 dry-run 後，那邊的 owner 決定不跑 bootstrap，改請 codeforge 的 hooks 由 autopilot plugin 註冊（fleet 訊息 `01M6CDDP51EF708E14PQ4W2V4N`）。
 - owner 2026-11-02 在卡 d-d9be662c 選 A：B31 的 hooks 段提前做，不等 autopilot alpha.7。B31 其餘段（band、status 片段、設定鍵、binary 需求）照原排程。
 - 介面已與 autopilot 對齊（fleet `01M6CDGZTHGHDFK7EMAARCH11V` → `01M6CDHXR3N1SSVW1VJCEN6HQW` → `01M6CDKJK52NB0AX9BM7G4TVJE` → `01M6CDKQQT6KZS1NGQWAXKW5PM`）。autopilot 端的 bridge 由 autopilot 自己實作，不在本計畫範圍；bridge 預設開或關由 autopilot 的卡 d-6812e1c5 決定。
 
@@ -33,7 +33,7 @@
 | KR5 | `hook on` 任何情況 exit 0（含 stdin 不是 JSON、stdin 非 UTF-8 或超過 1 MiB、子指令 exit 2、資料目錄不可寫、未知事件、未知旗標）；每個子指令收到的 stdin 與 hook 收到的逐 byte 相同 | binary 測試 |
 | KR6 | 單機 settings.json 偵測到 autopilot bridge（§3.5 五項條件），或帶 `--hooks-via autopilot`（任何檔）時：不新增 hook，清掉所有 codeforge 擁有的 hook 項目（marker `codeforge@*` 與舊的 node 形式），非 codeforge 的 hook 原樣保留；statusLine、cleanupPeriodDays 規則不變；印出一行說明。共用檔偵測到 bridge 但沒帶旗標時：hooks 照 0.0.7 處理並印警告，不清任何項目 | 單元測試（偵測純函式：五項條件各缺一項、schema 不是 1、config 形狀不合 → 不成立；單機／共用／旗標三種 patch 結果）+ e2e dry-run（單機、symlink 兩種） |
 | KR7 | 偵測不到 bridge 時，install 輸出與 0.0.7 byte 相同 | 單元測試（既有 global install 測試不改期望值） |
-| KR8 | 品質閘全綠；v0.0.8 發 full release；回覆 autopilot 與 host-mini | `./scripts/fmt.sh --check`、`cargo clippy -- -D warnings`、`cargo test`、`python3 scripts/check-doc-drift.py`、`bash scripts/check-cjk-safe.sh`；main CI 綠；`gh release view v0.0.8` |
+| KR8 | 品質閘全綠；v0.0.8 發 full release；回覆 autopilot 與 host-a | `./scripts/fmt.sh --check`、`cargo clippy -- -D warnings`、`cargo test`、`python3 scripts/check-doc-drift.py`、`bash scripts/check-cjk-safe.sh`；main CI 綠；`gh release view v0.0.8` |
 
 ## 2.5 Global Constraints（原文照抄進每個 dispatch）
 

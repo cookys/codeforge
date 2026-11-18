@@ -13,7 +13,7 @@
 Mnemos 是中央腦，多來源收錄（Slack/LINE/Email/Docs/…）；CodeForge 是其中的 **coding 來源**。腦只開 **loopback（永不 0.0.0.0）**，所以非腦機（fleet client）一律走 **SSH forward-only 隧道**連，不直連。
 
 ```
-  fleet client（如某台 dev 機）                    腦 host（cookys-host-infra）
+  fleet client（如某台 dev 機）                    腦 host（brain host）
   ┌──────────────────────────────┐               ┌──────────────────────────────┐
   │ codeforge CLI + .codeforge    │   ssh 隧道    │ mnemos-api.service :8845       │
   │ 各 project 自己的 L0/L1        │  ===========> │ loopback-only · /v1/ingest/…  │
@@ -32,13 +32,15 @@ Mnemos 是中央腦，多來源收錄（Slack/LINE/Email/Docs/…）；CodeForge
 
 | 順序 | hook 指令 | 作用 | 依賴腦? |
 |---|---|---|---|
-| 1 | `codeforge dream --quiet` | 該 project `.codeforge` 的 L0 signals → L1 concepts（蒸餾） | ❌ 純本機，永遠跑 |
-| 2 | `codeforge ship --no-hook` | L1 + git log + db metrics → Haiku digest → L2 ledger → POST | ✅ opt-in gate |
+| 1 | `codeforge hook emit-session session_end`、`codeforge hook session-digest` | session 邊界訊號與 per-repo digest（供下一輪 dream 吸入） | ❌ 純本機 |
+| 2 | `codeforge dream --quiet` | 該 project `.codeforge` 的 L0 signals → L1 concepts（蒸餾） | ❌ 純本機，永遠跑 |
+| 3 | `codeforge ship --no-hook` | L1 + git log → LLM digest（claude -p → agy → codex → Haiku API → rule-based）→ L2 ledger → POST | ✅ opt-in gate |
+| 4 | `codeforge usage collect --quiet` | 用量收集（只存數字）與 `summary.json` | ❌ 純本機 |
 
 - **ship 的 opt-in gate**：`--no-hook` 模式只在 `~/.config/mnemos.env` 存在（或 `MNEMOS_INGEST_URL` 設了）才 POST；否則乾淨 no-op（不 POST、不寫死信）。所以**沒接腦的 codeforge-only 使用者**照樣 dream 蒸餾、ship 是 clean no-op。
 - **POST 目標**：`MNEMOS_INGEST_URL` → `/v1/ingest/ledger`。fleet 機這個 URL 指隧道的 forwarded port。
 - **retry**（Mnemos source-contract §9.1）：1s→5s→30s ×4；失敗寫 `~/.codeforge/ship-failed/<id>.json` 待下次 ship 重送。`--no-hook` 是 single-attempt（永不阻塞 SessionEnd）。
-- **送什麼**（as-shipped，非設計全貌）：`build_lessons` 只讀 L1 + git；**不掃 session jsonl**（設計目標、code 未跟上，BACKLOG B18）。envelope：`source=codeforge_ledger`、`machine_id=<hostname>`。
+- **送什麼**（as-shipped，非設計全貌）：`build_lessons` 只讀 L1 + git；**不掃 session jsonl**（設計目標、code 未跟上，BACKLOG B18）。envelope：`source=codeforge_ledger`、`machine_id=<MACHINE_ID（mnemos.env／環境變數），沒設才用 hostname>`。
 
 ## 3. READ 路徑（↓ 下行，腦 → 本機）
 
@@ -88,6 +90,17 @@ ls ~/.codeforge/ship-failed/ 2>/dev/null || echo 'clean'
 
 - **fleet 隧道**：`mnemos-tunnel.service`（autossh `-M 0` + SSH keepalive + `Restart=always`）+ user-linger → reboot/斷網/ssh 死都自動重連。
 - **腦端**：`mnemos-api.service`（user unit + Linger）→ reboot 自啟。
+
+## 6.5 dream compile 的 LLM 成本控制（PM 01M7C8NM，2026-11-14 事故）
+
+事故：腦 host 上 `dream` compile 對每條 signal 各冷啟動一次 `claude -p --model opus`（262 次、約 1480 萬 token、US$56.74），另加每個新 slug 一次對賬呼叫。現行規則：
+
+- **模型**：compile 與對賬走 `llm::compile_model()`（env `CODEFORGE_COMPILE_MODEL`，預設 `haiku`，空字串視同未設）。ship digest 仍用 `digest_model()`（預設 `opus`），不變。
+- **上限**：每次 `dream` 最多送 `CODEFORGE_COMPILE_MAX_ITEMS` 條（預設 10）給 LLM；其餘留待下次。`signal_cursors` 只推進到實際處理過的位置，超出上限的 signal 不會被跳過，下一輪接著編譯。`absorbed` 來源走 rule-based 快速路徑，不佔上限。
+- **批次**：一次 run 的所有 LLM signal 合併成一個 prompt、一次 `claude -p`，回傳 JSON 陣列（每條一個元素，以 `index` 對應）；壞元素只略過該條。對賬同樣每次 run 至多一次批次呼叫（解析失敗一律退回 add，不遺失知識）。
+- **去重**：以簽名（來源種類 + 內容前 120 字，小寫、空白折疊、連續數字換成 `#`）去重，同批只編譯第一條；同一簽名同一天只編譯一次，記在 state db 的 `compiled_signatures` 表（schema v10）。被略過的重複項算已處理（cursor 前進）、不算 LLM 項目。
+- **來源過濾**：`session-digest.js` 的 `extractErrorRecoveries` 丟棄由 PreToolUse hook 擋下指令所產生的錯誤文字（`PreToolUse:Bash hook error`、`bash-footgun-guard`、`bash-launch-guard`、`depth0-delegate-gate`、`no matches found`），這些是 hook 拒絕，不是學習。
+- **用量紀錄**：每次有呼叫 LLM 的 compile run 附加一行 JSON 到 `<data_dir>/llm-usage.jsonl`（通常 `~/.local/share/codeforge/`，權限 0600，寫入失敗忽略）：`ts_ms, op="compile", items, skipped_dupes, deferred, model, engine(claude|agy|codex|api|rule), input_tokens, output_tokens, cache_read, cache_write`。`claude -p` 以 `--output-format json` 執行並讀 `usage`；其他引擎的 token 欄位為 `null`。
 
 ## 7. 對應文件
 

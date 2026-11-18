@@ -16,7 +16,7 @@
 | 對話區 | Claude Code | 其餘高度 | — |
 | AbovePrompt band | autopilot live mod，在上；forge-stats，在下 | autopilot 的 band 是 1 列（`BAND_ROWS = 1`），分頁打開時往下長；forge-stats 拿到的是 autopilot 傳下來的 `maxRows`／`bodyColumns` | live mod 是全域 plugin；forge-stats 在 G33 之後也改成全域 |
 | 提示列 | Claude Code | — | — |
-| statusline | codeforge statusline（Rust，一次性的行程） | 完整版 5 列；精簡版（forge-stats band 心跳新鮮時）或沒有寵物時 2 列（`statusline.rs` `render_full`／`render_strip`） | 全域 settings.json，每個 session 都有 |
+| statusline | codeforge statusline（Rust，一次性的行程） | 一行，任何狀態都一行、不畫寵物（golden：`tests/statusline_one_line.rs`；`statusline.rs` `render_line`） | 全域 settings.json，每個 session 都有 |
 | pane | live mod（`autopilot-live`）或 forge-stats（`/forge-stats layout pane`） | Claude Code 決定：寬終端時停靠在側邊（docked），否則疊在對話區上（inline）；兩種都經 `e.props.bodyColumns`／`scroll.bodyRows` 拿到尺寸 | live 在寬度 ≥144 且全螢幕時自動開；其餘手動 |
 
 規則：
@@ -50,14 +50,14 @@
 | 24 | `<80` 級：判定、`●N ⊘N`、`⚑N`（`BAND_MIN_COLS = 30`，再窄只留判定符號、`ⓘ`、`⚑N`） | 一行摘要 | 不適用（寬度由 `CODEFORGE_WIDTH` 決定） | 可畫（≥20） |
 | 56 | `<80` 級 | Ferris｜寵物 | 同上 | 可畫 |
 | 86 | `80–119` 級：加單元進度條、`QC`、3 格花費條、一個配額窗 | Ferris｜寵物｜記憶與大腦 | 同上 | 可畫 |
-| 100 | `80–119` 級 | 同上 | 預設寬度；`≥90` 畫右欄寵物圖 | 可畫；不會自動打開 |
+| 100 | `80–119` 級 | 同上 | 預設寬度 | 可畫；不會自動打開 |
 | 144+ | `120–159` 級；`≥160` 全部 | 同上 | 同上 | 全螢幕時 live pane 自動打開（`PANE_MIN_COLUMNS = 144`） |
 
 autopilot band 寬度不夠時的捨棄順序，依 §2.1：配額 → 截短 stage → 單元進度條 → `●` 數 → `⊘` 數 → 縮短判定字。判定符號、`ⓘ`、`⚑N` 永遠不捨。現況偏差：live `model.ts` band 寬度表先拿 `⊘` 再拿 `●`，跟優先序相反，列入 §12。
 
 **pane 類畫面**（live 各分頁含艦隊、待決卡、forge-stats pane）：寬度取 `bodyColumns`（live 預設 76，最窄 20：`model.ts` `DEFAULT_PANE_COLS`、`paneWidth`），任何寬度都照 §6「一個項目一列」排。pane **沒有高度分級**：內容比 `scroll.bodyRows` 高時捲動（live 用引擎的捲動，待決分頁自己捲），pane 被縮小也一樣。現況偏差：forge-stats pane 至少畫 30 欄（`register.tsx` 的 `Math.max(30, bodyColumns - 2)`），pane 比 30 欄窄時會超寬，列入 §12。
 
-**statusline**：寬度是 `CODEFORGE_WIDTH`，沒設就用 `COLUMNS − 4`（Claude Code 啟動 statusline 時設 `COLUMNS` 為終端寬，resize 後下次刷新跟上；statusline 左縮 2 格、右留 2 格，120／160 欄實測），兩者都沒有才是 100；沒有高度輸入。列數：完整版 5 列；精簡版 2 列，但身分（model、路徑、分支）、2 格以上空白、版本與整段用量在寬度內放得下時併成 1 列（身分靠左；用量和版本靠右，版本在最右，和兩行版第 1 列一致；門檻由實際內容的顯示寬度算，不是固定欄數）。每一列在寬度內依自己的降級層級排（`statusline.rs`，例如第 3 列的 Level 1–6，依序拿掉中央燈號、版本等），`<90` 拿掉右欄寵物圖（`ART_THRESHOLD`）。設成 24／56／86 時走同一套降級；最後一層以字元數截（`.chars().take`），是 §6.3 的偏差，列入 §12。
+**statusline**：寬度是 `CODEFORGE_WIDTH`，沒設就用 `COLUMNS − 4`（Claude Code 啟動 statusline 時設 `COLUMNS` 為終端寬，resize 後下次刷新跟上；statusline 左縮 2 格、右留 2 格，120／160 欄實測），兩者都沒有才是 100；沒有高度輸入。列數：永遠 1 列。放不下時，band 事實先縮、再拿掉版本、最後截斷（`statusline.rs` `render_line`）。設成 24／56／86 時走同一套降級；最後一層以字元數截（`.chars().take`），是 §6.3 的偏差，列入 §12。
 
 
 
@@ -77,7 +77,7 @@ forge 分頁打開但下方不到 12 列時，autopilot 只畫自己的速度圖
 
 ### 1.4 終端尺寸和拿到的尺寸
 
-終端的總高度和總寬度由 Claude Code 分配給對話區、band、提示列、statusline 和 pane。本規範**不分配終端尺寸**，只規定每個畫面在拿到多少空間時怎麼畫。statusline 自己決定印 5 列或 2 列（依心跳，不依終端高度）；終端太矮時，Claude Code 怎麼裁切不歸我們管。測試和審查一律以「拿到的尺寸」為準。
+終端的總高度和總寬度由 Claude Code 分配給對話區、band、提示列、statusline 和 pane。本規範**不分配終端尺寸**，只規定每個畫面在拿到多少空間時怎麼畫。statusline 永遠印一行（不依心跳、不依終端高度）；終端太矮時，Claude Code 怎麼裁切不歸我們管。測試和審查一律以「拿到的尺寸」為準。
 
 ## 2. 資訊優先序：1 列時要留下什麼
 
@@ -154,8 +154,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 | 位置 | 現況 | 衝突 | 遷移方向 |
 |---|---|---|---|
 | forge-stats 記憶／大腦燈號 | `●` 綠／灰（`model.ts` `GLYPH.latest`） | `●` 在共用表裡是「執行中」 | 健康狀態不是工作狀態，不借用狀態符號：只畫字樣（例如 `記憶 正常`、`大腦 離線`），用主題色；沒資料寫 `—` |
-| statusline 大腦燈號 | `● ◐ ○ ◌`，原始 RGB（`statusline.rs` brain lights，`BRAIN_GREEN` 等） | `◐` 是「你在這裡」，`○` 是「未開始」，`◌` 是「已停」 | 同上：只畫字樣（正常、降級、離線、未檢查），顏色依 §5 的 ANSI 對照 |
-| statusline 量表 | `▮▯`（`statusline.rs` 用量列） | 共用表的量表是 `▰▱` | 改成 `▰▱` |
+| statusline 量表與警示 | 已遷移（原本 `▮▯`／`⚠`／50–80%） | — | 現用 `▰▱`、`▲`、`floor` 捨去與 80/100% 門檻（依 autopilot band-facts contract，預設 `80`/`100`/`floor`/`▰`/`▱`/`▲`） |
 | statusline 上游 | `⇡⇣`（`statusline.rs` `git_ahead_behind`） | 共用表的落後是 `↓` | 改成 `↑N ↓N`；`↑` 先登記進 live `GLYPHS.structure`（`ahead`），並列入 glyph-check |
 
 ### 3.5 間距（晶片與分隔）
@@ -233,7 +232,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 2. **有人看才抓**：資料只在有讀者時才抓。例如艦隊資料只在艦隊分頁正在顯示，或 forge-stats band 的心跳是新的時候才抓（G33）。
 3. **輸出要有上限**：外部輸出依 UTF-8 位元組設上限（艦隊 `FLEET_MAX_BYTES = 2_000_000`；被引擎截斷時直接拒收）；接受的列數也要設上限（艦隊 `FLEET_MAX_ROWS = 300`），超過的部分只計數。新的資料來源要在設計時寫明這兩個數字。
 4. **頻率**（現況；statusline 的刷新間隔是 settings.json 的 `statusLine.refreshInterval`）：live mod 每 5 秒一個 tick（`TICK_MS`）；艦隊 TTL 30 秒（`FLEET_TTL_MS`，`fleet.ts`）；forge-stats 寵物 15 秒、Ferris 動畫 0.5 秒、心跳 2 秒（`register.tsx` 的 `$.clock.every`）。引擎上限（mod-ui spec，CC 2.1.314）：`invalidate` 每秒最多 10 次（終端裡顯示中的 pane、展開的 band、prompt hint 是 30 次），一個 hook 的時間預算是 10 秒。
-5. **statusline**：它是一次性的行程，`refreshInterval` 約 2 秒就跑一次，每次都要很快。網路查詢只讀快取，不在熱路徑上等待（已經是這樣：README「hot path … only reads the cache」，`mnemos::health::maybe_spawn_probe` 在背景探測）。現況偏差：每次執行都會跑 `git branch`、`git rev-list`、`claude --version`，以後要改成讀快取：key 是 cwd 加上 HEAD 解析出的 sha 和上游 ref 的 sha（不能只看 `.git/HEAD` 的 mtime，commit、fetch、push 都不會動它），另加約 30 秒的 TTL。key 要靠讀檔算出（`.git/HEAD`、`refs/`、`packed-refs`，worktree 要跟著 `gitdir` 檔），只有快取沒命中或過期時才跑 `git`；用 `git rev-parse` 算 key 就又變成每次執行都跑子行程。
+5. **statusline**：它是一次性的行程，`refreshInterval` 預設 10 秒（`codeforge install` 寫入，使用者自設的值不覆蓋）就跑一次，每次都要很快。網路查詢只讀快取，不在熱路徑上等待（已經是這樣：README「hot path … only reads the cache」，`mnemos::health::maybe_spawn_probe` 在背景探測）。現況偏差：每次執行都會跑 `git branch`、`git rev-list`、`claude --version`，以後要改成讀快取：key 是 cwd 加上 HEAD 解析出的 sha 和上游 ref 的 sha（不能只看 `.git/HEAD` 的 mtime，commit、fetch、push 都不會動它），另加約 30 秒的 TTL。key 要靠讀檔算出（`.git/HEAD`、`refs/`、`packed-refs`，worktree 要跟著 `gitdir` 檔），只有快取沒命中或過期時才跑 `git`；用 `git rev-parse` 算 key 就又變成每次執行都跑子行程。
 
 ## 9. 審查截圖
 

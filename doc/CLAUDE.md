@@ -8,7 +8,7 @@ Loaded by Claude Code when a file under `doc/` is touched. `scripts/check-doc-dr
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Memory CLI + Common Pet | ✅ done |
-| 2a | Daemon framework + IPC socket + tick loop | ✅ done |
+| 2a | Daemon framework + SQLite event_inbox IPC + tick loop | ✅ done |
 | 2b | MOB generation + auto-combat + loot | ✅ done |
 | 2c | TUI rendering + Local Map | ✅ done |
 | 3a | World Map + Zone unlock | ✅ done |

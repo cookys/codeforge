@@ -3,10 +3,17 @@
 //! Phase 1: account aliases and per-account quota snapshots written by the
 //! statusline, read back for the usage row.
 
+pub mod agy;
 pub mod alias;
 pub mod autocollect;
 pub mod collect;
+pub mod fetch;
 pub mod fleet_quota;
+pub mod grok;
+pub mod hourly;
+pub mod kimi;
+pub mod lane_pin;
+pub mod logins;
 pub mod names;
 pub mod price;
 pub mod quota;
@@ -14,8 +21,10 @@ pub mod quota_mirror;
 pub mod quota_mirror_read;
 pub mod quota_view;
 pub mod reset_rule;
+pub mod sessions_export;
 pub mod store;
 pub mod summary;
+pub mod trinity;
 pub mod usage_v1;
 
 #[cfg(test)]

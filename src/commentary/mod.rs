@@ -17,7 +17,6 @@
 // Public API surface — consumer list as of Phase 3c P6:
 //   tick.rs / daemon/mod.rs → decide_and_reserve, execute_dispatch, PendingDispatch
 //   cli/commentary.rs       → Kind, Source, Tone, repo::*, generator::*, display::*
-//   cli/statusline.rs       → display::statusline_override
 //   tui/panels/combat_log.rs → display::CommentaryEntry
 //   tui/render.rs           → display::recent_commentary
 // Some repo helpers (budget_unreserve, budget_incr_skip's read side) are

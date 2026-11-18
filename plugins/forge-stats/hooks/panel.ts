@@ -1,7 +1,7 @@
 // The integrated panel's contract (codeforge.panel/1, autopilot × codeforge design v2, operator d-fb45042e): forge-stats writes `$.state` key `panel`, autopilot's panel shell
 // draws the 用量 / 寵物 tabs from it and computes nothing. The lines are the pane's own (usageLines / petLines), laid out once per tier width; the reader takes the widest
 // tier that fits its columns (40 below 40) and clips each line to cols - 1.
-import type { PanelLine, PanelSide, PanelState, PanelTone, SpriteData } from '../types'
+import type { PanelLine, PanelSide, PanelState, PanelTone, PetIcon, SpriteData } from '../types'
 
 export const PANEL_SCHEMA = 'codeforge.panel/1'
 export const PANEL_TIERS = [40, 60, 80, 100, 120] as const
@@ -22,7 +22,7 @@ export function panelTiers(lay: (cols: number) => readonly (readonly Seg[])[]): 
 export function panelState(
   nowMs: number,
   usage: Record<string, PanelLine[]>,
-  pet: { title: string; sprite: SpriteData | null; tiers: Record<string, PanelLine[]> },
+  pet: { title: string; sprite: SpriteData | null; tiers: Record<string, PanelLine[]>; icon?: PetIcon },
   side: PanelSide | null = null,
 ): PanelState {
   return side === null ? { schema: PANEL_SCHEMA, updated_at_ms: nowMs, usage: { tiers: usage }, pet } : { schema: PANEL_SCHEMA, updated_at_ms: nowMs, usage: { tiers: usage }, pet, side }

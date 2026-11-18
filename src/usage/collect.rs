@@ -7,11 +7,12 @@
 //! by the last component of its cwd (local only), a model id only when it matches the id grammar.
 //! Claude config directory paths are kept locally so later collects can rediscover them.
 
-use super::{alias, quota};
+use super::{alias, logins, quota};
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
@@ -322,7 +323,15 @@ fn add_bucket(tx: &Transaction, k: &Key, c: Counts, requests: i64) -> Result<()>
 /// One Claude line: per request id the counters merge by per-counter maximum and only the
 /// increase over what is stored is added, so repeated lines, split responses and rereads
 /// count once. Lines without a request id or usage are skipped.
-fn claude_line(tx: &Transaction, v: &Value, account: &str, now_ms: i64) -> Result<()> {
+fn claude_line(
+    tx: &Transaction,
+    v: &Value,
+    account: &str,
+    timeline: Option<&logins::Timeline>,
+    pinned: Option<&str>,
+    session: Option<&str>,
+    now_ms: i64,
+) -> Result<()> {
     let Some(rid) = request_id(v) else {
         return Ok(());
     };
@@ -392,17 +401,37 @@ fn claude_line(tx: &Transaction, v: &Value, account: &str, now_ms: i64) -> Resul
             } else {
                 "standard"
             };
+            // pin for this session, else the alias logged in at this line's time, else
+            // the account resolved for the root at collect. Rows already stored are not
+            // rewritten (account or session): a later token increase keeps the same row.
+            let row_account = pinned
+                .or_else(|| timeline.and_then(|t| t.alias_at(ms)))
+                .unwrap_or(account);
             tx.execute(
-                "INSERT INTO requests VALUES (?1, ?2, 'claude', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                "INSERT INTO requests
+                 (request_id, day, source, account, model, project, speed,
+                  input, output, cw5m, cw1h, read, seen_ms, session)
+                 VALUES (?1, ?2, 'claude', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
-                    rid, day, account, model, project, speed, line.input, line.output, line.cw5m,
-                    line.cw1h, line.read, ms
+                    rid,
+                    day,
+                    row_account,
+                    model,
+                    project,
+                    speed,
+                    line.input,
+                    line.output,
+                    line.cw5m,
+                    line.cw1h,
+                    line.read,
+                    ms,
+                    session
                 ],
             )?;
             let k = Key {
                 day: &day,
                 source: "claude",
-                account,
+                account: row_account,
                 model: &model,
                 project: &project,
                 speed,
@@ -526,6 +555,7 @@ pub fn codex_snapshots(conn: &Connection, now_ms: i64) -> Result<Vec<quota::Snap
         Ok(quota::Snapshot {
             alias: r.get(0)?,
             org: None,
+            org_id: None,
             email: None,
             root: None,
             written_at_ms: at,
@@ -745,6 +775,20 @@ fn inode(_m: &std::fs::Metadata) -> i64 {
     0
 }
 
+/// Session id of a Claude transcript: the file stem, or the parent session when the
+/// file lives under `<session>/subagents/`.
+fn claude_session_of(path: &Path) -> Option<&str> {
+    let parent = path.parent()?;
+    if parent.file_name().and_then(|n| n.to_str()) == Some("subagents") {
+        parent
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+    } else {
+        path.file_stem().and_then(|n| n.to_str())
+    }
+}
+
 /// Collect one file in one transaction (buckets, dedup rows and cursor commit together).
 /// Returns whether the file was read; a file outside its root or not a regular file is not.
 pub fn collect_file(
@@ -752,6 +796,8 @@ pub fn collect_file(
     path: &Path,
     root: &Root,
     account: &str,
+    timeline: Option<&logins::Timeline>,
+    pins: Option<&BTreeMap<String, String>>,
     now_ms: i64,
 ) -> Result<bool> {
     let canon = std::fs::canonicalize(path)?;
@@ -827,7 +873,22 @@ pub fn collect_file(
             continue;
         };
         match &session {
-            None => claude_line(&tx, &v, account, now_ms)?,
+            None => {
+                let raw_sid = claude_session_of(path);
+                let pinned = pins
+                    .and_then(|m| raw_sid.and_then(|s| m.get(s).map(String::as_str)))
+                    .map(|a| {
+                        if a == logins::PIN_UNATTRIBUTED {
+                            UNATTRIBUTED
+                        } else {
+                            a
+                        }
+                    });
+                // Off-grammar stems (dots, spaces, >64 chars) store NULL so
+                // sessions export can skip them; the row still counts elsewhere.
+                let sid = raw_sid.filter(|s| logins::usable_session(s));
+                claude_line(&tx, &v, account, timeline, pinned, sid, now_ms)?
+            }
             Some(s) => codex_line(&tx, &v, s, account, now_ms, mtime_ms)?,
         }
     }
@@ -858,9 +919,13 @@ pub const UNATTRIBUTED: &str = "";
 /// which process runs collect), else the alias derived from the root's login file
 /// (`root.account`), else the stored one, else [`UNATTRIBUTED`] — never `acct-<sha8>`, which
 /// named no account and showed as a ghost on every host (PM 01M7052H79). The root is recorded
-/// either way, so [`rows_since`] knows its old `acct-<sha8>` rows. Known limitation:
-/// transcripts written before a re-login are attributed to the account logged in now.
-/// `AUTOPILOT_ACCOUNT` is never read here.
+/// either way, so [`rows_since`] knows its old `acct-<sha8>` rows. This alias is the fallback
+/// for a new request: a session pin wins, else the root's login timeline at the line's own
+/// time, else this alias. A snapshot filed with `root: None` (a setup-token override) is not
+/// a candidate here. Transcripts collected before the timeline existed therefore stay on the
+/// account logged in at collect time. A switch is noticed at the next statusline render or
+/// collect, so a request in that gap stays on the previous alias. Rows already stored keep
+/// their account. `AUTOPILOT_ACCOUNT` and `CODEFORGE_ACCOUNT_ALIAS` are never read here.
 pub fn root_alias(
     conn: &Connection,
     root: &Root,
@@ -905,12 +970,29 @@ pub struct Report {
 }
 
 /// Collect every root. A file that fails is skipped (its transaction rolls back) and the
-/// rest go on.
+/// rest go on. No login timeline: a request takes [`root_alias`], including transcripts
+/// from before a re-login. Tests call this; `usage collect` calls [`collect_with_logins`].
+#[cfg(test)]
 pub fn collect(
     conn: &mut Connection,
     roots: &[Root],
     snapshots: &[quota::Snapshot],
     now_ms: i64,
+) -> Result<Report> {
+    collect_with_logins(conn, roots, snapshots, now_ms, None)
+}
+
+/// Collect every root. When `usage_dir` is set, record each resolved Claude login on that
+/// root's timeline (`<usage_dir>/logins-<hash8>.json`) and read that root's session pins
+/// once (`<usage_dir>/pins-<hash8>.json`). A new request takes the pin for its session,
+/// else the alias logged in at its timestamp, else [`root_alias`]. `None` skips both, so a
+/// request takes [`root_alias`], including transcripts from before a re-login.
+pub fn collect_with_logins(
+    conn: &mut Connection,
+    roots: &[Root],
+    snapshots: &[quota::Snapshot],
+    now_ms: i64,
+    usage_dir: Option<&Path>,
 ) -> Result<Report> {
     let mut rep = Report::default();
     for root in roots {
@@ -922,8 +1004,24 @@ pub fn collect(
             )?;
         }
         let account = root_alias(conn, root, snapshots, now_ms)?;
+        // a timeline or pin-file error must not skip the root: those requests keep `account`
+        let timeline = usage_dir.and_then(|dir| login_timeline(dir, root, now_ms));
+        // once per root, not once per transcript
+        let pins = if root.kind == Kind::Claude {
+            usage_dir.and_then(|dir| logins::pins(dir, &root.hash).ok())
+        } else {
+            None
+        };
         for path in sources(root) {
-            match collect_file(conn, &path, root, &account, now_ms) {
+            match collect_file(
+                conn,
+                &path,
+                root,
+                &account,
+                timeline.as_ref(),
+                pins.as_ref(),
+                now_ms,
+            ) {
                 Ok(true) => rep.files += 1,
                 _ => rep.skipped += 1,
             }
@@ -936,6 +1034,20 @@ pub fn collect(
         [keep],
     )?;
     Ok(rep)
+}
+
+/// The login timeline of a Claude root. Observes the root's CURRENT login (`root.account`,
+/// appending only when it changed), never `root_alias`: that prefers a fresh snapshot, which
+/// right after a re-login is still the previous account's (review g1 s0). Without a usable
+/// login now, the stored timeline is read as is. Any error is dropped.
+fn login_timeline(dir: &Path, root: &Root, now_ms: i64) -> Option<logins::Timeline> {
+    if root.kind != Kind::Claude {
+        return None;
+    }
+    match root.account.as_deref().filter(|a| alias::valid_alias(a)) {
+        Some(login) => logins::observe(dir, &root.hash, login, now_ms).ok(),
+        None => logins::read(dir, &root.hash).ok(),
+    }
 }
 
 /// One bucket row.

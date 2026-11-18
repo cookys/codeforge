@@ -3,7 +3,8 @@
 #
 # Runs, in order: pinned fmt check → clippy -D warnings → cargo test (through the flake guard:
 # a failed test is rerun once; one that then passes is recorded in target/flaky-tests.log and
-# named on stderr, never hidden) → cjk-safe → doc-drift → cargo deny (licenses) → shellcheck
+# named on stderr, never hidden) → forge-stats plugin tests (when claude is on PATH)
+# → cjk-safe → doc-drift → cargo deny (licenses) → shellcheck
 # install.sh and the checkout guard → checkout-guard test → release smoke (the x86_64-unknown-linux-gnu tarball built with the MSRV toolchain
 # through scripts/package.sh, unpacked and run) — every job the retired ci.yml and
 # release-smoke.yml ran.
@@ -13,7 +14,7 @@
 # Usage:
 #   ./scripts/check-all.sh                 # native pass (+ WSL Linux pass on Windows)
 #   ./scripts/check-all.sh --no-wsl        # native pass only
-#   ./scripts/check-all.sh --install-hook  # run this before every `git push` (core.hooksPath=.githooks)
+#   ./scripts/check-all.sh --install-hook  # run this before every `git push` (copied into the common hooks dir)
 #
 # Env:
 #   CODEFORGE_TOOLCHAIN   cargo +toolchain override for the native pass
@@ -28,8 +29,25 @@ for arg in "$@"; do
   case "$arg" in
     --no-wsl) WITH_WSL=0 ;;
     --install-hook)
-      git config core.hooksPath .githooks
-      echo "check-all: pre-push hook enabled (git config core.hooksPath .githooks)."
+      # Copy into the common hooks dir (shared by every worktree; in a worktree .git is a file).
+      # Never set core.hooksPath: a repo-level value hides the global lab hook, which chains
+      # to this dir itself (lab 01M7K094, PM 01M7K08N).
+      hooks="$(git rev-parse --path-format=absolute --git-common-dir)/hooks"
+      dst="$hooks/pre-push"
+      if [ -e "$dst" ] && ! cmp -s .githooks/pre-push "$dst" \
+        && ! grep -q 'check-all.sh --install-hook' "$dst"; then
+        echo "check-all: $dst already exists and is not this hook; not replacing it" >&2
+        exit 1
+      fi
+      mkdir -p "$hooks"
+      cp .githooks/pre-push "$dst.tmp.$$"
+      chmod 755 "$dst.tmp.$$"
+      mv -f "$dst.tmp.$$" "$dst"
+      if git config --local --get core.hooksPath >/dev/null; then
+        git config --local --unset core.hooksPath
+        echo "check-all: removed the local core.hooksPath (it hid the global hooks)."
+      fi
+      echo "check-all: pre-push hook installed at $dst."
       echo "           bypass once with: git push --no-verify"
       exit 0
       ;;
@@ -61,8 +79,19 @@ step "clippy -D warnings (${TC:-default toolchain})"
 step "cargo test (${TC:-default toolchain}, flake guard)"
 ./scripts/test-flake-guard.sh "${CARGO[@]}"
 
+step "forge-stats plugin tests"
+if command -v claude >/dev/null 2>&1; then
+  claude plugin test plugins/forge-stats
+else
+  echo "check-all: SKIP forge-stats plugin tests (claude is not on PATH)."
+fi
+
 step "cjk-safe"
 ./scripts/check-cjk-safe.sh
+
+step "private-leaks (hashed denylist + email allowlist, public tree)"
+./scripts/check-private-leaks.test.sh
+./scripts/check-private-leaks.sh
 
 step "doc-drift"
 python3 scripts/check-doc-drift.py 2>/dev/null || python scripts/check-doc-drift.py
@@ -72,11 +101,16 @@ cargo deny check licenses
 
 step "shellcheck install.sh + checkout guard"
 shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh scripts/checkout-guard.test.sh \
-  scripts/g40-real-data/check.sh scripts/g40-real-data/check.test.sh scripts/g40-real-data/scan-statusline.test.sh
+  scripts/g40-real-data/check.sh scripts/g40-real-data/check.test.sh scripts/g40-real-data/scan-statusline.test.sh \
+  scripts/trinity-import/trinity-import.sh scripts/trinity-import/trinity-import.test.sh \
+  scripts/check-private-leaks.sh scripts/check-private-leaks.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh
 ./scripts/g40-real-data/check.test.sh
+
+step "trinity quota import (fake fleet, tmpfs live dir)"
+./scripts/trinity-import/trinity-import.test.sh
 
 step "checkout guard (the main clone stays on develop)"
 ./scripts/checkout-guard.test.sh

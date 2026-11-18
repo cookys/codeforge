@@ -1,7 +1,9 @@
 //! `codeforge usage` (G36 plan, phase 3): collect, write `summary.json`, print a table.
 
 use crate::usage::reset_rule::Kind;
-use crate::usage::{collect, price, quota, store, summary};
+use crate::usage::{
+    agy, collect, grok, hourly, kimi, price, quota, sessions_export, store, summary, trinity,
+};
 use anyhow::{Context as _, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -18,6 +20,10 @@ pub enum Action {
         claude_dirs: Vec<PathBuf>,
     },
     Push,
+    Export {
+        hourly: bool,
+        sessions: bool,
+    },
     Pools {
         json: bool,
     },
@@ -55,6 +61,10 @@ pub enum Action {
     },
     PlanClear {
         target: String,
+    },
+    /// 匯入 trinity 自報的配額檔（trinity-usage/1）
+    TrinityImport {
+        file: String,
     },
 }
 
@@ -133,9 +143,10 @@ fn collect_and_summarize(
         )
         .map(|i| i.alias);
     }
+    let usage_dir = summary::summary_dir(&live_base);
     let snaps = quota::read_all(&quota::quota_dir(&live_base));
     let now = now_ms();
-    let rep = collect::collect(&mut conn, &roots, &snaps, now)?;
+    let rep = collect::collect_with_logins(&mut conn, &roots, &snaps, now, Some(&usage_dir))?;
     let since = (chrono::Utc::now() - chrono::Duration::days(6))
         .format("%Y-%m-%d")
         .to_string();
@@ -146,6 +157,38 @@ fn collect_and_summarize(
         .collect();
     // codex accounts carry the windows of their newest rollout `rate_limits` the same way
     fresh.extend(collect::codex_snapshots(&conn, now)?);
+    // the host's agy account: the two pools of `agy -p /usage` (10-min cache, 20 s timeout,
+    // CODEFORGE_USAGE_AGY=0 to never spawn)
+    fresh.extend(agy::snapshots(
+        &summary::summary_dir(&live_base),
+        &home,
+        now,
+        agy::run_agy,
+    ));
+    // the host's grok CLI account: weekly quota from the billing API (10-min cache, 10 s
+    // timeout, CODEFORGE_USAGE_GROK=0 to read nothing at all, cache included)
+    if !grok::disabled() {
+        fresh.extend(grok::snapshots(
+            &summary::summary_dir(&live_base),
+            &home,
+            now,
+            || grok::fetch_live(&home),
+        ));
+    }
+    // the host's kimi Code CLI account: 5h and weekly quota from the usages API (10-min cache,
+    // 8 s timeout, CODEFORGE_USAGE_KIMI=0 to read nothing at all, cache included)
+    if !kimi::disabled() {
+        fresh.extend(kimi::snapshots(
+            &summary::summary_dir(&live_base),
+            &home,
+            now,
+            || kimi::fetch_live(&home),
+        ));
+    }
+    // trinity's self-reported quota (no network). CODEFORGE_USAGE_TRINITY=0 reads nothing.
+    if !trinity::disabled() {
+        fresh.extend(trinity::snapshots(&summary::summary_dir(&live_base), now));
+    }
     let v = summary::with_codex_sessions(
         summary::build(
             &rows,
@@ -159,6 +202,19 @@ fn collect_and_summarize(
     summary::validate(&v)?;
     let sdir = summary::summary_dir(&live_base);
     let path = summary::write(&sdir, &v)?;
+    {
+        let host = summary::host_alias(&summary::hostname());
+        if let Err(e) = (|| -> Result<()> {
+            let sessions = sessions_export::build(&conn, &host, now)?;
+            sessions_export::validate(&sessions).context("每 session 用量未通過檢查，拒絕寫入")?;
+            sessions_export::write(&sdir, &sessions)?;
+            Ok(())
+        })() {
+            if !quiet {
+                eprintln!("codeforge usage: 每 session 用量沒有更新（{e:#}）");
+            }
+        }
+    }
     let fleet_env = std::env::var("CODEFORGE_FLEET_USAGE_DIR").ok();
     if let Err(e) = write_fleet_quota(&sdir, fleet_env.as_deref(), now) {
         if !quiet {
@@ -313,6 +369,56 @@ pub fn run(action: Action) -> Result<()> {
             let dir = path.parent().map(PathBuf::from).unwrap_or_default();
             let sha = summary::push(&dir, "fleet")?;
             println!("{sha}");
+            Ok(())
+        }
+        Action::TrinityImport { file } => {
+            let text = if file == "-" {
+                trinity::read_reader(std::io::stdin().lock())?
+            } else {
+                trinity::read_path(std::path::Path::new(&file))?
+            };
+            let parsed = trinity::parse(&text, now_ms());
+            if parsed.reports.is_empty() && parsed.skipped > 0 {
+                anyhow::bail!(
+                    "trinity 配額檔沒有一行合格（略過 {} 行），未匯入",
+                    parsed.skipped
+                );
+            }
+            let (live_base, _) = crate::live::resolve_live_base();
+            let written = trinity::import(&parsed.reports, &summary::summary_dir(&live_base))?;
+            println!("{}", trinity::report_line(written, parsed.skipped));
+            Ok(())
+        }
+        Action::Export { hourly, sessions } => {
+            let (conn, path) = collected(true)?;
+            if hourly {
+                // validate before any stdout write: a failure prints nothing
+                let v = hourly::build(&conn, &summary::host_alias(&summary::hostname()), now_ms())?;
+                hourly::validate(&v).context("每小時用量未通過檢查，拒絕印出")?;
+                let bytes = serde_json::to_vec(&v)?;
+                use std::io::Write;
+                std::io::stdout().lock().write_all(&bytes)?;
+                println!();
+                return Ok(());
+            }
+            if sessions {
+                let v = sessions_export::build(
+                    &conn,
+                    &summary::host_alias(&summary::hostname()),
+                    now_ms(),
+                )?;
+                sessions_export::validate(&v).context("每 session 用量未通過檢查，拒絕印出")?;
+                let bytes = serde_json::to_vec(&v)?;
+                use std::io::Write;
+                std::io::stdout().lock().write_all(&bytes)?;
+                println!();
+                return Ok(());
+            }
+            let dir = path.parent().map(PathBuf::from).unwrap_or_default();
+            let bytes = summary::export_bytes(&dir)?;
+            use std::io::Write;
+            std::io::stdout().lock().write_all(&bytes)?;
+            println!();
             Ok(())
         }
         Action::Show { days, by, json } => {
@@ -1050,13 +1156,13 @@ mod tests {
             .unwrap()
             .unwrap();
         let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&p).unwrap()).unwrap();
-        let kimi = v["accounts"]
+        let qoder = v["accounts"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|a| a["provider"] == "kimi")
+            .find(|a| a["provider"] == "qoder")
             .unwrap();
-        assert_eq!(kimi["source_note"], "web_only");
+        assert_eq!(qoder["source_note"], "web_only");
     }
 
     #[test]

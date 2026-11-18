@@ -232,7 +232,7 @@ fn codex_only_alias_and_every_provider_are_no_source_with_a_reason() {
             )
         })
         .collect();
-    assert_eq!(notes["kimi"], "web_only");
+    assert_eq!(notes["qoder"], "web_only");
     assert_eq!(notes["glm"], "needs_token");
     assert_eq!(notes["minimax"], "needs_token");
     assert_eq!(notes["cx"], "no_window");
@@ -312,6 +312,87 @@ fn a_codex_account_with_windows_is_merged_like_a_claude_one() {
     assert!(txt.contains("會不夠 估 · codex · 週 72%"), "{txt}");
 }
 
+#[test]
+fn agy_pool_keys_are_two_rows_with_their_pool_providers() {
+    // the collector records the host's agy account as `agy-<hex8>` (Gemini pool) and
+    // `agyclaude-<hex8>` (Claude/GPT pool): two accounts, one key per pool
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![
+            acct(
+                "agy-1a2b3c4d",
+                60,
+                Some((0.02, NOW_S + 2 * H)),
+                Some((0.4, NOW_S + 3 * D)),
+            ),
+            acct(
+                "agyclaude-1a2b3c4d",
+                60,
+                Some((0.0, NOW_S + 2 * H)),
+                Some((0.16, NOW_S + 3 * D)),
+            ),
+        ],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let g = row(&f, "agy-1a2b3c4d");
+    assert_eq!(g.provider, "agy");
+    assert_eq!(g.name, "agy");
+    assert_eq!(g.state, State::Ok);
+    let c = row(&f, "agyclaude-1a2b3c4d");
+    assert_eq!(c.provider, "agyclaude");
+    assert_eq!(c.name, "agyclaude");
+    assert_eq!(c.state, State::Ok);
+    // a host with no agy account has no agy row at all: no placeholder
+    assert!(f.rows.iter().all(|r| r.alias != "agy"));
+    assert!(f.rows.iter().all(|r| r.alias != "agyclaude"));
+}
+
+#[test]
+fn a_grok_account_is_a_weekly_row_named_grok_cli_and_not_a_placeholder() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![acct("grok-1a2b3c4d", 60, None, Some((0.34, NOW_S + 3 * D)))],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let r = row(&f, "grok-1a2b3c4d");
+    assert_eq!(r.provider, "grok");
+    assert_eq!(r.name, "grok-cli");
+    assert_eq!(r.state, State::Ok);
+    assert!(r.five_hour.is_none());
+    assert_eq!(r.weekly.as_ref().unwrap().win.pct, 0.34);
+    assert_eq!(r.source_note, None);
+    assert!(f.rows.iter().all(|r| r.alias != "grok"), "no placeholder");
+    let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(txt.contains("grok-cli"), "{txt}");
+}
+
+#[test]
+fn a_kimi_account_is_named_kimi_code_with_both_windows_and_not_a_placeholder() {
+    let s = summary(
+        "host-aaaaaaaa",
+        vec![acct(
+            "kimi-1a2b3c4d",
+            60,
+            Some((0.42, NOW_S + 2 * H)),
+            Some((1.0, NOW_S + 3 * D)),
+        )],
+        vec![],
+    );
+    let f = run(&[("a.json", &s)]);
+    let r = row(&f, "kimi-1a2b3c4d");
+    assert_eq!(r.provider, "kimi");
+    assert_eq!(r.name, "kimi-code");
+    assert_eq!(r.state, State::Ok);
+    assert_eq!(r.five_hour.unwrap().pct, 0.42);
+    assert_eq!(r.weekly.as_ref().unwrap().win.pct, 1.0);
+    assert_eq!(r.source_note, None);
+    assert!(f.rows.iter().all(|r| r.alias != "kimi"), "no placeholder");
+    let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
+    assert!(txt.contains("kimi-code"), "{txt}");
+}
+
 fn notes(v: &[(&str, &str)]) -> super::names::Notes {
     super::names::Notes(
         v.iter()
@@ -335,14 +416,14 @@ fn notes_attach_by_account_key_first_then_provider_and_show_dim_at_the_row_end()
     attach_notes(
         &mut f,
         &notes(&[
-            ("kimi", "週配額用完"),
+            ("qoder", "週配額用完"),
             ("codex", "team plan"),
             ("codex-1a2b3c4d", "mine"),
         ]),
     );
     assert_eq!(row(&f, "codex-1a2b3c4d").note.as_deref(), Some("mine"));
     assert_eq!(row(&f, "codex-99999999").note.as_deref(), Some("team plan"));
-    assert_eq!(row(&f, "kimi").note.as_deref(), Some("週配額用完"));
+    assert_eq!(row(&f, "qoder").note.as_deref(), Some("週配額用完"));
     assert_eq!(row(&f, "work").note, None);
     let v = to_json(&f, NOW_MS);
     let by = |alias: &str| {
@@ -354,7 +435,7 @@ fn notes_attach_by_account_key_first_then_provider_and_show_dim_at_the_row_end()
             .unwrap()
             .clone()
     };
-    assert_eq!(by("kimi")["note"], "週配額用完");
+    assert_eq!(by("qoder")["note"], "週配額用完");
     assert!(by("work").get("note").is_none());
     let txt = text(&f, 100, NOW_MS, &Tr("zh-TW".into()), false);
     assert!(txt.contains("無來源 · 只有網頁  週配額用完"), "{txt}");
@@ -448,7 +529,7 @@ fn a_long_cjk_note_is_cut_to_the_width_and_the_numbers_stay() {
     );
     let mut f = run(&[("a.json", &s)]);
     let long = "週".repeat(20);
-    attach_notes(&mut f, &notes(&[("work", &long), ("kimi", &long)]));
+    attach_notes(&mut f, &notes(&[("work", &long), ("qoder", &long)]));
     for cols in [100, 80, 60, 40, 20] {
         for tr in ["zh-TW", "en"] {
             let txt = text(&f, cols, NOW_MS, &Tr(tr.into()), false);
@@ -602,7 +683,7 @@ fn with_org(mut a: Value, org: &str) -> Value {
 #[test]
 fn eight_hosts_at_80_cols_keep_as_many_labels_as_fit_and_count_the_rest() {
     let names = [
-        "gpu-host-2", "host-mini", "host-console", "gpu-host-1", "cuda", "host-recovery", "host-infra", "gpu-host-3",
+        "alpha1", "bravo2", "charlie3", "delta", "echo", "foxtrt", "golf4444", "hotel1",
     ];
     let s = summary(
         "host-aaaaaaaa",
@@ -635,11 +716,11 @@ fn eight_hosts_at_80_cols_keep_as_many_labels_as_fit_and_count_the_rest() {
         let head = txt.lines().find(|l| l.starts_with("personal")).unwrap();
         assert!(UnicodeWidthStr::width(head) <= 80, "{head:?}");
         assert!(
-            head.contains("gpu-host-2") && head.contains(more),
+            head.contains("alpha1") && head.contains(more),
             "{tr}: {head:?}"
         );
         let pos = |s: &str| head.find(s).unwrap();
-        assert!(pos("personal") < pos("claude") && pos("claude") < pos("gpu-host-2"));
+        assert!(pos("personal") < pos("claude") && pos("claude") < pos("alpha1"));
     }
     // JSON carries the org; an account without one has null
     let js = to_json(&f, NOW_MS);
@@ -925,8 +1006,8 @@ fn seen_ms(age_s: i64) -> Option<i64> {
     Some((NOW_S - age_s) * 1000)
 }
 
-/// The real failure: both files written 17 min ago; gpu-host-2 captured a weekly 4 % that has since
-/// reset, gpu-host-1 still carries a 97 % captured days ago with a future reset.
+/// The real failure: both files written 17 min ago; alpha1 captured a weekly 4 % that has since
+/// reset, delta still carries a 97 % captured days ago with a future reset.
 fn real_case() -> Fleet {
     let a = summary(
         "host-aaaaaaaa",
@@ -954,7 +1035,7 @@ fn real_case() -> Fleet {
         )],
         vec![],
     );
-    run(&[("gpu-host-2.json", &a), ("gpu-host-1.json", &b)])
+    run(&[("alpha1.json", &a), ("delta.json", &b)])
 }
 
 #[test]
@@ -964,15 +1045,15 @@ fn real_case_newest_capture_wins_so_the_weekly_is_reset_not_97() {
     let w = r.weekly.as_ref().unwrap();
     assert!(
         w.reset,
-        "gpu-host-2 has the newest weekly capture and it has reset"
+        "alpha1 has the newest weekly capture and it has reset"
     );
     assert_eq!(w.win.pct, 0.04);
     assert_eq!((w.warn, w.projected, w.exhaust_at), (None, None, None));
-    // 5h: gpu-host-1 captured 120 s ago vs 60 s: gpu-host-2 is newer, gpu-host-1's 0.27 disagrees
+    // 5h: delta captured 120 s ago vs 60 s: alpha1 is newer, delta's 0.27 disagrees
     assert_eq!(r.five_hour.unwrap().pct, 0.25);
     assert!(!r.five_reset);
-    assert_eq!(r.old_hosts, vec!["gpu-host-1"]);
-    assert_eq!(r.hosts, vec!["gpu-host-2", "gpu-host-1"]);
+    assert_eq!(r.old_hosts, vec!["delta"]);
+    assert_eq!(r.hosts, vec!["alpha1", "delta"]);
     assert_eq!(r.state, State::Ok);
     let js = to_json(&f, NOW_MS);
     let a = js["accounts"]
@@ -981,13 +1062,13 @@ fn real_case_newest_capture_wins_so_the_weekly_is_reset_not_97() {
         .iter()
         .find(|a| a["alias"] == "acct-65d2bffc")
         .unwrap();
-    assert_eq!(a["old_hosts"], json!(["gpu-host-1"]));
+    assert_eq!(a["old_hosts"], json!(["delta"]));
     assert_eq!(a["weekly"]["reset"], json!(true));
     assert!(a["weekly"]["warn"].is_null() && a["weekly"]["projected"].is_null());
     assert_eq!(a["five_hour"]["reset"], json!(false));
     for (tr, reset, old) in [
-        ("zh-TW", "已重置", "gpu-host-1 舊"),
-        ("en", "reset", "gpu-host-1 old"),
+        ("zh-TW", "已重置", "delta 舊"),
+        ("en", "reset", "delta old"),
     ] {
         for cols in [40usize, 60, 80, 100] {
             let txt = text(&f, cols, NOW_MS, &Tr(tr.into()), false);
@@ -1167,19 +1248,19 @@ fn a_reset_rule_adds_the_next_occurrence_to_json_text_and_never_replaces_a_real_
     let mut f = run(&[("a.json", &s)]);
     attach_notes(
         &mut f,
-        &notes(&[("kimi", "本週已用完"), ("twgame", "週四重置")]),
+        &notes(&[("qoder", "本週已用完"), ("twgame", "週四重置")]),
     );
     attach_resets(
         &mut f,
         &resets(&[
-            ("kimi", "fri@17:00+08:00"),
+            ("qoder", "fri@17:00+08:00"),
             ("twgame", "thu@00:00+08:00"),
             ("work", "mon@01:00+00:00"),
             ("claude", "sun@01:00+00:00"),
         ]),
         NOW_MS,
     );
-    let k = row(&f, "kimi");
+    let k = row(&f, "qoder");
     assert_eq!(k.note_resets_at, Some(FRI_0900_UTC));
     assert_eq!(k.note_reset_rule.as_deref(), Some("fri@17:00+08:00"));
     assert_eq!(row(&f, "twgame").note_resets_at, Some(WED_1600_UTC));
@@ -1197,8 +1278,8 @@ fn a_reset_rule_adds_the_next_occurrence_to_json_text_and_never_replaces_a_real_
             .unwrap()
             .clone()
     };
-    assert_eq!(acc("kimi")["note_resets_at"], FRI_0900_UTC);
-    assert_eq!(acc("kimi")["note_reset_rule"], "fri@17:00+08:00");
+    assert_eq!(acc("qoder")["note_resets_at"], FRI_0900_UTC);
+    assert_eq!(acc("qoder")["note_reset_rule"], "fri@17:00+08:00");
     assert_eq!(acc("work")["weekly"]["resets_at"], NOW_S + 3 * D);
     // no rule, no keys
     attach_resets(&mut f, &resets(&[]), NOW_MS);
@@ -1213,12 +1294,12 @@ fn the_text_table_shows_a_dim_countdown_after_the_note_and_cuts_the_note_not_the
     let mut f = run(&[("a.json", &s)]);
     attach_notes(
         &mut f,
-        &notes(&[("kimi", "本週已用完"), ("glm", &"週".repeat(20))]),
+        &notes(&[("cursor", "本週已用完"), ("glm", &"週".repeat(20))]),
     );
     attach_resets(
         &mut f,
         &resets(&[
-            ("kimi", "fri@17:00+08:00"),
+            ("cursor", "fri@17:00+08:00"),
             ("glm", "fri@17:00+08:00"),
             ("qoder", "thu@00:00+08:00"),
         ]),
@@ -1269,7 +1350,7 @@ fn a_row_carries_plan_in_json_only_when_set_and_the_text_says_unknown_otherwise(
         vec![],
     );
     let mut f = run(&[("a.json", &s)]);
-    attach_plans(&mut f, &plans(&[("work", "max5x"), ("kimi", "api")]));
+    attach_plans(&mut f, &plans(&[("work", "max5x"), ("qoder", "api")]));
     assert_eq!(row(&f, "work").plan, Some("max5x"));
     assert_eq!(row(&f, "other").plan, None);
     let v = to_json(&f, NOW_MS);
@@ -1285,7 +1366,7 @@ fn a_row_carries_plan_in_json_only_when_set_and_the_text_says_unknown_otherwise(
     assert_eq!(by("work")["plan"], "max5x");
     assert!(by("other").get("plan").is_none());
     assert_eq!(
-        by("kimi")["plan"],
+        by("qoder")["plan"],
         "api",
         "a provider key applies to its rows"
     );
@@ -1351,8 +1432,8 @@ fn monthly_and_one_shot_rules_count_down_and_a_passed_one_shot_drops_out() {
 
 #[test]
 fn the_newest_reading_of_an_account_wins_whatever_os_account_or_host_and_each_window_has_its_age() {
-    // 2026-11-09: host-console-team (the team OS account) last saw acct-337c98de at 06:13 TW, 7d 11% in
-    // a week resetting Mon 11-16 04:00; host-console (the cookys OS account) saw 63% at 20:07 in the week
+    // 2026-11-09: charlie3-team (the team OS account) last saw acct-337c98de at 06:13 TW, 7d 11% in
+    // a week resetting Mon 11-16 04:00; charlie3 (the cookys OS account) saw 63% at 20:07 in the week
     // resetting Thu 11-12 12:00. NOW = 20:08.
     let team_seen = 13 * H + 55 * 60;
     let team = summary(
@@ -1393,10 +1474,10 @@ fn the_newest_reading_of_an_account_wins_whatever_os_account_or_host_and_each_wi
         ],
         vec![],
     );
-    let f = run(&[("host-console-team.json", &team), ("host-console.json", &cookys)]);
+    let f = run(&[("charlie3-team.json", &team), ("charlie3.json", &cookys)]);
     let r = row(&f, "acct-337c98de");
     assert_eq!(r.weekly.as_ref().unwrap().win.pct, 0.63);
-    assert_eq!(r.old_hosts, vec!["host-console-team"]);
+    assert_eq!(r.old_hosts, vec!["charlie3-team"]);
     let v = to_json(&f, NOW_MS);
     let a = |k: &str| {
         v["accounts"]

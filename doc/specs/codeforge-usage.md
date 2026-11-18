@@ -15,6 +15,9 @@
 | 收集 | `codeforge usage`、`usage collect`、statusline 背景觸發（每 15 分鐘至多一次）、SessionEnd hook | `<data_dir>/usage/usage.db` |
 | 摘要 | 每次收集之後 | `<live_base>/codeforge/usage/summary.json` |
 | 推送 | `codeforge usage push` | `fleet upload`，印出 blob sha |
+| 匯出 | `codeforge usage export` | 印出驗證過、拿掉 email 和 name 的 summary（同 push 上傳的內容），給 hangar 用 ssh 收 |
+| 每小時匯出 | `codeforge usage export --hourly` | 同一趟收集後，改印 UTC 每小時、每帳號、每模型的 Claude token 列（`codeforge.usage-hourly/1`），給 capacity 在重置與換帳號時切開用量 |
+| 每 session 匯出 | `codeforge usage export --sessions`；每次收集也寫檔 | `<live_base>/codeforge/usage/usage-sessions.json`（`codeforge.usage-sessions/1`）：每 session、每帳號、每模型的 Claude token 列，給 fleet 把 session 對到 lane |
 | 面板分頁 | forge-stats pane 的「用量」分頁（`/forge-stats usage` 直接開到這頁） | 只讀 `summary.json`：帳號 5h／7d 與倒數、今天（UTC）各 model 的 token 與 API 等值；摘要超過 1 小時就提示執行 `codeforge usage`，不自己呼叫 codeforge |
 
 `<data_dir>` = `CODEFORGE_DATA_DIR`，預設 `~/.local/share/codeforge`；`<live_base>` 見
@@ -30,7 +33,7 @@ session 手上是舊值（2026-11-06 實測：同一組重置時間下，四組�
 - 重置時間相同（相差不到 600 秒）：取百分比較大的；
 - 重置時間不同（兩個不同的窗）：重置時間已過的窗不取代還在跑的窗；其他情況取擷取時間（`seen_at_ms`）較新的
   那份（都沒有擷取時間時取重置時間較晚的；兩個都已重置時取重置時間較晚的，所以停在舊窗的閒置 session 不會刷新檔案）。
-  以前是「較晚的窗取代、較早的丟掉」：2026-11-09 host-console-team 的一個 session 在 06:13 TW 換登入前，把前一個帳號
+  以前是「較晚的窗取代、較早的丟掉」：2026-11-09 team 帳號（host-t）的一個 session 在 06:13 TW 換登入前，把前一個帳號
   的週窗（週一 04:00 重置，7d 11%）記到了 acct-337c98de 下，之後這個帳號真正的讀數（週四 12:00 重置，63%）都因為
   「較早的窗」被丟掉，畫面一直停在 11%；
 - 這次沒帶這個窗：保留檔案裡的。
@@ -53,14 +56,14 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   收集到的用量列 `account` 存空字串，`summary.json` 的 `days[].account` 寫 `null`，自成一行，不併進任何帳號；
   `usage --by account` 印「未歸屬（未登入）」，`--json` 的 `key` 是 `null`。fleet 的 rollup 用同一條規則（PM 01M7052H79）。
   以前退回 `acct-` + sha256(canonical config dir) 前 8 碼，2026-11-09 實測：`acct-ae88ee5d`（`/home/user/.claude`）
-  在每台主機都出現、卻沒有任何窗，`acct-81916b7b`（`/home/user/.claude`）被當成 team 的舊帳號。讀舊資料時一樣當未歸屬：
+  在每台主機都出現、卻沒有任何窗，`acct-81916b7b`（`/home/user2/.claude`）被當成 team 的舊帳號。讀舊資料時一樣當未歸屬：
   `acct-<自己 root 的 hash>` 的配額快照不讀；db 裡 `acct-<任一已知 root 的 hash>` 的用量列讀成未歸屬。
   為什麼不用路徑：每台主機的 config dir 都是 `/home/user/.claude`，路徑 hash 讓 7 台不同配額的主機撞同一個別名，
   而且換帳號（同 email、個人訂閱 vs 組織訂閱）別名不會變。
 - 登入檔：`$CLAUDE_CONFIG_DIR/.claude.json`（有設且非空），否則 `$HOME/.claude.json`（在 `~/.claude/` 之外）。
   只讀 `oauthAccount` 底下三個欄位：`organizationUuid`、`organizationName`、`emailAddress`（operator 授權的範圍），
   用只命名這三欄的型別化 serde 結構解析，其餘欄位（token、accountUuid…）由 serde 忽略，不留、不記錄、不複製；
-  從不寫這個檔。org uuid 不離開本機：快照、summary、`fleet-quota.json` 只有別名（hash）、org 顯示名與登入 email。
+  從不寫這個檔。org uuid 只以 `org_id` 欄位原字串寫進本機配額快照（見下）；summary、`fleet-quota.json`、`usage push` 不帶它，只有別名（hash）、org 顯示名與登入 email。
   email 只出現在本機 0600 的快照、身分快取與 summary／`fleet-quota.json` 檔，**不進 repo、不進日誌、不進 fleet 訊息與 blob（`usage push` 上傳前拿掉 email）、
   不進錯誤訊息**（`Identity` 的 `Debug` 也不印它；測試與 fixture 只用 `@example.com`）。
 - 快取（statusline 每次刷新都跑，登入檔可能數 MB）：`<live_base>/codeforge/usage/identity-<config dir 8 碼>.json`
@@ -72,6 +75,7 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   不存在 = 未知，舊 summary 仍合格；1..=40 字元、無控制字元、無 `@`）與 `fleet-quota.json`（字串或 null）。
   文字表頭在別名後顯示（`personal` 顯示為「個人」／personal），順序：別名、org、provider、主機。
   主機太多放不下時，保留放得下的標籤並以「等 N 台」／「+N more」收尾，不會整段拿掉。
+- `org_id`（選填，`codeforge.quota/1` 的加法欄位，schema 名稱不變）：`oauthAccount.organizationUuid` 原字串，給 fleet courier 比對 hangar seat-pool 的 pool_key（完整 orgId）。沒有 uuid 或空字串就整個欄位省略；舊快照沒有這欄，讀成未知。合併規則照舊（同一帳號寫同一個檔，以最新寫入者為準，同 `org`）。pin 住的 token lane（覆寫別名、不取登入檔）不寫它。身分快取也存它；舊快取（有別名、沒有 org_id）視為未命中，重新解析一次。不進 summary、`fleet-quota.json`、`usage push`。
 - `email`：`emailAddress` 去頭尾空白後 3..=254 字元、恰一個 `@` 且兩邊都有字、無空白與控制字元，否則視為未知（None，
   不是錯誤、不拒收快照）。有 `AUTOPILOT_ACCOUNT` 時別名仍用它，但 email 與 org 照樣取自登入檔。`email` 放在本機快照
   （壞值丟掉、數字照留）、summary 帳號（**選填**，驗證規則同上，壞值整份 summary 不合格，訊息不含該值；契約的
@@ -138,19 +142,65 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   同時清備註與規則；`usage alias list` 的備註區列出規則。規則格式不合時報繁體中文錯誤並附範例。檔案其餘內容原樣保留，0600、原子寫入。
 - **statusline 其他帳號段**：只看還沒重置的週視窗。週 ≥ 95% 或「會不夠（估）」→「⚠ 名字 週 97% 3d1h 後重置」；
   「會浪費」→「名字 週 NN% … 後重置 會浪費」；其餘帳號不出現，沒有名字的帳號不出現。放不下就只留前面的段。
-  （gpu-host-1 曾顯示 97%，原因是 statusline 讀到修正身分前的舊合併快照；gpu-lead 實測 /login 後新舊 session 的數字相同，
+  （一台 GPU 主機曾顯示 97%，原因是 statusline 讀到修正身分前的舊合併快照；gpu-lead 實測 /login 後新舊 session 的數字相同，
   「舊 session 拿舊 token」的推論不成立。）
 - **summary 帶 `name`**：summary 帳號**選填** `name`（顯示名，由寫 summary 的主機用同一套規則與它自己的名字設定檔算；沒有名字就不帶）。
   驗證同 `valid_name`，契約 `name_max_cells` = 24 與 pane 副本由測試比對。forge-stats「用量」分頁與側欄畫 `name`；舊 summary 沒有 `name`
   時依序退回 email、org、非 `acct-` 的別名，`acct-` 且三者皆無的帳號不畫。`usage push` 上傳前同時拿掉 `email` 與 `name`
   （預設名可能是 email 前段）。`codeforge usage --by account` 的文字表也印顯示名（無法命名的 `acct-` 印「未命名帳號」），`--json` 仍是鍵。
-- 收集：不讀 `AUTOPILOT_ACCOUNT`。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」，其次是該 root 自己的
+- 收集：不讀 `AUTOPILOT_ACCOUNT`，也不讀 `CODEFORGE_ACCOUNT_ALIAS`（後者只由 statusline 釘 session，見下）。一個 Claude root 的別名取「`root` 等於它 hash 的最新快照」（`root` 為 null 的覆寫快照不算），其次是該 root 自己的
   登入檔身分（預設 root `~/.claude` 對應 `~/.claude.json`，其他 root 對應 `<root>/.claude.json`），
   再其次是 db 裡存的，最後未歸屬（不再是 `acct-<hash>`；root 一律記進 db，讓它的舊 `acct-<hash>` 列認得出來）。
   Codex root 是 `codex-<hash>`。
-- 已知限制：重新登入之前寫下的轉錄檔，會歸給目前登入的帳號。
-- 限制：轉錄檔不記錄是哪個 OAuth token。同一個 config dir 跑多個帳號時，轉錄用量歸給那個 dir
-  的別名（配額快照仍準確）。G37 採「每個帳號一個 config dir」，解除這個限制。
+- 重新登入後的配額與請求歸屬見「重新登入的歸屬」。
+- 限制：轉錄檔不記錄是哪個 OAuth token。沒有 `CODEFORGE_ACCOUNT_ALIAS`、也沒有 token 變數的 session，同一個 config dir 的用量仍依登入時間軸歸給那個 dir 的別名（配額快照仍準確）。setup-token lane 由 wrapper 設覆寫，並以 session 釘選分開歸屬（PM 01M76F3F）。G37 的「每個帳號一個 config dir」仍是沒有覆寫時的做法。
+
+## 重新登入的歸屬（Re-login attribution）
+
+同一個 Claude config dir 換帳號（帳號 A 登出、帳號 B 登入）之後，沒有行程覆寫的配額與請求依該 root 的登入時間軸歸屬。setup-token lane 的覆寫見下方。
+
+時間軸檔是 `<quota 目錄的上一層>/logins-<root 的 hash8>.json`（也就是 `<live_base>/codeforge/usage/`），內容為
+`{"entries":[{"since_ms":<毫秒>,"alias":"acct-xxxxxxxx"}]}`，新的在最後，最多 64 筆（丟掉最舊的）。
+statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Claude root，都呼叫 `observe`：只有最後一筆的別名不同（或檔案是空的）才追加 `(現在, 目前別名)`。只存合法別名（`valid_alias`），不存 email、不存 org。寫入同其他 live JSON：暫存檔加 rename、0600。讀取不跟隨最後一層的 symlink。壞掉或外來的檔案（含任何 `@`）當成空的重寫。`alias_at(t)` 取 `since_ms <= t` 裡最大的那筆；`t` 早於第一筆則沒有。
+
+配額閘門的檔是同一層的 `sessions-<root 的 hash8>.json`，內容為
+`{"sessions":{"<session>":{"alias":"<別名>","fp":"<四個 rate_limits 原值接成的字串>","at_ms":<毫秒>}}}`。
+`fp` 是這次 stdin 的 5h 百分比、5h `resets_at`、7d 百分比、7d `resets_at`。session 已有紀錄、別名不是目前帳號、而且 `fp` 相同：這是換帳號前的回應還留在畫面上，**不合併、不寫入**快照，長條改畫磁碟上目前帳號的快照（沒有這份檔就當成這次沒有 `rate_limits`）。該筆紀錄不改。
+沒有紀錄、別名相同、或 `fp` 變了（換帳號之後的新回應）：照舊合併，並把紀錄設成目前別名、新的 `fp`、現在。別名與 `fp` 都沒變就不寫檔。
+寫檔時刪掉 `at_ms` 早於 `quota::MAX_AGE_MS` 的紀錄，最多留 512 筆（丟掉 `at_ms` 最舊的）。session 是空字串就不設閘門，照舊合併。讀寫失敗就退回今天的合併，statusline 不因此失敗、也不印 stderr。
+
+行程覆寫：lane wrapper 可設 `CODEFORGE_ACCOUNT_ALIAS=acct-<8 個小寫 hex>`。這是給 setup-token（環境變數登入）的 lane 用的（PM 01M76F3F）：那種 lane **不改寫**登入檔，若仍從 `.claude.json` 推別名，會把該 lane 的請求和 statusline 的配額讀數記到舊帳號。statusline 只在去掉前後空白後、同時通過 `valid_alias` 且符合 `acct-[0-9a-f]{8}` 時採用；大寫 hex、長度不對、`acct-` 後面像 email、空字串，都當成沒有，不印錯誤。採用時：
+
+- 這個行程的帳號就是該別名，org 與 email 都是空的，**不讀**登入檔。
+- **不**呼叫 `observe`。root 的登入時間軸仍只記登入檔上的帳號。
+- 配額快照寫在覆寫別名下，`root` 為 null，因此 `root_alias` 不會把這個別名當成該 root 的帳號。
+- 呼叫 `pin_session`，把這個 session 釘在覆寫別名上。檔案是同一層的 `pins-<root 的 hash8>.json`，內容為 `{"<session>":{"alias":"<別名>","at_ms":<毫秒>}}`。寫入慣例與 `sessions-` 相同：`state_file`、`load_bytes` 上限、0600、暫存檔加 rename、寫入時依 `quota::MAX_AGE_MS` 修剪、最多 512 筆、不能用的 session id 略過、內容沒變不寫。缺檔、壞掉或外來（含任何 `@`）讀成空的。
+- `session_gate` 仍用覆寫別名跑。
+
+釘選由 statusline **與** SessionStart 的 `memory context --hook` 兩邊寫入（決策與寫入在 `usage::lane_pin`）：無頭的 `claude -p` 不會跑 statusline，若只靠 statusline 釘選，token lane 子 session 的請求會被 collect 歸到登入檔帳號（2026-11-13，cuda：twgame token lane 子行程記到團隊帳號）。hook 不改 additionalContext 的位元組輸出。
+
+沒帶覆寫的 token lane（hangar 01M77KXH）：行程有非空的 `CLAUDE_CODE_OAUTH_TOKEN`（只看有沒有，不讀值）、卻沒有可採用的 `CODEFORGE_ACCOUNT_ALIAS` 時，statusline 不從登入檔推帳號，因為 token 可能是別的 org，例如另一台主機的 personal token 原本被記到團隊帳號。做法如下：
+
+- 不寫配額快照，也不呼叫 `observe`。
+- 用 `pin_session` 把 session 釘在 `unattributed`（`logins::PIN_UNATTRIBUTED`）。
+- `collect` 讀到這個釘選時，該 session 的新請求一律記為未歸屬（`""`，每小時匯出為 null）。
+- 其他帳號的快照照常讀回。
+
+要歸到正確帳號，lane wrapper 應帶 `CODEFORGE_ACCOUNT_ALIAS`。
+
+請求：`collect` 插入**新的** `requests` 列時，把轉錄檔的 session id 寫進 `requests.session`（檔名 stem；`<session>/subagents/` 底下的子代理轉錄算父 session）。stem 必須是 1–64 個 `[A-Za-z0-9_-]`（與 pins／statusline 同一條 `usable_session`）；不合規格的（含點號、空白、超過 64 字）存 NULL，該列仍照常計入 buckets／summary／每小時匯出。同一個 root 每次收集只讀一次 pins。帳號的優先順序是：該 session 的釘選別名，沒有才取 `timeline.alias_at(該列的 seen_ms)`，再沒有才用 `root_alias`。已經在庫裡的列不改帳號、也不改 session（本功能上線前入庫的列 `session` 仍是 NULL，不回填）；同一列後來增加的 token 仍加進原來的 bucket。`buckets` 的帳號跟該列相同。每小時匯出讀 `requests.account`；每 session 匯出讀 `requests.session`（NULL 的列不進匯出）。
+
+已知限制：換帳號要到下一次 statusline 渲染或 collect 才被看見；這段空檔裡的請求歸給前一個別名。時間軸出現之前就收集的轉錄檔，仍用舊規則（歸給收集當下的帳號）。釘選在 SessionStart（`memory context --hook`）或該 lane 的 statusline 寫過 pin 之後，之後的**新**列才歸到覆寫別名。
+
+console host 的 team 帳號，從 2026-11-12 06:30（+0800）起，到各 lane 帶著這個覆寫重啟為止，記成 `acct-65d2bffc` 的 Claude 請求與配額百分比實際上屬於 `acct-9832dff1`。PM 裁定不回填（PM 01M76FE9），所以這段期間的逐帳號合計是不準的。
+
+**沒有登入檔可推的 token 池用固定別名**（PM 01M78CGQ、01M78CTD）：用 `claude setup-token` 產生、沒有任何機器 `/login` 過的帳號，推不出正規別名（`sha256("<organizationUuid>\n<emailAddress>")` 取前 8 碼）。這時改用 `acct-` 加上 `sha256("token-pool:<池名>")` 的前 8 碼，在 wrapper 裡設 `CODEFORGE_ACCOUNT_ALIAS`。不拿 token 打 OAuth profile 端點讀身分（那是憑證的新用途，PM 不採用）。目前只有一個：
+
+| 池 | 別名 | lane（生效時間，+0800） |
+|---|---|---|
+| twgame.net | `acct-d5435540` | twgs-dev（2026-11-13 01:28）、revival.3d（01:32）、pinball（02:30 前後） |
+
+生效之前的請求維持未歸屬，不回填。以後有人 `/login` 這個帳號時，codeforge 推出的是正規別名：把 wrapper 換成它，舊別名的歷史留在原池，用 `codeforge usage alias set` 讓兩者同名。
 
 ## 讀什麼、存什麼
 
@@ -186,7 +236,7 @@ claude_dirs = ["/srv/claude/seats/seat-a", "/srv/claude/dispatches/run-b"]
 
 | 來源 | glob | 存下 |
 |---|---|---|
-| Claude | `<cfg>/projects/*/*.jsonl`、`<cfg>/projects/*/*/subagents/*.jsonl` | request id、UTC 日、model id、token 數、speed、cwd 最後一段 |
+| Claude | `<cfg>/projects/*/*.jsonl`、`<cfg>/projects/*/*/subagents/*.jsonl` | request id、UTC 日、model id、token 數、speed、cwd 最後一段、session（轉錄檔 stem，須為 1–64 個 `[A-Za-z0-9_-]`，否則 NULL；子代理算父 session；本功能上線前的列為 NULL） |
 | Codex | `<codex>/sessions/YYYY/MM/DD/rollout-*.jsonl` | session id（檔名）、UTC 日、model id、token 數、cwd 最後一段；`rate_limits` 的窗口數字（見下） |
 
 - **Codex 窗口（rollout `rate_limits`）**：`payload.type == "token_count"` 行的 `payload.rate_limits.primary`／`secondary`
@@ -225,6 +275,11 @@ claude_dirs = ["/srv/claude/seats/seat-a", "/srv/claude/dispatches/run-b"]
 5 分／1 小時、快取讀、fast 倍率）。標成「API 等值」：訂閱方案不按 token 計費。沒有定價的
 model（含所有 Codex model）顯示 `—`，合計只加有定價的列並註明幾列沒定價。
 
+**已知偏差（OTEL 對帳，2026-11-12）**：Claude Code 有些呼叫不寫進 transcript：prompt_suggestion、agent_summary、
+compact、session 標題、web_search／web_fetch。codeforge 只讀 transcript，所以看不到它們。24 小時對帳中，
+這些呼叫約占 output 8.5%、API 等值 6.4%；兩邊都有的請求，四種 token 完全一致。用 codeforge 數字估成本燒速時，
+乘上 1.07。報告：`doc/reports/2026-11-12-otel-pilot-reconcile.md`。
+
 ## summary.json（唯一會離開本機的東西；帳號列帶登入 email，`usage push` 上傳的 blob 會先拿掉 email）
 
 ```json
@@ -262,6 +317,89 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
 `days` 是最近 7 天，專案已加總掉。`usage push` 讀回、驗證、把驗過的 bytes 以固定檔名
 `usage-summary.json` 交給 `fleet upload`，不送本機路徑。
 
+## 每小時匯出（`usage export --hourly`）
+
+`codeforge usage export --hourly` 先做與 `usage export` 相同的收集（寫 `summary.json`），再把下面這份
+JSON 印到 stdout：一個文件、結尾一個換行。不印 summary。給 capacity 在每個配額池的重置時間、以及換帳號時
+切開用量。沒有 `--hourly` 的 `usage export` 印出的 bytes 不變。
+
+```json
+{"schema":"codeforge.usage-hourly/1","generated_at_ms":0,"host":"host-1a2b3c4d",
+ "rows":[{"hour":"2026-11-04T13","account":"acct-1a2b3c4d","model":"claude-opus-4-8","speed":"standard",
+          "input":0,"cache_write_5m":0,"cache_write_1h":0,"cache_read":0,"output":0,"requests":0}]}
+```
+
+沒有登入的列，`account` 是 `null`（未歸屬），不是空字串。
+
+- **schema**：`codeforge.usage-hourly/1`。每一層的 key 都是封閉集合；多一個或少一個欄位，整份不合格。
+- **generated_at_ms**：產出當下的 unix 毫秒，整數，0..=2^53−1。
+- **host**：`host-` 加 hostname sha256 的前 8 碼 hex（`summary::host_alias`）。絕不是 hostname。
+- **rows**：`requests` 裡 `source = 'claude'`、而且 `seen_ms` 沒有比 `generated_at_ms` 早超過 35 天
+  （`HORIZON_DAYS`，與收集的視野相同；未來的時間戳照計）的列，依 (hour, account, model, speed) 加總。
+  最多 100_000 列。依 hour、account、model、speed 排序（未歸屬的空字串排在有別名的前面，印出時寫成 `null`）。
+- **hour**：`seen_ms` 的 UTC 小時，`YYYY-MM-DDTHH`（`strftime('%Y-%m-%dT%H', seen_ms/1000, 'unixepoch')`）。
+- **account**：未歸屬 sentinel（空字串，同 `summary::build`）寫 `null`；否則必須是合法別名（`^[a-z0-9-]{1,24}$`）。
+- **model**：與 summary 同一條 model id 規則，`^[A-Za-z0-9._-]{1,64}$`。不合語法的記為 `unknown`
+  （同一小時、同一帳號、同一速度裡多個不合語法的 id 併成一列）。
+- **speed**：`standard` 或 `fast`。
+- **計數**：`input`、`cache_write_5m`（欄 `cw5m`）、`cache_write_1h`（欄 `cw1h`）、`cache_read`（欄 `read`）、
+  `output` 是加總，`requests` 是 `COUNT(*)`。每個整數壓在 `UINT_MAX`（2^53−1）。
+- 印出前先驗證。驗證失敗是錯誤，stdout 什麼都不印。
+
+**覆蓋**：收集只把 35 天以內的紀錄算進去，去重列在 `requests` 留到 40 天（`DEDUP_KEEP_DAYS`）才刪。
+這份匯出再依同一個 35 天視野濾一次，所以是最近 35 天的 Claude 用量。
+
+**只有 Claude**：Codex 的用量在 `codex_sessions`（每個 rollout 的累計），沒有逐筆 `requests` 列，所以這裡不出現。
+
+**為什麼沒有 email、name、org、project、路徑**：這份 JSON 會離開這台機器（capacity 用 ssh 收，跟 `usage export`
+同一條路）。email、顯示名、組織名留在本機快照與 summary。project 是 cwd 的最後一段，只留在本機 `requests`，
+不進任何一列。host 只用 hash。
+
+## 每 session 匯出（usage-sessions/1）
+
+路徑：`<live_base>/codeforge/usage/usage-sessions.json`。每次 `usage collect`（以及會先收集的
+`usage`／`usage export`／`usage push`）在寫完 `summary.json` 之後，用同一慣例寫這份檔（暫存檔加
+rename、0600）。sessions 匯出失敗時，`collect` 印一行 stderr（quiet 時不印）後繼續寫
+`fleet-quota.json`，不因此整趟失敗；`usage export --sessions` 仍把驗證／建檔失敗當成錯誤。
+`codeforge usage export --sessions` 先做與 `usage export` 相同的收集，再把同一份 JSON 印到
+stdout（結尾一個換行），不印 summary。與 `--hourly` 互斥。
+
+```json
+{"schema":"codeforge.usage-sessions/1","generated_at_ms":0,"host":"host-1a2b3c4d",
+ "rows":[{"session":"sess-a","account":"acct-1a2b3c4d","model":"claude-opus-4-8",
+          "first_ms":0,"last_ms":0,"input":0,"output":0,
+          "cache_write_5m":0,"cache_write_1h":0,"cache_read":0,"requests":0}]}
+```
+
+沒有登入的列，`account` 是 `null`（未歸屬），不是空字串。整份文件任何地方都不能出現 `@`。
+
+- **schema**：`codeforge.usage-sessions/1`。每一層的 key 都是封閉集合；多一個或少一個欄位，整份不合格。
+- **generated_at_ms**：產出當下的 unix 毫秒，整數，0..=2^53−1。
+- **host**：`host-` 加 hostname sha256 的前 8 碼 hex（`summary::host_alias`）。絕不是 hostname。
+- **rows**：`requests` 裡 `source = 'claude'`、`session` 不是 NULL、而且 `seen_ms` 沒有比
+  `generated_at_ms` 早超過 **8 天**的列，依 (session, account, model) 加總。依 session、account、
+  model 排序（未歸屬的空字串排在有別名的前面，印出時寫成 `null`）後，**只保留前 100_000 列**
+  （超過的加總列丟掉）。庫裡已有、但 session 不合規格的列（本功能過濾 stem 之前入庫的）略過，
+  不使整份失敗。
+- **session**：轉錄檔的 session id（1–64 個 `[A-Za-z0-9_-]`）。`session` 為 NULL 的列（本功能上線前
+  入庫、未回填，或 stem 不合規格）不進匯出；per-lane 對帳從本功能上線當天起算。
+- **account**：未歸屬 sentinel（空字串）寫 `null`；否則必須是合法別名（`^[a-z0-9-]{1,24}$`）。
+- **model**：與 summary 同一條 model id 規則，`^[A-Za-z0-9._-]{1,64}$`。不合語法的記為 `unknown`。
+- **first_ms**／**last_ms**：該組內 `seen_ms` 的最小／最大。
+- **計數**：`input`、`output`、`cache_write_5m`（欄 `cw5m`）、`cache_write_1h`（欄 `cw1h`）、
+  `cache_read`（欄 `read`）是加總，`requests` 是 `COUNT(*)`。每個整數壓在 `UINT_MAX`（2^53−1）。
+- 寫檔與印出前先驗證。驗證失敗是錯誤，不寫檔、stdout 什麼都不印（`export --sessions`）；
+  `collect` 路徑見上，驗證失敗不阻斷後續 fleet-quota。
+
+**只有 Claude**：Codex 的用量在 `codex_sessions`（每個 rollout 的累計），沒有逐筆帶 session 的
+`requests` 列可供此報表加總，v1 **不包含** Codex。
+
+**消費者**：fleet。fleet member address 帶 `@<session uuid>`，用這份文件把 session 對到 lane；
+`fleet.console/1` 以 add-only 的方式掛上 `usage` 區塊（本文件只產出用量，不改 console schema）。
+
+**為什麼沒有 email、name、org、project、路徑**：同每小時匯出——這份 JSON 會離開這台機器。project
+只留在本機 `requests`。host 只用 hash。
+
 ## 配額檢視（G40）
 
 `codeforge usage accounts` 與 forge-stats（用量分頁、band 晶片）、statusline 都讀 autopilot 的配額
@@ -280,6 +418,105 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
 - 只有 token 狀態、從沒有過 window 的記錄（契約 §21.6 shape c）畫「沒有用量資料」，不是「過期或已重置，等新觀察」（後者只給有過 window 但全被丟掉的）；`--json` 的 `state` 為 `no_usage`。
 - `--json` 輸出解讀後的清單（已套用丟棄規則），schema `codeforge.usage-accounts/1`。
 
+## agy 配額（`agy -p /usage` 的本機帳號）
+
+`codeforge usage collect` 同時收這台主機的 `agy`（Antigravity CLI）帳號配額，進 `summary.json`、
+隨之進 `usage fleet`：一個 pool 一個帳號，共兩個——Gemini pool 的鍵是 `agy-<hash8>`、
+Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
+
+- **來源命令**：`agy -p /usage`（無 model call，約 3 秒回四行 tab 分隔：pool／窗口標籤／**剩餘** %／
+  窗口重置的 RFC3339 時間）。這是別的程序輸出（信任邊界）：不是恰好四個欄位、pool 或窗口標籤不認識、
+  % 不是 0..=100 的整數後面跟 `%`、或時間解析不出的行都略過；沒有有效視窗的 pool 不產生快照。
+- **換算**：輸出是**剩餘**比例，`quota::Window.pct`（**已用**比例 0.0–1.0）= `1 − 剩餘/100`；
+  `resets_at` = 重置時間的 unix 秒。
+- **快取**：原始輸出存 `<live_base>/codeforge/usage/agy-usage.json`（`{"observed_ms", "text"}`、
+  0600、原子寫入），至多每 10 分鐘重跑一次（期間不 spawn `agy`）；跑失敗時改用不超過 6 小時
+  （同配額快照的 `MAX_AGE_MS`）的快取，再沒有就本次不收集。
+- **逾時／關斷**：`agy` 與 headless CLI 同一個包裝跑（`platform::low_priority_command`：Unix
+  `nice -n 19 timeout 20`、Windows 殺 pid 的看門狗），20 秒後被殺；exit 0 的 stdout 才算輸出。
+  環境變數 `CODEFORGE_USAGE_AGY=0` 完全不 spawn `agy`。
+- **鍵**：`hash8` = 這台 `$HOME`（canonicalized）的 `alias::path_hash8`；同一個 Google 帳號在兩台
+  主機上是兩列，operator 用 `usage alias set` 設了顯示名之前不會合併。
+
+## grok 配額（本機 `grok` CLI 的週配額）
+
+`codeforge usage collect` 同時收這台主機的 `grok` CLI 帳號週配額，寫進 `summary.json`，再進
+`usage fleet`（`codeforge.fleet-quota/1`）：grok 帳號的鍵是 `grok-<hash8>`，只有週視窗
+（`five_hour` 為 null）。還沒設顯示名時，畫面顯示 `grok-cli`。實作 `src/usage/grok.rs`。
+
+同一份 billing 回應的 `config.productUsage` 若有一列，其 `product` 轉成小寫並去掉每個非字母、非數字的字元後等於 `grokbot`（`GrokBot`、`Grok Bot`、`grok-bot` 都算），且 `usagePercent` 是 0..=150 的數字，就多一筆快照：鍵 `grokbot-<同一個 hash8>`，週視窗的 `pct` 是該百分比除以 100，`resets_at` 與 grok 列同一個 `currentPeriod.end`。百分比缺欄、不是數字或不在範圍內就略過該列，grok 快照不變。帳號的 billing 沒有這一列就沒有 grokbot 快照；trinity 若在另一個 xAI 帳號，這裡不會出現。還沒設顯示名時這一列顯示 `trinity`。
+
+- **端點**：`GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`。標頭
+  `Authorization: Bearer <key>`、`User-Agent: grok/<version>`。`<version>` 取自 `grok --version`
+  （印出例如 `grok 1.0.70 (f50904eaee6c)`，用 `1.0.70`）。逾時 10 秒。`grok` 不在 PATH 上，或讀不到
+  版號，就不讀登入檔、不送請求。
+- **憑證（操作員卡 d-8bbff214）**：只在這台主機、這個帳號、發出請求的當下讀 `~/.grok/auth.json`。
+  金鑰只放在記憶體裡的區域變數，隨請求送出；不複製到任何檔案，不寫進日誌、stderr、錯誤訊息、快取、
+  summary 或測試快照；除了這個 billing 端點，不送到別的地方。`auth.json` 是頂層恰好一個欄位的 JSON
+  物件：忽略欄位名，取那個值。那個值只用 `"key"`（字串，Bearer）與 `"expires_at"`（字串，ISO 8601
+  UTC、帶奈秒與 `Z`，例如 `2026-11-11T15:27:38.257878022Z`）。其餘欄位（`refresh_token`、`email`、
+  `user_id` 等）不讀。`expires_at` 已經到期（≤ now），或 HTTP 401／403：停止，不重新登入、不換發
+  token，本次沒有新資料，改用下面的快取（快取自己逾齡後變成過期）。
+- **換算**：`config.creditUsagePercent`（數字，接受 0..=150，否則整筆不要）除以 100 得到
+  `seven_day.pct`；`config.currentPeriod.end`（RFC3339）換成 unix 秒，寫進 `seven_day.resets_at`。
+  `five_hour` 為 null。回應不可信：缺欄位或型別不對就沒有快照。
+- **快取**：`<live_base>/codeforge/usage/grok-usage.json` 只存 `{"observed_ms","pct","resets_at"}`，
+  有 Grok Bot 列時多一個數字 `bot_pct`（已除以 100；不含產品名稱或其他欄位）。舊快取沒有 `bot_pct`
+  仍只回 grok 快照。0600、原子寫入，同其他 usage 快取。未滿 10 分鐘就用快取、不打端點（有 `bot_pct`
+  時一併回 grokbot 快照）。否則打端點：解析成功就覆寫快取並回傳；Denied、失敗或解析失敗時，若快取未超過
+  6 小時（`quota::MAX_AGE_MS`）就用快取，否則這次不收集。
+- **關斷**：環境變數 `CODEFORGE_USAGE_GROK=0` 時什麼都不讀（包括快取，不輸出 grok 或 grokbot 列）、不打端點。
+- **鍵**：`hash8` 是這台 `$HOME`（canonicalized）的 `alias::path_hash8`。
+
+## kimi 配額（本機 `kimi` Code CLI 的 5 小時與週配額）
+
+`codeforge usage collect` 同時收這台主機的 `kimi`（Kimi Code CLI）帳號的 5 小時與週配額，寫進
+`summary.json`，再進 `usage fleet`（`codeforge.fleet-quota/1`）：一個帳號，鍵是 `kimi-<hash8>`。
+還沒設顯示名時，畫面顯示 `kimi-code`。月配額與 booster 錢包不收集（fleet-quota/1 沒有月視窗）。
+實作 `src/usage/kimi.rs`。不需要 `kimi` 執行檔在 PATH 上。
+
+- **端點**：`GET <base>/usages`。`base` 是環境變數 `KIMI_CODE_BASE_URL`，但只在它以 `https://` 開頭且
+  含主機時採用（`http://`、其他 scheme、以及只有 `https://` 都忽略，尾端的 `/` 會去掉），否則
+  `https://api.kimi.com/coding/v1`。標頭 `Authorization: Bearer <access_token>`、
+  `Accept: application/json`。逾時 8 秒。不走代理、不跟隨重新導向（權杖只送到這個端點）。
+- **憑證（操作員卡 d-a080c798）**：只在這台主機、這個帳號、發出請求的當下讀
+  `<kimi_home>/credentials/kimi-code.json`。`kimi_home` 是環境變數 `KIMI_CODE_HOME`（有設且非空），
+  否則 `<home>/.kimi-code`。檔案不以 symlink 開啟。權杖只放在記憶體裡的區域變數，隨請求送出；
+  不複製到任何檔案，不寫進日誌、stderr、錯誤訊息、快取、summary 或測試快照；除了這個 usages
+  端點，不送到別的地方。檔案是 JSON 物件，只用 `"access_token"`（字串，Bearer）與 `"expires_at"`
+  （數字，unix 秒）。其餘欄位（`refresh_token`、`scope` 等）不讀。`access_token` 是空字串（kimi
+  用來標記已撤銷）、`expires_at` ≤ now、或 HTTP 401／403：停止，不重新整理、不換發權杖（kimi
+  自己換發，不能跟它搶）、不打端點，本次沒有新資料，改用下面的快取（快取自己逾齡後變成過期）。
+- **換算**：`usages.limit_5h` → `five_hour`，`usages.limit_7d` → `seven_day`。`used_ratio` 是數字
+  或數字字串，已經是已用比例（0.42 = 42%），接受 0.0..=1.5，否則丟掉那個視窗。`reset_time` 是
+  RFC3339，換成 unix 秒寫進 `resets_at`；缺了或解析不出就丟掉那個視窗。`limit_month_total`、
+  `limit_month_code`、`boosterWallet` 忽略。回應不可信：沒有 `usages` 物件，或兩個視窗都無效，
+  就沒有快照。
+- **快取**：`<live_base>/codeforge/usage/kimi-usage.json` 只存 `observed_ms`，以及每個看得到的視窗
+  的 `pct`／`resets_at`（0600、原子寫入，同其他 usage 快取）。未滿 10 分鐘就用快取、不打端點。
+  否則打端點：解析成功就覆寫快取並回傳；Denied、失敗或解析失敗時，若快取未超過 6 小時
+  （`quota::MAX_AGE_MS`）就用快取，否則這次不收集。
+- **關斷**：環境變數 `CODEFORGE_USAGE_KIMI=0` 時什麼都不讀（包括憑證檔與快取）、不打端點。
+- **鍵**：`hash8` 是這台 `$HOME`（canonicalized）的 `alias::path_hash8`。
+
+## trinity 配額（自報）
+
+操作員 d-e31e39c0（PM 01M76PF4）。fleet 成員 `<namespace>/<bot-host>/trinity`（Grok Bot，自己的 VM，沒有可讀的憑證）每次被叫醒時，把自己的 Grok 額度寫成一行，同一個 UTC 小時最多一次，送到 console host 上的 fleet-cli 成員（或由它那台的 courier 定時送出同一行）。只收配額：token 數與醒來次數不匯入（醒來次數是 hangar 每 6 小時從 hub 算的代理值，給 capacity，PM 01M76GXN）。codeforge 不連線、不讀憑證，只在 `codeforge usage trinity-import <FILE>`（`-` 表示標準輸入）時匯入。帳號鍵是 `trinity-<sha8>`：sha8 是成員位址字串的 sha256 前 8 碼 hex，各主機相同；沒設顯示名時顯示 `trinity (Grok Bot)`。實作 `src/usage/trinity.rs`。
+
+```json
+{"schema":"trinity-usage/1","observed_at":"2026-11-12T03:12:00Z","pct":0.34,"resets_at":"2026-11-18T00:00:00Z"}
+```
+
+- **schema**：必須是 `trinity-usage/1`。
+- **observed_at**：RFC3339；比現在晚超過 5 分鐘就略過該行。
+- **pct**：已用比例，有限數字 0.0..=1.5（34% 寫 0.34）。
+- **resets_at**：RFC3339，必須晚於 `observed_at`。
+- 三個欄位都必填，不合格的行略過並計數，空白行不計；有不合格的行、卻一行合格的都沒有時是錯誤（結束碼非 0，收件端會通知）。其他欄位忽略，不寫進任何檔案。檔案超過 64 KiB 或 200 行，整份拒絕。
+
+**寫入**：這次匯入裡 `observed_at` 最新的那一行，比 `<live_base>/codeforge/usage/trinity-quota.json` 裡的 `observed_ms` 新時才覆寫（0600、原子寫入）：`observed_ms`（unix 毫秒）、`pct`、`resets_at`（unix 秒）。不寫 `usage.db`，不進 `usage export --hourly`。`codeforge usage` 收集時讀這份檔，做成週視窗快照（沒有 5 小時窗）；`CODEFORGE_USAGE_TRINITY=0` 時不讀。快照比 `quota::MAX_AGE_MS`（6 小時）舊、或 `resets_at` 已過，就不進 summary。
+
+**收件**：`scripts/trinity-import/trinity-import.sh`（`CODEFORGE_TRINITY_SENDERS` 與 `CODEFORGE_TRINITY_NOTIFY` 沒有預設值，由選用的 `${CODEFORGE_TRINITY_ENV:-$HOME/.config/codeforge/trinity.env}` 或環境提供；沒設就 exit 2），由 systemd user timer 每 15 分鐘執行一次（`codeforge-trinity-import.timer`）。它讀這台 fleet-cli 的收件匣（`fleet inbox --peek --json`），只收 courier 證明的 `from` 在 `CODEFORGE_TRINITY_SENDERS`（沒有預設，必須設；內容是 trinity 與它那台 fleet-cli 的位址：trinity 那台用排程跑 shell `fleet send` 時，寄件者是那台的 fleet-cli；hub 只認證到 courier 這層，所以內容一律當不可信資料解析）裡、內容是 `trinity-usage/1` JSON 的訊息，每則訊息只匯入一次。匯入失敗，或成功匯入後超過 `CODEFORGE_TRINITY_STALE_H`（預設 168，即一個週配額窗）小時沒有新資料，就通知 `CODEFORGE_TRINITY_NOTIFY` 列的成員一次（每則訊息一次，每天一次）。trinity 只在被叫醒、`usage.json` 有變動時才送，閒置時不送；閒置時它的週用量也不會增加，所以舊讀數仍然正確。原本的 24 小時門檻在 2026-11-14 誤報過一次（trinity 只是閒置），因此放寬到一週：整個週窗都沒資料，才可能是送出端壞了。unit 固定 `AUTOPILOT_LIVE_DIR=/dev/shm/autopilot-%U`：systemd 會帶 `XDG_RUNTIME_DIR`，不固定的話 codeforge 會寫到 `/run/user/<uid>/autopilot`，而跑 `codeforge usage` 的 Claude session 沒有這個變數、讀的是 `/dev/shm`，兩邊對不上（2026-11-13 第一筆就這樣沒進 summary）。
+
 ## 全帳號配額表（`usage fleet`）
 
 `codeforge usage fleet --dir <D>`：把許多主機的 `codeforge.usage-summary/1` 合併成一張全帳號配額表，
@@ -289,6 +526,8 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
   `gpu-a.json`）；summary 裡的 `host` hash 與任何路徑都不顯示。每個檔都過 `summary::validate`，不合格的略過並計數
   （文字顯示「N 份略過」，JSON 的 `skipped` 為 `{原因: 數量}`，原因：`invalid`、`not_json`、`unreadable`、
   `too_large`（> 4 MiB）、`too_many`（> 256 份）、`bad_name`；沒有顯示名的帳號列記為 `no_identity`），不會中斷整張表。
+資料夾由 hangar 每 15 分鐘對每台主機跑 `ssh <host> codeforge usage export > <dir>/<label>.json` 收集填入
+（PM 01M74XA6Y5）：匯出的 bytes 就是 `usage push` 會上傳的那份（驗證過、拿掉 email 與 name），email 從不離開主機。
 - **合併**：每個別名一列；`hosts` 是有這個別名的所有檔名。**5h 與 7d 視窗各自取「擷取時間最新」的那筆觀察**
   （擷取時間 = 視窗的 `seen_at_ms`，沒有就用該帳號的 `written_at_ms`；平手取 `written_at_ms` 較新者，再取標籤較小者），
   **不是取最大 pct**，也不是整個帳號只看 `written_at_ms`：一台主機的 statusline 久未刷新、檔案卻剛寫出，
@@ -296,10 +535,16 @@ forge-stats 與 `validate` 已接受。升級前就存在、之後沒再成長�
   （任一視窗輸了就算）：JSON `old_hosts`、文字與分頁在標籤後加「舊」／old。列的 `observed_at_ms` 與 6 小時過期
   都看被選中視窗的擷取時間。被選中的視窗 `resets_at` ≤ now 就是「已重置」：JSON `reset: true`，畫成「週 已重置」／
   `week reset`（不顯示舊的 pct），不估算、不警示（`projected`、`warn`、`exhaust_at` 皆 `null`）。
-  帳號的 provider 由鍵的形式推得（`codex-<8 碼 hex>` → `codex`，其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
+  帳號的 provider 由鍵的形式推得（`codex-<8 碼 hex>` → `codex`，`agy-<8 碼 hex>`／`agyclaude-<8 碼 hex>` →
+  `agy`／`agyclaude`（見「agy 配額」），`grok-<8 碼 hex>` → `grok`（見「grok 配額」，只有週視窗；預設顯示名
+  `grok-cli`），`grokbot-<8 碼 hex>` → `grokbot`（見「grok 配額」，只有週視窗；預設顯示名 `trinity`），
+  `kimi-<8 碼 hex>` → `kimi`（見「kimi 配額」，5 小時與週視窗；預設顯示名 `kimi-code`），
+  `trinity-<8 碼 hex>` → `trinity`（見「trinity 配額（自報）」，只有週視窗；預設顯示名 `trinity (Grok Bot)`），
+  其他 → `claude`）。有窗口的 codex 帳號照 Claude 帳號一樣合併；
   只出現在 `days`（source codex）的別名是「無來源」列。provider 列（`PROVIDERS`，小寫標籤）在沒有任何該 provider 的列時補一列
-  「無來源」，並帶原因 `source_note`：kimi、qoder、qodercn、agy、grok、cursor、opencode → `web_only`（只有網頁）；
+  「無來源」，並帶原因 `source_note`：qoder、qodercn、cursor、opencode → `web_only`（只有網頁）；
   glm、minimax → `needs_token`（要 token，待 autopilot 鏡像）；codex → `no_window`（帳號沒有窗口資料，有窗口時就不是無來源）。
+  agy、grok、grokbot、kimi 與 trinity 有本機來源，不在 `PROVIDERS` 裡：沒有資料就沒有那一列，不會補一列「只有網頁」。
   文字表與分頁在「無來源」後淡色接「 · 原因」（i18n：`quota.fleet_src_*`、forge-stats `fleetSrc*`）。
 - **畫法**：沿用 G40（`quota_view`）：觀察超過 30 分鐘顯示年齡、超過 6 小時算「過期」、`resets_at` 已過的視窗
   畫成「已重置」而不是 pct（兩個都過就是「已重置，等新觀察」，`state` 為 `stale`）、`pct ≥ 0.90` 標「緊」；寬度 ≤ 100 欄。
@@ -354,6 +599,10 @@ codeforge usage --json
 codeforge usage collect --quiet     # hook 用
 codeforge usage collect --claude-dir /srv/claude/seat-a --claude-dir /srv/claude/seat-b  # 本次掃描並記住（絕對路徑）
 codeforge usage push                # 印出 blob sha
+codeforge usage export              # 印出 push 會上傳的 bytes（驗證後拿掉 email 與 name，不連線、不寫檔），給 hangar 用 ssh 收
+codeforge usage export --hourly     # 同一趟收集後改印每小時（UTC）每帳號每模型的 Claude token 列（codeforge.usage-hourly/1）；沒有 email、name、org、project、路徑
+codeforge usage export --sessions   # 同一趟收集後改印每 session 每帳號每模型的 Claude token 列（codeforge.usage-sessions/1）；與 --hourly 互斥；collect 也會寫 usage-sessions.json
+codeforge usage trinity-import <FILE|->  # 匯入 trinity 自報配額（trinity-usage/1）；`-` 讀標準輸入。不連線、不讀憑證
 codeforge usage accounts [--json]   # G40 配額檢視：讀 autopilot 的配額 mirror（只讀，不探測、不連網）
 codeforge usage pools [--json]      # usage.v1 配額池（CODEFORGE_USAGE_V1 未設 = 關）
 codeforge usage fleet [--dir <D>] [--json] [--out <file>] [--use-target 0.85]  # 全帳號配額表（多主機 summary 合併）

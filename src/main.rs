@@ -18,6 +18,7 @@ mod mnemos;
 mod pet;
 mod platform;
 mod power;
+mod redact;
 mod snapshot;
 mod tui;
 mod usage;

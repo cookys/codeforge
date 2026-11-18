@@ -45,7 +45,7 @@ codeforge lane(team 帳號)的交接。O4 整合面板、G40 真資料檢查腳�
 5. ~/projects/codeforge/doc/BACKLOG.md:B41、B45 的剩餘項。
 
 ## 陷阱
-- team 帳號：cargo 要加 `PATH="$HOME/.cargo/bin:$PATH"`;讀不到 /home/user;fleet 的 send／reply 不能帶 attachments(先 upload,再送 ref)— 見記憶 team-account-toolchain。
+- team 帳號：cargo 要加 `PATH="$HOME/.cargo/bin:$PATH"`;讀不到另一個帳號的 home;fleet 的 send／reply 不能帶 attachments(先 upload,再送 ref)— 見記憶 team-account-toolchain。
 - gate(check-all、doc-drift)要單獨跑，看完 exit code 才 commit;這次踩過兩次 — 見記憶 gate-before-commit。
 - 外掛測試只能 import 相對路徑和 "claude-code";render 裡不能讀 `$.clock`(用 flag 在 timer 裡換算);mock.clock 不會改 `Date.now()`。
 - 新版 autopilot 的 roster 規則會拒絕沒放在 override 區塊裡的座席欄位(codeforge 已改成 override,until 2026-12-07,到期要續)。

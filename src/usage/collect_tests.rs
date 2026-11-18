@@ -134,6 +134,322 @@ fn collect_cli(e: &Env, extra: &[&str], env_cfg: Option<&Path>) -> std::process:
     cmd.output().unwrap()
 }
 
+// Run the real CLI in an isolated test process (the same seam as `collect_dirs_cli_child`).
+// The markers bracket the CLI's own stdout: the test harness's progress lines share the
+// process stdout, so without them the CLI's bytes would be mixed in.
+#[test]
+fn export_cli_child() {
+    use clap::Parser;
+    let Ok(args) = std::env::var("CODEFORGE_EXPORT_TEST_ARGS") else {
+        return;
+    };
+    let args: Vec<String> = serde_json::from_str(&args).unwrap();
+    println!("CF-EXPORT-STDOUT-BEGIN");
+    let cli = crate::cli::Cli::try_parse_from(args).unwrap();
+    crate::cli::run(cli).unwrap();
+    println!("CF-EXPORT-STDOUT-END");
+}
+
+/// The live base the child resolves: the `AUTOPILOT_LIVE_DIR` override is only honored when
+/// RAM-backed, so on a machine with `/dev/shm` the dir lives there; anywhere else the resolver
+/// falls back to `<HOME>/.autopilot` (the child's HOME is the test temp dir).
+fn child_live_dir(e: &Env) -> PathBuf {
+    child_live_labeled(e, &format!(".codeforge-export-test-{}", std::process::id()))
+}
+
+fn child_live_labeled(e: &Env, label: &str) -> PathBuf {
+    #[cfg(unix)]
+    {
+        let d = Path::new("/dev/shm").join(label);
+        if std::fs::create_dir_all(&d).is_ok() {
+            return d;
+        }
+    }
+    e._tmp.path().join(".autopilot")
+}
+
+/// `usage export` in an isolated child: exit status, the bytes the CLI wrote to stdout
+/// (between its markers), and the child's stderr.
+fn export_cli(e: &Env, live: &Path) -> (std::process::ExitStatus, String, String) {
+    export_cli_args(e, live, &["codeforge", "usage", "export"])
+}
+
+fn export_cli_args(
+    e: &Env,
+    live: &Path,
+    args: &[&str],
+) -> (std::process::ExitStatus, String, String) {
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--exact",
+        "usage::collect::tests::export_cli_child",
+        "--nocapture",
+    ])
+    .env_clear()
+    .env("HOME", e._tmp.path())
+    .env("CODEFORGE_DIR", e._tmp.path().join("project"))
+    .env("CODEFORGE_DATA_DIR", &e.data)
+    .env("CODEX_HOME", &e.codex)
+    .env("AUTOPILOT_LIVE_DIR", live)
+    .env(
+        "CODEFORGE_ACCOUNTS_FILE",
+        e._tmp.path().join("accounts.toml"),
+    )
+    .env(
+        "CODEFORGE_EXPORT_TEST_ARGS",
+        serde_json::to_string(&args).unwrap(),
+    )
+    .current_dir(e._tmp.path());
+    let child = cmd.output().unwrap();
+    let s = String::from_utf8_lossy(&child.stdout).into_owned();
+    let begin = "CF-EXPORT-STDOUT-BEGIN\n";
+    let end = "\nCF-EXPORT-STDOUT-END";
+    let b = s.find(begin).expect("the begin marker");
+    let e = s.rfind(end).expect("the end marker");
+    (
+        child.status,
+        s[b + begin.len()..=e].to_string(),
+        String::from_utf8_lossy(&child.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn usage_export_prints_the_validated_email_free_summary() {
+    use crate::usage::quota::Window;
+    let e = env();
+    let live = child_live_dir(&e);
+    // a fresh snapshot with a login email: it enters the summary and must not leave on stdout
+    let quota = live.join("codeforge/usage/quota");
+    std::fs::create_dir_all(&quota).unwrap();
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let snap = Snapshot {
+        alias: "acct-1a2b3c4d".into(),
+        org: None,
+        org_id: None,
+        email: Some("me@example.com".into()),
+        root: None,
+        written_at_ms: now_ms,
+        five_hour: Some(Window {
+            pct: 0.3,
+            resets_at: now_ms / 1000 + 3600,
+            seen: None,
+        }),
+        seven_day: Some(Window {
+            pct: 0.5,
+            resets_at: now_ms / 1000 + 5 * 86_400,
+            seen: None,
+        }),
+    };
+    std::fs::write(quota.join("acct-1a2b3c4d.json"), snap.to_json().to_string()).unwrap();
+    let (status, stdout, stderr) = export_cli(&e, &live);
+    assert!(status.success(), "{stderr}");
+    assert!(stdout.ends_with('\n'), "{stdout:?}");
+    let v: Value = serde_json::from_str(stdout.trim_end()).expect("stdout is one JSON document");
+    assert_eq!(v["schema"], "codeforge.usage-summary/1");
+    let accounts = v["accounts"].as_array().unwrap();
+    assert!(
+        accounts.iter().any(|a| a["alias"] == "acct-1a2b3c4d"),
+        "the snapshot's account is in the export: {accounts:?}"
+    );
+    for a in accounts {
+        assert!(a.get("email").is_none(), "{a}");
+        assert!(a.get("name").is_none(), "{a}");
+    }
+    assert!(!stdout.contains("me@example.com"), "{stdout}");
+    // the local summary keeps the email (only the exported bytes lose it)
+    let local: Value =
+        serde_json::from_slice(&std::fs::read(live.join("codeforge/usage/summary.json")).unwrap())
+            .unwrap();
+    assert_eq!(local["accounts"][0]["email"], json!("me@example.com"));
+    let _ = std::fs::remove_dir_all(&live);
+}
+
+#[test]
+fn usage_export_hourly_prints_the_hourly_document_and_plain_export_stays_the_summary() {
+    use crate::usage::quota::Window;
+    let e = env();
+    let live = child_live_labeled(
+        &e,
+        &format!(".codeforge-hourly-test-{}", std::process::id()),
+    );
+    let quota = live.join("codeforge/usage/quota");
+    std::fs::create_dir_all(&quota).unwrap();
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let snap = Snapshot {
+        alias: "acct-1a2b3c4d".into(),
+        org: None,
+        org_id: None,
+        email: Some("me@example.com".into()),
+        root: None,
+        written_at_ms: now_ms,
+        five_hour: Some(Window {
+            pct: 0.3,
+            resets_at: now_ms / 1000 + 3600,
+            seen: None,
+        }),
+        seven_day: Some(Window {
+            pct: 0.5,
+            resets_at: now_ms / 1000 + 5 * 86_400,
+            seen: None,
+        }),
+    };
+    std::fs::write(quota.join("acct-1a2b3c4d.json"), snap.to_json().to_string()).unwrap();
+    // the project is the last path component; it must not appear in the hourly document
+    write(
+        &e._tmp.path().join(".claude/projects/p/s.jsonl"),
+        &claude(
+            "req_hourly",
+            10,
+            2,
+            json!({
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "cwd": "/srv/work/user@example.com",
+            }),
+        ),
+    );
+    let (status, stdout, stderr) =
+        export_cli_args(&e, &live, &["codeforge", "usage", "export", "--hourly"]);
+    assert!(status.success(), "{stderr}");
+    assert!(stdout.ends_with('\n'), "{stdout:?}");
+    assert!(!stdout.contains('@'), "{stdout}");
+    let v: Value = serde_json::from_str(stdout.trim_end()).expect("stdout is one JSON document");
+    assert_eq!(v["schema"], "codeforge.usage-hourly/1");
+    let rows = v["rows"].as_array().unwrap();
+    assert!(
+        rows.iter()
+            .any(|r| r["account"].is_null() && r["input"] == 10 && r["output"] == 2),
+        "{rows:?}"
+    );
+    let (status, stdout, stderr) = export_cli_args(&e, &live, &["codeforge", "usage", "export"]);
+    assert!(status.success(), "{stderr}");
+    let v: Value = serde_json::from_str(stdout.trim_end()).expect("stdout is one JSON document");
+    assert_eq!(v["schema"], "codeforge.usage-summary/1");
+    let _ = std::fs::remove_dir_all(&live);
+}
+
+#[test]
+fn usage_export_sessions_prints_the_sessions_document_and_collect_writes_the_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let e = env();
+    let live = child_live_labeled(
+        &e,
+        &format!(".codeforge-sessions-test-{}", std::process::id()),
+    );
+    write(
+        &e._tmp.path().join(".claude/projects/p/sess-a.jsonl"),
+        &claude(
+            "req_sess",
+            10,
+            2,
+            json!({
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "cwd": "/srv/work/user@example.com",
+            }),
+        ),
+    );
+    let (status, stdout, stderr) =
+        export_cli_args(&e, &live, &["codeforge", "usage", "export", "--sessions"]);
+    assert!(status.success(), "{stderr}");
+    assert!(stdout.ends_with('\n'), "{stdout:?}");
+    assert!(!stdout.contains('@'), "{stdout}");
+    let v: Value = serde_json::from_str(stdout.trim_end()).expect("stdout is one JSON document");
+    assert_eq!(v["schema"], "codeforge.usage-sessions/1");
+    let rows = v["rows"].as_array().unwrap();
+    assert!(
+        rows.iter().any(|r| {
+            r["session"] == "sess-a"
+                && r["account"].is_null()
+                && r["input"] == 10
+                && r["output"] == 2
+        }),
+        "{rows:?}"
+    );
+    let path = live.join("codeforge/usage/usage-sessions.json");
+    assert!(path.is_file(), "collect must write {path:?}");
+    let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "{path:?} mode {mode:o}");
+    let on_disk: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    assert_eq!(on_disk["schema"], "codeforge.usage-sessions/1");
+    crate::usage::sessions_export::validate(&on_disk).unwrap();
+    let _ = std::fs::remove_dir_all(&live);
+}
+
+#[test]
+fn usage_export_sessions_and_hourly_together_is_rejected() {
+    use clap::Parser;
+    let err =
+        crate::cli::Cli::try_parse_from(["codeforge", "usage", "export", "--hourly", "--sessions"]);
+    assert!(err.is_err(), "hourly and sessions must conflict");
+}
+
+/// Sessions write fails (final path is a directory) but collect still writes fleet-quota.
+/// Forced via the filesystem, with no test-only seam in production code.
+#[test]
+fn collect_writes_fleet_quota_when_sessions_export_fails() {
+    let e = env();
+    let live = child_live_labeled(
+        &e,
+        &format!(".codeforge-sessions-fleet-{}", std::process::id()),
+    );
+    let usage = live.join("codeforge/usage");
+    std::fs::create_dir_all(&usage).unwrap();
+    std::fs::create_dir_all(usage.join(crate::usage::sessions_export::FILE)).unwrap();
+    let hosts = e._tmp.path().join("fleet-hosts");
+    std::fs::create_dir_all(&hosts).unwrap();
+    write(
+        &e._tmp.path().join(".claude/projects/p/sess-a.jsonl"),
+        &claude(
+            "req_fleet",
+            3,
+            1,
+            json!({
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "cwd": "/srv/work/repo",
+            }),
+        ),
+    );
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--exact",
+        "usage::collect::tests::export_cli_child",
+        "--nocapture",
+    ])
+    .env_clear()
+    .env("HOME", e._tmp.path())
+    .env("CODEFORGE_DIR", e._tmp.path().join("project"))
+    .env("CODEFORGE_DATA_DIR", &e.data)
+    .env("CODEX_HOME", &e.codex)
+    .env("AUTOPILOT_LIVE_DIR", &live)
+    .env("CODEFORGE_FLEET_USAGE_DIR", &hosts)
+    .env(
+        "CODEFORGE_ACCOUNTS_FILE",
+        e._tmp.path().join("accounts.toml"),
+    )
+    .env(
+        "CODEFORGE_EXPORT_TEST_ARGS",
+        serde_json::to_string(&["codeforge", "usage", "collect"]).unwrap(),
+    )
+    .current_dir(e._tmp.path());
+    let child = cmd.output().unwrap();
+    let stderr = String::from_utf8_lossy(&child.stderr);
+    assert!(child.status.success(), "{stderr}");
+    assert!(
+        stderr.contains("每 session 用量沒有更新"),
+        "expected sessions warning, got: {stderr}"
+    );
+    let fleet = usage.join("fleet-quota.json");
+    assert!(
+        fleet.is_file(),
+        "fleet-quota must still be written: {fleet:?}"
+    );
+    let summary = usage.join("summary.json");
+    assert!(
+        summary.is_file(),
+        "summary must still be written: {summary:?}"
+    );
+    let _ = std::fs::remove_dir_all(&live);
+}
+
 fn assert_collect_ok(output: std::process::Output) -> String {
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
     assert!(
@@ -659,7 +975,7 @@ fn an_uncommitted_collect_leaves_no_trace() {
     {
         let tx = conn.transaction().unwrap();
         let v: Value = serde_json::from_str(&claude("req_x", 10, 10, json!({}))).unwrap();
-        claude_line(&tx, &v, "acct-a", NOW).unwrap();
+        claude_line(&tx, &v, "acct-a", None, None, Some("sess-x"), NOW).unwrap();
         // dropped without commit: an interrupted collect
     }
     assert_eq!(totals(&conn).1, 0);
@@ -867,6 +1183,7 @@ fn a_root_takes_the_alias_of_the_snapshot_naming_it() {
     let snap = |alias: &str, root: Option<&str>, at: i64| Snapshot {
         alias: alias.into(),
         org: None,
+        org_id: None,
         email: None,
         root: root.map(String::from),
         written_at_ms: at,
@@ -1468,4 +1785,342 @@ fn a_root_without_a_login_is_unattributed_also_its_old_hash_keyed_rows() {
     .unwrap();
     let rows = rows_since(&conn, "2000-01-01").unwrap();
     assert!(rows.iter().any(|r| r.account == "acct-337c98de"));
+}
+
+fn request_accounts(conn: &Connection) -> Vec<(String, String)> {
+    let mut st = conn
+        .prepare("SELECT request_id, account FROM requests ORDER BY request_id")
+        .unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+fn bucket_accounts(conn: &Connection) -> Vec<(String, i64, i64)> {
+    let mut st = conn
+        .prepare("SELECT account, input, requests FROM buckets ORDER BY account")
+        .unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+/// Timeline says A until t1, then B. A request an hour before t1 stays on A; one an hour
+/// after lands on B. The day bucket uses that same account. With no timeline both stay on
+/// the account logged in at collect time, and a row already stored keeps its account.
+#[test]
+fn requests_follow_the_login_timeline_across_a_relogin() {
+    let hour = 3_600_000;
+    let t1 = NOW - 2 * hour;
+    let before = t1 - hour;
+    let after = t1 + hour;
+    let lines = format!(
+        "{}{}",
+        claude("req_before", 10, 1, json!({"timestamp": iso(before)})),
+        claude("req_after", 20, 1, json!({"timestamp": iso(after)})),
+    );
+
+    // no timeline: both rows take the account logged in now (the old rule)
+    let e = env();
+    write(&e.cfg.join("projects/p/s.jsonl"), &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-bbbbbbbb".into());
+    collect(&mut conn, &rs, &[], NOW).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_after".into(), "acct-bbbbbbbb".into()),
+            ("req_before".into(), "acct-bbbbbbbb".into()),
+        ]
+    );
+
+    // timeline: A until t1, then B
+    let e = env();
+    let path = e.cfg.join("projects/p/s.jsonl");
+    write(&path, &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-bbbbbbbb".into());
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-bbbbbbbb", t1).unwrap();
+    let logins =
+        std::fs::read_to_string(usage.join(format!("logins-{}.json", rs[0].hash))).unwrap();
+    assert!(!logins.contains('@'), "{logins}");
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_after".into(), "acct-bbbbbbbb".into()),
+            ("req_before".into(), "acct-aaaaaaaa".into()),
+        ]
+    );
+    assert_eq!(
+        bucket_accounts(&conn),
+        vec![
+            ("acct-aaaaaaaa".into(), 10, 1),
+            ("acct-bbbbbbbb".into(), 20, 1),
+        ]
+    );
+
+    // already stored: a reread, under a timeline that would now call both A, keeps each row's
+    // account. The grown tokens land on that same bucket (proves the file was read again).
+    std::fs::remove_file(usage.join(format!("logins-{}.json", rs[0].hash))).unwrap();
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    let rewritten = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("\"input_tokens\":10", "\"input_tokens\":15");
+    std::fs::write(&path, rewritten).unwrap();
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_after".into(), "acct-bbbbbbbb".into()),
+            ("req_before".into(), "acct-aaaaaaaa".into()),
+        ]
+    );
+    assert_eq!(
+        bucket_accounts(&conn),
+        vec![
+            ("acct-aaaaaaaa".into(), 15, 1),
+            ("acct-bbbbbbbb".into(), 20, 1),
+        ]
+    );
+}
+
+/// Review g1 s0: right after a re-login A -> B, A's snapshot naming the root is still fresh and
+/// wins `root_alias`. collect must observe the login (B), not that alias: no A entry is
+/// appended after B, and a request made after the switch stays B's. Logged out: the stored
+/// timeline is still applied.
+#[test]
+fn collect_observes_the_login_not_a_fresh_snapshot_of_the_previous_account() {
+    let hour = 3_600_000;
+    let t1 = NOW - 2 * hour;
+    let lines = claude("req_after", 20, 1, json!({"timestamp": iso(t1 + hour)}));
+    let e = env();
+    write(&e.cfg.join("projects/p/s.jsonl"), &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-bbbbbbbb".into());
+    let hash = rs[0].hash.clone();
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    crate::usage::logins::observe(&usage, &hash, "acct-bbbbbbbb", t1).unwrap();
+    let a_snap = Snapshot {
+        alias: "acct-aaaaaaaa".into(),
+        org: None,
+        org_id: None,
+        email: None,
+        root: Some(hash.clone()),
+        written_at_ms: NOW - 60_000,
+        five_hour: None,
+        seven_day: None,
+    };
+    collect_with_logins(
+        &mut conn,
+        &rs,
+        std::slice::from_ref(&a_snap),
+        NOW,
+        Some(&usage),
+    )
+    .unwrap();
+    let t = crate::usage::logins::read(&usage, &hash).unwrap();
+    assert_eq!(t.alias_at(NOW), Some("acct-bbbbbbbb"));
+    assert_eq!(
+        request_accounts(&conn),
+        vec![("req_after".into(), "acct-bbbbbbbb".into())]
+    );
+
+    // logged out now: the stored timeline still attributes, nothing is appended
+    let e = env();
+    write(&e.cfg.join("projects/p/s.jsonl"), &lines);
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = None;
+    let hash = rs[0].hash.clone();
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &hash, "acct-aaaaaaaa", t1 - 10 * hour).unwrap();
+    crate::usage::logins::observe(&usage, &hash, "acct-bbbbbbbb", t1).unwrap();
+    let before = std::fs::read(usage.join(format!("logins-{hash}.json"))).unwrap();
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        std::fs::read(usage.join(format!("logins-{hash}.json"))).unwrap(),
+        before
+    );
+    assert_eq!(
+        request_accounts(&conn),
+        vec![("req_after".into(), "acct-bbbbbbbb".into())]
+    );
+}
+
+/// One root, two sessions in the same hour. Session A is pinned to B; session B is not,
+/// so the login timeline (A) still owns it. A's subagent transcript is filed under the pin.
+#[test]
+fn a_pinned_session_and_its_subagent_split_from_the_login_timeline() {
+    let hour = 3_600_000;
+    let ts = NOW - hour;
+    let line = |rid: &str, input: u64| claude(rid, input, 1, json!({"timestamp": iso(ts)}));
+    let e = env();
+    write(&e.cfg.join("projects/p/sess-a.jsonl"), &line("req_a", 10));
+    write(&e.cfg.join("projects/p/sess-b.jsonl"), &line("req_b", 20));
+    write(
+        &e.cfg.join("projects/p/sess-a/subagents/agent-1.jsonl"),
+        &line("req_sub", 7),
+    );
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-aaaaaaaa".into());
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-aaaaaaaa", ts - 10 * hour).unwrap();
+    crate::usage::logins::pin_session(&usage, &rs[0].hash, "sess-a", "acct-bbbbbbbb", ts).unwrap();
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_a".into(), "acct-bbbbbbbb".into()),
+            ("req_b".into(), "acct-aaaaaaaa".into()),
+            ("req_sub".into(), "acct-bbbbbbbb".into()),
+        ]
+    );
+    assert_eq!(
+        bucket_accounts(&conn),
+        vec![
+            ("acct-aaaaaaaa".into(), 20, 1),
+            ("acct-bbbbbbbb".into(), 17, 2),
+        ]
+    );
+}
+
+/// A token lane without an override alias is pinned unattributed (hangar 01M77KXH): its
+/// requests carry no account, while an unpinned session on the same root keeps the login's.
+#[test]
+fn an_unattributed_pin_files_the_session_under_no_account() {
+    let hour = 3_600_000;
+    let ts = NOW - hour;
+    let line = |rid: &str, input: u64| claude(rid, input, 1, json!({"timestamp": iso(ts)}));
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/sess-tok.jsonl"),
+        &line("req_tok", 10),
+    );
+    write(
+        &e.cfg.join("projects/p/sess-login.jsonl"),
+        &line("req_login", 20),
+    );
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let mut rs = roots(std::slice::from_ref(&e.cfg), Some(&e.codex));
+    rs[0].account = Some("acct-aaaaaaaa".into());
+    let usage = e._tmp.path().join("usage-live");
+    crate::usage::logins::observe(&usage, &rs[0].hash, "acct-aaaaaaaa", ts - 10 * hour).unwrap();
+    crate::usage::logins::pin_session(
+        &usage,
+        &rs[0].hash,
+        "sess-tok",
+        crate::usage::logins::PIN_UNATTRIBUTED,
+        ts,
+    )
+    .unwrap();
+    collect_with_logins(&mut conn, &rs, &[], NOW, Some(&usage)).unwrap();
+    assert_eq!(
+        request_accounts(&conn),
+        vec![
+            ("req_login".into(), "acct-aaaaaaaa".into()),
+            ("req_tok".into(), UNATTRIBUTED.into()),
+        ]
+    );
+}
+
+fn request_sessions(conn: &Connection) -> Vec<(String, Option<String>)> {
+    let mut st = conn
+        .prepare("SELECT request_id, session FROM requests ORDER BY request_id")
+        .unwrap();
+    st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap()
+}
+
+/// New Claude rows store the transcript session id (subagent → parent). A row that
+/// already existed with session NULL keeps NULL after a later collect / token bump.
+#[test]
+fn new_requests_store_session_and_old_null_rows_stay_null() {
+    let ts = NOW - 3_600_000;
+    let line = |rid: &str, input: u64| claude(rid, input, 1, json!({"timestamp": iso(ts)}));
+    let e = env();
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    // a pre-existing row (as if collected before the session column shipped)
+    conn.execute(
+        "INSERT INTO requests
+         (request_id, day, source, account, model, project, speed,
+          input, output, cw5m, cw1h, read, seen_ms, session)
+         VALUES ('req_old', '2026-11-03', 'claude', 'acct-aaaaaaaa', 'claude-opus-5-5',
+                 'repo', 'standard', 5, 1, 0, 0, 0, ?1, NULL)",
+        [ts],
+    )
+    .unwrap();
+    write(&e.cfg.join("projects/p/sess-a.jsonl"), &line("req_a", 10));
+    write(&e.cfg.join("projects/p/sess-b.jsonl"), &line("req_b", 20));
+    write(
+        &e.cfg.join("projects/p/sess-a/subagents/agent-1.jsonl"),
+        &line("req_sub", 7),
+    );
+    // bump the old row's tokens so collect updates it in place
+    append(&e.cfg.join("projects/p/sess-b.jsonl"), &line("req_old", 9));
+    let rs = roots(std::slice::from_ref(&e.cfg), None);
+    collect(&mut conn, &rs, &[], NOW).unwrap();
+    assert_eq!(
+        request_sessions(&conn),
+        vec![
+            ("req_a".into(), Some("sess-a".into())),
+            ("req_b".into(), Some("sess-b".into())),
+            ("req_old".into(), None),
+            ("req_sub".into(), Some("sess-a".into())),
+        ]
+    );
+    let input: i64 = conn
+        .query_row(
+            "SELECT input FROM requests WHERE request_id = 'req_old'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(input, 9, "token bump kept the same row");
+}
+
+/// A transcript stem outside the session grammar (e.g. `foo.bar`) is stored as NULL.
+/// Collect still succeeds; the good session is exported; the bad stem is absent.
+#[test]
+fn unusable_transcript_stem_stores_null_and_is_absent_from_sessions_export() {
+    let ts = NOW - 3_600_000;
+    let line = |rid: &str, input: u64| claude(rid, input, 1, json!({"timestamp": iso(ts)}));
+    let e = env();
+    write(
+        &e.cfg.join("projects/p/sess-good.jsonl"),
+        &line("req_good", 10),
+    );
+    write(
+        &e.cfg.join("projects/p/foo.bar.jsonl"),
+        &line("req_bad", 20),
+    );
+    let (mut conn, _) = store::open(&store::usage_dir(&e.data)).unwrap();
+    let rs = roots(std::slice::from_ref(&e.cfg), None);
+    collect(&mut conn, &rs, &[], NOW).unwrap();
+    assert_eq!(
+        request_sessions(&conn),
+        vec![
+            ("req_bad".into(), None),
+            ("req_good".into(), Some("sess-good".into())),
+        ]
+    );
+    let host = crate::usage::summary::host_alias("test-host");
+    let v = crate::usage::sessions_export::build(&conn, &host, NOW).unwrap();
+    crate::usage::sessions_export::validate(&v).unwrap();
+    let rows = v["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["session"], "sess-good");
+    let text = v.to_string();
+    assert!(!text.contains("foo.bar"), "bad stem leaked: {text}");
 }

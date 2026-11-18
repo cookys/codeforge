@@ -6,6 +6,14 @@
 - Not goals now: MUD 後段、自己產生配額資料、hosted CI。
 - Source: operator 已確認。；操作員 d-fb9989dc 定案（2026-11-05）
 
+## 這個 repo 是你的
+
+這個 repo 是你的，你是它的長期維護者。看到壞掉、過時、重複或缺測試的地方，在授權範圍內直接修，不用等人指派；修不了的登進 backlog，寫明影響。不要把問題留給「之後的人」。
+
+## 授權範圍內做到驗收才停
+
+授權範圍內的工作做到驗收才停：真實使用者在真實 build 上走過核心路徑，並附一行證據（截圖、指令或 URL）。測試綠、審查通過、推送都只是中間步驟。只有三種情況可以中途停下：需要 tier-2 破壞性操作、超出授權、要改 Goal 或里程碑。停下時一次說清楚，附上選項和建議。
+
 Claude Code 工作指南。
 
 ## Project Overview
@@ -30,7 +38,7 @@ CodeForge 是 **CodePower 生態系裡的私人鍛造間**（personal smithy）�
 - **Storage**: rusqlite (bundled SQLite), WAL mode
 - **Terminal**: crossterm + termcolor
 - **I18n**: rust-i18n v3 (compile-time), `locales/` YAML
-- **LLM**: dream/ship via `claude -p` → Haiku API → rule-based (3-layer); AI commentary via Haiku API → rule-based (2-layer, no `claude -p`)
+- **LLM**: dream/ship via `claude -p` → `agy` → `codex exec` → Haiku API → rule-based (5-layer); AI commentary via Haiku API → rule-based (2-layer, no `claude -p`)
 - **HTTP**: reqwest (async, TLS)
 - **Async**: tokio (for daemon, Phase 2+)
 
@@ -42,7 +50,7 @@ cargo build --release          # release build → target/release/codeforge
 cargo check                    # fast type-check (no binary)
 cargo test                     # run tests
 cargo clippy                   # lint
-./scripts/check-all.sh         # THE merge gate (no hosted CI since G38): fmt, clippy --all-targets, test (flake guard), cjk-safe, doc-drift, cargo deny, shellcheck, checkout guard (main clone stays on develop), MSRV release smoke
+./scripts/check-all.sh         # THE merge gate (no hosted CI since G38): fmt, clippy --all-targets, test (flake guard), cjk-safe, doc-drift, cargo deny, shellcheck, forge-stats plugin tests, g40 real-data scans, trinity-import test, checkout guard (main clone stays on develop), release archive hermetic test (B43), MSRV release smoke
 ./scripts/package.sh <target>  # release tarball + .sha256 named as install.sh downloads them (dist/); --cross, --max-glibc; reproducible
 ./scripts/repro-check.sh <target> # build HEAD twice at two paths; archives must match
 ./scripts/release-local.sh     # local release: linux x86_64/aarch64 via cross (glibc <= 2.35), install.sh verified from a local server, dist/RELEASE.txt; --publish = DRAFT only (operator publishes)
@@ -85,13 +93,14 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 
 - **CJK**: cut user-generated strings with `.chars().take(N).collect::<String>()`, never `&s[..N]` (`scripts/check-cjk-safe.sh` enforces).
 - **Statusline is global**: `codeforge statusline` runs in every Claude Code session of every project; a change hits every session header.
-- **SessionEnd chain is global**: `codeforge dream --quiet` → `codeforge ship --no-hook` runs in every project; `--quiet` is mandatory (no stdout in a hook), and `ship --no-hook` never fails SessionEnd (single attempt, Mnemos opt-in gated — no POST and no `ship-failed/` write when not opted in).
+- **Display rules come from the operator**: before changing what the statusline or band shows (which form draws, when the pet/RPG panel appears), the statusline is exactly one line in every state and never draws the pet (operator via PM 01M7MEY1, 2026-11-17; golden `tests/statusline_one_line.rs`); the pet lives in its own tab (PM 01M78CB6, 01M7MD5Z). A lane-added safeguard may not override them (B34 `band_seen` did, reverted in 48d2489).
+- **SessionEnd chain is global**: emit-session → session-digest → `codeforge dream --quiet` → `codeforge ship --no-hook` → `codeforge usage collect --quiet` runs in every project (`src/cli/install.rs:832-859`; usage collect `src/cli/install.rs:849-858`); `--quiet` is mandatory (no stdout in a hook), and `ship --no-hook` never fails SessionEnd (single attempt, Mnemos opt-in gated — no POST and no `ship-failed/` write when not opted in).
 - **ship is production critical path**: schema/API changes get core-pipeline rigor; the Mnemos contract's single source of truth is `cookys/mnemos:docs/specs/10-source-contract.md`, never duplicated here. Keep the retry policy and `~/.codeforge/ship-failed/` persistence + next-ship replay (a dropped payload leaves Mnemos incomplete).
 - **Daemon owns `pet_snapshot`**: the CLI never writes it (it appends `xp_events` + `event_inbox` only).
-- **Hook placement**: product-wide hooks live only in the global install (`codeforge install --hooks`/`--all`); never move dream/ship into `--project-hooks` (dual-fire in the clone). Project `.claude/settings.json` holds the clone-only dev hooks. The SessionStart recall injector stays in global settings.json, not a plugin `hooks.json` (additionalContext unreliable, CC #16538). Re-install must stay idempotent: `patch_hooks` sweeps every codeforge-owned group (and legacy pre-marker commands) across all hook types before re-adding. `cleanupPeriodDays` goes into a shared settings.json (symlink or git-tracked) only with `--cleanup-period-days`.
+- **Hook placement**: product-wide hooks live only in the global install (`codeforge install --hooks`/`--all`); never move dream/ship into `--project-hooks` (dual-fire in the clone). Project `.claude/settings.json` holds the clone-only dev hooks (`check-improvements.js` SessionStart, `check-dev-flow.js` PreToolUse; `src/cli/install.rs:783-801`). The global set today: SessionStart emit-session + the two recall injectors; SessionEnd emit-session → session-digest → `dream --quiet` → `ship --no-hook` → `usage collect --quiet`; PreCompact session-digest (`src/cli/install.rs:805-865`). The SessionStart recall injectors (local `codeforge memory context --hook` + central `codeforge mnemos-cli context --hook`; `src/cli/install.rs:806-829`) stay in global settings.json, not a plugin `hooks.json` (additionalContext unreliable, CC #16538). Re-install must stay idempotent: `patch_hooks` sweeps every codeforge-owned group (and legacy pre-marker commands) across all hook types before re-adding. `cleanupPeriodDays` goes into a shared settings.json (symlink or git-tracked) only with `--cleanup-period-days`.
 - **Keep projects independent**: never import CodePower code into CodeForge tests or vice versa; they meet at runtime (hooks + CLI) only.
 - **Memory stays per project**: dream/learn write the CWD project's `.codeforge/`; one shared store only when `CODEFORGE_DIR` selects it.
-- **LLM key is optional**: dream/ship use the chain `claude -p` → `ANTHROPIC_API_KEY` (Haiku) → rule-based; never make a key required.
+- **LLM key is optional**: dream/ship use the 5-layer chain `claude -p` → `agy` → `codex exec` → `ANTHROPIC_API_KEY` (Haiku) → rule-based (headless three: `src/llm.rs:313-339`; key and rule-based layers in the callers: `src/dream/compile.rs:471-490`, `src/cli/ship.rs:199-225`); never make a key required.
 
 ## Conventions
 
@@ -123,6 +132,7 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 | `doc/specs/codeforge-agent-coupling.md` | **ADR** — codeforge↔coding-agent 耦合接縫（4 surface：transcript→signal / hook wiring / session 事件 / statusline）。決策 *A-with-seam*：先綁 CC、命名守住接縫、不過早抽象，留多-agent（B）路 |
 | `doc/specs/codeforge-usage.md` | **用量（G36）** — 每帳號配額快照 + statusline 用量列、轉錄檔收集器（只存數字）、成本估算、`summary.json` 契約與 `usage push` |
 | `doc/specs/codeforge-mod-ui.md` | **開發依據** — Claude Code mod UI 能力與限制（已覆核，CC 2.1.314）、owner 終端實測（mod `Image` 在 Windows 終端不可用 → 像素走 Raster 半格）、codeforge↔mod 分工（`pet.json` 契約） |
+| `doc/specs/forge-stats-ux-gate.md` | **UX 閘門** — forge-stats 畫面改動上線前必過：carbon-high + astra 皆 ≥8/10 且無 Critical、最多 3 輪；評分項目（好用／fancy）、必交截圖 S1–S6 |
 | `.claude/rpg-engine-spec.md` | Phase 1 architectural decisions (daemon model, write ownership) |
 | `.claude/i18n-spec.md` | i18n two-layer design (compile-time UI + runtime content) |
 
@@ -130,7 +140,7 @@ directory is touched; Codex and agy do not descend, so a dispatch brief must nam
 
 ## forge-stats mod
 
-The **forge-stats mod** lives in `plugins/forge-stats/` and is a global plugin, installed from the repo's directory marketplace (`.claude-plugin/marketplace.json`; `claude plugin marketplace add <codeforge>` + `claude plugin install forge-stats@codeforge`), so every project's session loads it (PM G33). It reads `pet.json` and autopilot's `autopilot.fleet` state and never spawns codeforge. Test: `claude plugin test plugins/forge-stats`. Specs: `doc/specs/codeforge-mod-ui.md`, `doc/specs/tui-guideline.md`.
+The **forge-stats mod** lives in `plugins/forge-stats/` and is a global plugin, installed from the repo's directory marketplace (`.claude-plugin/marketplace.json`; `claude plugin marketplace add <codeforge>` + `claude plugin install forge-stats@codeforge`), so every project's session loads it (PM G33). It reads `pet.json` and autopilot's `autopilot.fleet` state and never spawns codeforge. Test: `claude plugin test plugins/forge-stats`. Any change to what it draws passes the UX gate first (`doc/specs/forge-stats-ux-gate.md`). Specs: `doc/specs/codeforge-mod-ui.md`, `doc/specs/tui-guideline.md`.
 
 ## Knowledge Management
 

@@ -11,18 +11,18 @@ Mnemos ship/cite: `src/mnemos/CLAUDE.md`.
 ```
 src/
   main.rs           ← clap CLI dispatch (locale: CODEFORGE_LOCALE → system locale → "en")
-  llm.rs            ← LLM backend chain: claude -p headless → ANTHROPIC_API_KEY (Haiku) → rule-based
-  cli/              ← command handlers (one file per command)
+  llm.rs            ← LLM backend chain: claude -p → agy → codex exec → ANTHROPIC_API_KEY (Haiku) → rule-based
+  cli/              ← command handlers (one file per command; also adopt, attach, bootstrap, commentary, craft, daemon, doctor, emit, hook, inventory, recall, selfupdate, snapshot, strategy, subagent_statusline, tui, usage, use_item, world — see `cli/mod.rs`)
     init.rs         ← codeforge init
     learn.rs        ← codeforge learn
-    dream.rs        ← codeforge dream (--quiet / --only <op>)
+    dream.rs        ← codeforge dream (--quiet / --only <op> / --dry-run)
     search.rs       ← codeforge memory search
     ingest.rs       ← codeforge ingest
     pet.rs          ← codeforge pet
-    statusline.rs   ← codeforge statusline (ANSI 5-line panel + right-column pet art)
+    statusline.rs   ← codeforge statusline (exactly one ANSI line, never the pet)
     install.rs      ← codeforge install (--hooks / --all / --project-hooks) + uninstall
     ship.rs         ← codeforge ship (Mnemos L2 ledger)
-    mnemos_cli.rs   ← codeforge mnemos-cli (cite / cite-detect / context)
+    mnemos_cli.rs   ← codeforge mnemos-cli (cite / cite-detect / context / probe)
   memory/
     l0.rs           ← raw signals (JSONL file-based)
     l1.rs           ← compiled knowledge (SQLite FTS5)
@@ -44,7 +44,9 @@ src/
     ability.rs      ← ability unlock catalog (display-only; combat effects not yet wired)
   daemon/           ← Phase 2 MUD engine: tick loop, ECS, event_inbox, combat, mob_scanner + dup_detect (Doppelganger), loot, strategy, mood, lifecycle
   combat (in daemon/) ← auto-combat resolution
-  mnemos/           ← ship transport/digest/config/state/cite/evidence (Mnemos source role)
+  mnemos/           ← ship transport/digest/config/state/cite/evidence + autocite, cite_detect, context, health, ledger (Mnemos source role)
+  usage/            ← G36/G40 usage + quota: collectors, quota mirror/view, summary.json, fleet quota (see doc/specs/codeforge-usage.md)
+  live.rs, platform.rs ← live-dir resolution; platform helpers
   clan/             ← CodePower clan content provider skeleton (not yet wired to village.rs)
   craft/            ← loot crafting + active items (Phase 3e)
   tui/              ← alt-screen TUI + Local Map (Phase 2c)
@@ -53,7 +55,7 @@ src/
   snapshot/         ← codeforge snapshot ASCII monthly card (Phase 3f)
   db/
     mod.rs          ← Context, Connection, PRAGMA setup
-    migrations.rs   ← schema migrations (inline SQL)
+    schema.sql      ← base schema; `pub mod migrations` (inline SQL) lives in mod.rs
   import/           ← claude.ai export parser
   power/            ← CharacterStats (5 fields: ATK/DEF/SUP/VER + HP/Activity)
 ```
@@ -90,10 +92,10 @@ The CodePower repo is the primary test environment for Phase 2 features:
 
 ### LLM Backend (Shared, key-optional)
 
-**dream/ship** resolve their LLM via a 3-layer **fallback chain**, not a single key:
-`claude -p` headless (Claude Code CLI, no key, Opus default, highest quality) → `ANTHROPIC_API_KEY` (direct Haiku API, per-token billing) → rule-based passthrough (no LLM). See `src/llm.rs` + `src/dream/compile.rs` + `src/cli/ship.rs`. **AI commentary is NOT on this chain** — it's 2-layer only (Haiku API if `ANTHROPIC_API_KEY` set, else rule-based; never `claude -p` — `src/commentary/` doesn't import `crate::llm`). See `doc/concepts.md` for the user-facing explanation.
+**dream/ship** resolve their LLM via a 5-layer **fallback chain**, not a single key:
+`claude -p` headless (Claude Code CLI, no key; model per use: ship digest `CODEFORGE_DIGEST_MODEL` default opus, dream compile `CODEFORGE_COMPILE_MODEL` default haiku) → `agy` (Gemini, `CODEFORGE_AGY_MODEL`) → `codex exec` → `ANTHROPIC_API_KEY` (direct Haiku API, per-token billing) → rule-based passthrough (no LLM). See `src/llm.rs` + `src/dream/compile.rs` + `src/cli/ship.rs`. **AI commentary is NOT on this chain** — it's 2-layer only (Haiku API if `ANTHROPIC_API_KEY` set, else rule-based; never `claude -p` — `src/commentary/` doesn't import `crate::llm`). See `doc/concepts.md` for the user-facing explanation.
 
-`ANTHROPIC_API_KEY` is therefore **optional** — only the second fallback. When set, it's read from the `~/.claude/` environment or shell profile (shared with CodePower), not a per-project `.env` (though `dotenvy` will also pick up a local `.env`). `.env.example` lists it under Optional.
+`ANTHROPIC_API_KEY` is therefore **optional** — only the fourth fallback. When set, it's read from the `~/.claude/` environment or shell profile (shared with CodePower), not a per-project `.env` (though `dotenvy` will also pick up a local `.env`). `.env.example` lists it under Optional.
 
 ### Dev Rule: Keep projects independent
 

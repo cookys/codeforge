@@ -550,7 +550,11 @@ test('the band: chips after the fleet counts and before the pet, nothing without
   const at = async (cols: number) => {
     const ui = await $.ui.mount(band(cols))
     const boxes = (await ui.findAll({ type: 'Box' })).map(b => b.props.key)
-    const t = boxes.includes('beneath') ? undefined : await flat(ui)
+    // The engine's unkeyed composition wrapper and empty test part can accompany the summary.
+    if (boxes[0] === undefined) boxes.shift()
+    expect(boxes.filter(k => k !== 'beneath')).toEqual(['summary'])
+    expect(await ui.find({ type: 'Raster' })).toBe(undefined)
+    const t = await flat(ui)
     await ui.unmount()
     return t
   }

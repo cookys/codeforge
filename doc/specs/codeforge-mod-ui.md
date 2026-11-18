@@ -101,14 +101,19 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
 - **band 版面（statusline-band，2026-10-31）**：`/forge-stats layout band|pane`（存 `$.store`，預設 band）。band 畫在
   prompt 正上方（AbovePrompt），分級與排欄見下面兩條；記憶與大腦讀 `codeforge/session/<sid>.json`。mod 每 2 秒寫
   `codeforge/mod-alive/<sid>.json` 心跳（`schema`、`session_id`、`written_at_ms`、`layout`、`summary_row`、`band_seen`）；
-  statusline 讀到自己 session、未滿 10 秒、`layout: band`、而且 `band_seen` 不是 `false` 的心跳就縮成 2 行：寵物歸 band
+  statusline 讀到自己 session、未滿 10 秒、`layout: band` 的心跳就縮成 2 行：寵物歸 band
   （autopilot 的 forge 分頁），statusline 只留不必即時更新的資料（owner 2026-10-31 定案；原本另看 blit 是否成功的
-  `pet_shown`，已拿掉）。**`band_seen`（B34，2026-11-07）**：forge-stats 的 band 在最近 30 秒內真的畫過（摘要列或欄位）才是
-  `true`。AbovePrompt 一次只有一個實例，鏈上排在上面的 plugin 不呼叫 `next(e)`（例如 autopilot 的 O4 外殼）就輪不到
-  forge-stats，這時 `band_seen` 會變成 `false`，statusline 恢復完整版、把寵物留著。`layout` 照舊寫使用者選的版面，
-  因為 autopilot 靠它決定要不要把一列交給 forge-stats；如果 `layout` 跟著畫面變，forge-stats 就永遠拿不回那一列。
+  `pet_shown`，已拿掉）。**`band_seen`（B34，2026-11-07；statusline 自 2026-11-15 起不再讀）**：forge-stats 的 band 在最近 30 秒內真的畫過才是
+  `true`。B34 曾讓 statusline 在 `band_seen: false` 時恢復完整版（RPG 大塊）。但 autopilot 的 O4 外殼自己畫 band、不呼叫 `next(e)`，
+  `/reload-plugins` 後 forge-stats 還沒畫過，於是操作員又看到整塊橫幅（PM 01M7E1M5）。這違反 owner 2026-10-31 的定案（卡 d-feb71b14 → A）：
+  有 band 心跳就縮，不看畫面上實際畫了什麼。寵物標籤放在 autopilot 的 band（PM 01M78CB6）。所以 statusline 只看 `layout`；
+  `band_seen` 欄位仍照寫（舊版 statusline 讀它），之後再一起拿掉。紅測：`heartbeat_band_not_seen_still_compacts_no_rpg_panel_after_reload`。**2026-11-17 起（PM 01M7MEY1）statusline 不再讀心跳，任何狀態都只畫一行、不畫寵物**；本段留作歷史，golden 測試是 `tests/statusline_one_line.rs`。
   閒置時沒有重畫：超過半個視窗（15 秒）沒畫，心跳就請一次重畫，band 還在螢幕上的話會在下一拍更新。
   舊版 forge-stats 沒有 `band_seen` 欄位，statusline 照舊縮。
+  - **autopilot band-facts 合約（2026-11，對照 autopilot 的 `mods/band-statusline-map.md`）**：精簡版另外讀
+    `<live_base>/autopilot/band-facts/<sid>.json`（上限 4096 位元組、同 session id、age `< 30 s`、`v == 1`；無檔或過期即視同不存在）：
+    - `contract`：`quota_warn_pct`（預設 `80`）、`quota_error_pct`（預設 `100`）、`round`（`"floor"` 預設／`"round"`）、`bar_on`/`bar_off`（預設 `▰`/`▱`）、`alert`（預設 `▲`）、`age`（預設 `◷`）；任一鍵缺漏或無效就退回該鍵預設值。量表顏色一律依 `< warn` 綠 / `warn..error` 黃 / `>= error` 紅，保留每列最多一個黃色的規則；他帳號警示固定顯示 `7d` 標籤與 `alert`（`▲`）。
+    - `progress` 與 `spend`：有效時接在精簡版第一列（`branch` 之後），依序為 `● N`（`live_dispatches > 0`）、`position`（≤16 字元）、`unit`（≤12 字元）、`↺ R<review_round>`、`◆ N`（`decisions_open > 0`）、`$<floor usd>`（`cap_usd > 0` 時附 5 格 `usd/cap_usd` 量表）。欄位可為 `null`（略過）；字串一律先去控制字元再依字元數截斷。列寬不足時由清單尾端反序先丟棄新增片段，最後才影響既有身份與路徑。
   Claude Code 只在事件時重跑 statusLine（新的 assistant 訊息、/compact、模式切換…），閒置時不會重跑，心跳變了畫面也不跟著變
   （2026-11-07 rig 實測：110 秒只跑了一次）。所以 `codeforge install` 會寫 `statusLine.refreshInterval: 10`（秒，和心跳 10 秒
   的新鮮度一致）；設定裡原本就有的值（使用者自己設的）不覆蓋。操作員卡 d-f6e451d2。install 每次真的改動 settings.json 前，先把原檔存成
@@ -138,6 +143,9 @@ kitty 路徑要求 **Unicode placeholder**（WezTerm 未實作，wez/wezterm#453
   30 秒寫一次（讀的一方超過 60 秒沒更新就標「資料 N 分鐘前」）；`ui.render` 裡不能寫。autopilot 的面板開著時會寫
   `autopilot.panel_open_at_ms`，forge-stats 讀到最近一分鐘內的值，就照常更新配額鏡像，不需要自己的 band 或 pane 畫過。
   forge-stats 自己的 pane 等操作員看過整合面板的預覽、點頭後才退場。
+  `pet.icon`（選填，2026-11-17，PM 01M7MD5Z）：寵物分頁在 autopilot-live 分頁列上的圖示 `{id, emoji, fallback, text}`，`text` 恰好 2 格，
+  autopilot 只畫 `text`。emoji 或退回符號由 forge-stats 在 session 開始時依環境決定（`hooks/pet-icon.ts`）：`TERM` 是 linux／dumb／vt*／ansi／cons* 或
+  locale（LC_ALL > LC_CTYPE > LANG）不是 UTF-8 就退回兩個 ASCII 字元；`CODEFORGE_PET_ICON` 選候選（cat／chick／crab），`plain` 強制退回。
   O4 寬度分級（2026-11-06）另加選填的 `side`（右側摘要欄的用量、各模型比例、記憶），分工、欄寬和各級用法見
   [`panel-band-contract.md`](panel-band-contract.md)。
 - **prompt 提示行的尾巴（PromptHint tail，2026-11-05，PM 採用 slot 調查的建議）**：forge-stats 只設 `PromptHint` 的

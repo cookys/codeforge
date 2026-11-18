@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.327
+▝▜██████▀  Sonnet 5.5 · Claude Team
+ ▝▝   ▝▝   ~/projects/codeforge/.claude/worktrees/pane-gate/scripts/pane-gate/gate-shots/cwd
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+◌ 待命 │ 艦隊 ✗ 2  ⊘ 4  ○ 3  ● 0  ⋯ 0 │ QC ▲ │ 開發 ⚑ 11 │ [+面板]                                                                                          [-]
+                                                                1 現況 2 待決(3) 3 艦隊(✗2 ⊘4 ○3) 4 額度(✗2 ?3 ▲5) 5 派工 6 審查 7 花費 8 殘留 9 寵物 0 鍛
+                                                          tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try "how does collect_tests.rs work?"
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Sonnet 5.5 ── ~/projects/codeforge/.claude/worktrees/pane-gate/scripts/pane-gate/gate-shots/cwd chore/pane-gate-scripts  5h ▱▱▱▱▱▱ 9% 52m   7d ▰▰▰▰▰▱ 94% 4
+  ⏵⏵ auto mode on (shift+tab to cycle)
