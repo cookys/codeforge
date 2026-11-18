@@ -299,6 +299,42 @@
 - **Queued-By**: PM 01M7QPZ6（經 hangar 01M7QQ2YC29S5N8AZ61JKYCG4T）
 - **Context**: 同一 commit、同一 rustc，建出來應該一樣；做好後推版要求可以改成「各席 sha16 等於 package.sh 封存檔裡的那支」
 
+### absorb 寫入 L0 時沒有記來源 slug，事後查不出某列來自哪個專案
+- **Id**: B65
+- **Status**: open
+- **Since**: 2026-11-19
+- **Origin**: PM
+- **Problem**: `src/dream/absorb.rs` 用 `Signal::new(content, SignalSource::AbsorbedMemory)` 寫入，沒有記下讀的是哪個 Claude 專案目錄（slug）和檔名。8a5f30a 之後只讀當前專案，但換版後一台機器在 codeforge 專案新增 41 列，事後只能用名稱比對證明「不是 PM 的記憶」，證明不了「全部是本專案的」；換版前已吸進來的跨專案條目也分不出來。
+- **Impact**: 隱私稽核時沒辦法直接數「來自其他專案」的列數，得去讀操作員的 Claude 目錄（要卡）。（Minor：這些列 origin=absorbed，不會 ship，只存在本機）
+- **Trigger**: ready；做法是 absorb 寫入時在 signal 上帶 `source_slug`（加檔名），加測試；再出一個只計數的檢查：L0 裡 absorbed 列的 slug 不等於當前專案 slug 的數量
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: PM 01M7R1SD 的只讀比對（41 列，39 個名稱，和 PM 記憶重疊 0）
+- **Pointer**: src/dream/absorb.rs:76-80, src/memory/l0.rs
+- **Needs**: none
+- **ms**: none
+- **Used-by**: e2e 隱私稽核只計數就能回答「有沒有跨專案」
+- **Queued-By**: PM 01M7R1SDE4K3HVE0HFCB7H389H
+- **Context**: 換版前吸進來的舊列沒有 slug，只能靠新的列往後查；舊列要不要清，另外問 PM
+
+### 有一台主機的登入 shell PATH 找不到 codeforge
+- **Id**: B66
+- **Status**: open
+- **Since**: 2026-11-19
+- **Origin**: PM
+- **Problem**: 03531cc 換版後，hangar 在一台主機的登入 shell 實跑 `codeforge dream --only absorb` 得到 rc=127（command not found）。其他 13 個帳號都正常。全域 hook 的 SessionEnd 鏈和 statusline 也靠 PATH 找 codeforge，所以那台的 dream、ship、usage collect、statusline 可能都沒在跑。
+- **Impact**: 那台的記憶、用量和 statusline 可能整個缺席，而且不會報錯。（Major：要先確認 hook 執行時的 PATH 是否也找不到）
+- **Trigger**: ready；先查清楚：binary 裝在哪、登入 shell 和 Claude Code hook 的 PATH 各是什麼、`codeforge doctor` 結果；修法歸 hangar（PATH 設定或安裝位置），codeforge 這側視需要讓 install 寫絕對路徑或在 doctor 報出來
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: hangar 01M7R1PJ 換版回報
+- **Pointer**: src/cli/install.rs:805-865
+- **Needs**: hangar
+- **ms**: none
+- **Used-by**: e2e 那台實跑 dream rc=0
+- **Queued-By**: PM 01M7R1SDE4K3HVE0HFCB7H389H
+- **Context**: 主機名照隱私規則不寫進 repo，見 hangar 01M7R1PJ
+
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
 - **Status**: open
