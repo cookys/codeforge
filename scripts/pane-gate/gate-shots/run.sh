@@ -12,7 +12,7 @@ start() { # start <scenario> <home> [extra claude args]
   : > "$G/cwd/.fleet-no-register"  # fleet skips sessions whose cwd holds this (fleet 6353fad2): a shot session never joins the patrol list
   tmux new-session -d -s "$s" -x 160 -y 40 -c "$G/cwd" "env HOME=$2 PATH=$G/bin:$PATH GATE_DIR=$G AUTOPILOT_CARD_MIRROR_DIR=$G/mirror AUTOPILOT_ROOMS_DIR=$G/rooms AUTOPILOT_LOCALE=zh-TW LANG=zh_TW.UTF-8 claude --plugin-dir $ap ${3:-}"
   sleep 7; if cap | grep -qi "trust this folder"; then key Down; sleep .5; key Enter; fi
-  sleep 14; key '/live-pane'; sleep 1.5; key Enter; sleep 4
+  sleep 14; [ -n "${NOPANE:-}" ] && return; key '/live-pane'; sleep 1.5; key Enter; sleep 4
 }
 stop() { tmux kill-session -t "$s" 2>/dev/null; }
 shots() { # shots <tag> <size...>
@@ -25,10 +25,15 @@ shots() { # shots <tag> <size...>
 }
 REALHOME=$HOME
 HOMEBOX=$G/home; mkdir -p "$HOMEBOX"; ln -sfn "$REALHOME/.claude" "$HOMEBOX/.claude"; ln -sf "$REALHOME/.claude.json" "$HOMEBOX/.claude.json"
-start full "$REALHOME";  shots S1-full 160x40 120x30 80x24 80x20 80x16; stop
+start full "$REALHOME";  shots S1-full 160x40 120x30 80x24 80x20 80x16
+# page 0 鍛 (gate b2 r2 astra 13: K1 needs the whole page, not just the keyprobe row)
+for sz in 160x40 80x24; do tmux resize-window -t "$s" -x ${sz%x*} -y ${sz#*x}; sleep 4; key 0; sleep 2.5
+  cap > "$O/S1-full-p0-$sz.txt"; tmux capture-pane -p -e -t "$s" > "$O/S1-full-p0-$sz.ans"; done; stop
+# pane closed: the band's 2nd row is the one shared tab strip (gate b2 r2 carbon N4: X1 second half, batch 1 M6)
+NOPANE=1 start full "$REALHOME"; cap > "$O/S1-closed-160x40.txt"; tmux capture-pane -p -e -t "$s" > "$O/S1-closed-160x40.ans"; stop
 # light terminal (gate b2 carbon M5): Claude Code's light theme for this session only, via --settings (nothing is written to the global config)
 start full "$REALHOME" "--settings '{\"theme\":\"light\"}'"; shots S1-light 160x40 80x24; stop
 start small "$REALHOME"; shots S4-small 160x40; stop
-start s5stale "$REALHOME"; shots S5-stale-10min 160x40; stop
+start s5stale "$REALHOME"; shots S5-stale-10min 160x40 120x30; stop
 start s5fail "$HOMEBOX"; shots S5-console-exit1-nofile 160x40; stop
 echo "fleet.log lines: $(wc -l < "$G/fleet.log")"; cut -d' ' -f3- "$G/fleet.log" | sort | uniq -c

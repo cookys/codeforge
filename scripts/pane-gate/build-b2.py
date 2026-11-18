@@ -15,16 +15,17 @@ assert SHA in head, "sha line not replaced"
 insert = open(f"{S}/gate-b2-insert.md", encoding="utf-8").read()
 O = f"{G}/out/{LABEL}"
 order = [f"S1-full-p{p}-{sz}" for sz in ("160x40", "120x30", "80x24", "80x20", "80x16") for p in (1, 2, 3, 4)] + \
-        [f"S1-light-p{p}-{sz}" for sz in ("160x40", "80x24") for p in (1, 4)] + [f"S6-own-p2-{sz}" for sz in ("160x40", "80x24")] + [f"S4-small-p{p}-160x40" for p in (1, 4)] + \
-        [f"S5-stale-10min-p{p}-160x40" for p in (1, 4)] + [f"S5-console-exit1-nofile-p{p}-160x40" for p in (1, 4)]
+        [f"S1-full-p0-{sz}" for sz in ("160x40", "80x24")] + ["S1-closed-160x40"] + [f"S1-light-p{p}-160x40" for p in (1, 4)] + [f"S6-own-p2-{sz}" for sz in ("160x40", "80x24")] + [f"S4-small-p{p}-160x40" for p in (1, 4)] + \
+        [f"S5-stale-10min-p{p}-{sz}" for sz in ("160x40", "120x30") for p in (1, 4)] + [f"S5-console-exit1-nofile-p{p}-160x40" for p in (1, 4)]
 order = [k for k in order if os.path.exists(f"{O}/{k}.txt")]
-missing = [k for k in ("S1-full-p1-80x24", "S1-full-p3-80x24", "S1-full-p4-80x24", "S1-full-p2-80x24", "S1-full-p1-80x16", "S1-light-p1-160x40") if k not in order]
+missing = [k for k in ("S1-full-p1-80x24", "S1-full-p3-80x24", "S1-full-p4-80x24", "S1-full-p2-80x24", "S1-full-p1-80x16", "S1-light-p1-160x40", "S1-full-p0-160x40", "S1-closed-160x40", "S5-stale-10min-p1-120x30") if k not in order]
 assert not missing, f"missing must-have 80x24 shots: {missing}"
 parts = [head, insert]
 if ROUND > 1:
     prev = f"{S}/../../doc/design/ux-gate/pane-batch2/r{ROUND - 1}-dispositions.md"
     parts.append(f"## 第 {ROUND - 1} 輪的發現與處置（這一輪請逐條判定：修好／部分／未修，未修的照原嚴重度再列一次）\n\n" + open(prev, encoding="utf-8").read().split("\n", 1)[1].replace("\n## ", "\n### "))
-    parts.append("## 這一輪新增的截圖\n\n- S1-full-*-80x20、80x16：pane 只剩 2 列、1 列內容時，至少要露出最嚴重的一類（PM 01M7PMAN 說的「80x3」就是這個狀況）。\n- S1-light-*：Claude Code 淺色主題（白底）。" + ("\n- S6-own-p2-*：本席可答的卡（對照 S1-full-p2 的不可答卡）。" if any(k.startswith("S6-") for k in order) else "") + "\n- keyprobe 改看分頁列選中哪一頁（tab=），不再看 pane 第一列。")
+    parts.append("## 這一輪新增的截圖\n\n- S1-full-*-80x20、80x16：pane 只剩 2 列、1 列內容時，至少要露出最嚴重的一類（PM 01M7PMAN 說的「80x3」就是這個狀況）。\n- S1-light-*：Claude Code 淺色主題（白底）。" + ("\n- S6-own-p2-*：本席可答的卡（對照 S1-full-p2 的不可答卡）。" if any(k.startswith("S6-") for k in order) else "") + "\n- keyprobe 改看分頁列選中哪一頁（tab=），不再看 pane 第一列。"
+                 + ("\n- S1-full-p0-*：鍛造頁整頁（K1）。\n- S1-closed-160x40：pane 關著時的 band，第 2 列應是唯一的共用分頁列（X1 後半、第 1 批 M6）。band 下面那列「tmux focus-events off …」是 Claude Code 對截圖用 tmux 的提示，不是 pane 或 band 畫的，請不要計分。\n- S5-stale-10min-*-120x30：120x30 的資料過期（X4／W5）。" if "S1-closed-160x40" in order else ""))
 if NJ:
     ND = f"{G}/out/{NJ}"; rows = []
     for n in sorted(x for x in os.listdir(ND) if x.endswith(".txt")):
