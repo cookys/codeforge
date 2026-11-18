@@ -26,6 +26,8 @@ if ROUND > 1:
     parts.append(f"## 第 {ROUND - 1} 輪的發現與處置（這一輪請逐條判定：修好／部分／未修，未修的照原嚴重度再列一次）\n\n" + open(prev, encoding="utf-8").read().split("\n", 1)[1].replace("\n## ", "\n### "))
     parts.append("## 這一輪新增的截圖\n\n- S1-full-*-80x20、80x16：pane 只剩 2 列、1 列內容時，至少要露出最嚴重的一類（PM 01M7PMAN 說的「80x3」就是這個狀況）。\n- S1-light-*：Claude Code 淺色主題（白底）。" + ("\n- S6-own-p2-*：本席可答的卡（對照 S1-full-p2 的不可答卡）。" if any(k.startswith("S6-") for k in order) else "") + "\n- keyprobe 改看分頁列選中哪一頁（tab=），不再看 pane 第一列。"
                  + ("\n- S1-full-p0-*：鍛造頁整頁（K1）。\n- S1-closed-160x40：pane 關著時的 band，第 2 列應是唯一的共用分頁列（X1 後半、第 1 批 M6）。band 下面那列「tmux focus-events off …」是 Claude Code 對截圖用 tmux 的提示，不是 pane 或 band 畫的，請不要計分。\n- S5-stale-10min-*-120x30：120x30 的資料過期（X4／W5）。" if "S1-closed-160x40" in order else ""))
+if os.environ.get("IMPL_NOTE"):  # the implementer's evidence for a disputed finding (r3: autopilot mods/live/docs/w1-host-row.md); reviewers judge it against the shots
+    parts.append("## 實作方的說明（autopilot 提供，不是評審結論；請對照截圖自行判斷）\n\n" + re.sub(r"\[([^\]]+)\]\(\.\./[^)]*\)", r"`\1`", open(os.environ["IMPL_NOTE"], encoding="utf-8").read().split("\n", 1)[1].replace("\n## ", "\n### ")))  # its links point into the autopilot repo: keep the name, drop the target
 if NJ:
     ND = f"{G}/out/{NJ}"; rows = []
     for n in sorted(x for x in os.listdir(ND) if x.endswith(".txt")):
