@@ -1,0 +1,15 @@
+gate-shots/out/
+gate-shots/cwd/
+gate-shots/home/
+gate-shots/mirror/
+gate-shots/rooms/
+gate-shots/scenario
+gate-shots/*.log
+gate-shots/*.ans
+pet-shots/cwd/
+pet-shots/petdata/
+pet-shots/out/
+*.log
+gate-b2.md
+gate-b2-*.out
+gate-b2-*.err
