@@ -89,6 +89,10 @@ fi
 step "cjk-safe"
 ./scripts/check-cjk-safe.sh
 
+step "private-leaks (hashed denylist + email allowlist, public tree)"
+./scripts/check-private-leaks.test.sh
+./scripts/check-private-leaks.sh
+
 step "doc-drift"
 python3 scripts/check-doc-drift.py 2>/dev/null || python scripts/check-doc-drift.py
 
@@ -98,7 +102,8 @@ cargo deny check licenses
 step "shellcheck install.sh + checkout guard"
 shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh scripts/checkout-guard.test.sh \
   scripts/g40-real-data/check.sh scripts/g40-real-data/check.test.sh scripts/g40-real-data/scan-statusline.test.sh \
-  scripts/trinity-import/trinity-import.sh scripts/trinity-import/trinity-import.test.sh
+  scripts/trinity-import/trinity-import.sh scripts/trinity-import/trinity-import.test.sh \
+  scripts/check-private-leaks.sh scripts/check-private-leaks.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh

@@ -749,7 +749,7 @@ mod tests {
 
     #[test]
     fn a_newer_reading_of_another_running_window_replaces_an_older_one() {
-        // host-console-team, 2026-11-09: at 06:13 TW a session wrote 7d 11% (week resetting Mon 11-16
+        // a team host, 2026-11-09: at 06:13 TW a session wrote 7d 11% (week resetting Mon 11-16
         // 04:00, the account it was logged in to before) under acct-337c98de; from 20:07 the real
         // readings say 63% in the week resetting Thu 11-12 12:00. The newer reading must win.
         const T0: i64 = 1_794_176_000_231;

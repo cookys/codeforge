@@ -13,7 +13,7 @@
 Mnemos 是中央腦，多來源收錄（Slack/LINE/Email/Docs/…）；CodeForge 是其中的 **coding 來源**。腦只開 **loopback（永不 0.0.0.0）**，所以非腦機（fleet client）一律走 **SSH forward-only 隧道**連，不直連。
 
 ```
-  fleet client（如某台 dev 機）                    腦 host（cookys-host-infra）
+  fleet client（如某台 dev 機）                    腦 host（brain host）
   ┌──────────────────────────────┐               ┌──────────────────────────────┐
   │ codeforge CLI + .codeforge    │   ssh 隧道    │ mnemos-api.service :8845       │
   │ 各 project 自己的 L0/L1        │  ===========> │ loopback-only · /v1/ingest/…  │
@@ -93,7 +93,7 @@ ls ~/.codeforge/ship-failed/ 2>/dev/null || echo 'clean'
 
 ## 6.5 dream compile 的 LLM 成本控制（PM 01M7C8NM，2026-11-14 事故）
 
-事故：host-infra 上 `dream` compile 對每條 signal 各冷啟動一次 `claude -p --model opus`（262 次、約 1480 萬 token、US$56.74），另加每個新 slug 一次對賬呼叫。現行規則：
+事故：腦 host 上 `dream` compile 對每條 signal 各冷啟動一次 `claude -p --model opus`（262 次、約 1480 萬 token、US$56.74），另加每個新 slug 一次對賬呼叫。現行規則：
 
 - **模型**：compile 與對賬走 `llm::compile_model()`（env `CODEFORGE_COMPILE_MODEL`，預設 `haiku`，空字串視同未設）。ship digest 仍用 `digest_model()`（預設 `opus`），不變。
 - **上限**：每次 `dream` 最多送 `CODEFORGE_COMPILE_MAX_ITEMS` 條（預設 10）給 LLM；其餘留待下次。`signal_cursors` 只推進到實際處理過的位置，超出上限的 signal 不會被跳過，下一輪接著編譯。`absorbed` 來源走 rule-based 快速路徑，不佔上限。

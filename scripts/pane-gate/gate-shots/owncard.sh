@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# NOTE: the sandbox HOME links the real ~/.claude and ~/.claude.json (needs the real login to render); build-b2.py's private-name gate is what keeps real names out of packets.
 # owncard.sh <autopilot-dir> <label> — page 2 待決 with a card this seat can answer (gate b2 carbon M4 asks for it next to the read-only card).
 # Shots: out/<label>/S7-own-p2-{160x40,80x24}.{txt,ans}. Run after run.sh, never beside it (both use cwd/ and scenario).
 # The seat's own cards come from the repo's card store, scope-checked against the session (autopilot 01M7PZP3, fixture

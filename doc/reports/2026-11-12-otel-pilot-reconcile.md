@@ -4,7 +4,7 @@ PM 01M747D34N 開的 24 小時 pilot；PM 01M76T9R 裁定停止，並要求本�
 
 ## 範圍
 
-- 主機：host-console 的 team 帳號。期間：2026-11-11 10:37 到 2026-11-12 10:43（CST）。
+- 主機：console host 的 team 帳號。期間：2026-11-11 10:37 到 2026-11-12 10:43（CST）。
 - OTEL：Claude Code 的 `api_request` 事件，送到本機 receiver（OTLP/HTTP，port 4318），寫成 JSONL。
   只有在 team tmux 裡帶 OTEL 變數啟動的 session 會送，共 15 個 session。
 - codeforge：`codeforge usage collect` 之後 `usage.db` 的 `requests`（`source = 'claude'`），用 request_id 對。

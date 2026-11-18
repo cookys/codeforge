@@ -8,8 +8,18 @@
 set -euo pipefail
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 STATE=${CODEFORGE_TRINITY_STATE:-$HOME/.local/state/codeforge/trinity-import}
-SENDERS=${CODEFORGE_TRINITY_SENDERS:-cookys/grokbot/trinity cookys/grokbot/fleet-cli}
-NOTIFY=${CODEFORGE_TRINITY_NOTIFY:-cookys/host-console-team/capacity--claude cookys/host-console-team/codeforge--claude}
+# Fleet addresses carry host names, so they live outside the repo: an optional env file sets
+# CODEFORGE_TRINITY_SENDERS (space-separated courier-attested senders) and CODEFORGE_TRINITY_NOTIFY
+# (space-separated alert recipients). Both are required; there are no defaults.
+ENV_FILE=${CODEFORGE_TRINITY_ENV:-$HOME/.config/codeforge/trinity.env}
+# shellcheck source=/dev/null
+if [ -f "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi
+if [ -z "${CODEFORGE_TRINITY_SENDERS:-}" ] || [ -z "${CODEFORGE_TRINITY_NOTIFY:-}" ]; then
+  echo "trinity-import: set CODEFORGE_TRINITY_SENDERS and CODEFORGE_TRINITY_NOTIFY (e.g. in $ENV_FILE)" >&2
+  exit 2
+fi
+SENDERS=$CODEFORGE_TRINITY_SENDERS
+NOTIFY=$CODEFORGE_TRINITY_NOTIFY
 STALE_H=${CODEFORGE_TRINITY_STALE_H:-168}
 FLEET=${FLEET_BIN:-fleet}
 CODEFORGE=${CODEFORGE_BIN:-codeforge}

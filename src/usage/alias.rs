@@ -408,8 +408,8 @@ mod tests {
 
     #[test]
     fn a_dir_hash_alias_is_recognized_only_against_its_own_root() {
-        // /home/user/.claude hashes to ae88ee5d: the ghost account of PM 01M7052H79
-        assert_eq!(path_hash8(Path::new("/home/user/.claude")), "ae88ee5d");
+        // /home/user/.claude hashes to d1c0b541: the ghost account of PM 01M7052H79
+        assert_eq!(path_hash8(Path::new("/home/user/.claude")), "d1c0b541");
         assert!(is_dir_hash_alias("acct-ae88ee5d", "ae88ee5d"));
         assert!(!is_dir_hash_alias("acct-337c98de", "ae88ee5d"));
         assert!(!is_dir_hash_alias("ae88ee5d", "ae88ee5d"));

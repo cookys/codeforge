@@ -4,7 +4,7 @@
 
 ## Project Goal
 
-> **Final goal**: 在共用（symlink 或進 git 版控）的 settings.json 上跑 `codeforge install`／`bootstrap`，寫出的內容在每台機器、每個版本都一樣，而且寫進共用檔本身；發布 v0.0.7 讓 host-mini 安全執行 bootstrap。
+> **Final goal**: 在共用（symlink 或進 git 版控）的 settings.json 上跑 `codeforge install`／`bootstrap`，寫出的內容在每台機器、每個版本都一樣，而且寫進共用檔本身；發布 v0.0.7 讓 host-a 安全執行 bootstrap。
 > **Success criteria**: 計畫 §2 的 KR1–KR8，每條都有門檻與驗證方式。
 > **Scope boundary**: 包含 install.rs 的 hook／statusLine command、marker、symlink 寫入、共用檔偵測與 `cleanupPeriodDays` 規則、新的 `codeforge hook` 子命令、文件與 v0.0.7 發布；不含 `--project-hooks`、舊快取清理、B31、任何機器上實際跑 install／bootstrap。
 
