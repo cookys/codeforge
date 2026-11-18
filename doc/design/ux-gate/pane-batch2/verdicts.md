@@ -13,3 +13,5 @@ B56（80x24 縮窄後數字鍵打進提示列）：第 1 輪 6/6 提示列乾淨
 B56 pass（第 2 輪 keyprobe 6/6 ok：分頁列選中的頁都對、提示列全空，r2-keyprobe.log）。
 
 第 3 輪後兩家仍有的問題（交 PM，見 fleet 01M7N307 回報）：W1 分頁列下那列空白歸屬未定（astra Critical；carbon pass；autopilot 以 host 程式碼靜態證據說是 host 外框，沒量真機 bodyRows）；120x30 band 修復指令截成「autopilot …」（astra Critical、carbon Major）；額度頁 120x30／160x40 新加的欄名讓判定硬截成「浪費 1」（實為 12%，兩家 Major）；80x16 待決頁只剩操作列（兩家 Major）；160x40 band 少「艦隊」區名（U1 未修）。
+
+PM 裁決 A 後的點驗（autopilot 98cf58d03，沒有評審，r4-spot.md）：W1 真機量測 bodyRows＝正文全高、分頁列在最後一列，下面那列屬 host，結案；第 2–5 項逐條 ok；keyprobe 6/6 ok。可以照 rollout 流程 pin。
