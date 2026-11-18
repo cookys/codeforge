@@ -10,7 +10,7 @@ bash gate-shots/owncard.sh "$ap" "$label" >> "shots-$label.log" 2>&1; tail -1 "s
 KEYS="2 3 9 1 0 4" timeout 300 bash gate-shots/keyprobe.sh "$ap" "$label" > "keyprobe-$label.log" 2>&1; echo "keyprobe: $(grep -c ' ok$' "keyprobe-$label.log")/6 ok"
 python3 -I build-b2.py "$sha" "$label" || exit 1
 D=${AUTOPILOT_DIR:-$HOME/projects/autopilot}/scripts/dispatch-author.sh
-bash $D --runner agy --model gemini-4-carbon-high --timeout 20m --prompt-file "$S/gate-b2.md" > gate-b2-carbon.out 2> gate-b2-carbon.err &
+bash $D --runner agy --model gemini-4-carbon-high --timeout 30m --prompt-file "$S/gate-b2.md" > gate-b2-carbon.out 2> gate-b2-carbon.err &
 pc=$!
 bash $D --runner codex --model gpt-6-astra --timeout 20m --prompt-file "$S/gate-b2.md" > gate-b2-astra.out 2> gate-b2-astra.err &
 pa=$!
