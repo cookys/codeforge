@@ -212,7 +212,7 @@ fn transcript_in_window(entry: &std::fs::DirEntry, path: &Path, start: i64, end:
 
 /// Claude Code's project-dir slug: absolute path, every non-alnum char → `-`.
 /// e.g. `/home/user/projects/codeforge` → `-home-user-projects-codeforge`.
-fn claude_project_slug(repo_root: &Path) -> String {
+pub(crate) fn claude_project_slug(repo_root: &Path) -> String {
     repo_root
         .to_string_lossy()
         .chars()

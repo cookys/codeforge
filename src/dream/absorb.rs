@@ -1,6 +1,6 @@
 use crate::db;
 use crate::memory::l0::{Signal, SignalSource, SignalWriter};
-/// Dream Absorb：掃描 .claude/memory/ 並收編為 L0 signals
+/// Dream Absorb：只收編「當前專案」自己的 Claude Code memory 目錄（projects/<slug>/memory/*.md）為 L0 signals
 use anyhow::Result;
 
 pub struct AbsorbResult {
@@ -8,9 +8,26 @@ pub struct AbsorbResult {
 }
 
 pub fn run(ctx: &db::Context) -> Result<AbsorbResult> {
-    let claude_memory = dirs::home_dir()
+    let projects_root = dirs::home_dir()
         .map(|h| h.join(".claude").join("projects"))
         .unwrap_or_default();
+    let cwd = std::env::current_dir().unwrap_or_default();
+    run_from(ctx, &projects_root, &cwd)
+}
+
+/// `projects_root` = `~/.claude/projects`; `cwd` = the project dream runs for
+/// (the SessionEnd hook's CWD is the project root).
+pub fn run_from(
+    ctx: &db::Context,
+    projects_root: &std::path::Path,
+    cwd: &std::path::Path,
+) -> Result<AbsorbResult> {
+    // Only this project's own memory dir (PM 01M7QZ9Y): dream runs at SessionEnd
+    // in every project, so scanning all of `projects_root` copied every other
+    // project's memory into this one's L0 (and from there into LLM prompts).
+    let claude_memory = projects_root
+        .join(crate::mnemos::autocite::claude_project_slug(cwd))
+        .join("memory");
 
     if !claude_memory.exists() {
         return Ok(AbsorbResult { absorbed: 0 });
@@ -29,7 +46,7 @@ pub fn run(ctx: &db::Context) -> Result<AbsorbResult> {
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s.trim()).ok())
         .map(|dt| dt.with_timezone(&chrono::Utc));
 
-    for proj_entry in walkdir_shallow(&claude_memory, 3) {
+    for proj_entry in walkdir_shallow(&claude_memory, 0) {
         if proj_entry.extension().map(|e| e == "md").unwrap_or(false) {
             // 檢查修改時間（只吸收新的）
             let modified = std::fs::metadata(&proj_entry)
@@ -87,4 +104,59 @@ fn walkdir_shallow(base: &std::path::Path, max_depth: usize) -> Vec<std::path::P
     let mut result = Vec::new();
     walk(base, 0, max_depth, &mut result);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn signals_text(ctx: &db::Context) -> String {
+        let mut all = String::new();
+        for e in std::fs::read_dir(ctx.project_dir.join("signals")).unwrap() {
+            all.push_str(&std::fs::read_to_string(e.unwrap().path()).unwrap_or_default());
+        }
+        all
+    }
+
+    /// PM 01M7QZ9Y: dream runs at SessionEnd in every project; absorb must take
+    /// only the CWD project's own Claude memory, never another project's.
+    #[test]
+    fn absorb_takes_only_the_current_projects_memory() {
+        let temp = TempDir::new().unwrap();
+        let projects_root = temp.path().join("claude-projects");
+        let repo_a = temp.path().join("work").join("repo-a");
+        let repo_b = temp.path().join("work").join("repo-b");
+        for (repo, marker) in [(&repo_a, "MARKER_OWN_A"), (&repo_b, "MARKER_OTHER_B")] {
+            let mem = projects_root
+                .join(crate::mnemos::autocite::claude_project_slug(repo))
+                .join("memory");
+            std::fs::create_dir_all(&mem).unwrap();
+            std::fs::write(
+                mem.join("note.md"),
+                format!("{marker} a memory note long enough to absorb"),
+            )
+            .unwrap();
+        }
+        let project_dir = repo_a.join(".codeforge");
+        std::fs::create_dir_all(project_dir.join("signals")).unwrap();
+        let ctx = db::Context {
+            project_dir,
+            brain_dir: temp.path().join("brain"),
+            db_path: temp.path().join("state.db"),
+        };
+
+        let r = run_from(&ctx, &projects_root, &repo_a).unwrap();
+
+        let text = signals_text(&ctx);
+        assert!(
+            !text.contains("MARKER_OTHER_B"),
+            "another project's memory leaked into this project's L0"
+        );
+        assert!(
+            text.contains("MARKER_OWN_A"),
+            "own memory must still be absorbed"
+        );
+        assert_eq!(r.absorbed, 1);
+    }
 }
