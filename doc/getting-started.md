@@ -5,8 +5,9 @@
 ## What you'll have at the end
 
 - `codeforge` on your `$PATH`
-- A statusline panel in Claude Code showing your model, dir, git branch,
-  token-usage bars, and a pet that levels up as you code
+- A one-line statusline in Claude Code showing your model, dir, git branch
+  and usage, plus a pet that levels up as you code (the pet lives in the
+  forge-stats tab, never in the statusline)
 - A per-project memory store (`.codeforge/`) that captures learnings
   during sessions
 
@@ -24,7 +25,8 @@
   `check-dev-flow.js` (PreToolUse). Skip if you only want the statusline.
 - **(optional) `ANTHROPIC_API_KEY`** — NOT required. `codeforge dream`
   (memory compilation, L0 → L1) uses a fallback chain: `claude -p` (the
-  Claude Code CLI, no key) → this key (Haiku API) → rule-based. Set it only
+  Claude Code CLI, no key) → `agy` (Gemini CLI) → `codex exec` → this key
+  (Haiku API) → rule-based. Set it only
   as a fallback when the `claude` CLI is unavailable. See
   [`concepts.md`](concepts.md).
 
@@ -65,9 +67,11 @@ codeforge install
 ```
 
 This patches `~/.claude/settings.json` to set `codeforge statusline` as
-the Claude Code statusLine hook — using the **absolute path** of the
-binary, so it works even when `~/.cargo/bin` isn't on PATH for the
-shells Claude Code spawns (a common rustup quirk).
+the Claude Code statusLine hook — as the bare `codeforge statusline`
+when `codeforge` on PATH is this binary (or the settings file is shared),
+otherwise with the binary's **absolute path**, so it still works when
+`~/.cargo/bin` isn't on PATH for the shells Claude Code spawns (a common
+rustup quirk).
 
 Re-running is safe — it prints `已是最新（無變動）` if nothing changed.
 
@@ -123,18 +127,12 @@ cd ~/projects/<your-repo>
 claude
 ```
 
-The statusline panel should now show:
+The statusline is exactly one line, in every state. It shows your model,
+workspace, git branch, usage and the Claude Code session version (not
+codeforge's). It never draws the pet; the pet lives in the forge-stats tab.
 
-- Your model name + workspace + git branch (line 1)
-- Token usage bars: 5h / 7d / context (line 2)
-- Your pet's location, level, HP, XP, stats (lines 3-4)
-- Memory status + Claude Code session version (line 5; the version chip is CC's session version, not codeforge's)
-- ASCII pet portrait on the right
-
-If you see only the minimal no-pet statusline (a 2-line panel: identity
-strip with model/cwd/branch/version, then usage bars with a `→ codeforge
-adopt` hint), your pet record isn't loaded — re-run `codeforge adopt`
-and confirm `codeforge pet` shows stats.
+If `codeforge pet` shows no stats, your pet record isn't loaded: re-run
+`codeforge adopt`.
 
 If you see nothing at all, Claude Code didn't pick up the settings.json
 change. Try `/clear` or restart Claude Code.
@@ -156,7 +154,7 @@ change. Try `/clear` or restart Claude Code.
 - `codeforge world` — render the world map (codebase as zones).
 
 For the SessionStart / SessionEnd / PreCompact hooks (session tracking,
-local recall, dream-on-close memory pipeline), run `codeforge install --all`
+local and central recall, dream-on-close memory pipeline), run `codeforge install --all`
 (statusline + global hooks). See the
 [README "First-time Claude Code hook setup"](../README.md#first-time-claude-code-hook-setup)
 section and [`doc/specs/codeforge-install-subcommand.md`](specs/codeforge-install-subcommand.md).
@@ -166,8 +164,8 @@ These flags are shipped, not roadmap.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `codeforge: command not found` after `cargo install` | `~/.cargo/bin` not on PATH | `. ~/.cargo/env` for this shell; add to `~/.zshrc` / `~/.bashrc` permanently. **Or** just run `codeforge install` — it writes the absolute path so Claude Code finds it. |
-| Statusline shows the minimal 2-line no-pet panel (identity + usage bars + `→ codeforge adopt` hint) | No pet adopted | `codeforge adopt` then `codeforge pet` to verify |
+| `codeforge: command not found` after `cargo install` | `~/.cargo/bin` not on PATH | `. ~/.cargo/env` for this shell; add to `~/.zshrc` / `~/.bashrc` permanently. **Or** just run `codeforge install` — it writes the absolute path when `codeforge` is not on PATH, so Claude Code finds it. |
+| `codeforge pet` shows no stats | No pet adopted | `codeforge adopt` then `codeforge pet` to verify |
 | Statusline shows nothing | Claude Code didn't reload settings.json | `/clear` or restart Claude Code |
 | `codeforge install` rejected with `settings.json 根節點不是 object` | Existing settings.json is a JSON array or non-object | Open `~/.claude/settings.json` and wrap content in `{}` or back it up and start fresh |
 | `codeforge dream` produces low-quality / rule-based output | `claude` CLI not on PATH and no `ANTHROPIC_API_KEY` set (fell through to rule-based pass) | Ensure the `claude` CLI is installed/on PATH, or set `ANTHROPIC_API_KEY=sk-ant-...` from <https://console.anthropic.com/> as a fallback |

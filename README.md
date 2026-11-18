@@ -152,7 +152,7 @@ codeforge init
 # log a learning (L0 raw signal) — also: --paste (clipboard), --file <FILE>, or stdin
 codeforge learn "tokio::select! preserves cancellation across branches"
 
-# compile L0 → L1 (uses the LLM backend chain: claude -p → Haiku → rule-based)
+# compile L0 → L1 (uses the LLM backend chain: claude -p → agy → codex → Haiku API → rule-based)
 # no API key needed if the `claude` CLI is on your PATH; see Data & Privacy
 codeforge dream
 
@@ -166,7 +166,7 @@ codeforge pet
 codeforge statusline
 ```
 
-More commands: `codeforge memory search|status|context`, `tui` / `attach [--size PCT]` (full TUI + Local Map; `--size` sets companion-pane width %), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world [--refresh]` (zone map; `--refresh` rescans L1), `ingest <path> [--source claude|chatgpt|markdown|auto]` (import external history), `craft` / `inventory` / `use` (loot), `snapshot [--days N]` (ASCII activity card; `--days` sets the lookback window), `commentary on|off|list [-n N]|test [kind]` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event> [-f KEY=VALUE]... [--json <JSON>]` (push an event into the daemon inbox; used by hooks), `ship [--date YYYY-MM-DD] [--dry-run] [--no-hook] [--resend]` / `mnemos-cli cite [--matched-text]|cite-detect <transcript> [--topic|--max]|context [--topic|--max|--max-sensitivity|--with-themes]|probe [--verbose]` (Mnemos integration), `doctor` (brain health diagnostics). Run `codeforge --help` for the full tree.
+More commands: `codeforge memory search|status|context`, `tui` / `attach [--size PCT]` (full TUI + Local Map; `--size` sets companion-pane width %), `daemon start|stop|status|install` (background MUD engine; `install` writes a systemd user unit), `strategy` (combat mode), `world [--refresh]` (zone map; `--refresh` rescans L1), `ingest <path> [--source claude|chatgpt|markdown|auto]` (import external history), `craft` / `inventory` / `use` (loot), `snapshot [--days N]` (ASCII activity card; `--days` sets the lookback window), `commentary on|off|list [-n N]|test [kind]` (AI pet commentary), `dream --only <op>` (single dream op), `emit <event> [-f KEY=VALUE]... [--json <JSON>]` (push an event into the daemon inbox; used by hooks), `ship [--date YYYY-MM-DD] [--dry-run] [--no-hook] [--resend]` / `mnemos-cli cite [--matched-text]|cite-detect <transcript> [--topic|--max]|context [--topic|--max|--max-sensitivity|--with-themes]|probe [--verbose]` (Mnemos integration), `doctor` (brain health diagnostics), `adopt` (pick a starter pet), `bootstrap [--dry-run]` (one-command per-machine setup), `uninstall`, `self-update`, `usage collect|export|fleet|pools|trinity-import|note|plan` (usage and quota), `subagent-statusline`. Run `codeforge --help` for the full tree.
 
 For the global memory store pattern (one shared store across projects), see [`.env.example`](.env.example) — set `CODEFORGE_DIR=~/.codeforge/global`.
 
@@ -196,6 +196,7 @@ codeforge install --project-hooks --force --yes
 
 `codeforge hook <name> [args…]` runs a hook script embedded in the binary (copied to a private per-version cache under the codeforge data dir, honouring `CODEFORGE_DATA_DIR`) with `node`, passing stdin and the script's exit code through. Its own failures exit 1, never 2 (Claude Code treats 2 as blocking). The scripts update with the binary, so `self-update` needs no reinstall.
 - `codeforge memory context --hook` (SessionStart) — injects a lean ranked L1 index as additionalContext (local recall; no-op when the project has no active L1)
+- `codeforge mnemos-cli context --hook --max 5 --with-themes --max-sensitivity work` (SessionStart) — central recall: injects cross-source Mnemos atoms (self-gates on Mnemos opt-in; injects nothing when empty or unreachable)
 - `codeforge dream --quiet` → `codeforge ship --no-hook` (SessionEnd) — the memory pipeline: distill L0 → L1 in every project, then ship to Mnemos if opted in (clean no-op otherwise). See [`doc/concepts.md`](doc/concepts.md).
 - `codeforge usage collect --quiet` (SessionEnd, after ship) — incremental usage collect: numbers only from the session transcripts, then `summary.json`. See [Usage](#usage).
 
@@ -252,22 +253,20 @@ This makes CodeForge the **coding source** for Mnemos's multi-source brain (alon
 
 ### Brain Connection Indicators
 
-The `codeforge statusline` bottom border carries two connection lights:
+The statusline itself is one line and draws no lights. `codeforge statusline` computes two connection lights each run and writes them to the per-session view (`codeforge.session-view/1`), where forge-stats reads and draws them:
 
-- **`memory ●/◌`** (local brain, always shown when the project has history):
-  - `●` green — active L1 concepts > 0
-  - `◌` grey — store directory exists but active count is 0 ("where did my memory go?" is a useful signal)
-  - not shown — brand-new project, never dreamed
+- **memory** (local brain, shown when the project has history):
+  - `●` active: active L1 concepts > 0
+  - `◌` grey: store directory exists but the active count is 0 ("where did my memory go?" is a useful signal)
+  - not shown: brand-new project, never dreamed
 
-- **`mnemos ●/◐/○/◌`** (central brain, only shown when opted-in):
-  - `●` green — liveness probe ok, ingest healthy
-  - `◐` yellow `degraded` — server is up but last ingest failed or queue depth is high
-  - `○` grey `offline` — server not reachable (neutral, not an alarm — just go start the server)
-  - `◌` grey `pending` — opted-in but never connected yet
+- **mnemos** (central brain, only when opted in):
+  - `●` ok: liveness probe ok, ingest healthy
+  - `◐` `degraded`: server is up but the last ingest failed or the queue depth is high
+  - `○` `offline`: server not reachable (neutral, not an alarm; just go start the server)
+  - `◌` `pending`: opted in but never connected yet
 
-The liveness probe runs as a detached background process (`process_group` isolated), writing to a per-machine cache (`$XDG_RUNTIME_DIR/codeforge/`). The hot path (every ~5 s in statusline) only reads the cache — it never blocks on network I/O. The second signal (`mnemos-ship.json`) comes from real ingest outcomes piggybacked on `codeforge ship`.
-
-**NO_COLOR / colour-blind terminals:** glyphs fall back to `memory:active`, `mnemos:ok`, etc. (full words, no abbreviated codes).
+The liveness probe runs as a detached background process (`process_group` isolated), writing to a per-machine cache (`$XDG_RUNTIME_DIR/codeforge/`). The hot path (every statusline run) only reads the cache — it never blocks on network I/O. The second signal (`mnemos-ship.json`) comes from real ingest outcomes piggybacked on `codeforge ship`.
 
 **Diagnostics:** `codeforge doctor` shows all dimensions — local L1 count, opt-in status, live probe result, last ship time/outcome, queue depth, and next-step recommendations. `codeforge mnemos-cli probe [--verbose]` probes `GET /health` directly.
 
@@ -457,14 +456,14 @@ codeforge usage note clear <provider|name>      # clears the note and the rule
 ## Data & Privacy
 
 - All data stays on your machine in `.codeforge/` (per-project) or `$CODEFORGE_DIR` (global).
-- `dream`/`ship` compile your signals via an LLM. The backend is a fallback chain: `claude -p` (the Claude Code CLI, default, no key) → `ANTHROPIC_API_KEY` (direct Haiku API, only if set) → a local rule-based pass (no LLM). The first two routes send the text to Anthropic's models and are subject to [Anthropic's privacy policy](https://www.anthropic.com/privacy); the rule-based fallback sends nothing off-machine. See [`doc/concepts.md`](doc/concepts.md) for the full flow.
+- `dream`/`ship` compile your signals via an LLM. The backend is a fallback chain: `claude -p` (the Claude Code CLI, default, no key) → `agy` (Gemini CLI) → `codex exec` (OpenAI) → `ANTHROPIC_API_KEY` (direct Haiku API, only if set) → a local rule-based pass (no LLM). The `claude -p` and API routes send the text to Anthropic's models and are subject to [Anthropic's privacy policy](https://www.anthropic.com/privacy); the `agy` and `codex` routes send it to Google's and OpenAI's models under those providers' terms; the rule-based fallback sends nothing off-machine. See [`doc/concepts.md`](doc/concepts.md) for the full flow.
 - When `codeforge ship` runs (Mnemos Sprint 1+), the L2 ledger is POSTed to your **local** Mnemos daemon at `127.0.0.1:8845` — same machine, no external upload. Mnemos itself stores data locally in `~/.mnemos/data/`.
 - The project author collects no telemetry and runs no servers.
 - `.codeforge/codeforge.db` (SQLite) and `.codeforge/signals/*.jsonl` contain your raw inputs and compiled knowledge — both are gitignored by default.
 
 ## Tech Stack
 
-Rust 2021, clap 4, rusqlite (bundled SQLite, WAL), tokio, hecs ECS, crossterm TUI, rust-i18n, reqwest. `dream compile` / `ship` use the 3-layer LLM chain `claude -p` (Claude Code CLI, default) → Anthropic Haiku API (fallback) → rule-based. AI commentary uses a 2-layer path only — Anthropic Haiku API when `ANTHROPIC_API_KEY` is set, else rule-based (it never calls `claude -p`).
+Rust 2021, clap 4, rusqlite (bundled SQLite, WAL), tokio, hecs ECS, crossterm TUI, rust-i18n, reqwest. `dream compile` / `ship` use the LLM chain `claude -p` (Claude Code CLI, default) → `agy` → `codex exec` → Anthropic Haiku API (fallback) → rule-based. AI commentary uses a 2-layer path only — Anthropic Haiku API when `ANTHROPIC_API_KEY` is set, else rule-based (it never calls `claude -p`).
 
 ## Disclaimer
 
@@ -473,7 +472,7 @@ CodeForge is an independent open-source project and is not affiliated with or en
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). There is no hosted CI: `./scripts/check-all.sh` is the merge gate
-(fmt, clippy, tests, cjk-safe, doc-drift, cargo deny, shellcheck, MSRV release smoke), and releases are
+(fmt, clippy, tests, forge-stats plugin tests, cjk-safe, doc-drift, cargo deny, shellcheck, g40 real-data scans, trinity-import test, checkout guard, release archive hermetic test, MSRV release smoke), and releases are
 built locally by `./scripts/release-local.sh`. Project conventions documented in [CLAUDE.md](CLAUDE.md). Bug reports and feature ideas welcome via GitHub Issues.
 
 ## License

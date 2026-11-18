@@ -30,7 +30,7 @@ CodeForge 是 **CodePower 生態系裡的私人鍛造間**（personal smithy）�
 - **Storage**: rusqlite (bundled SQLite), WAL mode
 - **Terminal**: crossterm + termcolor
 - **I18n**: rust-i18n v3 (compile-time), `locales/` YAML
-- **LLM**: dream/ship via `claude -p` → Haiku API → rule-based (3-layer); AI commentary via Haiku API → rule-based (2-layer, no `claude -p`)
+- **LLM**: dream/ship via `claude -p` → `agy` → `codex exec` → Haiku API → rule-based (5-layer); AI commentary via Haiku API → rule-based (2-layer, no `claude -p`)
 - **HTTP**: reqwest (async, TLS)
 - **Async**: tokio (for daemon, Phase 2+)
 
@@ -42,7 +42,7 @@ cargo build --release          # release build → target/release/codeforge
 cargo check                    # fast type-check (no binary)
 cargo test                     # run tests
 cargo clippy                   # lint
-./scripts/check-all.sh         # THE merge gate (no hosted CI since G38): fmt, clippy --all-targets, test (flake guard), cjk-safe, doc-drift, cargo deny, shellcheck, checkout guard (main clone stays on develop), MSRV release smoke
+./scripts/check-all.sh         # THE merge gate (no hosted CI since G38): fmt, clippy --all-targets, test (flake guard), cjk-safe, doc-drift, cargo deny, shellcheck, forge-stats plugin tests, g40 real-data scans, trinity-import test, checkout guard (main clone stays on develop), release archive hermetic test (B43), MSRV release smoke
 ./scripts/package.sh <target>  # release tarball + .sha256 named as install.sh downloads them (dist/); --cross, --max-glibc; reproducible
 ./scripts/repro-check.sh <target> # build HEAD twice at two paths; archives must match
 ./scripts/release-local.sh     # local release: linux x86_64/aarch64 via cross (glibc <= 2.35), install.sh verified from a local server, dist/RELEASE.txt; --publish = DRAFT only (operator publishes)
