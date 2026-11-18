@@ -26,9 +26,10 @@ envelope() { printf '{"schema":"autopilot.runs-live/1","published_at":"%s","vali
 envelope; ( while :; do sleep 30; envelope; done ) & keep=$!
 rm -f "$G/cwd/.claude/console.json"; echo full > "$G/scenario"; s=own-$$
 trap 'kill $keep 2>/dev/null; tmux kill-session -t "$s" 2>/dev/null || true' EXIT
-tmux new-session -d -s "$s" -x 160 -y 40 -c "$G/cwd" "env HOME=$H PATH=$G/bin:$PATH GATE_DIR=$G AUTOPILOT_CARD_MIRROR_DIR=$G/mirror AUTOPILOT_ROOMS_DIR=$G/rooms AUTOPILOT_LOCALE=zh-TW LANG=zh_TW.UTF-8 claude --session-id $SID --plugin-dir $ap"
+tmux new-session -d -s "$s" -x 160 -y 40 -c "$G/cwd" "env HOME=$H AUTOPILOT_LIVE_DIR=$LB PATH=$G/bin:$PATH GATE_DIR=$G AUTOPILOT_CARD_MIRROR_DIR=$G/mirror AUTOPILOT_ROOMS_DIR=$G/rooms AUTOPILOT_LOCALE=zh-TW LANG=zh_TW.UTF-8 claude --session-id $SID --plugin-dir $ap"
 sleep 7; if cap | grep -qi "trust this folder"; then key Down; sleep .5; key Enter; fi
 sleep 14; key '/live-pane'; sleep 1.5; key Enter; sleep 4
+grep -q "\"live_base\":\"$LB\"" "$H/.autopilot/live-pointer.json" || echo "own card: live-pointer moved off $LB" >&2
 for sz in 160x40 80x24; do
   tmux resize-window -t "$s" -x "${sz%x*}" -y "${sz#*x}"; sleep 4; key 2; sleep 2.5
   cap > "$O/S6-own-p2-$sz.txt"; tmux capture-pane -p -e -t "$s" > "$O/S6-own-p2-$sz.ans"
