@@ -35,6 +35,8 @@ NOPANE=1 start full "$REALHOME"; cap > "$O/S1-closed-160x40.txt"; tmux capture-p
 # light terminal (gate b2 carbon M5): Claude Code's light theme for this session only, via --settings (nothing is written to the global config)
 start full "$REALHOME" "--settings '{\"theme\":\"light\"}'"; shots S1-light 160x40 80x24; stop
 start small "$REALHOME"; shots S4-small 160x40; stop
-start s5stale "$REALHOME"; shots S5-stale-10min 160x40 120x30; stop
+start s5stale "$REALHOME"; shots S5-stale-10min 160x40 120x30; stop  # data is 12 min old (name kept for old records)
+# spec S5 threshold is 5 min: a 6-minute-old brief must also read as stale (ux-gate s5s6-spec-vs-tool.md)
+start s5stale6 "$REALHOME"; shots S5-stale-6min 160x40; stop
 start s5fail "$HOMEBOX"; shots S5-console-exit1-nofile 160x40; stop
 echo "fleet.log lines: $(wc -l < "$G/fleet.log")"; cut -d' ' -f3- "$G/fleet.log" | sort | uniq -c

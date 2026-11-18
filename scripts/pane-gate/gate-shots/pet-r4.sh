@@ -11,6 +11,8 @@ tmux new-session -d -s "$s" -x 160 -y 40 -c "$G/cwd" "env PATH=$G/bin:$PATH GATE
 trap 'tmux kill-session -t "$s" 2>/dev/null || true' EXIT
 sleep 7; if cap | grep -qi "trust this folder"; then key Down; sleep .5; key Enter; fi
 sleep 14; key '/live-pane'; sleep 1.5; key Enter; sleep 4
+# spec S6: the default page right after opening must be the overview, not Pet
+cap > "$O/pet-default-160x40.txt"; tmux capture-pane -p -e -t "$s" > "$O/pet-default-160x40.ans"
 for sz in 160x40 120x30 80x24; do
   tmux resize-window -t "$s" -x ${sz%x*} -y ${sz#*x}; sleep 4
   key 9; sleep 3

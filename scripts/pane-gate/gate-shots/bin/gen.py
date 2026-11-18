@@ -30,7 +30,7 @@ def item(i, kind, state, title, text, line=None, sev=2, since_min=30, op=True, c
     return dict(id=i, kind=kind, severity=sev, state=state, needs_operator=op, title=title, text=text, facts={}, since_ms=now-since_min*MIN, line_id=line, link="/i/"+i, answerable_by=[], to_console=cc)
 
 def console(sc):
-    full = sc in ("full", "s5stale")
+    full = sc in ("full", "s5stale", "s5stale6")
     n_stuck = 6 if full else 0
     lines = []; items = []
     for k, (lid, label, host) in enumerate(LINES if full else LINES[:3]):
@@ -51,8 +51,8 @@ def console(sc):
         cards.append(dict(id=cid, question=q, background="假資料", options=[dict(label="准", recommended=True)], status=st, opened_at_ms=now-m*MIN, executor_display=f"lead-x · Claude (h{1+m%6})"))
         items.append(item("card:"+cid,"card","need_you",q[:20],q,sev=1,since_min=m,cc=None))
     pools = POOLS12 if full else POOLS3
-    age = 12 * MIN if sc == "s5stale" else 20000
-    st = "stale" if sc == "s5stale" else "ok"
+    age = 12 * MIN if sc == "s5stale" else 6 * MIN if sc == "s5stale6" else 20000  # s5stale6 = just past the spec S5 5-minute line
+    st = "stale" if sc in ("s5stale", "s5stale6") else "ok"
     srcs = {k: dict(at_ms=now-age, state=st) for k in ("tasks","stuck","peers","hosts","goals","cards","card_mirror","quota_now","quota_forecast","changes")}
     if sc == "s5stale":
         srcs["hosts"] = dict(at_ms=now-3*H, state="expired"); srcs["quota_forecast"] = dict(state="no_source")
@@ -63,8 +63,8 @@ def console(sc):
       brief="假資料 brief", items=items, cards=cards, lines=lines, quota=dict(pools=pools, seats=SEATS if full else SEATS[:2]), health=dict(), hosts=[])
 
 def tasks(sc):
-    full = sc in ("full","s5stale"); rows = []
-    n = 14 if full else 4
+    full = sc in ("full","s5stale","s5stale6"); rows = []
+    n = 14 if full else 1  # small = spec S4: 1 handed-off task
     for i in range(n):
         host = f"h{1+i%6}"; created = now - (90 + i*17) * MIN
         state = ["running","running","waiting","open","blocked_human","suspect","running"][i % 7] if full else "running"
