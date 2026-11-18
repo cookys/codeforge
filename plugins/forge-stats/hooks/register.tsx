@@ -143,7 +143,8 @@ async function stepSprite($: EngineInterface) {
   }
 }
 
-// One line codeforge statusline reads: is forge-stats alive in this session, and in which layout?
+// The heartbeat: is forge-stats alive in this session, and in which layout? Autopilot reads `layout`/`summary_row`; the codeforge statusline no longer reads it.
+// It never asks for a render: an invalidate every 2 s redrew the whole UI for a `band_seen` nobody reads.
 async function writeHeartbeat($: EngineInterface) {
   if (liveBase === null || sid === '') return
   try {
@@ -154,10 +155,8 @@ async function writeHeartbeat($: EngineInterface) {
     }
     const age = bandSeenAt === null ? Infinity : now - bandSeenAt
     await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout, layout === 'band' && age < BAND_SEEN_MS))
-    // an idle session may not redraw: past half the window, ask for a render, so a band still on screen refreshes bandSeenAt before it ages out
-    if (layout === 'band' && age >= BAND_SEEN_MS / 2) void $.ui.invalidate('ui.render')
   } catch {
-    // best effort: no heartbeat means the statusline stays full
+    // best effort: a missed beat is retried at the next tick
   }
 }
 

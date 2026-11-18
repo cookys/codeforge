@@ -327,9 +327,9 @@ pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot,
             let taken = took(&five_hour, &snap.five_hour) || took(&seven_day, &snap.seven_day);
             Snapshot {
                 alias: snap.alias.clone(),
-                org: snap.org.clone(),
-                org_id: snap.org_id.clone(),
-                email: snap.email.clone(),
+                org: snap.org.clone().or_else(|| old.org.clone()),
+                org_id: snap.org_id.clone().or_else(|| old.org_id.clone()),
+                email: snap.email.clone().or_else(|| old.email.clone()),
                 root: snap.root.clone().or_else(|| old.root.clone()),
                 written_at_ms: if taken {
                     snap.written_at_ms
@@ -505,6 +505,32 @@ mod tests {
         let mut t = snap("acct-a", NOW_MS + 60_000, Some((0.5, NOW_S + 60)), None);
         t.email = Some("new@example.com".into());
         let (m, _) = merge_snapshot(dir.path(), &t).unwrap();
+        assert_eq!(m.email.as_deref(), Some("new@example.com"));
+    }
+
+    #[test]
+    fn merge_keeps_old_identity_when_the_new_writer_has_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut old = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
+        old.org = Some("Acme".into());
+        old.org_id = Some("org-1".into());
+        old.email = Some("me@example.com".into());
+        merge_snapshot(dir.path(), &old).unwrap();
+        // an env_override writer: the alias is the whole identity
+        let bare = snap("acct-a", NOW_MS + 60_000, Some((0.5, NOW_S + 60)), None);
+        let (m, _) = merge_snapshot(dir.path(), &bare).unwrap();
+        assert_eq!(m.org.as_deref(), Some("Acme"));
+        assert_eq!(m.org_id.as_deref(), Some("org-1"));
+        assert_eq!(m.email.as_deref(), Some("me@example.com"));
+        assert_eq!(read_all(dir.path())[0].org_id.as_deref(), Some("org-1"));
+        // a new value overrides the old one
+        let mut newer = snap("acct-a", NOW_MS + 120_000, Some((0.6, NOW_S + 60)), None);
+        newer.org = Some("Beta".into());
+        newer.org_id = Some("org-2".into());
+        newer.email = Some("new@example.com".into());
+        let (m, _) = merge_snapshot(dir.path(), &newer).unwrap();
+        assert_eq!(m.org.as_deref(), Some("Beta"));
+        assert_eq!(m.org_id.as_deref(), Some("org-2"));
         assert_eq!(m.email.as_deref(), Some("new@example.com"));
     }
 
