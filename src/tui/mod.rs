@@ -22,7 +22,7 @@ use std::time::Duration;
 use tokio::time::{interval, MissedTickBehavior};
 
 use crate::db::Context;
-use crate::pet::session::{get_last_seen, update_last_seen, WelcomeBackSummary};
+use crate::pet::session::{get_last_interaction, update_last_interaction, WelcomeBackSummary};
 use crate::tui::events::TuiEvent;
 use crate::tui::layout::LayoutMode;
 use crate::tui::panels::local_map::LocalMapPanel;
@@ -66,7 +66,7 @@ pub async fn run(ctx: &Context) -> Result<()> {
     let mut local_map = LocalMapPanel::new();
 
     // Phase 3d §3.1: compute welcome-back BEFORE alt-screen takeover so
-    // the SQL work doesn't flash an empty frame. `update_last_seen` closes
+    // the SQL work doesn't flash an empty frame. `update_last_interaction` closes
     // the window immediately — if the user relaunches TUI seconds later,
     // no stale welcome-back will re-show.
     let welcome_lines = compute_welcome_lines(ctx).unwrap_or_default();
@@ -222,7 +222,7 @@ fn paint_once(
 }
 
 /// Compute the 2-3 line welcome-back greeting if the player's been away
-/// long enough, and close the window via `update_last_seen`. Silent on
+/// long enough, and close the window via `update_last_interaction`. Silent on
 /// any DB error — a broken welcome-back must not block the TUI from
 /// opening.
 fn compute_welcome_lines(ctx: &Context) -> Result<Vec<String>> {
@@ -232,14 +232,92 @@ fn compute_welcome_lines(ctx: &Context) -> Result<Vec<String>> {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
+    welcome_lines_at(&conn, now)
+}
+
+fn welcome_lines_at(conn: &rusqlite::Connection, now: i64) -> Result<Vec<String>> {
     let mut lines: Vec<String> = Vec::new();
-    if let Ok(Some(last)) = get_last_seen(&conn) {
-        if let Ok(Some(summary)) = WelcomeBackSummary::build(&conn, last, now, None) {
+    let prev = get_last_interaction(conn).ok().flatten();
+    if let Some(last) = prev {
+        if let Ok(Some(summary)) = WelcomeBackSummary::build(conn, last, now, None) {
             if summary.has_content() || summary.absence_seconds >= 3600 {
                 lines = summary.render_lines();
             }
         }
     }
-    let _ = update_last_seen(&conn, now);
+    let _ = update_last_interaction(conn, now);
+    // The daemon (separate process) runs the commentary trigger: hand it the
+    // previous value so its first decision still sees the absence.
+    if let Some(last) = prev {
+        let _ = crate::pet::session::stash_absence_from(conn, last);
+    }
     Ok(lines)
+}
+
+#[cfg(test)]
+mod welcome_tests {
+    use super::*;
+
+    #[test]
+    fn welcome_back_uses_last_interaction_not_statusline_seen() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        let now = 1_800_000_000;
+        // Statusline just ran 5 s ago; the human last used the TUI 8 h ago.
+        crate::pet::session::update_last_seen(&conn, now - 5).unwrap();
+        crate::pet::session::update_last_interaction(&conn, now - 8 * 3600).unwrap();
+        let lines = welcome_lines_at(&conn, now).unwrap();
+        assert!(!lines.is_empty(), "8 h away must show the welcome-back");
+        // Opening the TUI closes the window and leaves the statusline key alone.
+        assert_eq!(
+            crate::pet::session::get_last_interaction(&conn).unwrap(),
+            Some(now)
+        );
+        assert_eq!(
+            crate::pet::session::get_last_seen(&conn).unwrap(),
+            Some(now - 5)
+        );
+    }
+
+    #[test]
+    fn real_open_path_welcome_then_first_commentary_fires_long_idle() {
+        use crate::commentary::Kind;
+        use crate::daemon::ecs::GameWorld;
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        crate::commentary::repo::set_opt_in_flag(&conn, true).unwrap();
+        let world = GameWorld::load_or_init(&conn).unwrap();
+        let now = 1_800_000_000;
+        crate::pet::session::update_last_seen(&conn, now - 5).unwrap();
+        crate::pet::session::update_last_interaction(&conn, now - 8 * 3600).unwrap();
+        // 1. TUI opens (writes last_interaction_at = now) ...
+        let lines = welcome_lines_at(&conn, now).unwrap();
+        assert!(!lines.is_empty());
+        // 2. ... then the daemon's first commentary decision, seconds later.
+        let first = crate::commentary::dispatch::decide_and_reserve(
+            &conn,
+            &world,
+            &[],
+            1,
+            1,
+            now - 10,
+            1,
+            now + 3,
+        )
+        .unwrap();
+        assert_eq!(first.expect("LongIdle must fire").kind, Kind::LongIdle);
+        // 3. Later decisions in the same session do not repeat it.
+        let second = crate::commentary::dispatch::decide_and_reserve(
+            &conn,
+            &world,
+            &[],
+            1,
+            1,
+            now - 10,
+            2,
+            now + 4000,
+        )
+        .unwrap();
+        assert!(second.is_none());
+    }
 }

@@ -166,3 +166,47 @@ fn statusline_is_exactly_one_line_without_the_pet_in_every_state() {
         }
     }
 }
+
+fn settings_get(s: &Sandbox, key: &str) -> Option<String> {
+    let conn = rusqlite::Connection::open(s.data.join("state.db")).unwrap();
+    conn.query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+        r.get(0)
+    })
+    .ok()
+}
+
+/// The statusline is the "a session was open" signal only: it bumps
+/// `last_player_seen_at` and must leave `last_interaction_at` (human use) alone.
+#[test]
+fn statusline_bumps_player_seen_but_not_last_interaction() {
+    let s = sandbox();
+    adopt(&s);
+    let conn = rusqlite::Connection::open(s.data.join("state.db")).unwrap();
+    for (k, v) in [
+        ("last_player_seen_at", "100"),
+        ("last_interaction_at", "200"),
+    ] {
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [k, v],
+        )
+        .unwrap();
+    }
+    drop(conn);
+    let mut c = codeforge(&s);
+    c.arg("statusline");
+    run_with_stdin(c, "{}");
+    let seen: i64 = settings_get(&s, "last_player_seen_at")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+        seen > 1_000_000,
+        "statusline must bump last_player_seen_at, got {seen}"
+    );
+    assert_eq!(
+        settings_get(&s, "last_interaction_at").as_deref(),
+        Some("200")
+    );
+}

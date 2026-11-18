@@ -72,14 +72,17 @@ pub fn decide_and_reserve(
     }
 
     // 2. Detect triggers (pure logic).
-    let last_seen_at = session::get_last_seen(tx)?;
+    // The daemon is a separate process from the TUI: the TUI hands over the
+    // pre-open `last_interaction_at` once; only the first decision after an
+    // open sees the absence (no repeat LongIdle while the user is away).
+    let last_interaction_at = session::take_absence_from(tx)?;
     let trig_ctx = trigger::TickContext {
         now,
         defeats,
         level_before,
         level_after,
         session_started_at,
-        last_seen_at,
+        last_interaction_at,
     };
     let Some(best) = trigger::pick_best(trigger::detect(&trig_ctx)) else {
         return Ok(None);
@@ -429,5 +432,20 @@ mod tests {
         let conn = Connection::open(&db_path).unwrap();
         let rows = repo::recent_feed(&conn, 5).unwrap();
         assert_eq!(rows[0].source, super::super::Source::Rule);
+    }
+
+    #[test]
+    fn long_idle_fires_from_stashed_interaction_once() {
+        let conn = fresh_conn();
+        enable_opt_in(&conn);
+        let world = GameWorld::load_or_init(&conn).unwrap();
+        let now = 1_800_000_000;
+        session::update_last_seen(&conn, now - 5).unwrap();
+        session::stash_absence_from(&conn, now - 8 * 3600).unwrap();
+        let res = decide_and_reserve(&conn, &world, &[], 1, 1, now - 10, 1, now).unwrap();
+        let pending = res.expect("8 h absence must fire LongIdle");
+        assert_eq!(pending.kind, Kind::LongIdle);
+        // Consumed: the next decision in the same session sees no absence.
+        assert_eq!(session::take_absence_from(&conn).unwrap(), None);
     }
 }
