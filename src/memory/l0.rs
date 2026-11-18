@@ -65,6 +65,10 @@ impl<'a> SignalWriter<'a> {
 
     /// Append signal 到 JSONL，同步更新人類可讀 log.md，回傳 signal id
     pub fn append(&self, signal: &Signal) -> Result<String> {
+        // every source passes the shared secret mask before it touches disk
+        let mut masked = signal.clone();
+        masked.content = crate::redact::mask_secrets(&signal.content);
+        let signal = &masked;
         let jsonl_path = self.today_file();
 
         // `create(true)` 只建檔、不建父目錄 → 新 store(無 signals/)會 open 失敗。
@@ -255,6 +259,29 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    /// R3: every L0 source (learn/absorb/digest) is secret-masked at write time.
+    #[test]
+    fn append_masks_secrets_for_every_source() {
+        let tmp = TempDir::new().unwrap();
+        let ctx = db::Context {
+            project_dir: tmp.path().to_path_buf(),
+            brain_dir: tmp.path().join("brain"),
+            db_path: tmp.path().join("state.db"),
+        };
+        let writer = SignalWriter::new(&ctx);
+        for src in [SignalSource::Manual, SignalSource::AbsorbedMemory] {
+            let sig = Signal::new("deploy with password=hunter2 now".to_string(), src);
+            writer.append(&sig).unwrap();
+        }
+        let mut all = String::new();
+        for e in std::fs::read_dir(tmp.path().join("signals")).unwrap() {
+            all.push_str(&std::fs::read_to_string(e.unwrap().path()).unwrap());
+        }
+        all.push_str(&std::fs::read_to_string(tmp.path().join("log.md")).unwrap());
+        assert!(!all.contains("hunter2"), "secret leaked into L0: {all}");
+        assert!(all.contains("deploy with"), "{all}");
+    }
 
     /// 回歸:fresh store(無 signals/ 目錄)時 append 必須自建目錄並成功寫入。
     /// 否則 append 靜默失敗,上游 ingest-digests「失敗也刪 digest」會造成
