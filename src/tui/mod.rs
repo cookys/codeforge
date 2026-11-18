@@ -237,7 +237,8 @@ fn compute_welcome_lines(ctx: &Context) -> Result<Vec<String>> {
 
 fn welcome_lines_at(conn: &rusqlite::Connection, now: i64) -> Result<Vec<String>> {
     let mut lines: Vec<String> = Vec::new();
-    if let Ok(Some(last)) = get_last_interaction(conn) {
+    let prev = get_last_interaction(conn).ok().flatten();
+    if let Some(last) = prev {
         if let Ok(Some(summary)) = WelcomeBackSummary::build(conn, last, now, None) {
             if summary.has_content() || summary.absence_seconds >= 3600 {
                 lines = summary.render_lines();
@@ -245,6 +246,11 @@ fn welcome_lines_at(conn: &rusqlite::Connection, now: i64) -> Result<Vec<String>
         }
     }
     let _ = update_last_interaction(conn, now);
+    // The daemon (separate process) runs the commentary trigger: hand it the
+    // previous value so its first decision still sees the absence.
+    if let Some(last) = prev {
+        let _ = crate::pet::session::stash_absence_from(conn, last);
+    }
     Ok(lines)
 }
 
@@ -271,5 +277,47 @@ mod welcome_tests {
             crate::pet::session::get_last_seen(&conn).unwrap(),
             Some(now - 5)
         );
+    }
+
+    #[test]
+    fn real_open_path_welcome_then_first_commentary_fires_long_idle() {
+        use crate::commentary::Kind;
+        use crate::daemon::ecs::GameWorld;
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        crate::commentary::repo::set_opt_in_flag(&conn, true).unwrap();
+        let world = GameWorld::load_or_init(&conn).unwrap();
+        let now = 1_800_000_000;
+        crate::pet::session::update_last_seen(&conn, now - 5).unwrap();
+        crate::pet::session::update_last_interaction(&conn, now - 8 * 3600).unwrap();
+        // 1. TUI opens (writes last_interaction_at = now) ...
+        let lines = welcome_lines_at(&conn, now).unwrap();
+        assert!(!lines.is_empty());
+        // 2. ... then the daemon's first commentary decision, seconds later.
+        let first = crate::commentary::dispatch::decide_and_reserve(
+            &conn,
+            &world,
+            &[],
+            1,
+            1,
+            now - 10,
+            1,
+            now + 3,
+        )
+        .unwrap();
+        assert_eq!(first.expect("LongIdle must fire").kind, Kind::LongIdle);
+        // 3. Later decisions in the same session do not repeat it.
+        let second = crate::commentary::dispatch::decide_and_reserve(
+            &conn,
+            &world,
+            &[],
+            1,
+            1,
+            now - 10,
+            2,
+            now + 4000,
+        )
+        .unwrap();
+        assert!(second.is_none());
     }
 }

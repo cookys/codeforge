@@ -82,6 +82,36 @@ pub fn update_last_interaction(conn: &Connection, now_unix: i64) -> Result<()> {
     Ok(())
 }
 
+/// Settings key: the `last_interaction_at` value the TUI saw when it opened,
+/// handed to the daemon (a separate process) for its first commentary decision.
+const ABSENCE_FROM_KEY: &str = "commentary_absence_from";
+
+/// TUI open: remember when the human was last here (`prev`), unless an earlier
+/// open has not been consumed yet (keeps the longest absence).
+pub fn stash_absence_from(conn: &Connection, prev: i64) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES (?1, ?2)",
+        rusqlite::params![ABSENCE_FROM_KEY, prev.to_string()],
+    )?;
+    Ok(())
+}
+
+/// Commentary decision: take (read and clear) the stashed absence start. `Some`
+/// only for the first decision after a TUI open; later decisions get `None`.
+pub fn take_absence_from(conn: &Connection) -> Result<Option<i64>> {
+    let row: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            [ABSENCE_FROM_KEY],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if row.is_some() {
+        conn.execute("DELETE FROM settings WHERE key = ?1", [ABSENCE_FROM_KEY])?;
+    }
+    Ok(row.and_then(|s| s.parse::<i64>().ok()))
+}
+
 /// Aggregated stats about what happened while the player was away.
 /// All counts are capped at `u32::MAX` for defensive saturation — a
 /// real absence can't possibly produce overflow-magnitude counts, but

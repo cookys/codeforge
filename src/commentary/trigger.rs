@@ -89,9 +89,9 @@ pub struct TickContext<'a> {
     pub level_after: u32,
     /// Unix seconds when the daemon started. Used for SessionLong.
     pub session_started_at: i64,
-    /// Unix seconds of last human interaction (`last_interaction_at` in settings).
+    /// Unix seconds of last human interaction (`last_interaction_at` before this TUI open, handed over by the TUI).
     /// `None` on fresh install → LongIdle suppressed.
-    pub last_seen_at: Option<i64>,
+    pub last_interaction_at: Option<i64>,
 }
 
 /// Detect all triggers that the current tick would warrant. The caller
@@ -131,7 +131,7 @@ pub fn detect(ctx: &TickContext<'_>) -> Vec<Trigger> {
     }
 
     // LongIdle: only meaningful once last_seen is populated.
-    if let Some(last) = ctx.last_seen_at {
+    if let Some(last) = ctx.last_interaction_at {
         let absence = ctx.now.saturating_sub(last);
         if absence >= LONG_IDLE_THRESHOLD_SECS {
             out.push(Trigger::LongIdle {
@@ -170,7 +170,7 @@ mod tests {
             level_before: 1,
             level_after: 1,
             session_started_at: 10_000,
-            last_seen_at: None,
+            last_interaction_at: None,
         }
     }
 
@@ -266,13 +266,13 @@ mod tests {
     fn long_idle_requires_last_seen() {
         let defeats: Vec<DefeatedMob> = vec![];
         let mut ctx = base_ctx(&defeats);
-        ctx.last_seen_at = None;
+        ctx.last_interaction_at = None;
         assert!(!detect(&ctx).iter().any(|t| t.kind() == Kind::LongIdle));
 
-        ctx.last_seen_at = Some(ctx.now - LONG_IDLE_THRESHOLD_SECS);
+        ctx.last_interaction_at = Some(ctx.now - LONG_IDLE_THRESHOLD_SECS);
         assert!(detect(&ctx).iter().any(|t| t.kind() == Kind::LongIdle));
 
-        ctx.last_seen_at = Some(ctx.now - (LONG_IDLE_THRESHOLD_SECS - 1));
+        ctx.last_interaction_at = Some(ctx.now - (LONG_IDLE_THRESHOLD_SECS - 1));
         assert!(!detect(&ctx).iter().any(|t| t.kind() == Kind::LongIdle));
     }
 
