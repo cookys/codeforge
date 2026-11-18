@@ -9,7 +9,8 @@
 set -uo pipefail
 G=$(cd "$(dirname "$0")" && pwd); ap=$(cd "$1" && pwd); label=$2; O=$G/out/$label; mkdir -p "$O"
 . "$G/lib.sh"
-H=$G/home-own; LB=$H/.autopilot/live; KEY=$(printf gate-own | sha256sum | cut -c1-16);  # any 16 hex (model.ts isKey); SID=$(python3 -I -c 'import uuid; print(uuid.uuid4())')
+H=$G/home-own; LB=$H/.autopilot/live; KEY=$(printf gate-own | sha256sum | cut -c1-16)  # any 16 hex (model.ts isKey)
+SID=$(python3 -I -c 'import uuid; print(uuid.uuid4())')
 GIT=$G/cwd/.git; IDENT="git-common-dir:$GIT"
 rm -rf "$H/.autopilot"; mkdir -p "$H/.autopilot/session-mode" "$LB/runs" "$GIT/autopilot/decisions"
 ln -sfn "$HOME/.claude" "$H/.claude"; ln -sf "$HOME/.claude.json" "$H/.claude.json"
