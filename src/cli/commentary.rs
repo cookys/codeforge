@@ -170,6 +170,9 @@ fn load_pet_context(conn: &Connection) -> Result<(String, u32, u32, u8, String)>
         .optional()?;
     match row {
         Some((v, l, h, m, s)) => {
+            let s = crate::daemon::strategy::read_setting(conn)?
+                .map(|x| x.as_str().to_string())
+                .unwrap_or(s);
             let level = l.clamp(1, i64::from(u32::MAX)) as u32;
             let hp = h.clamp(0, i64::from(u32::MAX)) as u32;
             let mood = m.clamp(0, 100) as u8;
