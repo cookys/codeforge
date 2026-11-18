@@ -447,8 +447,9 @@ fn record_quota_with(
     use crate::usage::logins::{self, SessionGate};
     use crate::usage::quota::{merge_snapshot, read_others, Seen, Snapshot, Window};
     let window = |pct: Option<f64>, at: Option<i64>| match (pct, at) {
-        (Some(pct), Some(resets_at)) => Some(Window {
-            pct,
+        // an overrun past the cap is filed as the cap, so the file always reads back
+        (Some(pct), Some(resets_at)) if pct.is_finite() && pct >= 0.0 => Some(Window {
+            pct: pct.min(crate::usage::quota::PCT_CAP),
             resets_at,
             seen: Some(Seen {
                 at_ms: now_ms,
@@ -1818,6 +1819,31 @@ mod tests {
             org_id: None,
             email: email.map(str::to_string),
         }
+    }
+
+    #[test]
+    fn an_overrun_past_the_cap_is_filed_as_the_cap() {
+        // fleet 01M7PDG6: used_percentage 180 must not write a pct the reader refuses
+        let base = tempfile::tempdir().unwrap();
+        let dir = base.path().join("codeforge/usage/quota");
+        let mut data = StatusInput {
+            five_hour_pct: Some(1.8),
+            five_hour_resets_at: Some(Q_NOW + 3600),
+            ..Default::default()
+        };
+        record_quota(
+            &mut data,
+            &dir,
+            Some(&ident("acct-a", None)),
+            "1a2b3c4d",
+            "sess-1",
+            Q_NOW * 1000,
+        );
+        let got = crate::usage::quota::read_own(&dir, "acct-a").unwrap();
+        assert_eq!(
+            got.five_hour.map(|w| w.pct),
+            Some(crate::usage::quota::PCT_CAP)
+        );
     }
 
     #[test]

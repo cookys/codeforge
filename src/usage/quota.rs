@@ -32,6 +32,9 @@ pub const MAX_AGE_MS: i64 = 6 * 3600 * 1000;
 /// Bounded read of the snapshot dir.
 pub const MAX_FILES: usize = 16;
 pub const MAX_BYTES: u64 = 4096;
+/// The highest `pct` a snapshot carries: Claude Code reports `used_percentage` above 100 on an
+/// overrun, so 1.0..=1.5 is real; a larger reading is stored as this cap (fleet 01M7PDG6).
+pub const PCT_CAP: f64 = 1.5;
 /// Two `resets_at` closer than this are the same window (sessions may round differently).
 pub const SAME_WINDOW_S: i64 = 600;
 
@@ -118,8 +121,10 @@ fn window_from(v: &Value) -> Option<Window> {
         }),
         _ => None,
     };
-    (pct.is_finite() && (0.0..=1.5).contains(&pct)).then_some(Window {
-        pct,
+    // an over-cap value from an older writer is read as the cap: dropping it would make the next
+    // write lose this window and file `null` (fleet 01M7PDG6)
+    (pct.is_finite() && pct >= 0.0).then_some(Window {
+        pct: pct.min(PCT_CAP),
         resets_at,
         seen,
     })
@@ -516,6 +521,43 @@ mod tests {
         let mut v = s.to_json();
         v["five_hour"]["pct"] = json!(f64::NAN.to_string());
         assert_eq!(Snapshot::from_json(&v).unwrap().five_hour, None);
+    }
+
+    #[test]
+    fn an_over_cap_pct_reads_as_the_cap_and_a_negative_one_is_refused() {
+        let s = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
+        let mut v = s.to_json();
+        v["five_hour"]["pct"] = json!(1.8);
+        assert_eq!(
+            Snapshot::from_json(&v).unwrap().five_hour.map(|w| w.pct),
+            Some(PCT_CAP)
+        );
+        v["five_hour"]["pct"] = json!(-0.1);
+        assert_eq!(Snapshot::from_json(&v).unwrap().five_hour, None);
+    }
+
+    #[test]
+    fn an_old_file_over_the_cap_keeps_its_window_when_the_new_reading_has_none() {
+        // fleet 01M7PDG6: the old reader dropped a 1.8 window, so the next write filed five_hour null
+        let dir = tempfile::tempdir().unwrap();
+        let old = snap(
+            "acct-a",
+            NOW_MS,
+            Some((0.5, NOW_S + 3600)),
+            Some((0.4, NOW_S + 86400)),
+        );
+        let mut v = old.to_json();
+        v["five_hour"]["pct"] = json!(1.8);
+        crate::live::write_live_json(dir.path(), "acct-a.json", &v).unwrap();
+        let new = snap("acct-a", NOW_MS + 60_000, None, Some((0.45, NOW_S + 86400)));
+        let (m, wrote) = merge_snapshot(dir.path(), &new).unwrap();
+        assert!(wrote);
+        assert_eq!(
+            m.five_hour.map(|w| (w.pct, w.resets_at)),
+            Some((PCT_CAP, NOW_S + 3600))
+        );
+        let back = read_own(dir.path(), "acct-a").unwrap();
+        assert_eq!(back.five_hour.map(|w| w.pct), Some(PCT_CAP));
     }
 
     #[test]
