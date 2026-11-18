@@ -134,6 +134,44 @@
 - **Source**: PM 01M7P1HY：astra 補評等登入恢復後放到第二批
 - **Pointer**: doc/backlog/pane-batch2.md
 
+### pane 開著時終端機縮窄，數字熱鍵改打進提示列（第二批 B56）
+- **Id**: B56
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: pane 在寬終端機（側邊）開著，終端機縮到 80 寬後 pane 改疊在提示列上方，之後按 1–9、0 一律打進提示列，分頁不切換；一開始就是 80 寬、或只縮高度（160x24）都正常。
+- **Impact**: 操作員按數字想切頁，結果在對話框打出數字，可能直接送出錯字（PM 01M7PMAN：會打錯字的真 bug）。
+- **Trigger**: ready；隨第 2 批一起交
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: codeforge keyprobe 11-18（Claude Code 2.1.327、已安裝的 autopilot 083cf2e9）；PM 01M7PMAN 列入第 2 批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Done-Check**: `grep -q "^B56 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7PMANY4HGR5N2J6BNAWFD6J
+- **Context**: 實作在 autopilot；可能是 host 換位置時沒重新登記 hotkey，要 autopilot 查清楚是自己的還是 host 的，host 的就做繞道並回報
+
+### pane 寵物分頁正式上線（第 3 批）
+- **Id**: B57
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 9 寵物分頁目前只畫佔位文字「寵物分頁還沒上線」。
+- **Impact**: 操作員按 9 看不到寵物；寵物只能在這一頁畫（statusline 永不畫寵物）。
+- **Trigger**: 第 2 批 pin 之後
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: PM 01M7PMAN：寵物頁排第 3 批，codeforge 主導、autopilot 實作
+- **Pointer**: doc/specs/codeforge-mod-ui.md
+- **Needs**: B56
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7PMANY4HGR5N2J6BNAWFD6J
+- **Context**: 資料走 pet.json 契約；閘門照 forge-stats-ux-gate
+
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
