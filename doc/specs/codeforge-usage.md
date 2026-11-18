@@ -33,7 +33,7 @@ session 手上是舊值（2026-11-06 實測：同一組重置時間下，四組�
 - 重置時間相同（相差不到 600 秒）：取百分比較大的；
 - 重置時間不同（兩個不同的窗）：重置時間已過的窗不取代還在跑的窗；其他情況取擷取時間（`seen_at_ms`）較新的
   那份（都沒有擷取時間時取重置時間較晚的；兩個都已重置時取重置時間較晚的，所以停在舊窗的閒置 session 不會刷新檔案）。
-  以前是「較晚的窗取代、較早的丟掉」：2026-11-09 host-console-team 的一個 session 在 06:13 TW 換登入前，把前一個帳號
+  以前是「較晚的窗取代、較早的丟掉」：2026-11-09 team 帳號（host-t）的一個 session 在 06:13 TW 換登入前，把前一個帳號
   的週窗（週一 04:00 重置，7d 11%）記到了 acct-337c98de 下，之後這個帳號真正的讀數（週四 12:00 重置，63%）都因為
   「較早的窗」被丟掉，畫面一直停在 11%；
 - 這次沒帶這個窗：保留檔案裡的。
@@ -56,7 +56,7 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   收集到的用量列 `account` 存空字串，`summary.json` 的 `days[].account` 寫 `null`，自成一行，不併進任何帳號；
   `usage --by account` 印「未歸屬（未登入）」，`--json` 的 `key` 是 `null`。fleet 的 rollup 用同一條規則（PM 01M7052H79）。
   以前退回 `acct-` + sha256(canonical config dir) 前 8 碼，2026-11-09 實測：`acct-ae88ee5d`（`/home/user/.claude`）
-  在每台主機都出現、卻沒有任何窗，`acct-81916b7b`（`/home/user/.claude`）被當成 team 的舊帳號。讀舊資料時一樣當未歸屬：
+  在每台主機都出現、卻沒有任何窗，`acct-81916b7b`（`/home/user2/.claude`）被當成 team 的舊帳號。讀舊資料時一樣當未歸屬：
   `acct-<自己 root 的 hash>` 的配額快照不讀；db 裡 `acct-<任一已知 root 的 hash>` 的用量列讀成未歸屬。
   為什麼不用路徑：每台主機的 config dir 都是 `/home/user/.claude`，路徑 hash 讓 7 台不同配額的主機撞同一個別名，
   而且換帳號（同 email、個人訂閱 vs 組織訂閱）別名不會變。
@@ -142,7 +142,7 @@ session、何時看到的；`seen_by` 是清理過的 session id）。同樣的�
   同時清備註與規則；`usage alias list` 的備註區列出規則。規則格式不合時報繁體中文錯誤並附範例。檔案其餘內容原樣保留，0600、原子寫入。
 - **statusline 其他帳號段**：只看還沒重置的週視窗。週 ≥ 95% 或「會不夠（估）」→「⚠ 名字 週 97% 3d1h 後重置」；
   「會浪費」→「名字 週 NN% … 後重置 會浪費」；其餘帳號不出現，沒有名字的帳號不出現。放不下就只留前面的段。
-  （gpu-host-1 曾顯示 97%，原因是 statusline 讀到修正身分前的舊合併快照；gpu-lead 實測 /login 後新舊 session 的數字相同，
+  （一台 GPU 主機曾顯示 97%，原因是 statusline 讀到修正身分前的舊合併快照；gpu-lead 實測 /login 後新舊 session 的數字相同，
   「舊 session 拿舊 token」的推論不成立。）
 - **summary 帶 `name`**：summary 帳號**選填** `name`（顯示名，由寫 summary 的主機用同一套規則與它自己的名字設定檔算；沒有名字就不帶）。
   驗證同 `valid_name`，契約 `name_max_cells` = 24 與 pane 副本由測試比對。forge-stats「用量」分頁與側欄畫 `name`；舊 summary 沒有 `name`
@@ -179,7 +179,7 @@ statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Cla
 
 釘選由 statusline **與** SessionStart 的 `memory context --hook` 兩邊寫入（決策與寫入在 `usage::lane_pin`）：無頭的 `claude -p` 不會跑 statusline，若只靠 statusline 釘選，token lane 子 session 的請求會被 collect 歸到登入檔帳號（2026-11-13，cuda：twgame token lane 子行程記到團隊帳號）。hook 不改 additionalContext 的位元組輸出。
 
-沒帶覆寫的 token lane（hangar 01M77KXH）：行程有非空的 `CLAUDE_CODE_OAUTH_TOKEN`（只看有沒有，不讀值）、卻沒有可採用的 `CODEFORGE_ACCOUNT_ALIAS` 時，statusline 不從登入檔推帳號，因為 token 可能是別的 org，例如 gpu-host-2 的 personal token 原本被記到團隊帳號。做法如下：
+沒帶覆寫的 token lane（hangar 01M77KXH）：行程有非空的 `CLAUDE_CODE_OAUTH_TOKEN`（只看有沒有，不讀值）、卻沒有可採用的 `CODEFORGE_ACCOUNT_ALIAS` 時，statusline 不從登入檔推帳號，因為 token 可能是別的 org，例如另一台主機的 personal token 原本被記到團隊帳號。做法如下：
 
 - 不寫配額快照，也不呼叫 `observe`。
 - 用 `pin_session` 把 session 釘在 `unattributed`（`logins::PIN_UNATTRIBUTED`）。
@@ -192,7 +192,7 @@ statusline 每次渲染，以及 `usage collect` 對每個解析出登入的 Cla
 
 已知限制：換帳號要到下一次 statusline 渲染或 collect 才被看見；這段空檔裡的請求歸給前一個別名。時間軸出現之前就收集的轉錄檔，仍用舊規則（歸給收集當下的帳號）。釘選在 SessionStart（`memory context --hook`）或該 lane 的 statusline 寫過 pin 之後，之後的**新**列才歸到覆寫別名。
 
-host-console 的 team，從 2026-11-12 06:30（+0800）起，到各 lane 帶著這個覆寫重啟為止，記成 `acct-65d2bffc` 的 Claude 請求與配額百分比實際上屬於 `acct-9832dff1`。PM 裁定不回填（PM 01M76FE9），所以這段期間的逐帳號合計是不準的。
+console host 的 team 帳號，從 2026-11-12 06:30（+0800）起，到各 lane 帶著這個覆寫重啟為止，記成 `acct-65d2bffc` 的 Claude 請求與配額百分比實際上屬於 `acct-9832dff1`。PM 裁定不回填（PM 01M76FE9），所以這段期間的逐帳號合計是不準的。
 
 **沒有登入檔可推的 token 池用固定別名**（PM 01M78CGQ、01M78CTD）：用 `claude setup-token` 產生、沒有任何機器 `/login` 過的帳號，推不出正規別名（`sha256("<organizationUuid>\n<emailAddress>")` 取前 8 碼）。這時改用 `acct-` 加上 `sha256("token-pool:<池名>")` 的前 8 碼，在 wrapper 裡設 `CODEFORGE_ACCOUNT_ALIAS`。不拿 token 打 OAuth profile 端點讀身分（那是憑證的新用途，PM 不採用）。目前只有一個：
 
@@ -501,7 +501,7 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
 
 ## trinity 配額（自報）
 
-操作員 d-e31e39c0（PM 01M76PF4）。fleet 成員 `cookys/grokbot/trinity`（Grok Bot，自己的 VM，沒有可讀的憑證）每次被叫醒時，把自己的 Grok 額度寫成一行，同一個 UTC 小時最多一次，送到 `cookys/host-console-team/fleet-cli`（或由它那台的 courier 定時送出同一行）。只收配額：token 數與醒來次數不匯入（醒來次數是 hangar 每 6 小時從 hub 算的代理值，給 capacity，PM 01M76GXN）。codeforge 不連線、不讀憑證，只在 `codeforge usage trinity-import <FILE>`（`-` 表示標準輸入）時匯入。帳號鍵是 `trinity-<sha8>`：sha8 是成員位址字串的 sha256 前 8 碼 hex，各主機相同；沒設顯示名時顯示 `trinity (Grok Bot)`。實作 `src/usage/trinity.rs`。
+操作員 d-e31e39c0（PM 01M76PF4）。fleet 成員 `<namespace>/<bot-host>/trinity`（Grok Bot，自己的 VM，沒有可讀的憑證）每次被叫醒時，把自己的 Grok 額度寫成一行，同一個 UTC 小時最多一次，送到 console host 上的 fleet-cli 成員（或由它那台的 courier 定時送出同一行）。只收配額：token 數與醒來次數不匯入（醒來次數是 hangar 每 6 小時從 hub 算的代理值，給 capacity，PM 01M76GXN）。codeforge 不連線、不讀憑證，只在 `codeforge usage trinity-import <FILE>`（`-` 表示標準輸入）時匯入。帳號鍵是 `trinity-<sha8>`：sha8 是成員位址字串的 sha256 前 8 碼 hex，各主機相同；沒設顯示名時顯示 `trinity (Grok Bot)`。實作 `src/usage/trinity.rs`。
 
 ```json
 {"schema":"trinity-usage/1","observed_at":"2026-11-12T03:12:00Z","pct":0.34,"resets_at":"2026-11-18T00:00:00Z"}
@@ -515,7 +515,7 @@ Claude/GPT pool 的鍵是 `agyclaude-<hash8>`（實作 `src/usage/agy.rs`）。
 
 **寫入**：這次匯入裡 `observed_at` 最新的那一行，比 `<live_base>/codeforge/usage/trinity-quota.json` 裡的 `observed_ms` 新時才覆寫（0600、原子寫入）：`observed_ms`（unix 毫秒）、`pct`、`resets_at`（unix 秒）。不寫 `usage.db`，不進 `usage export --hourly`。`codeforge usage` 收集時讀這份檔，做成週視窗快照（沒有 5 小時窗）；`CODEFORGE_USAGE_TRINITY=0` 時不讀。快照比 `quota::MAX_AGE_MS`（6 小時）舊、或 `resets_at` 已過，就不進 summary。
 
-**收件**：`scripts/trinity-import/trinity-import.sh`，由 systemd user timer 每 15 分鐘執行一次（`codeforge-trinity-import.timer`）。它讀這台 fleet-cli 的收件匣（`fleet inbox --peek --json`），只收 courier 證明的 `from` 在 `CODEFORGE_TRINITY_SENDERS`（預設 `cookys/grokbot/trinity` 與 `cookys/grokbot/fleet-cli`：trinity 那台用排程跑 shell `fleet send` 時，寄件者是那台的 fleet-cli；hub 只認證到 courier 這層，所以內容一律當不可信資料解析）裡、內容是 `trinity-usage/1` JSON 的訊息，每則訊息只匯入一次。匯入失敗，或成功匯入後超過 `CODEFORGE_TRINITY_STALE_H`（預設 168，即一個週配額窗）小時沒有新資料，就通知 capacity 與 codeforge 一次（每則訊息一次，每天一次）。trinity 只在被叫醒、`usage.json` 有變動時才送，閒置時不送；閒置時它的週用量也不會增加，所以舊讀數仍然正確。原本的 24 小時門檻在 2026-11-14 誤報過一次（trinity 只是閒置），因此放寬到一週：整個週窗都沒資料，才可能是送出端壞了。unit 固定 `AUTOPILOT_LIVE_DIR=/dev/shm/autopilot-%U`：systemd 會帶 `XDG_RUNTIME_DIR`，不固定的話 codeforge 會寫到 `/run/user/<uid>/autopilot`，而跑 `codeforge usage` 的 Claude session 沒有這個變數、讀的是 `/dev/shm`，兩邊對不上（2026-11-13 第一筆就這樣沒進 summary）。
+**收件**：`scripts/trinity-import/trinity-import.sh`（`CODEFORGE_TRINITY_SENDERS` 與 `CODEFORGE_TRINITY_NOTIFY` 沒有預設值，由選用的 `${CODEFORGE_TRINITY_ENV:-$HOME/.config/codeforge/trinity.env}` 或環境提供；沒設就 exit 2），由 systemd user timer 每 15 分鐘執行一次（`codeforge-trinity-import.timer`）。它讀這台 fleet-cli 的收件匣（`fleet inbox --peek --json`），只收 courier 證明的 `from` 在 `CODEFORGE_TRINITY_SENDERS`（沒有預設，必須設；內容是 trinity 與它那台 fleet-cli 的位址：trinity 那台用排程跑 shell `fleet send` 時，寄件者是那台的 fleet-cli；hub 只認證到 courier 這層，所以內容一律當不可信資料解析）裡、內容是 `trinity-usage/1` JSON 的訊息，每則訊息只匯入一次。匯入失敗，或成功匯入後超過 `CODEFORGE_TRINITY_STALE_H`（預設 168，即一個週配額窗）小時沒有新資料，就通知 `CODEFORGE_TRINITY_NOTIFY` 列的成員一次（每則訊息一次，每天一次）。trinity 只在被叫醒、`usage.json` 有變動時才送，閒置時不送；閒置時它的週用量也不會增加，所以舊讀數仍然正確。原本的 24 小時門檻在 2026-11-14 誤報過一次（trinity 只是閒置），因此放寬到一週：整個週窗都沒資料，才可能是送出端壞了。unit 固定 `AUTOPILOT_LIVE_DIR=/dev/shm/autopilot-%U`：systemd 會帶 `XDG_RUNTIME_DIR`，不固定的話 codeforge 會寫到 `/run/user/<uid>/autopilot`，而跑 `codeforge usage` 的 Claude session 沒有這個變數、讀的是 `/dev/shm`，兩邊對不上（2026-11-13 第一筆就這樣沒進 summary）。
 
 ## 全帳號配額表（`usage fleet`）
 

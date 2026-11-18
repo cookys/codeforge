@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# NOTE: HOMEBOX links the real ~/.claude and ~/.claude.json (the pane needs the real login to render); build-b2.py's private-name gate is what keeps real names out of packets.
 # run.sh <autopilot-dir> [label] — real-terminal shots of pages 1-4 with fake fleet data. Output: out/<label>/...
 # Needs cwd/.git/HEAD (git-less repo stub); console mode OFF (cwd/.claude/console.json absent) = where the framed pages draw.
 set -uo pipefail

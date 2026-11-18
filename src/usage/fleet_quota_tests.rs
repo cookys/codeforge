@@ -683,7 +683,7 @@ fn with_org(mut a: Value, org: &str) -> Value {
 #[test]
 fn eight_hosts_at_80_cols_keep_as_many_labels_as_fit_and_count_the_rest() {
     let names = [
-        "gpu-host-2", "host-mini", "host-console", "gpu-host-1", "cuda", "host-recovery", "host-infra", "gpu-host-3",
+        "alpha1", "bravo2", "charlie3", "delta", "echo", "foxtrt", "golf4444", "hotel1",
     ];
     let s = summary(
         "host-aaaaaaaa",
@@ -716,11 +716,11 @@ fn eight_hosts_at_80_cols_keep_as_many_labels_as_fit_and_count_the_rest() {
         let head = txt.lines().find(|l| l.starts_with("personal")).unwrap();
         assert!(UnicodeWidthStr::width(head) <= 80, "{head:?}");
         assert!(
-            head.contains("gpu-host-2") && head.contains(more),
+            head.contains("alpha1") && head.contains(more),
             "{tr}: {head:?}"
         );
         let pos = |s: &str| head.find(s).unwrap();
-        assert!(pos("personal") < pos("claude") && pos("claude") < pos("gpu-host-2"));
+        assert!(pos("personal") < pos("claude") && pos("claude") < pos("alpha1"));
     }
     // JSON carries the org; an account without one has null
     let js = to_json(&f, NOW_MS);
@@ -1006,8 +1006,8 @@ fn seen_ms(age_s: i64) -> Option<i64> {
     Some((NOW_S - age_s) * 1000)
 }
 
-/// The real failure: both files written 17 min ago; gpu-host-2 captured a weekly 4 % that has since
-/// reset, gpu-host-1 still carries a 97 % captured days ago with a future reset.
+/// The real failure: both files written 17 min ago; alpha1 captured a weekly 4 % that has since
+/// reset, delta still carries a 97 % captured days ago with a future reset.
 fn real_case() -> Fleet {
     let a = summary(
         "host-aaaaaaaa",
@@ -1035,7 +1035,7 @@ fn real_case() -> Fleet {
         )],
         vec![],
     );
-    run(&[("gpu-host-2.json", &a), ("gpu-host-1.json", &b)])
+    run(&[("alpha1.json", &a), ("delta.json", &b)])
 }
 
 #[test]
@@ -1045,15 +1045,15 @@ fn real_case_newest_capture_wins_so_the_weekly_is_reset_not_97() {
     let w = r.weekly.as_ref().unwrap();
     assert!(
         w.reset,
-        "gpu-host-2 has the newest weekly capture and it has reset"
+        "alpha1 has the newest weekly capture and it has reset"
     );
     assert_eq!(w.win.pct, 0.04);
     assert_eq!((w.warn, w.projected, w.exhaust_at), (None, None, None));
-    // 5h: gpu-host-1 captured 120 s ago vs 60 s: gpu-host-2 is newer, gpu-host-1's 0.27 disagrees
+    // 5h: delta captured 120 s ago vs 60 s: alpha1 is newer, delta's 0.27 disagrees
     assert_eq!(r.five_hour.unwrap().pct, 0.25);
     assert!(!r.five_reset);
-    assert_eq!(r.old_hosts, vec!["gpu-host-1"]);
-    assert_eq!(r.hosts, vec!["gpu-host-2", "gpu-host-1"]);
+    assert_eq!(r.old_hosts, vec!["delta"]);
+    assert_eq!(r.hosts, vec!["alpha1", "delta"]);
     assert_eq!(r.state, State::Ok);
     let js = to_json(&f, NOW_MS);
     let a = js["accounts"]
@@ -1062,13 +1062,13 @@ fn real_case_newest_capture_wins_so_the_weekly_is_reset_not_97() {
         .iter()
         .find(|a| a["alias"] == "acct-65d2bffc")
         .unwrap();
-    assert_eq!(a["old_hosts"], json!(["gpu-host-1"]));
+    assert_eq!(a["old_hosts"], json!(["delta"]));
     assert_eq!(a["weekly"]["reset"], json!(true));
     assert!(a["weekly"]["warn"].is_null() && a["weekly"]["projected"].is_null());
     assert_eq!(a["five_hour"]["reset"], json!(false));
     for (tr, reset, old) in [
-        ("zh-TW", "已重置", "gpu-host-1 舊"),
-        ("en", "reset", "gpu-host-1 old"),
+        ("zh-TW", "已重置", "delta 舊"),
+        ("en", "reset", "delta old"),
     ] {
         for cols in [40usize, 60, 80, 100] {
             let txt = text(&f, cols, NOW_MS, &Tr(tr.into()), false);
@@ -1432,8 +1432,8 @@ fn monthly_and_one_shot_rules_count_down_and_a_passed_one_shot_drops_out() {
 
 #[test]
 fn the_newest_reading_of_an_account_wins_whatever_os_account_or_host_and_each_window_has_its_age() {
-    // 2026-11-09: host-console-team (the team OS account) last saw acct-337c98de at 06:13 TW, 7d 11% in
-    // a week resetting Mon 11-16 04:00; host-console (the cookys OS account) saw 63% at 20:07 in the week
+    // 2026-11-09: charlie3-team (the team OS account) last saw acct-337c98de at 06:13 TW, 7d 11% in
+    // a week resetting Mon 11-16 04:00; charlie3 (the cookys OS account) saw 63% at 20:07 in the week
     // resetting Thu 11-12 12:00. NOW = 20:08.
     let team_seen = 13 * H + 55 * 60;
     let team = summary(
@@ -1474,10 +1474,10 @@ fn the_newest_reading_of_an_account_wins_whatever_os_account_or_host_and_each_wi
         ],
         vec![],
     );
-    let f = run(&[("host-console-team.json", &team), ("host-console.json", &cookys)]);
+    let f = run(&[("charlie3-team.json", &team), ("charlie3.json", &cookys)]);
     let r = row(&f, "acct-337c98de");
     assert_eq!(r.weekly.as_ref().unwrap().win.pct, 0.63);
-    assert_eq!(r.old_hosts, vec!["host-console-team"]);
+    assert_eq!(r.old_hosts, vec!["charlie3-team"]);
     let v = to_json(&f, NOW_MS);
     let a = |k: &str| {
         v["accounts"]

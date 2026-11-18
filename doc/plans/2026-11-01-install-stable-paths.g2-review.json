@@ -234,7 +234,7 @@
       "affected_surface": "共用 settings.json 寫出的 codeforge hook command 與尚未升級的 PATH binary",
       "claim": "共用檔被任一台 0.0.7 install 改寫成 codeforge hook … 並 sweep 掉 hooks/<ver>/ node 路徑後，PATH 上仍是 0.0.6 的機器會打到未知子命令。clap 預設 exit 2，Claude Code 當成 blocking。這是 R11 要避免的 exit 2，只是發生在舊 binary 而非新轉發器。§2.6 寫沒重跑 install 的機器繼續用舊 versioned 腳本，在共用檔情境為假。",
       "evidence": "本計畫 OKR 就是同一份共用檔。P2.3 把 global emit-session／session-digest 改成 codeforge hook …；P2.6 重跑後舊 codeforge@0.0.x 與 hooks/<ver>/ 不留。0.0.6 沒有 hook 子命令。§2.6 仍稱 published-compatible、沒重跑的機器照常運作。P4.5 只提醒舊 entry 會被換掉，沒要求其他機器先 self-update 再拉改寫後的 settings。",
-      "evidence_reference": "plan §2.6 Compatibility impact; plan §4 P2.3 global hook commands; plan §4 P2.6 sweep; plan §4 P4.5 host-mini reply; rubric R11 轉發器自身錯誤不回 2",
+      "evidence_reference": "plan §2.6 Compatibility impact; plan §4 P2.3 global hook commands; plan §4 P2.6 sweep; plan §4 P4.5 host-a reply; rubric R11 轉發器自身錯誤不回 2",
       "repair": "改寫 §2.6：共用檔沒有「舊機器繼續用舊腳本」這條路。CHANGELOG 與 P4.5 寫升級順序：每台先 self-update 到 0.0.7，再讓改寫後的 settings.json 進共用來源。不雙寫舊 node 路徑（那會違反 R9 不重複觸發）。clap 漏 name 的 exit 2 維持現有註明即可。",
       "blocks_next_slice_or_immediate_integrity": false,
       "cannot_defer_to_spike": true,
@@ -282,7 +282,7 @@
       "rubric_id": "R11",
       "affected_surface": "共用 settings.json 寫出的 codeforge hook command 與尚未升級的 PATH binary",
       "claim": "共用檔被任一台 0.0.7 install 改寫成 codeforge hook … 並 sweep 掉 hooks/<ver>/ node 路徑後，PATH 上仍是 0.0.6 的機器會打到未知子命令。clap 預設 exit 2，Claude Code 當成 blocking。這是 R11 要避免的 exit 2，只是發生在舊 binary 而非新轉發器。§2.6 寫沒重跑 install 的機器繼續用舊 versioned 腳本，在共用檔情境為假。",
-      "evidence_reference": "plan §2.6 Compatibility impact; plan §4 P2.3 global hook commands; plan §4 P2.6 sweep; plan §4 P4.5 host-mini reply; rubric R11 轉發器自身錯誤不回 2",
+      "evidence_reference": "plan §2.6 Compatibility impact; plan §4 P2.3 global hook commands; plan §4 P2.6 sweep; plan §4 P4.5 host-a reply; rubric R11 轉發器自身錯誤不回 2",
       "disposition": null
     }
   ],

@@ -20,7 +20,8 @@ esac
 F
 chmod +x "$T/bin/fleet"
 export FLEET_BIN="$T/bin/fleet" CODEFORGE_BIN="$bin" CODEFORGE_TRINITY_STATE="$T/state" \
-  AUTOPILOT_LIVE_DIR="$L" CODEFORGE_DATA_DIR="$T/data" CODEFORGE_TRINITY_NOTIFY="cap cf"
+  AUTOPILOT_LIVE_DIR="$L" CODEFORGE_DATA_DIR="$T/data" CODEFORGE_TRINITY_NOTIFY="cap cf" \
+  CODEFORGE_TRINITY_SENDERS="ns/botvm/trinity ns/botvm/fleet-cli" CODEFORGE_TRINITY_ENV=/nonexistent
 fail() { echo "FAIL: $*" >&2; exit 1; }
 q="$L/codeforge/usage/trinity-quota.json"
 now=$(date -u +%FT%TZ)
@@ -31,12 +32,12 @@ msg() { # id from observed pct
     '{id:$id, from:$f, content:({schema:"trinity-usage/1",observed_at:$o,pct:$p,resets_at:$r}|tojson)}'
 }
 {
-  msg A cookys/grokbot/trinity@abc "$earlier" 0.2
-  msg B cookys/grokbot/trinity "$now" 0.4
-  msg C cookys/evil/trinity "$now" 0.9
-  msg C2 cookys/grokbot/trinityx "$now" 0.9
-  msg F cookys/grokbot/fleet-cli "$earlier" 0.3
-  jq -cn '{id:"D", from:"cookys/grokbot/trinity", content:"trinity-usage/1 2026-11-11\n{}"}'
+  msg A ns/botvm/trinity@abc "$earlier" 0.2
+  msg B ns/botvm/trinity "$now" 0.4
+  msg C ns/evil/trinity "$now" 0.9
+  msg C2 ns/botvm/trinityx "$now" 0.9
+  msg F ns/botvm/fleet-cli "$earlier" 0.3
+  jq -cn '{id:"D", from:"ns/botvm/trinity", content:"trinity-usage/1 2026-11-11\n{}"}'
 } > "$T/inbox.json"
 
 "$here/trinity-import.sh" || fail "first run"
@@ -44,13 +45,13 @@ msg() { # id from observed pct
 [ "$(sort "$T/state/done" | tr '\n' ' ')" = "A B F " ] || fail "done ids: $(cat "$T/state/done")"
 [ ! -e "$T/sent" ] || fail "unexpected notify: $(cat "$T/sent")"
 
-msg E cookys/grokbot/trinity "$earlier" 0.99 >> "$T/inbox.json"
+msg E ns/botvm/trinity "$earlier" 0.99 >> "$T/inbox.json"
 "$here/trinity-import.sh" || fail "older report run"
 [ "$(jq .pct "$q")" = 0.4 ] || fail "older report overwrote"
 grep -qxF E "$T/state/done" || fail "older report not marked done"
 
 # a well-formed message with no valid line (34 instead of 0.34) fails and alerts once
-msg G cookys/grokbot/trinity "$now" 34 >> "$T/inbox.json"
+msg G ns/botvm/trinity "$now" 34 >> "$T/inbox.json"
 if "$here/trinity-import.sh"; then fail "invalid-only message not reported"; fi
 "$here/trinity-import.sh" || true
 [ "$(grep -c '^cf|.*訊息 G' "$T/sent")" = 1 ] || fail "invalid-only alert not once: $(cat "$T/sent")"
@@ -72,4 +73,8 @@ echo $(( $(date +%s) - 25 * 3600 )) > "$T/state/last_ok"
 echo $(( $(date +%s) - 169 * 3600 )) > "$T/state/last_ok"
 "$here/trinity-import.sh"
 grep -q '^cf|.*小時沒有新的 trinity 配額' "$T/sent" || fail "stale alert missing"
+# no senders/notify configured: exit 2 naming the env file
+rc=0; out=$(env -u CODEFORGE_TRINITY_SENDERS "$here/trinity-import.sh" 2>&1) || rc=$?
+[ "$rc" = 2 ] || fail "missing config not rejected with exit 2: rc=$rc"
+grep -q '/nonexistent' <<<"$out" || fail "message does not name the env file"
 echo "trinity-import.test.sh: ok"

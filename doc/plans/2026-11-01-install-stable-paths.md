@@ -5,14 +5,14 @@
 
 ## 0. Context
 
-- host-mini 已用 `self-update` 升到 v0.0.6。它的 `~/.claude/settings.json` 是 symlink，指到 dotfiles 裡進版控、全部機器共用的檔案。owner 要求修好以下問題、發 v0.0.7 後才跑 `codeforge bootstrap`（fleet 訊息 `01M6BQ8BEDZKQM1TFARTSNYK0M`，2026-11-01）。
+- host-a 已用 `self-update` 升到 v0.0.6。它的 `~/.claude/settings.json` 是 symlink，指到 dotfiles 裡進版控、全部機器共用的檔案。owner 要求修好以下問題、發 v0.0.7 後才跑 `codeforge bootstrap`（fleet 訊息 `01M6BQ8BEDZKQM1TFARTSNYK0M`，2026-11-01）。
 - owner 2026-11-01 指示：列進 BACKLOG（B35）、寫計畫、過 hetero plan review。
 - 前作：`2026-06-15-ship-online`（global hooks、`cleanupPeriodDays`、sweep 規則）與 `2026-06-23-codeforge-bootstrap`。兩者已封存，不是草稿，沒有重疊的進行中計畫。
 - 與 B31（codeforge 成為 autopilot extension、hooks 改由 autopilot 登記）的關係：B31 之後由 autopilot 登記 hooks 時，同樣需要一個不帶本機路徑與版號的入口。本計畫做的 `codeforge hook <name>` 正是那個入口，B31 直接沿用，不會白做。
 
 ## 1. Problem
 
-`codeforge install --hooks|--all`（`bootstrap` 第 1 步就是它）寫進 settings.json 的內容綁死在「這台機器、這個版本」。對單機使用者沒事；但 settings.json 一旦是多台共用的檔案，就會出現下列問題。前三項是 host-mini 回報的，後三項是讀 code 時找到的：
+`codeforge install --hooks|--all`（`bootstrap` 第 1 步就是它）寫進 settings.json 的內容綁死在「這台機器、這個版本」。對單機使用者沒事；但 settings.json 一旦是多台共用的檔案，就會出現下列問題。前三項是 host-a 回報的，後三項是讀 code 時找到的：
 
 | # | 問題 | 位置 | 後果 |
 |---|---|---|---|
@@ -21,7 +21,7 @@
 | P-c | 不偵測 settings.json 是不是共用檔 | — | 使用者不知道寫入會擴散 |
 | P-d | `statusLine.command` 是 `current_exe()` 的絕對路徑 | `install.rs:83-104` | 同 P-a（家目錄或安裝位置不同的機器上失效） |
 | P-e | marker 是 `codeforge@<CARGO_PKG_VERSION>`，寫進每個 entry | `install.rs:351-353` | 升版後重跑 install，即使內容沒變，共用檔每個 entry 都改一行 |
-| P-f | `write_settings_atomic` 先寫 `settings.json.tmp` 再 `rename` 到原路徑 | `install.rs:326-331` | `rename(2)` 會把 symlink 本身換成一般檔案：寫入後 `~/.claude/settings.json` 跟 dotfiles 脫鉤，dotfiles 完全沒更新。這是 host-mini 真跑 bootstrap 時最嚴重的問題 |
+| P-f | `write_settings_atomic` 先寫 `settings.json.tmp` 再 `rename` 到原路徑 | `install.rs:326-331` | `rename(2)` 會把 symlink 本身換成一般檔案：寫入後 `~/.claude/settings.json` 跟 dotfiles 脫鉤，dotfiles 完全沒更新。這是 host-a 真跑 bootstrap 時最嚴重的問題 |
 
 ## 2. OKR / KRs
 
@@ -36,7 +36,7 @@
 | KR5 | 共用檔時，install／bootstrap（含 dry-run）印出警告，指出 symlink target 與所屬 git repo | 單元測試（純函式）+ e2e dry-run 輸出 |
 | KR6 | `codeforge hook <name> [args…]` 把 stdin 轉給腳本、回傳腳本的 exit code；名稱不在清單內時 exit 1 並列出可用名稱 | 整合測試（需要 `node`，沒有時 skip 並印出原因） |
 | KR7 | 品質閘全綠 | `./scripts/fmt.sh --check`、`cargo clippy -- -D warnings`、`cargo test`、`python3 scripts/check-doc-drift.py`、`bash scripts/check-cjk-safe.sh`；merge 後 main CI 綠 |
-| KR8 | v0.0.7 發成 full release，`self-update --check` 看得到；回覆 host-mini | `gh release view v0.0.7`；fleet reply 的 message id |
+| KR8 | v0.0.7 發成 full release，`self-update --check` 看得到；回覆 host-a | `gh release view v0.0.7`；fleet reply 的 message id |
 
 ## 2.5 Global Constraints（原文照抄進每個 dispatch）
 
@@ -135,7 +135,7 @@
 2. CHANGELOG `[0.0.7]`：列 P-a～P-f 的修正、升級後重跑 install 的說明、`--cleanup-period-days`、`codeforge hook`。
 3. 版號：`Cargo.toml` 0.0.7、`cargo update -p codeforge --offline`。
 4. merge 進 main（`QC-Verdict` trailer）→ push → 看 CI → 打 tag `v0.0.7` → 看 release workflow → `gh release edit v0.0.7 --draft=false --latest --notes-file <CHANGELOG 0.0.7 段>`。發布是對外動作，在 owner 核可本計畫後才做。
-5. 回覆 host-mini（fleet reply）：版本、升級步驟 `codeforge self-update` → `codeforge bootstrap --dry-run`（確認警告、command 形式、沒有 `cleanupPeriodDays`）→ `codeforge bootstrap`；並提醒 dotfiles 裡舊的 `hooks/0.0.x` entry 會被這次 install 換掉，以及升級順序：共用 dotfiles 的每台機器都先 `self-update` 到 0.0.7，最後才 commit／同步改寫後的 settings.json。
+5. 回覆 host-a（fleet reply）：版本、升級步驟 `codeforge self-update` → `codeforge bootstrap --dry-run`（確認警告、command 形式、沒有 `cleanupPeriodDays`）→ `codeforge bootstrap`；並提醒 dotfiles 裡舊的 `hooks/0.0.x` entry 會被這次 install 換掉，以及升級順序：共用 dotfiles 的每台機器都先 `self-update` 到 0.0.7，最後才 commit／同步改寫後的 settings.json。
 
 **Acceptance**：KR7、KR8。
 
@@ -144,14 +144,14 @@
 ## 5. Test / validation
 
 - script-gated：§2 KR1–KR7 的單元／整合測試、品質閘、CI。
-- human-gated：v0.0.7 發布前 owner 核可；host-mini 由它的 owner 決定何時真跑 bootstrap。
+- human-gated：v0.0.7 發布前 owner 核可；host-a 由它的 owner 決定何時真跑 bootstrap。
 - e2e 只在 scratch 目錄、以 `CODEFORGE_CLAUDE_SETTINGS` 與 `CODEFORGE_DATA_LOCAL_DIR` 指向 temp 路徑執行，不碰本機 `~/.claude/settings.json` 與資料目錄。
 
 ## 6. Risks + inversion
 
 | 什麼會保證失敗 | 對策 |
 |---|---|
-| Claude Code 跑 hook 時 PATH 裡沒有 `codeforge` | 既有的 `dream`／`ship`／`memory context` entry 已經依賴 PATH 且在 host-mini、本機運作；README 寫明前提。statusLine 只有在 PATH 解析到同一個 binary 時才用短形式 |
+| Claude Code 跑 hook 時 PATH 裡沒有 `codeforge` | 既有的 `dream`／`ship`／`memory context` entry 已經依賴 PATH 且在 host-a、本機運作；README 寫明前提。statusLine 只有在 PATH 解析到同一個 binary 時才用短形式 |
 | 轉發器吞掉 stdin 或改變 exit code，hook 腳本收不到 JSON | KR6 測 stdin 原樣轉發與非零 exit code 傳遞；轉發器不讀 stdin |
 | 兩個 hook 同時落地同一個快取檔，讀到半個檔案 | tmp + rename；同版本內容相同，競爭的兩方寫出相同內容 |
 | 穿透 symlink 寫入時 target 在唯讀位置或跨檔案系統 | tmp 放在 target 同目錄，rename 不跨檔案系統；失敗時錯誤訊息指出 target 路徑 |
@@ -159,7 +159,7 @@
 | 舊版 entry 沒被 sweep，新舊 hook 同時觸發 | P2 第 6 步的遷移測試 |
 | 共用檔上 `cleanupPeriodDays` 不再預設寫入，transcript 30 天後被清 | 印出提示與旗標；單機使用者不受影響 |
 | `is_shared()` 假陰性（chezmoi 複製、Syncthing、無 git） | 只影響警告與 `cleanupPeriodDays` 預設；hook／statusLine 在單機檔也已不帶路徑與版號（statusLine 只有 PATH 對不上時例外）；README 註明 |
-| 共用檔被 0.0.7 改寫時，別台還是 0.0.6 | 升級順序寫進 CHANGELOG 與給 host-mini 的回覆（§2.6） |
+| 共用檔被 0.0.7 改寫時，別台還是 0.0.6 | 升級順序寫進 CHANGELOG 與給 host-a 的回覆（§2.6） |
 | `/nix/store` 等唯讀 target | 不嘗試繞過；錯誤訊息指出 target，請使用者改 dotfiles 來源 |
 
 ## 7. Out of scope
@@ -167,7 +167,7 @@
 - 清掉 `<data_local_dir>/codeforge/hooks/` 底下舊版本的快取目錄（`uninstall` 仍整個刪除）。
 - `--project-hooks` 的任何改動。
 - B31：hooks 改由 autopilot 登記。
-- 修改 host-mini 的 dotfiles 或在任何機器上實際跑 bootstrap／install。
+- 修改 host-a 的 dotfiles 或在任何機器上實際跑 bootstrap／install。
 - Windows 上 `codeforge hook` 以外的路徑處理（`shell_path` 不動）。
 
 ## 8. Open questions（只有 owner 能答）

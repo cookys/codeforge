@@ -53,7 +53,27 @@ kp = f"{S}/keyprobe-{sys.argv[2]}.log"
 assert os.path.exists(kp), f"missing B56 keyprobe log: {kp}"
 parts.append("## keyprobe（B56 真機按鍵驗收）\n\n160x40 開 pane，縮到 80x24，依序按下列鍵；每鍵之後記錄三件事：分頁列選中哪一頁（tab，從分頁列顏色判斷）、pane 第一列（page，頁面捲動時會是「上面還有 N 行」，只供參考）、提示列內容（composer）。每一列最後的 ok 表示提示列是空的，而且分頁列選中的就是按下的那一鍵；BAD 表示其中一項不符。\n\n```\n" + open(kp, encoding="utf-8").read().strip() + "\n```")
 out = "\n\n".join(parts) + "\n"
-bad = re.findall(r"(?i)cookys|host-console|stranity|singular|host-infra|gpu-host-1|host-recovery", out)
+# private-name gate: same hashed denylist and token rule as scripts/check-private-leaks.sh (names stay out of the repo).
+# Any hit in a shot, the keyprobe log or the assembled packet exits 1 (path only, never the value) before gate-b2.md is written.
+import hashlib
+_h = lambda t: hashlib.sha256(t.encode()).hexdigest()
+_dl = [l.strip() for l in open(f"{S}/../private-denylist.sha256", encoding="utf-8") if l.strip() and not l.startswith("#")]
+_any = {e for e in _dl if ":" not in e}; _exact = {e[6:] for e in _dl if e.startswith("exact:")}; _home = {e[5:] for e in _dl if e.startswith("home:")}
+_mail = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})")
+def _hits(text):
+    n = 0
+    for tok in re.split(r"[^A-Za-z0-9.-]+", text):
+        t = tok.strip(".-").lower()
+        if t and (_h(t) in _exact or any(_h(p) in _any for p in {t, *re.split(r"[-.]+", t)} if p)): n += 1
+    n += sum(1 for m in re.findall(r"(?:/home/|-home-)([A-Za-z0-9_]+)", text) if _h(m.lower()) in _home)
+    n += sum(1 for m in _mail.finditer(text) if not re.search(r"(^|\.)(example\.(com|org|net)|invalid|test|example)(\.|$)", m.group(1).lower()) and m.group(0) != "noreply@anthropic.com")
+    return n
+_srcs = [f"{O}/{k}.txt" for k in order if os.path.exists(f"{O}/{k}.txt")] + [kp]
+_bad_files = [p for p in _srcs if _hits(open(p, encoding="utf-8", errors="replace").read())]
+bad = [p for p in _bad_files] + (["<assembled packet>"] if _hits(out) and not _bad_files else [])
+if bad:
+    for p in bad: print(f"build-b2: private name or email in {p}; packet NOT written", file=sys.stderr)
+    sys.exit(1)
 open(f"{S}/gate-b2.md", "w", encoding="utf-8").write(out)
-print(f"bytes={len(out.encode())} shots={len(order)} realnames={len(bad)}")
+print(f"bytes={len(out.encode())} shots={len(order)} realnames=0")
 if len(out.encode()) > 165000: print("WARN: over agy prompt cap (~170KB); drop S1-light / S4 shots")
