@@ -95,7 +95,7 @@ The CodePower repo is the primary test environment for Phase 2 features:
 **dream/ship** resolve their LLM via a 5-layer **fallback chain**, not a single key:
 `claude -p` headless (Claude Code CLI, no key; model per use: ship digest `CODEFORGE_DIGEST_MODEL` default opus, dream compile `CODEFORGE_COMPILE_MODEL` default haiku) → `agy` (Gemini, `CODEFORGE_AGY_MODEL`) → `codex exec` → `ANTHROPIC_API_KEY` (direct Haiku API, per-token billing) → rule-based passthrough (no LLM). See `src/llm.rs` + `src/dream/compile.rs` + `src/cli/ship.rs`. **AI commentary is NOT on this chain** — it's 2-layer only (Haiku API if `ANTHROPIC_API_KEY` set, else rule-based; never `claude -p` — `src/commentary/` doesn't import `crate::llm`). See `doc/concepts.md` for the user-facing explanation.
 
-`ANTHROPIC_API_KEY` is therefore **optional** — only the second fallback. When set, it's read from the `~/.claude/` environment or shell profile (shared with CodePower), not a per-project `.env` (though `dotenvy` will also pick up a local `.env`). `.env.example` lists it under Optional.
+`ANTHROPIC_API_KEY` is therefore **optional** — only the fourth fallback. When set, it's read from the `~/.claude/` environment or shell profile (shared with CodePower), not a per-project `.env` (though `dotenvy` will also pick up a local `.env`). `.env.example` lists it under Optional.
 
 ### Dev Rule: Keep projects independent
 
