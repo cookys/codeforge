@@ -32,13 +32,15 @@ Mnemos 是中央腦，多來源收錄（Slack/LINE/Email/Docs/…）；CodeForge
 
 | 順序 | hook 指令 | 作用 | 依賴腦? |
 |---|---|---|---|
-| 1 | `codeforge dream --quiet` | 該 project `.codeforge` 的 L0 signals → L1 concepts（蒸餾） | ❌ 純本機，永遠跑 |
-| 2 | `codeforge ship --no-hook` | L1 + git log + db metrics → Haiku digest → L2 ledger → POST | ✅ opt-in gate |
+| 1 | `codeforge hook emit-session session_end`、`codeforge hook session-digest` | session 邊界訊號與 per-repo digest（供下一輪 dream 吸入） | ❌ 純本機 |
+| 2 | `codeforge dream --quiet` | 該 project `.codeforge` 的 L0 signals → L1 concepts（蒸餾） | ❌ 純本機，永遠跑 |
+| 3 | `codeforge ship --no-hook` | L1 + git log → LLM digest（claude -p → agy → codex → Haiku API → rule-based）→ L2 ledger → POST | ✅ opt-in gate |
+| 4 | `codeforge usage collect --quiet` | 用量收集（只存數字）與 `summary.json` | ❌ 純本機 |
 
 - **ship 的 opt-in gate**：`--no-hook` 模式只在 `~/.config/mnemos.env` 存在（或 `MNEMOS_INGEST_URL` 設了）才 POST；否則乾淨 no-op（不 POST、不寫死信）。所以**沒接腦的 codeforge-only 使用者**照樣 dream 蒸餾、ship 是 clean no-op。
 - **POST 目標**：`MNEMOS_INGEST_URL` → `/v1/ingest/ledger`。fleet 機這個 URL 指隧道的 forwarded port。
 - **retry**（Mnemos source-contract §9.1）：1s→5s→30s ×4；失敗寫 `~/.codeforge/ship-failed/<id>.json` 待下次 ship 重送。`--no-hook` 是 single-attempt（永不阻塞 SessionEnd）。
-- **送什麼**（as-shipped，非設計全貌）：`build_lessons` 只讀 L1 + git；**不掃 session jsonl**（設計目標、code 未跟上，BACKLOG B18）。envelope：`source=codeforge_ledger`、`machine_id=<hostname>`。
+- **送什麼**（as-shipped，非設計全貌）：`build_lessons` 只讀 L1 + git；**不掃 session jsonl**（設計目標、code 未跟上，BACKLOG B18）。envelope：`source=codeforge_ledger`、`machine_id=<MACHINE_ID（mnemos.env／環境變數），沒設才用 hostname>`。
 
 ## 3. READ 路徑（↓ 下行，腦 → 本機）
 

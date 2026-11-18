@@ -60,7 +60,7 @@ reader 的處理(autopilot 實作，codeforge 認可):
 
 - 加欄位不改 schema 字串。reader 忽略不認得的欄位；缺 `panel` 或缺 `side` 不算錯誤：右欄只畫圓桌，不留空洞。
 - 讀法同 `tiers`：取不超過欄內寬的最大一份。五級的欄內寬是 32、50、44、45、42，各自取到 30、50、40、40、40。producer 保證每一列不超過自己的 key；band 照常裁到「欄內寬 − 1」並加 `…`。
-- 配額來源：配額鏡像目錄存在時只用鏡像（`codeforge-mod-ui.md` §7 規則 7），否則用 `summary.json`。今天各模型的比例來自 `summary.json`。
+- 配額來源：配額鏡像目錄存在時只用鏡像（`doc/plans/2026-11-03-g40-usage-accounts.md` §7 規則 7），否則用 `summary.json`。今天各模型的比例來自 `summary.json`。
 - **不放金額**：只有比例和條數。producer 在寫入前檢查，任何一列出現 `$` 就整份 `side` 不寫（測試守住）。
 - 寫入時機同 `panel/1`：15 秒檢查、有變才寫、至少 30 秒寫一次。超過 60 秒沒更新時，band 在右欄第一列標「資料 N 分鐘前」，不另佔一列。
 

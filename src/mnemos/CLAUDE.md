@@ -16,10 +16,8 @@ Mnemos (`cookys/mnemos`) is the central brain that ingests from multiple sources
 `codeforge ship` runs at session end (chained after `dream --quiet` in the SessionEnd hook). It reads:
 - `.codeforge/store/concepts/*.md` (L1 compiled knowledge)
 - `git log` for the day's commits
-- `~/.claude/projects/<slug>/<uuid>.jsonl` for today's session transcripts
-- `.codeforge/codeforge.db` for metrics
 
-Then digests via Haiku and POSTs the L2 ledger payload to Mnemos at `http://127.0.0.1:8845/v1/ingest/ledger`. CodeForge spec: [`doc/specs/codeforge-ship.md`](../../doc/specs/codeforge-ship.md). Mnemos endpoint contract: `cookys/mnemos:docs/specs/10-source-contract.md` §5.1.
+(It does not read session transcripts or `codeforge.db` metrics; only the auto-cite step below reads transcripts.) Then digests through the headless LLM chain (`claude -p` → `agy` → `codex exec` → `ANTHROPIC_API_KEY` Haiku → rule-based passthrough; digest model `CODEFORGE_DIGEST_MODEL`, default opus) and POSTs the L2 ledger payload to Mnemos at `http://127.0.0.1:8845/v1/ingest/ledger`. CodeForge spec: [`doc/specs/codeforge-ship.md`](../../doc/specs/codeforge-ship.md). Mnemos endpoint contract: `cookys/mnemos:docs/specs/10-source-contract.md` §5.1.
 
 ### Cite (natural citation, client-side write-back)
 
