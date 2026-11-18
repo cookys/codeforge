@@ -33,7 +33,7 @@ pub fn run_from(
         return Ok(AbsorbResult { absorbed: 0 });
     }
 
-    // 找出所有 .claude/projects/*/memory/*.md 檔案
+    // 只看當前專案的 memory/*.md（不遞迴、不碰其他專案）
     let mut absorbed = 0;
     let writer = SignalWriter::new(ctx);
 
