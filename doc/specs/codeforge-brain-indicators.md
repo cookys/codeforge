@@ -1,6 +1,6 @@
 # CodeForge Brain Connection Indicators
 
-> Status: **DESIGN (converged)** · Owner: cookys · Created: 2026-06-23
+> Status: **SHIPPED**（§4 的 statusline 渲染已被取代，見該節）· Owner: cookys · Created: 2026-06-23
 > 3 輪 adversarial review 收斂（前提更正 → 假綠/spawn 機制 → 措辭/狀態機閉合）。
 > 把 statusline bottom border 寫死的 `memory ● active` 升級成兩顆真實狀態燈：本地腦（local）+ 央腦 Mnemos（central）。
 
@@ -62,6 +62,8 @@ probe 與 ship 是兩個**不同事實**，不可 OR 成一軸（否則「/healt
 
 ## 4. 渲染（彩色/無色雙路徑 + 窄窗降級）
 
+> ⚠️ **§4 為歷史設計，未實作**：statusline 現在永遠只有一行、不畫燈號，也沒有 `bottom_border`。燈號由 `statusline.rs` 的 `brain_health` 算出，經 `light_words` 轉成字樣，寫進 per-session view（`pet::view::write_session_view`，`codeforge.session-view/1`），由 forge-stats 讀取並畫出。statusline 的 NO_COLOR 由手刻的 `color_enabled()` 處理（`NO_COLOR` 非空即關色；刻意不用 tty／`if_supports_color` 偵測，因為 Claude Code 一律以 pipe 接 statusline）。以下內文與其中的行號引用僅供設計脈絡。
+
 ### 4.1 句法對稱
 central 沿用 local 的 `<label> <glyph> <word>`：
 - 彩色：`memory ● active   mnemos ● ok   v0.0.5`（glyph 帶色、word 完整不縮）。
@@ -94,7 +96,7 @@ central 沿用 local 的 `<label> <glyph> <word>`：
 ### 6.1 位置
 - `$XDG_RUNTIME_DIR/codeforge/`（Linux tmpfs / per-boot）。macOS 無 XDG → fallback `$TMPDIR`（注意：macOS `$TMPDIR` **跨 boot 持久**、非 tmpfs）。
 - **不可放 home dotfile**：央腦連通是 **per-machine 事實**（A 機跑 server、B 機 localhost 是空的），放會被 dotfile sync 同步的路徑會跨機假綠。
-- **macOS stale 處理**（零 dep）：不取 `sysctl kern.boottime`（需 libc，破零-dep）。改用**快取絕對年齡上限** `CACHE_MAX_AGE`（1h）：`last_probe_at` 早於 `now - CACHE_MAX_AGE` 即丟棄重 probe。Linux 端維持 `/proc/stat btime` 比對（純讀檔、零 dep）為精確 per-boot；macOS 用年齡上限退路（對 liveness 語意無傷）。
+- **macOS stale 處理**（零 dep）：不取 `sysctl kern.boottime`（需 libc，破零-dep）。改用**快取絕對年齡上限** `CACHE_MAX_AGE`（1h）：`last_probe_at` 早於 `now - CACHE_MAX_AGE` 即丟棄重 probe。所有平台都只用這個年齡上限（`fresh_enough`）；沒有 `/proc/stat btime` 比對。
 
 ### 6.2 雙檔（兩獨立 writer，避 lost-update）
 probe 與 ship 是兩個獨立 writer，拆兩檔、各自單一 writer、全檔 atomic rename（temp+rename，**temp 與目標同 dir**避 EXDEV，temp 名帶 `<pid>.<rand>` 避撞；tmpfs 上不需 fsync）：
@@ -146,7 +148,7 @@ should_spawn =
 
 ### 7.4 probe 子進程本體（`codeforge mnemos-cli probe`）
 - target = `MnemosConfig::load().base_url` + `/health`（與 ship/context 同源，不另立 URL 解析）。
-- `tokio::runtime::Builder::new_current_thread`（單執行緒最小冷啟）+ 專用 **~2s connect-timeout** client（**非** ship 的 20s `http_client()`）。
+- `tokio::runtime::Builder::new_current_thread`（單執行緒最小冷啟）+ 專用 client（**2s connect-timeout、4s 總 timeout**，`PROBE_TOTAL_TIMEOUT`）（**非** ship 的 20s `http_client()`）。
 - HTTP 200 → `ok`（不解 body，容忍純文字 `"ok"` 與未來 JSON）；connection-refused / timeout → `unreachable`；4xx/5xx → `http_error`（證據 = 快取 `http_status` 欄，**不另開 log 檔**避免 tmpfs 無界 log）。
 - 永不向 stdout 寫人類訊息（只寫快取）。
 - `--verbose`：前景模式，印 stderr、不寫快取，供手動 debug。
@@ -154,9 +156,9 @@ should_spawn =
 ## 8. ship 順風車（central 第二訊號源）
 
 - ship 寫 `mnemos-ship.json` **只在真有網路往返的分支**：
-  - fresh-digest POST：`ship.rs:117` 後的 `Ok`(:119) / `Exhausted`(:129) / `BadRequest`(:142)。
-  - **flush 成功**（`flush_failed_queue`，`ship.rs:100`/`:113` 呼叫）也回寫 `last_ship_ok=true`（同證 readiness）。
-- **早 return 路徑不寫**（無 :117 往返）：`no-ship opt-out`(:37)、`未 opt-in no-hook`(:47)、`--resend`(:56)、`--dry-run`(:86)、`already_shipped` 純早退(:94)、`empty lessons`(:106)。
+  - fresh-digest POST：`Ok` / `Exhausted` / `BadRequest` 三個分支（`ship.rs`）。
+  - **flush 成功**（`flush_failed_queue`，`--resend` 與 already-shipped 路徑都會呼叫）也回寫 `last_ship_ok=true`（同證 readiness）。
+- **早 return 路徑不寫**（無往返）：`no-ship opt-out`、`未 opt-in no-hook`、`--dry-run`、`already_shipped` 純早退（僅在 flush 成功時回寫）、`empty lessons`。`--resend` 只在至少 flush 成功一筆時回寫 `record_ship_health(true)`。（行號隨 `ship.rs` 變動，改用分支名。）
 - **寫快取受 `opted_in()` gate 約束**（與**渲染** gate 同源，**非** POST 是否發生）—— `record_ship_health` 內部先查 `opted_in()`：**opted-in 時才寫快取**（互動 ship 亦然；opted-in 使用者的手動 ship 是真實 readiness 訊號，寫快取正確）。未 opt-in 時不寫（避免「pre-opt-in 假綠」，opt-in gate 已達成此保護）。
 - `--no-hook` 失敗分支全回 `Ok(())`，不拖垮 SessionEnd。
 
@@ -185,9 +187,10 @@ should_spawn =
 | `PROBE_TTL_MAX` | 10m | backoff 上限 |
 | `SHIP_FRESH_WINDOW` | 24h | ship 訊號參與合成的新鮮度 |
 | `NEVER_RETIRE_DAYS` | 7d | never 態退場 |
-| `CACHE_MAX_AGE` | 1h | macOS 快取絕對年齡上限（per-boot 退路） |
+| `CACHE_MAX_AGE` | 1h | 快取絕對年齡上限（所有平台） |
 | `INFLIGHT_GRACE` | 10s | lock stale 判定 |
-| `PROBE_CONNECT_TIMEOUT` | 2s | probe client |
+| `PROBE_CONNECT_TIMEOUT` | 2s | probe client connect timeout |
+| `PROBE_TOTAL_TIMEOUT` | 4s | probe client 總 timeout |
 | `QUEUE_WARN_THRESHOLD` | ≥3 或最舊 > 24h | queue 判黃 |
 | bottom-border col 斷點 | 實作時量測 | 降級階梯 |
 

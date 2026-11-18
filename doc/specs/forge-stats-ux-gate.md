@@ -18,7 +18,7 @@
   - 這次 diff 的 base..head；
   - 下面「必交截圖」全部；
   - 上一輪的發現，以及實作者的回應。
-- 結果存放在 `doc/design/ux-gate/<日期>-<主題>/`，每一輪一個檔案，內容包括兩家的原始 JSON 和分數。
+- 結果存放在 `doc/design/ux-gate/<主題>/`（例如 `pane-batch2/`），每一輪（`r<n>`）有 `r<n>-astra.json`、`r<n>-carbon.json`（兩家的原始 JSON 和分數）、`r<n>-packet.md`、`r<n>-dispositions.md`、`r<n>-keyprobe.log`，另有總表 `verdicts.md`。
 - 上線前先給 PM 看 160x40 截圖，PM 放行才能上線。
 
 ## 必交截圖

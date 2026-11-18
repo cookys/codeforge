@@ -13,6 +13,17 @@
 > - **NOT YET IMPLEMENTED — Pet Ability 戰鬥效果（§2.5）**：Quick Eye 命中率、Focus Strike Boss 暴擊、Tome Sense 掉率等 ability 效果**未實裝**。`pet/ability.rs` 只是 display-only catalog，用來在 XP bar 旁顯示「下一個解鎖」；`combat.rs` 無 skill/ability 邏輯。§2.5 的 `hit_chance *= 1.3` / `damage *= 2.0` pseudocode 是 ability 設計，不是 live tick 公式（實際 hit_chance 只用 `(atk+ver)/(def+difficulty)` clamp [0.05,0.95]，與 strategy/ability 無關）→ BACKLOG B18。
 > - **STALE — MOB 種類（§2）**：scanner 實際產 5 種 MOB —— Zombie（TODO/FIXME≥5）、Boss（fn≥100 行）、Elite（branch keyword≥20）、Ghost（dead code）、Doppelganger（跨檔重複程式碼區塊，B10 2026-11-02）。§2 表列的 **Void Creature 🕳️（missing test coverage → drain DEF）仍未實作**（`src/daemon/mob.rs` 標 Phase 3 deferred），scanner 無對應 heuristic。
 > - **STALE — 村莊清單（§2.5 Lv50 legendary 表）**：實際村莊就 5 個（rust / python / typescript / go / javascript）。§2.5 列的 **ML 🧠 與 開源基金會 🐙 村莊不存在**；javascript 反而沒有 legendary 條目。整張 Lv50 legendary 表為設計稿，未實裝。
+> - **STALE — Daemon 結構與 IPC（§1 啟動方式、§6）**：daemon 是單一 tokio `select!`（60 秒 ticker + shutdown，`src/daemon/mod.rs`），沒有 FileWatcher／GitHookReceiver／SessionHookReceiver，也沒有 socket；TUI 是獨立的 `codeforge tui` 行程。event_inbox 每個 tick（`TICK_INTERVAL_SECS = 60`）由 `inbox::drain_once` drain 一次，**沒有 500ms poll**，延遲最長約 60 秒（CLI 讀取靠 live-overlay 補上）。啟動用 `codeforge daemon start|stop|status|install`；tmux 旁欄是 `codeforge attach`，沒有 `daemon --attach tmux`／`--fullscreen`。
+> - **STALE — 村落距離與 MOB 來源（§1 世界地圖）**：沒有「村落距離 = L1 link 強度」；MOB 只由檔案啟發式掃描產生（`cargo check`／eslint 輸出為 future work，`mob_scanner.rs`）。Zone 解鎖規則是 concept_count >= 3（`world/mod.rs` `UNLOCK_THRESHOLD`）。
+> - **STALE — Mood 存放（§3.2）**：沒有 `pet_stats` 表；mood 在 `pet_snapshot.mood`（加 `mood_tick_stamp`）。
+> - **STALE — Zone 聲望（§3.3）**：沒有 `zone_reputation` 表；rank 由 `game_world.kill_count` 即時算（`world/mod.rs`），只出現在 world map 與 snapshot，不在 statusline，沒有特殊 pet frame；最高階名稱就是 `Veteran`。
+> - **STALE — Statusline 顯示（§3.4、§4）**：statusline 永遠只有一行、不畫寵物（`tests/statusline_one_line.rs`）。下一個解鎖倒數（`next_unlock`）只在 TUI pet 面板；commentary 只在 TUI。§3.4 的 statusline 簡化模式與 §4「footer 5% 機率替換」都不存在。
+> - **STALE — Snapshot（§3.6）**：`codeforge snapshot` 只有 `--days`，沒有 `--clipboard`；實際卡片（`src/snapshot/render.rs`）列的是過去 N 天（預設 30）的擊殺數與最長連勝，沒有「Loot 合成」「Legendary 進度」列。
+> - **STALE — `codeforge use`（§3.7）**：`use` 只吃已合成的配方（`craft/mod.rs`）；`refactor-scroll` 是掉落物、沒有 use 效果；Ghost Repellent 是 3 天內抑制目前 Zone 新 Ghost 的生成，不會清除既有 Ghost。
+> - **STALE — Commentary 觸發（§4）**：只有 BossKill、LevelUp、SessionLong（4 小時）、LongIdle（30 分鐘）與手動 test；沒有 commit message／重複改檔／TODO 增加／ZoneUnlock 觸發；預算是全域每小時最多 1 次（`commentary/budget.rs`），沒有「每天 3 次」。
+> - **NOT YET IMPLEMENTED — 首次事件（§3.8）**：只接了前三個；「首次解鎖 Legendary Ability」與「首次蒐集第 2 隻寵物」未接（`first_events.rs`）。
+> - **NOT IMPLEMENTED — Nation Statusline Theme（§3.10）**：沒有 `theme` 指令、沒有 NationTheme 程式碼（Phase 5c，planned）。優先級表中的 Week Streak 是 §3.11，不是 §3.10。
+> - **STALE — Phase 分解（§8）**：實際分期見 `doc/CLAUDE.md`（3c = AI Commentary、3d = 黏著度、3e = Crafting、3f = Snapshot；Phase 5 = Nation P2P）。Week Streak 未實作。
 
 ## Vision
 
@@ -677,7 +688,7 @@ Phase 3+ 設計方向：
 | 3.5 Loot Crafting | 3a | 中 | 日常目標感 |
 | 3.7 主動 Item 使用 | 3a | 低 | 能動感 |
 | 3.6 Snapshot 分享 | 3b | 中 | 社交飛輪 |
-| 3.10 Week Streak | 3+ | 中（需 Nation） | 習慣化 |
+| 3.11 Week Streak | 3+ | 中（需 Nation） | 習慣化 |
 
 **明確 Defer（不在 Backlog，結論已定）：**
 - 排行榜（P2P 無法防偽）

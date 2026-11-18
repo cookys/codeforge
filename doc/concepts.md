@@ -103,22 +103,30 @@ L0 signals（含 `learn` 寫入的、session digest ingest 進來的）+ 既有 
 
 ### LLM backend fallback 鏈（重要）
 
-dream（與 ship）呼叫 LLM 時，走的是**三層 fallback**，不是單一把 key（AI commentary 是例外 —— 只有 2 層：有 `ANTHROPIC_API_KEY` 走 Haiku API、否則 rule-based，**不呼叫 claude -p**）：
+dream（與 ship）呼叫 LLM 時，走的是**多層 fallback**（五層），不是單一把 key（AI commentary 是例外 —— 只有 2 層：有 `ANTHROPIC_API_KEY` 走 Haiku API、否則 rule-based，**不呼叫 claude -p**）：
 
 ```
 1. claude -p headless     ← 主力。借用 Claude Code CLI 登入，免 API key，
-                            吃訂閱額度，Opus 預設、品質最高
+                            吃訂閱額度。model 依用途：ship digest 預設 opus
+                            （CODEFORGE_DIGEST_MODEL）、dream compile 預設 haiku
+                            （CODEFORGE_COMPILE_MODEL）
         ↓ 不可用時
-2. ANTHROPIC_API_KEY      ← 備援。直接打 Haiku API，按 token 計費
+2. agy（Gemini CLI）       ← 免 key 的第二引擎（CODEFORGE_AGY_MODEL）
         ↓ 不可用時
-3. rule-based passthrough ← 最後保險。純規則、不呼叫任何 LLM、零外送
+3. codex exec（OpenAI）    ← 免 key 的第三引擎
+        ↓ 不可用時
+4. ANTHROPIC_API_KEY      ← 備援。直接打 Haiku API，按 token 計費
+        ↓ 不可用時
+5. rule-based passthrough ← 最後保險。純規則、不呼叫任何 LLM、零外送
 ```
 
-**所以 `ANTHROPIC_API_KEY` 是 optional，不是必要的** —— 只要你機器上有 `claude` CLI，第一層就夠用了。每一層降級都會印 warning 讓品質下降可見。
+前三層是 headless 引擎，prompt 內容可能送到 Anthropic、Google、OpenAI 的訂閱登入端。另有載入節流：1 分鐘 load／核心數超過 `CODEFORGE_LLM_MAX_LOAD_PER_CORE`（預設 2.0）時直接退到 rule-based，不 spawn 子程序。
+
+**所以 `ANTHROPIC_API_KEY` 是 optional，不是必要的** —— 只要你機器上有 `claude` CLI（或 `agy`／`codex`），前三層就夠用了。每一層降級都會印 warning 讓品質下降可見。
 
 > 例外：`origin == "absorbed"` 的 signal（跨專案吸收的 `AbsorbedMemory`、過渡期 `ClaudeCodeSession` backlog）**跳過整條 LLM 鏈、直接走 rule-based** —— 它們是二手知識、不值得花 LLM，且不會被 ship。
 
-> 設計理由：2026-06-17 的 bake-off 顯示 `claude -p`（Opus）品質明顯優於 Haiku（Haiku 會漏教訓、捏造 evidence），且免 per-token 費用，故列為主力。
+> 設計理由：2026-06-17 的 bake-off 顯示 `claude -p`（Opus）品質明顯優於 Haiku（Haiku 會漏教訓、捏造 evidence），且免 per-token 費用，故列為主力；dream compile 因批次量大，之後改預設 haiku。
 
 ### 寫什麼
 
@@ -144,7 +152,7 @@ L1 store 的 `.md` 檔（frontmatter 帶 `origin` 欄位：`session` / `absorbed
 
 ```
 當天 L1 + git log
-        ↓  LLM digest（同 §3 的 fallback 鏈：claude -p → Haiku → rule-based）
+        ↓  LLM digest（同 §3 的 fallback 鏈：claude -p → agy → codex → Haiku API → rule-based）
   lessons[]（每條需 ≥1 source_evidence，無 evidence 者丟棄）
         ↓  provenance.haiku_model 永遠硬寫 HAIKU_MODEL 常數（不反映實際 backend，即使走 claude -p/Opus）
         ↓  POST
@@ -176,13 +184,13 @@ L1 store 的 `.md` 檔（frontmatter 帶 `origin` 欄位：`session` / `absorbed
 
 `codeforge mnemos-cli cite-detect <transcript>` 會掃 transcript、對命中的 Mnemos atom title POST 到 `/v1/atoms/<atom_id>/cite`，讓 Mnemos 累加 citation、驅動 active-memory ranking。confidence：自動偵測（cite-detect）用 0.5、手動 `mnemos-cli cite <atom_id>` 用 0.7；Sprint 5+ 換 Haiku 偵測。
 
-> ⚠️ **目前 cite-detect 是手動子命令，尚未接入自動流程**：`ship` 不呼叫 cite，SessionEnd hook 鏈（emit-session / session-digest / dream / ship）也不含 cite-detect。所以正常 session 結束**不會**自動回寫 citation —— 需手動跑 `cite-detect`。自動化是 roadmap（見 `codeforge-ship.md` §9）。
+> `ship` 結尾會自動呼叫 auto-cite（`maybe_auto_cite` → `autocite::run`，confidence 0.5）：用該 session 的 transcript 找出引用過的 Mnemos atom 並回寫 citation；即使當天已 ship 或 ledger 為空也會跑。`cite-detect` 子命令仍可手動執行。
 
 ---
 
 ## 5. 兩顆腦的連線燈號
 
-`codeforge statusline` 的底框右側現在有兩顆燈，讓你一眼看出記憶系統的健康狀態：
+`codeforge statusline` 每次執行會算出兩顆燈，寫進 per-session view（`codeforge.session-view/1`），由 forge-stats 讀取並畫出。statusline 本身永遠只有一行、不畫燈號：
 
 ### 本地腦（local memory）— 永遠本機
 
@@ -201,7 +209,7 @@ L1 store 的 `.md` 檔（frontmatter 帶 `origin` 欄位：`session` / `absorbed
 - `○` 灰 `offline`：server 沒在跑（**中性，不是告警**，去把 server 開起來就好）
 - `◌` 灰 `pending`：opt-in 但從未成功連線
 
-黃/灰態底框會出現 `→ doctor` 提示，引導你去執行 `codeforge doctor` 查詳情。
+燈號不是 ok 時，用 `codeforge doctor` 查詳情。
 
 ### 燈號的資料來源
 
@@ -209,10 +217,6 @@ L1 store 的 `.md` 檔（frontmatter 帶 `origin` 欄位：`session` / `absorbed
 - **readiness** (`mnemos-ship.json`)：每次 `codeforge ship` 真正 POST ledger 之後（或 flush 成功後）寫入，反映 Mnemos 的真實 ingest 能力。
 
 兩軸**獨立**、不 OR 合一（避免「server 活著但 ingest 500」或「probe 死但 ship 三天前綠」被洗成假綠）。
-
-### 無色終端 / 色盲
-
-設定 `NO_COLOR=1` 時，燈退化為文字形式：`memory:active`、`mnemos:offline` 等完整詞（無縮寫），保持可讀性。
 
 ### 深度診斷
 
@@ -268,8 +272,8 @@ CodePower（鬥技場，公開競技）與 CodeForge（鍛造間，私人累積�
 
 ### ✅ 今天真的有的
 
-- **跨專案共用 statusline**：`codeforge statusline` 被所有 Claude Code session 呼叫（全域 hook），同一隻寵物面板在每個專案都看得到。
-- **XP 來自任一專案**：上面 §5 的事件來自任何 repo 的活動，寵物在你所有工作中持續成長。
+- **跨專案共用 statusline**：`codeforge statusline` 被所有 Claude Code session 呼叫（全域 hook），同一份 `pet.json` 由所有專案共用，forge-stats 分頁畫出同一隻寵物（statusline 本身只有一行、不畫寵物）。
+- **XP 來自任一專案**：上面 §6 的事件來自任何 repo 的活動，寵物在你所有工作中持續成長。
 - **Clan content skeleton**：`src/clan/`（`ClanContentProvider` trait、`HttpClanContentProvider` 讀 `~/.codeforge/config.toml` 的 `[codepower]` 設定）已有骨架（`mod.rs` 的 re-export 用 `#[allow(unused_imports)]` 抑制），**尚未接線**到 `src/pet/village.rs`（仍是 5 個 hardcoded village）。
 
 ### 📋 Phase 5 roadmap（尚未實作）

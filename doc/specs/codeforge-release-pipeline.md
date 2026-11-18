@@ -1,6 +1,6 @@
 # CodeForge Release Distribution Pipeline — Spec
 
-**Status:** spec, ready to implement · **Target:** v0.0.2 first release ·
+**Status:** historical design spec (current state: see the banner below; crate is at 0.0.9) ·
 **Audience:** the next implementer.
 
 > **Current state (PM G38, 2026-11-03)** — hosted CI is retired: `.github/workflows` was deleted after
@@ -18,9 +18,9 @@
 | Windows in v1? | No | No demand yet; install.rs MVP already gates |
 | macOS notarize/sign? | No | $99/yr + tooling tax; README documents `xattr -d` |
 | Homebrew tap? | Defer | After install.sh + binstall have run for a month |
-| In-binary self-update? | No | binstall handles Rust users; install.sh idempotent |
+| In-binary self-update? | Yes (B20) | `codeforge self-update` (`src/cli/selfupdate.rs`) |
 | Release automation | `cargo-release` | PR-driven; atomic bump+CHANGELOG+tag |
-| MSRV | 1.75 via `rust-toolchain.toml` | Matches dep needs |
+| MSRV | 1.88 via `Cargo.toml` `rust-version` | Matches dep needs; no `rust-toolchain.toml` |
 | Crates.io publish? | Manual later | Keep crate publishable but don't auto-publish |
 
 ## 1. The shared URL contract
@@ -69,11 +69,11 @@ POSIX `sh`, shellchecked. Flow:
 
 1. `need_cmd curl tar uname` + sha256 (prefer `sha256sum`, else `shasum -a 256`)
 2. Detect OS/arch → target triple. Die on unsupported.
-3. Resolve version: `$CODEFORGE_VERSION` env > `gh api releases/latest` (no jq)
+3. Resolve version: `$CODEFORGE_VERSION` env > `curl` on the GitHub `releases/latest` API (no jq, no `gh`)
 4. Install dir: `$CODEFORGE_INSTALL_DIR` > `$CARGO_HOME/bin` > `~/.cargo/bin` > `~/.local/bin`
 5. Download tarball + .sha256, verify, extract to tmp, `install -m 0755` to install dir
 6. PATH check — print rc-append hint if missing
-7. Print next steps: `codeforge install` + `codeforge init`
+7. Print next steps: `codeforge bootstrap`, `codeforge init`, `codeforge adopt`
 8. Existing-install detection — skip if same version unless `CODEFORGE_FORCE=1`
 
 Hosting URL: `raw.githubusercontent.com/cookys/codeforge/main/install.sh`.
@@ -145,7 +145,7 @@ Plus `codeforge install` wiring step + macOS Gatekeeper note
 ## 3. Version-string verification
 
 `codeforge --version` reads `env!("CARGO_PKG_VERSION")` via clap derive
-(`src/cli/mod.rs:26`). No changes needed. Verify after bump.
+(`#[command(name = "codeforge", version, …)]` in `src/cli/mod.rs`). No changes needed. Verify after bump.
 
 ## 4. Implementation sequencing
 
