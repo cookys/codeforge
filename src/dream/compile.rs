@@ -319,7 +319,11 @@ fn merge_into(new: &l1::L1Entry, target: &l1::L1Entry) -> l1::L1Entry {
     merged.frontmatter.status = "active".to_string();
     // origin 不降級:既有為 dev/session(乾淨來源)就保留,別被後到的 absorbed 蓋掉
     // (對齊 origin-purity 規則 — ship 用 origin 排除 absorbed 跨專案 memory)。
-    if matches!(target.frontmatter.origin.as_str(), "dev" | "session") {
+    // 例外:body/title 來自 new,new 若是 absorbed 則合併後的內容就是 absorbed,origin 必須維持
+    // absorbed(taint wins),否則 absorbed 內文借 dev 條目的殼被 ship 出去。
+    if new.frontmatter.origin != "absorbed"
+        && matches!(target.frontmatter.origin.as_str(), "dev" | "session")
+    {
         merged.frontmatter.origin = target.frontmatter.origin.clone();
     }
 
@@ -1238,6 +1242,27 @@ mod tests {
             old.frontmatter.status
         );
         assert!(new.file_path.exists(), "the corrected fact is written");
+    }
+
+    /// R1: an absorbed new fact merged into a dev entry carries absorbed body text, so the
+    /// result must stay non-shippable (taint wins); dev-over-absorbed keeps its old behaviour.
+    #[test]
+    fn merge_into_keeps_absorbed_origin_when_new_is_absorbed() {
+        let dir = TempDir::new().unwrap();
+        let store = dir.path().join("store");
+        let target = entry(&store, "t", "old dev body");
+        let mut new = entry(&store, "t", "absorbed body");
+        new.frontmatter.origin = "absorbed".to_string();
+        let merged = merge_into(&new, &target);
+        assert_eq!(merged.frontmatter.origin, "absorbed");
+        let sel = crate::mnemos::digest::select_l1_for_date(&[merged], "2026-01-01");
+        assert!(sel.is_empty(), "absorbed-derived entry must not ship");
+
+        let mut dev_new = entry(&store, "t", "dev body");
+        dev_new.frontmatter.origin = "dev".to_string();
+        let mut abs_target = entry(&store, "t", "abs");
+        abs_target.frontmatter.origin = "absorbed".to_string();
+        assert_eq!(merge_into(&dev_new, &abs_target).frontmatter.origin, "dev");
     }
 
     #[test]

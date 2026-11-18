@@ -17,7 +17,7 @@ git -C "$T/repo" add -A
 run >/dev/null || fail "clean repo must pass"
 
 printf 'line one\nfleet ns/%s-team/member here\n' "$tok" > "$T/repo/doc.md"
-printf 'contact someone@corp-example-co.invalid\n' > "$T/repo/mail.md"
+printf 'contact someone@%s.io\n' corp-example-co > "$T/repo/mail.md"
 git -C "$T/repo" add -A
 rc=0; out=$(run 2>&1) || rc=$?
 [ "$rc" = 1 ] || fail "planted token/email must exit 1 (rc=$rc)"
