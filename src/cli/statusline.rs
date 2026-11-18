@@ -1246,11 +1246,10 @@ fn render_line<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Resul
         .map(band_facts_pieces)
         .unwrap_or_default();
 
-    // Row 0 — identity strip (no box, no chip wrappers).
-    // Composition: model ── cwd ⇡⇣ branch [band-facts] ─────── version
-    // Cross-mode anchor: same model/cwd/branch/version order as render_full's
-    // top border, just without the ╭─...─╮ frame. Adopting a pet is a "bloom"
-    // (extra rows appear), not a re-layout.
+    // One line: identity left (model ── cwd ⇡⇣ branch [band-facts]), usage bars, quota chips and
+    // the version right. Width budget, in the order things give way: version first, then the
+    // quota chips (they take the narrower form their drop order defines), then cwd and branch
+    // shrink so the usage bars keep their room; the line is cut only as the last resort.
     let dimmed = data.context_pct.is_some_and(|p| p > 0.8);
     let delim_c = if dimmed { DELIM_DIM } else { DELIM };
 
@@ -1265,7 +1264,7 @@ fn render_line<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Resul
 
     let branch_full = git_branch().unwrap_or_else(|| "—".to_string());
     let ab_str = fmt_ahead_behind(git_ahead_behind());
-    // ab_part carries ONLY its leading space (matches render_full's pattern).
+    // ab_part carries ONLY its leading space.
     // The space BEFORE branch is always written explicitly so cwd and branch
     // can't glue together when ab_part is empty (no-upstream case).
     let (ab_part, ab_vis) = if ab_str.is_empty() {
@@ -1276,23 +1275,7 @@ fn render_line<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Resul
 
     let (ver_str, ver_vis) = render_version(data, delim_c);
 
-    // Layout: " " model " ── " cwd <ab_part> " " branch [band-facts] " " fill(N) " " version
-    //   fixed widths: 1 + model + 4 + ab_vis + 1 + 1 + 1 + ver_vis
-    let fixed = 1 + model_vis + 4 + ab_vis + 1 + 1 + 1 + ver_vis;
-    // Allocate cwd ≥ 10 cols, branch ≥ 4 cols.
-    let cwd_budget = width.saturating_sub(fixed + 4).max(10);
-    let cwd_display = shorten_path(&cwd_home, cwd_budget);
-    let cwd_vis = vis(&cwd_display);
-    let branch_budget = width.saturating_sub(fixed + cwd_vis).max(4);
-    let branch_display = shorten_str(&branch_full, branch_budget);
-    let branch_vis = vis(&branch_display);
-
-    // Row 1 — usage bars on LEFT, onboarding hint right-aligned on the
-    // SAME row. Hint stays visible regardless of usage data because
-    // "no pet adopted" is orthogonal to "Claude is reporting usage" —
-    // the user can be deep in a CC session and still need the nudge.
-    // Degradation: if the row is too narrow to fit both, hint shrinks
-    // to "→ adopt"; if still no room, hint is dropped entirely.
+    // Usage bars (5h / 7d / ctx), built first: they reserve their room before cwd and branch.
     let mut usage_parts: Vec<String> = Vec::new();
     if let Some(pct) = data.five_hour_pct {
         usage_parts.push(usage_bare(
@@ -1313,20 +1296,23 @@ fn render_line<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Resul
     if let Some(pct) = data.context_pct {
         usage_parts.push(usage_bare("ctx", pct, None, contract));
     }
-    let usage_left = if usage_parts.is_empty() {
+    let usage_bars = if usage_parts.is_empty() {
         tc("─", delim_c)
     } else {
         usage_parts.join("   ")
     };
-    let usage_left = {
-        let room = width.saturating_sub(1 + ansi_vis(&usage_left) + 1);
-        let now_s = chrono::Utc::now().timestamp();
-        format!(
-            "{usage_left}{}",
-            quota_segment(data, now_s, room, own_bars_yellow(data, contract), contract,)
-        )
-    };
-    let usage_left_vis = ansi_vis(&usage_left);
+    let usage_bars_vis = ansi_vis(&usage_bars);
+
+    // Left block: " " model " ── " cwd <ab_part> " " branch. The version is not reserved here
+    // (it is dropped first); the bars and a 2-col gap are. cwd >= 10 cols, branch >= 4 cols.
+    let fixed = 1 + model_vis + 4 + ab_vis + 1;
+    let share = width.saturating_sub(fixed + usage_bars_vis + 2);
+    let cwd_budget = share.saturating_sub(4).max(10);
+    let cwd_display = shorten_path(&cwd_home, cwd_budget);
+    let cwd_vis = vis(&cwd_display);
+    let branch_budget = share.saturating_sub(cwd_vis).max(4);
+    let branch_display = shorten_str(&branch_full, branch_budget);
+    let branch_vis = vis(&branch_display);
     let left = format!(
         " {}{}{}{} {}",
         model_text,
@@ -1336,6 +1322,18 @@ fn render_line<W: Write>(out: &mut W, data: &StatusInput, width: usize) -> Resul
         tc(&branch_display, BRANCH_C),
     );
     let left_vis = 1 + model_vis + 4 + cwd_vis + ab_vis + 1 + branch_vis;
+
+    // Quota chips get what the identity block and the bars leave (the segment counts its own
+    // ` · `), so quota_segment picks a form that fits instead of being cut mid-chip.
+    let usage_left = {
+        let room = width.saturating_sub(left_vis + 2 + usage_bars_vis);
+        let now_s = chrono::Utc::now().timestamp();
+        format!(
+            "{usage_bars}{}",
+            quota_segment(data, now_s, room, own_bars_yellow(data, contract), contract)
+        )
+    };
+    let usage_left_vis = ansi_vis(&usage_left);
     // Version rightmost; dropped before anything is cut.
     let with_ver = left_vis + 2 + usage_left_vis + 3 + ver_vis <= width && ver_vis > 0;
     let (right, right_vis) = if with_ver {
@@ -2261,6 +2259,51 @@ mod tests {
             serde_json::from_slice(&std::fs::read(dir.join("acct-bbbbbbbb.json")).unwrap())
                 .unwrap();
         assert_eq!(b["seven_day"]["pct"], 0.96);
+    }
+
+    /// Width budget: identity (model, long cwd, branch) must not push the 7d/ctx bars out, and
+    /// the quota chips must take the narrower form their drop order defines instead of being cut.
+    #[test]
+    fn long_identity_keeps_usage_bars_and_quota_chips_whole() {
+        let _g = ENV_LOCK.lock().unwrap();
+        let now = chrono::Utc::now().timestamp();
+        let entries = mirror_entries(now);
+        let forms: Vec<String> = {
+            use crate::usage::quota_view as qv;
+            let band = qv::quota_band(&entries, now, &qv::Tr::current());
+            qv::band_forms(&band)
+                .iter()
+                .map(|f| f.iter().map(|p| p.text.as_str()).collect::<String>())
+                .collect()
+        };
+        let data = StatusInput {
+            model: Some("Opus 5.5 (1M context)".into()),
+            cwd: Some("/srv/work/projects/codeforge/.claude/worktrees/review-1118x".into()),
+            five_hour_pct: Some(0.08),
+            five_hour_resets_at: Some(now + 1800),
+            seven_day_pct: Some(0.46),
+            seven_day_resets_at: Some(now + 5 * 86400),
+            context_pct: Some(0.31),
+            mirror: Some(entries),
+            ..Default::default()
+        };
+        for width in [100usize, 108, 116, 124, 140] {
+            let lines = compact_lines(&data, width);
+            assert_eq!(lines.len(), 1, "{lines:?}");
+            let line = &lines[0];
+            assert!(vis(line) <= width, "width {width}: {line:?}");
+            assert!(
+                line.contains("7d") && line.contains("ctx"),
+                "width {width}: bars cut: {line:?}"
+            );
+            if let Some(at) = line.find(" · ") {
+                let chips = line[at + 3..].trim_end();
+                assert!(
+                    forms.iter().any(|f| f == chips),
+                    "width {width}: chip cut mid-way: {chips:?} not in {forms:?}"
+                );
+            }
+        }
     }
 
     #[test]
