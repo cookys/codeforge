@@ -7,6 +7,7 @@ S=$(cd "$(dirname "$0")" && pwd); ap=$(cd "$1" && pwd); sha=$(git -C "$ap" rev-p
 cd "$S"
 bash gate-shots/run.sh "$ap" "$label" > "shots-$label.log" 2>&1; echo "shots rc=$? ($(command ls gate-shots/out/$label | wc -l) files)"
 bash gate-shots/owncard.sh "$ap" "$label" >> "shots-$label.log" 2>&1; tail -1 "shots-$label.log"
+[ -n "${FS_DIR:-}" ] && { bash gate-shots/pet-r4.sh "$ap" "$FS_DIR" "$label" >> "shots-$label.log" 2>&1; echo "pet shots: $(command ls gate-shots/out/$label | grep -c ^pet-)"; }  # spec S6 (needs the forge-stats dir)
 KEYS="2 3 9 1 0 4" timeout 300 bash gate-shots/keyprobe.sh "$ap" "$label" > "keyprobe-$label.log" 2>&1; echo "keyprobe: $(grep -c ' ok$' "keyprobe-$label.log")/6 ok"
 [ -n "${NO_REVIEW:-}" ] && { echo "NO_REVIEW: shots + keyprobe only (spot check, PM 01M7Q8H2); probes: $(command ls gate-shots/out/$label | grep -c probe)"; exit 0; }
 python3 -I build-b2.py "$sha" "$label" || exit 1

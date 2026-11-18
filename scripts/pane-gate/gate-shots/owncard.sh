@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # owncard.sh <autopilot-dir> <label> — page 2 待決 with a card this seat can answer (gate b2 carbon M4 asks for it next to the read-only card).
-# Shots: out/<label>/S6-own-p2-{160x40,80x24}.{txt,ans}. Run after run.sh, never beside it (both use cwd/ and scenario).
+# Shots: out/<label>/S7-own-p2-{160x40,80x24}.{txt,ans}. Run after run.sh, never beside it (both use cwd/ and scenario).
 # The seat's own cards come from the repo's card store, scope-checked against the session (autopilot 01M7PZP3, fixture
 # mods/live/pane-attach.test.ts@af47b1fde baseFiles/durableStore): HOME/.autopilot/live-pointer.json -> live_base;
 # HOME/.autopilot/session-mode/<sid>.json -> project_key; <live_base>/runs/<key>.json envelope fresh within 180 s;
@@ -32,7 +32,7 @@ sleep 14; key '/live-pane'; sleep 1.5; key Enter; sleep 4
 grep -q "\"live_base\":\"$LB\"" "$H/.autopilot/live-pointer.json" || echo "own card: live-pointer moved off $LB" >&2
 for sz in 160x40 80x24; do
   tmux resize-window -t "$s" -x "${sz%x*}" -y "${sz#*x}"; sleep 4; key 2; sleep 2.5
-  cap > "$O/S6-own-p2-$sz.txt"; tmux capture-pane -p -e -t "$s" > "$O/S6-own-p2-$sz.ans"
+  cap > "$O/S7-own-p2-$sz.txt"; tmux capture-pane -p -e -t "$s" > "$O/S7-own-p2-$sz.ans"
 done
-if grep -q '准合併' "$O/S6-own-p2-160x40.txt"; then echo "own card: drawn"
-else rm -f "$O"/S6-own-p2-*; echo "own card: NOT drawn (shots removed so the packet never shows a wrong page; check scope files)"; fi
+if grep -q '准合併' "$O/S7-own-p2-160x40.txt"; then echo "own card: drawn"
+else rm -f "$O"/S7-own-p2-*; echo "own card: NOT drawn (shots removed so the packet never shows a wrong page; check scope files)"; fi
