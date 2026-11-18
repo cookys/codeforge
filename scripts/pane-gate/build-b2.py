@@ -12,15 +12,15 @@ head = head.replace("第 1 批 — UX 閘門第 3 輪（最後一輪）", f"第 
 head = re.sub(r"受測版本是 autopilot feat/pane-batch1 @ \w+，base 是 \w+。", f"受測版本是 autopilot @ {SHA}，base 是第 1 批上線版 083cf2e91。", head)
 head = head.replace("這一批交 1–4 頁。", "第 1 批（1–4 頁）已經上線；這一批交第 1 批評審發現的修正，範圍還是 1–4 頁和 band。")
 assert SHA in head, "sha line not replaced"
-if os.path.exists(f"{G}/out/{LABEL}/pet-p9-160x40.txt"): head = head.replace("S6 寵物頁這次不交（寵物頁在 P2 之前只是佔位）。", "S6 寵物頁（pet-default、pet-p9-*）這次有交。")
+head = head.replace("S6 寵物頁這次不交（寵物頁在 P2 之前只是佔位）。", "S6 寵物頁（pet-default、pet-p9-*）這次有交。")
 insert = open(f"{S}/gate-b2-insert.md", encoding="utf-8").read()
 O = f"{G}/out/{LABEL}"
 order = [f"S1-full-p{p}-{sz}" for sz in ("160x40", "120x30", "80x24", "80x20", "80x16") for p in (1, 2, 3, 4)] + \
         [f"S1-full-p0-{sz}" for sz in ("160x40", "80x24")] + ["S1-closed-160x40"] + [f"S1-light-p{p}-160x40" for p in (1, 4)] + [f"S7-own-p2-{sz}" for sz in ("160x40", "80x24")] + [f"S4-small-p{p}-160x40" for p in (1, 4)] + \
         [f"S5-stale-10min-p{p}-{sz}" for sz in ("160x40", "120x30") for p in (1, 4)] + [f"S5-stale-6min-p{p}-160x40" for p in (1, 4)] + [f"S5-console-exit1-nofile-p{p}-160x40" for p in (1, 4)] + ["pet-default-160x40"] + [f"pet-p9-{sz}" for sz in ("160x40", "120x30", "80x24")]
 order = [k for k in order if os.path.exists(f"{O}/{k}.txt")]
-missing = [k for k in ("S1-full-p1-80x24", "S1-full-p3-80x24", "S1-full-p4-80x24", "S1-full-p2-80x24", "S1-full-p1-80x16", "S1-light-p1-160x40", "S1-full-p0-160x40", "S1-closed-160x40", "S5-stale-10min-p1-120x30") if k not in order]
-assert not missing, f"missing must-have 80x24 shots: {missing}"
+missing = [k for k in ("S1-full-p1-80x24", "S1-full-p3-80x24", "S1-full-p4-80x24", "S1-full-p2-80x24", "S1-full-p1-80x16", "S1-light-p1-160x40", "S1-full-p0-160x40", "S1-closed-160x40", "S5-stale-10min-p1-120x30", "S5-stale-6min-p1-160x40", "pet-default-160x40", "pet-p9-160x40", "pet-p9-120x30", "pet-p9-80x24") if k not in order]
+assert not missing, f"missing must-have shots (incl. spec S5 6-min and S6 pet): {missing}"
 parts = [head, insert]
 if ROUND > 1:
     prev = f"{S}/../../doc/design/ux-gate/pane-batch2/r{ROUND - 1}-dispositions.md"
