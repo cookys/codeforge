@@ -1,299 +1,486 @@
-# CodeForge Backlog
-
-Last audited: 2026-11-01
-
-Items confirmed low-priority or blocked by external dependencies. Each item has a trigger condition for when to pick it up.
-
----
-
-## B1 — Signal Cursor Race Condition (Concurrent dream runs)
-
-**Area**: `src/dream/compile.rs`, `src/db/schema.sql` (signal_cursors)
-**Premise**: If two `codeforge dream` calls run simultaneously (e.g. SessionEnd hook + manual), the signal cursor may be read twice before either write completes, causing duplicate L1 entries.
-**Trigger**: Pick up when Phase 2 daemon is implemented (daemon will own all write operations, eliminating concurrent CLI calls).
-**Mitigation in place**: `PRAGMA busy_timeout=5000` ensures one waits; risk is low for Phase 1 single-user.
-**Status 2026-04-17**: Phase 2a shipped. Daemon now owns derived-state writes (`pet_snapshot`, `combat_log`, `game_world`), but `signal_cursors` are still CLI-written by `dream compile` — this item remains open with unchanged scope.
-**Status 2026-06-15**: ship-online 把 `codeforge dream` 移到 global SessionEnd（跑遍所有專案）。**預設 per-cwd `.codeforge` 不受影響**（各專案寫各自 store,無 cross race）；只有 `CODEFORGE_DIR` 共享 store 的使用者,多專案 session 同時結束時 concurrent-dream 機率上升 —— 仍由本 item 既有 scope 覆蓋,`busy_timeout` 緩解。
-
----
-
-## B2 — CJK-Aware FTS5 Search Tokenizer
-
-**Area**: `src/db/schema.sql` (memory_fts), `src/memory/fts.rs`
-**Premise**: FTS5 uses `porter unicode61` tokenizer which doesn't handle CJK character segmentation. Searching for Chinese terms like "重複" may miss matches split across FTS tokens.
-**Trigger**: Pick up when user reports CJK search misses, or when FTS corpus grows to >500 entries.
-**Note**: ICU tokenizer or external jieba segmentation needed. External dependency — needs survey first.
-
----
-
-## B3 — Badge System Implementation (Phase 1 stub)
-
-**Area**: `src/pet/badges.rs`, `src/db/schema.sql` (badges table)
-**Premise**: Badge table exists in schema and `badges.rs` has `award()` / `list()`, but nothing calls `award()` — no game event grants a badge (only `codeforge pet` lists them).
-**Trigger**: Pick up when deciding which events grant badges (MOB kills, zone mastery, milestones); Phase 2b shipped without wiring it.
-
----
-
-## B5 — Ingest Parser: ChatGPT Export Format
-
-**Area**: `src/cli/ingest.rs`
-**Premise**: `ingest --source chatgpt` is declared in CLI but parser may not handle all ChatGPT export variants (JSON vs markdown).
-**Trigger**: Pick up if user requests ChatGPT migration or if a second user adopts CodeForge.
-
----
-
-## B13 — 真實 production ship e2e（對 live Mnemos server）
-
-**Area**: runtime（`codeforge ship --no-hook` SessionEnd + `~/.mnemos/data/mnemos.db`）
-**Premise**: ship-online 專案的 e2e 只在隔離 test DB(`/tmp/ship-e2e`)驗過 → 200。真正對使用者 production Mnemos brain 的 session-end ship（global hook 鏈)尚未端到端跑過一次。已 opt-in（`~/.config/mnemos.env`），但驗證當下 Mnemos server 沒跑 → 本機 session-end ship 會 queue 到 `~/.codeforge/ship-failed/`。
-**Trigger**: 下次 Mnemos server 在跑時 —— 確認一次真實 session-end 的 ledger 落進 production brain（查 `documents`/`atoms`），並 `codeforge ship --resend` 清掉累積的 ship-failed/ queue。
-**Status 2026-06-15**: ship-online 上線後立即產生;設計上 ship --no-hook 失敗只 queue 不阻塞,故非 blocker。
-
----
-
-## B15 — improvement-queue surfacing 一般化(project-scoped,非 codeforge-clone-only)
-
-**Area**: `.claude/scripts/check-improvements.js`、`codeforge install`（hook 安裝佈局）
-**Premise**: improvement-queue 已做 project 歸屬(session-digest 寫項標 `project: cwd`,2026-06-15 fix `a0169cc`),但**surface 它的 `check-improvements.js` 仍是 codeforge-clone-only**(只裝在 codeforge clone 的 `--project-hooks`,`PROJECT_ROOT` 由 `__filename` 推導恆為 codeforge 根)。後果:
-- CodeForge 只 surface 自己的項(已修,正確)。
-- **其他專案(CodePower 等)寫進共享 queue 的項,沒有任何地方會在該專案 surface** —— 它們帶了 `project` tag 卻無 surfacing hook 消費。
-參考 dream/ship 的做法:把 surfacing 從 clone-only 改成可跨專案(global 或可裝進任一專案的 SessionStart hook),用 hook CWD/`CLAUDE_PROJECT_DIR` 當 `PROJECT_ROOT`,各專案 SessionStart 只報屬於自己(`project === <該專案根>`)的 pending 項。
-**Audit 2026-11-01**: 併入 B31 —— 納編後 hooks 改由 autopilot 的 opt-in 清單註冊，跨專案 surfacing 跟著那次一起設計，不單獨做。
-**Trigger**: 當 (1) 想讓 CodePower(或其他專案)session 也能在 SessionStart 看到自己的 pending improvements,或 (2) 把 check-improvements 納入 global hook 安裝鏈(類似 ship-online 把 dream/ship 移 global)時。需處理 `PROJECT_ROOT` 來源從 `__filename` 改成 hook 提供的 project dir。
-**Status 2026-06-15**: project 歸屬(寫端)+ CodeForge 自身 scoping(讀端)已完成;跨專案 surfacing 一般化未做,記為 enhancement。
-
-
----
-
-## B16 — memory-recall Phase B / C(偷好偷滿的下一輪)
-
-**Area**: `src/dream/compile.rs`、`src/memory/recall.rs`、SessionEnd hook、L1 schema
-**Premise**: Phase A(本地 recall 注入器)已上線(2026-06-16,`local-recall` 專案)。design spec `doc/proposals/2026-06-16-memory-recall-and-stolen-patterns.md` 的後續 tier:
-- **Phase B(Tier 2)**:T2.2 mem0 式 ADD/UPDATE/DELETE/NOOP 對賬 + T2.3 統一 recency×importance×relevance 排序 → **2026-06-17 開做**(plan `doc/plans/2026-06-17-memory-recall-phase-b.md`)。**T2.1 async fire-and-forget worker 留此 backlog**(見下)。**procedural-atom `nature` 欄位**:只在 frontmatter 留位,分類邏輯歸 Phase C。
-- **Phase C(Tier 3,評估後選)**:本地語意 recall(FastEmbed+HNSW,取代/增補 FTS5 keyword)、失敗/卡關為一等記憶、typed observation/relation schema、矛盾偵測 + 兩段式信心衰減。
-**Trigger**:
-- **T2.1(async worker)**:當 dream/ship 在 SessionEnd 開始有感卡頓時開新 L。設計已收斂(留檔在 phase-b plan「OUT OF SCOPE」段):conditional enqueue + 同步 fallback —— 有 live daemon 才 `dream --background` emit `dream_scheduled` event 快速返回,無 daemon inline 同步跑(維持「永遠會 distill」、不回歸 ship-online)。2026-06-17 user decision defer:觸發條件未成立 + 紅利範圍窄(多數專案無 daemon)+ 動剛上線熱路徑風險不划算。
-- **Phase C**:當 keyword recall 品質證實不足(語意)、或想捕捉失敗 pattern 時。**Audit 2026-11-01**:語意檢索依 pm 分工(B33)歸 mnemos,本地 FastEmbed+HNSW 開做前先確認不和 mnemos 重做。
-**Status 2026-06-17**:Phase A done;Phase B 的 T2.2+T2.3 開做;T2.1 + Phase C 記為 enhancement,有 design spec 母本與 credits。
-
----
-
-## B17 — session-digest A′ 落地的 review 殘留(低優先)
-
-**Area**: `.claude/scripts/session-digest.js`、`src/dream/ingest_digests.rs`
-**Premise**: A′ 落地(2026-06-17,`443e31d`)§6 獨立 review 留下幾個低優先項,已判定接受/駁回,記為 enhancement:
-- **mtime-guard 殘留亞秒競態**:ingest 刪檔前比對 mtime,但 coarse-mtime(秒級)FS 上「讀後同一 mtime-tick 內被改寫」仍可能刪到新檔。已配 atomic write 大幅收窄;若要全閉,改 rename-to-staging(`X.json`→`X.json.ingesting` 後處理)+ orphan 回收。實務機率極低(09:00 離峰 cron、session 多不活躍),故未做。
-- **`findCodeforgeRoot` 吞 EACCES**:`statSync` 把權限錯一律當「非 repo」→ skip 不寫,fail-safe 正確但不可診斷。可加「非 ENOENT errno 時 log」便於排查。
-- **improvement-queue 非原子寫**(pre-existing,本次 out of scope):`session-digest.js` 寫 `improvement-queue.json` 用 `writeFileSync` 但 doc-comment 宣稱 atomically。可比照 digest 改 temp+rename。
-**Trigger**: (1) 真的觀察到 worktree/權限情境的靜默 capture gap;或 (2) 多 dream 並行/高頻 PreCompact 環境下出現 digest 競態丟失;或 (3) 順手清 improvement-queue 寫入時。
-**Status 2026-06-17**: review 已處置(接受現狀);記為 enhancement。
-
----
-
-## B18 — spec 設計目標 code 未跟上（doc-code-drift audit 2026-06-18）
-
-**Area**: `src/cli/ship.rs`、`src/mnemos/*`、`src/daemon/combat.rs`、`src/pet/ability.rs`
-**Premise**: 2026-06-18 的 doc↔code drift audit（6 領域 + 對抗驗證，48 confirmed findings）發現幾處是「spec 寫了設計、code 尚未實作」（非 doc 寫錯）。已在各 spec 頂部標 `⚠️ NOT YET IMPLEMENTED / CODE LAGS DESIGN`，code 補上時清這些標記：
-- **ship 掃 session jsonl**：`codeforge-ship.md` §5/§6.1 設計 ship 讀 `~/.claude/projects/<repo>/*.jsonl` 取 source_evidence locator（uuid/ts/line）+ prompt [session 線索] block。實作只讀 L1 + git；`SourceEvidence::session_jsonl` 是 dead_code。
-- **provenance 擴充欄位**：`codeforge-ship.md` §4.3 設計 `raw_signal_count`(從 db 算)/`source_jsonl_paths`/`digest_cost_usd`。`build_provenance` 只產 5 個基本欄位。
-- **ship-state 省 digest**：§7.6 設計「已 ship 過 → skip digest + POST」，code 先 digest 才查 already_shipped，只 skip POST（浪費一次 LLM 呼叫）。
-- **Pet Ability 戰鬥效果**：`codeforge-mud-engine.md` §2.5 的 Quick Eye/Focus Strike/Tome Sense 效果未實裝；`ability.rs` 只是 display-only catalog，`combat.rs` 無 ability 邏輯。
-- ~~**auto-cite-on-ship**~~ ✅ **Done 2026-07-02**（fuchikoma P1.1）：`ship` 結束（成功/已 ship/空 ledger 三分支）自動掃當日本 repo session transcript → 比對候選 atom 標題 → 回寫 cite。實作 `src/mnemos/autocite.rs` + `ship.rs::maybe_auto_cite`（best-effort、gated on opt-in、confidence 0.5 + session_jsonl provenance）。e2e:`scripts/e2e-mnemos-chain.sh` 步驟 5。§9 的 ⚠️ 標記已清。**餘下未做**:ship digest 端仍不掃 jsonl 取 source_evidence(見上「ship 掃 session jsonl」子項,digest 證據那條仍 open)。
-- **Void Creature MOB + Lv50 legendary 村莊**（full sweep 2026-06-18 補）：`codeforge-mud-engine.md` §2 的 Void（missing test coverage→drain DEF）MOB 未實作（scanner 只產 Zombie/Boss/Elite/Ghost 4 種）；§2.5 Lv50 legendary 表列的 ML / 開源基金會 村莊不存在（實際 5 村莊，且 javascript 無 legendary 條目）。
-**Trigger**: 各子項獨立 —— 想讓 ledger 帶 session 證據 / 想要 cost telemetry / 想省重複 digest / 想做 ability 戰鬥深度 / 想自動 cite / 想加 MOB 種類或村莊時，分別開 S~L 實作並清掉對應 spec 的 ⚠️ 標記。
-**Status 2026-06-18**: audit 已把 doc 側全部更新成現實 + 標記設計目標;code 側未動,記為 enhancement。純 stale/missing 的 drift（首輪 48 條 + scoped 4 條 + full sweep 22 條）已分別修正落 doc。
-
----
-
-## B21 — `should_refresh` 的 `!fresh_enough` dead path revisit
-
-**Area**: `src/mnemos/health.rs:should_refresh`
-**Premise**: `should_refresh` 的 `cache_stale = !fresh_enough(l, now)` 分支在 `PROBE_TTL_MAX(600s) < CACHE_MAX_AGE(3600s)` 的當前常數下永遠被 `ttl_expired` 先短路（dead path，保留作 belt-and-suspenders）。代碼已加 comment 說明。若未來 `PROBE_TTL_MAX` 調高至 > `CACHE_MAX_AGE`，此 OR 分支將重新生效，語意正確性需 revisit（或可移除）。
-**Trigger**: 調整 `PROBE_TTL_MAX` 常數（往 >3600s 方向）時，或決定清理 belt-and-suspenders 時。
-
----
-
-## B24 — `l1::count_active` 熱路徑逐檔 parse frontmatter 潛在成本
-
-**Area**: `src/memory/l1.rs:count_active`、`src/cli/statusline.rs`（呼叫點）
-**Premise**: `count_active` 對 `store/concepts/` 下每個 `.md` 逐一 parse frontmatter，per-render 呼叫、未快取。概念數通常 <100 故成本可忽略，但 concepts 目錄成長至數百筆後，每次 statusline render 均有 O(n) 讀檔+解析開銷。
-**Trigger**: concepts 目錄 >200 筆，或 statusline render 延遲有感變慢時。改法選一：(a) 在 SQLite DB 加 `l1_count` 欄位、dream 寫入後更新，statusline 走 DB 查詢；(b) 快取到 runtime_dir（與 liveness cache 同源）並由 dream 觸碰失效。
-
-## B25 — fleet authed-readiness probe（央腦燈即時反映「真能 ship」）
-
-**Area**: `src/mnemos/health.rs`（probe）、`central_light` readiness 軸；協調 Mnemos repo `fleet-ingest-rollout`
-**Premise**: 央腦燈是 probe(liveness, `/health`) + ship(readiness) 雙軸。`/health` 結構性豁免 auth → 綠燈只證「腦活著」，**不證 token 配對正確**。fleet 機若 `MNEMOS_TOKEN` 錯/缺 → `/health` 綠、但 ship/context 吃 401。現況靠 ship 結果（401→`last_ship_ok=false`→燈翻黃）已能抓到，**但延遲到 SessionEnd（一 session 一次）**。
-**改法**: 背景 probe 在「有 token」時多打一條 **authed liveness**，餵進**既有 readiness 軸**（即時取代延遲的 ship 訊號），維持單一健康軸（綠/黃/灰）。不做成第三條獨立燈。frequency 放低（liveness 30s / readiness ~5min，因 authed 端點較重）。打 **`GET /v1/whoami`** 當 authed liveness（只過 Bearer middleware、零腦負載），比打 `/v1/atoms/context` 省。
-**Dependency（已就緒，code 已驗）**: `GET /v1/whoami` 端點 **Mnemos 已實作並 merge 進 main**（commit `70fa2d0`；origin/main `Cargo.toml` v0.3.5；落 spec 10 §8 / §3.2）。code 在 `crates/mnemos/src/api.rs`（route line 42 + handler line 67 + 3 tests：auth關→200、auth開缺token→401、auth開對token→200）。回 `{"ok":true,"version":"<crate>","auth":"enabled|disabled"}`：auth 關→恆 200 當 liveness；auth 開→缺/錯 token 401、對 token 200 → readiness 即時。不碰 store/embedder（比 `/v1/atoms/context` 省一輪 hybrid 檢索）。**caveat**: staging :8846 仍舊 binary 無此端點，flip-prod 一起換。runtime **已本機實證**（2026-06-24 經 SSH 隧道打 prod `/v1/whoami` 回 `{"auth":"disabled","ok":true,"version":"0.3.5"}`，與 origin/main `Cargo.toml` 對齊 → prod 腦確跑帶 whoami 的 binary）。
-**Trigger**: Mnemos flip-prod 開 auth（設 `MNEMOS_API_TOKEN`）/ fleet 開始多機收錄。現在不做（auth 關、單機，零價值）。端點雖已 live，auth 開前它只是 liveness、無 readiness 意義。
-**Cross-repo**: 與 `cookys/mnemos:docs/projects/fleet-ingest-rollout` 對齊；`/v1/whoami` 端點落 Mnemos repo（spec 10 §8）。
-
-## B26 — digest 引擎 fallback 鏈（claude -p → agy → codex → Haiku → rule-based）✅ 實作 2026-06-24
-
-**Area**: `src/llm.rs`（`headless_digest` + `agy_p`/`codex_exec`）、caller `src/cli/ship.rs`、`src/dream/compile.rs`（reconcile + compile_signal）
-**Premise（品質懸崖）**: dream/ship digest 走 `claude -p`(Opus)。但 `claude -p` 大 prompt 可能空輸出(#7263) → 無 `ANTHROPIC_API_KEY` 的機器**直接掉 rule-based passthrough**（最差），中間無 LLM 級檔位。ship 是 production critical path，品質下限不該是 passthrough。
-**Bake-off（2026-06-24，真實 ship-shape prompt）**: 三家 headless 引擎都產 valid JSON、3+ lessons、evidence 歸因正確。claude(Opus) 40s/nuance 最全、title 最像結論；agy(Gemini Flash) 16s/最快/夠好但丟部分 nuance；codex(0.142.0) 中速/最徹底(抓 4 條)。三家 decorrelated（Anthropic/Google/OpenAI），且都走訂閱（claude/ChatGPT）或近免費（agy）→ 免 per-token key。
-**改法（已實作）**: 抽 `llm::run_cli` 共用 headless 執行器；`headless_digest` 串 `claude_p → agy_p → codex_exec`，回第一個非空輸出；三家全失敗才 Err，caller 再接既有 Haiku(key)→rule-based 尾。主力仍 Opus（`CODEFORGE_DIGEST_MODEL`，bake-off 最佳），agy/codex 是免 key 中間檔。env：`CODEFORGE_AGY_MODEL`（預設 `Gemini 3.5 Flash (Medium)`）。
-**已知限制 / 後續**:
-- (a) **parse-fail 不換引擎**：某引擎回「非空但無法 parse 的 JSON」→ caller 走 passthrough，不會 fall through 到下一引擎（維持原 claude parse-fail 語義）。要更穩可讓 `headless_digest` 收 validator closure，逐引擎驗 parseable。低優先（Opus 回垃圾罕見）。
-- (b) **codex 輸出格式**：codex exec 是 agent，stdout 理論上可能夾雜非 JSON 前後文；bake-off 實測乾淨，但它是第三 fallback、罕觸發。若實戰發現髒輸出，parse 端已有 `extract_json` 容忍。
-- (c) **cron PATH**：agy/codex 常在 `~/.local/bin` 或 nvm bin，cron 下 ship 要確保在 PATH 內（`scripts/codeforge_ship.sh`），否則該層 spawn 失敗沿鏈降級。
-
-## B27 — statusline 中段 indicator（hangar-bridge / autopilot / …）
-
-**Area**: `src/cli/statusline.rs` `bottom_border`（擴充點註解已就位，central segment 之後）
-**Premise**: 版號已右對齊（commit `ff51004`），bottom border 變成 `╰─ memory… mnemos ● ok ──[中段 fill]── ⬆ v… ──╯`。中段 fill 是預留空間，未來新功能的即時狀態燈（hangar-bridge 連線、autopilot 模式指示等）就接在這 —— central(mnemos) 之後、版號之前，當作「左側 content」的額外 segment，fill 自動縮短吸收。
-**接法（code 內已寫詳細步驟）**: 對齊 central segment 的 pattern：(1) 狀態來源 enum + glyph/顏色 match；(2) `make_<name>_seg_{colored,glyph_only_colored,nocolor}` 三變體；(3) degradation ladder 每 level `total += seg_vis + gap` 並 `content.push_str` 接在 central 後；(4) 窄寬度於較低 level 優先丟（如 hint 的處理）。width 自動正確（ladder 用 vis 量、assemble fill = panel_w - overhead - left_vis - right_vis）。
-**候選 indicator**:
-- **hangar-bridge**：跨 agent 通道連線狀態（此概念目前 repo 內不存在，需先定義；見本 session 接腦討論）。
-- **autopilot**：autopilot 模式 / DOA 狀態指示。
-**Trigger**: 當 hangar-bridge 或 autopilot indicator 有了明確語義 + 狀態來源時。現在不做（無狀態來源、純預留）。
-**Audit 2026-11-01**: autopilot 的狀態已由 autopilot 自己畫在 band（分頁列），B31 的 status 片段契約定案時一併決定這個擴充點留不留；在那之前不加 indicator。
-**注意**: 每加一個 indicator 中段 fill 變窄；窄終端要靠 ladder 的 drop 順序保證不溢出（已有 `bottom_border_narrow_no_overflow` 測試守著）。
-
-## B29 — ascii-pet-artist 指南寫小圖「最多 4 行」，實際五村都是 6 行
-
-**Area**: `.claude/skills/ascii-pet-artist.md`（硬性約束段、新村莊 checklist）、`src/pet/village.rs` struct 註解（「6 行 × ≤10 字」）、`src/cli/statusline.rs` `render_full` 的 art 欄
-**Premise**: 指南說 `ascii_small` 最多 4 行（對應 render_full rows 0-3），但 struct 註解寫 6 行、現有五個村落的小圖都是 6 行，statusline 實際畫出 5 行。三處說法不一，新增村落時不知道該畫幾行。（來源：2026-10-31 pet-view-snapshot 收尾的 doc-sync 掃描。）
-**Proposed**: 先量 `render_full` 實際能放幾列 art，再把指南、struct 註解統一成那個數字，並在 `village.rs` 測試釘住上限。
-**Trigger**: 下次新增或重畫村落圖案，或動 statusline 的 art 欄。
-**Not done**: 只記錄落差；2026-10-31 只修了縮排、加了 `concat!` 寫法說明，沒有動行數規格。
-
-## B30 — 其他四個村落的像素 sprite（目前只有 Ferris）
-
-**Area**: `src/pet/sprite.rs`（`for_village`、新 sprite 常數）、`.claude/skills/ascii-pet-artist.md`（補 sprite 畫法）
-**Premise**: pixel-pet（2026-10-31）只做了 Rust/Ferris 的 24×24 兩幀 sprite；python/typescript/go/javascript 的 `village.sprite` 是 `null`，forge-stats 面板對這些寵物退回 ASCII。sprite 格式與驗證已定（`validate()`：24×24、`.` 透明、xterm-256 cube 色、≥2 幀、500 ms）。
-**Proposed**: 每村畫一組 24×24 兩幀 sprite 加進 `for_village`；`validate` 測試自動涵蓋。畫法說明寫進 ascii-pet-artist skill。
-**Trigger**: owner 領養非 Rust 村落的寵物，或要求其他村落也有像素圖。
-**Not done**: 範圍刻意只做 Ferris（plan `doc/plans/2026-10-31-pixel-pet.md` §7）。
-
-## B31 — codeforge 成為 autopilot 的 extension（autopilot 3.0.0-alpha.8 起）
-
-**Area**: 跨專案架構（autopilot extension 契約、codeforge 的 hooks / forge-stats mod / statusline 接法）；Rust 本體不搬
-**Decision**: owner 2026-11-01（卡 d-0e2e6e0d）：codeforge 走 autopilot 的 extension 契約、不併進 autopilot repo，從 autopilot
-3.0.0-alpha.8 起分段做（band 分頁 → hooks → status 片段 → 設定鍵 → binary 需求），在 3.0.0 正式版前完成，使用者只裝 autopilot。
-兩邊共識（fleet msg `01M69B3CY03VMC41QQJ1CEGWQ1`、`01M69B89Z5GRJE5Z9NHBDM19N4`）：
-- Rust 本體（記憶、ship、MUD）留在 codeforge repo；autopilot 是 Node、跨 harness、已公開，不帶進 Rust build 與 SQLite schema。
-- band 契約只剩一件事：forge 分頁點開時，autopilot 往下問一次展開區，codeforge 回 Ferris、寵物、記憶與大腦。
-  原本的分頁標籤契約（keyed Box，main `c5165cf`）隨速度一起退場（B32 已完成，見 CHANGELOG Unreleased 的 Removed）。
-- hooks 改由 autopilot 的 opt-in 清單註冊、不再寫全域 settings。ship 失敗責任：autopilot 只負責有呼叫、記結束碼、失敗看得到；
-  重試與補送仍是 codeforge 的。
-- 降級：每一項都要能沒有 autopilot 單獨跑（forge-stats 沒有 host 時照現在自己畫；Solo Smith 定位不變）。
-- 取代原 B31（表現層由誰統一畫）：答案是 autopilot 當 host，各 extension 照契約交內容；fleet 分頁也走這條：owner 決定由 autopilot 畫（卡 d-d99e2d99 已關），autopilot 登記為 BL-0358，alpha.7 之後做、不放核准按鈕。
-**Trigger**: autopilot `v3.0.0-alpha.7`（repo 重整 P1–P5）發布之後；開工前 autopilot 先寫 extension 機制 plan 並過 plan review，
-codeforge 參與審查（掛載點、manifest、binary 需求、ship 失敗責任這四塊）。
-**hooks 段**: 2026-11-02 提前定好介面契約（host-mini 請求；owner 卡 d-0ce83828 選 C：只定契約）：`codeforge hook on <session-start|session-end|pre-compact>`，autopilot 用通用提供者清單 `hooks/hook-providers.json` 呼叫（autopilot 卡 d-92a2231d），codeforge install 依五項條件偵測、共用檔不自動清。契約：[`doc/plans/2026-11-02-autopilot-hook-bridge.md`](plans/2026-11-02-autopilot-hook-bridge.md)；專案：`doc/projects/2026-11-02-autopilot-hook-bridge/`。兩邊實作都等 alpha.7 之後，開工時再跑一次兩席 plan review。
-**Not done**: hooks 段只有契約、沒有 code；其他段的契約與實作都還沒開始；alpha.7 搬家期間不定掛載點（路徑會變好幾次）。
-
-## B33 — 專案範圍知識的正本改放 pm（跟著 repo 走、跨機器同步）
-
-**Area**: 記憶管線（`src/dream/`、`src/memory/`、`memory context` recall、`ship` 選條目）；L1 atom schema（`doc/specs/codeforge-memory-contract.md`）
-**Premise**: `.codeforge/` 整個被 gitignore，L1 只存在本機，多機開發彼此看不到。fleet 規劃中的 pm CLI（Rust，單一專案的 backlog/決策/ADR 鏈/專案事實，正本是 commit 進 repo 的 JSONL、sqlite 只當本機索引、id 用 ULID）要收專案範圍的 lesson/gotcha；codeforge 的 learn/dream 繼續從對話萃取，專案範圍產出改經 pm CLI 寫入，跨專案、L2 ledger、語意檢索照舊歸 codeforge/mnemos。
-**codeforge 開出的限制**（fleet msg `01M6BASVM2RS9CY36Y2V61FFR9`，fleet 回覆會原樣寫進正式計畫）：(a) dream 產出先標 candidate，經 identifier-scan + 人工把關才升正式；(b) dream 只寫本機，由 finish 決定何時匯出並 commit；(c) 一條目一檔或 union merge；(d) refs/last_ref/strength 等使用統計留本機不進 commit；(e) pm 不在時降級寫本機 store，SessionEnd 不可失敗，recall 統一讀 pm＋本機；(f) ship 以 ULID 去重。另需新增 atom `scope: project | cross` 與來源 repo 欄位（現在只有存放位置與 `origin` 可粗分）。
-**Trigger**: operator 對 pm 計畫拍板、fleet 通知 codeforge 寫遷移計畫；計畫寫好後開決策卡給 owner，不先動 code。
-**Not done**: 遷移計畫、schema 增欄、寫入與 recall 路徑改動，全部未開始。
-
-## B34 — 上層 plugin 吃掉 band 時，statusline 仍縮成精簡版、寵物哪裡都不顯示 ✅ 2026-11-07（心跳加 `band_seen`，見 `codeforge-mod-ui.md` band 版面；觸發條件成立：autopilot O4 外殼不呼叫 `next(e)`）
-
-> **2026-11-15 撤回 statusline 端**（PM 01M7E1M5）：`band_seen: false` 恢復完整版，等於把操作員不要的 RPG 橫幅帶回來（reload 後 O4 外殼先畫）。依 owner 2026-10-31 定案（d-feb71b14 → A）改回只看 `layout`；寵物在 autopilot band（PM 01M78CB6）。
-
-**Area**: `.claude/skills/forge-stats/hooks/register.tsx`（心跳每 2 秒無條件寫）、`src/cli/statusline.rs` `read_mod_heartbeat`
-**Premise**: statusline 只看心跳的 `layout: band` 就縮（owner 2026-10-31 定案，拿掉 `pet_shown`）。心跳由計時器寫，不知道 AbovePrompt 的 render hook 有沒有輪到 forge-stats：若鏈上有 plugin 自己畫 band、不呼叫 `next(e)`，forge-stats 的 band 不出現，statusline 卻照樣縮，寵物兩邊都看不到。現在 autopilot 的分頁列用 `await next(e)` 疊在上面（BL-0352），不會發生。
-**Proposed**: 心跳加「最近 N 秒內 AbovePrompt hook 有被呼叫」的條件（只看有沒有輪到，不看 blit 是否成功，不回到舊的 `pet_shown` 規則）。
-**Trigger**: autopilot 新增會拿掉 forge 分頁或不呼叫下層的模式，或使用者裝了別的會畫 band 的 plugin。
-**Not done**: 只記錄；2026-11-01 清理時順手發現，不在那次範圍。
-
-## B37 — 分身偵測：邊界續行裡的 block comment 本文含結束符時，續行提前結束
-
-**Area**: `src/daemon/dup_detect.rs` `classify`（`State::Boundary` 與 `State::BlockComment` 只能擇一）
-**Premise**: 同一行同時開了跨行 import／屬性續行與未閉合的 `/*`（例：`pub(crate) use crate::{ /*`）時，以續行狀態為準、註解狀態被丟掉。若註解本文剛好有 `};`、`]`、`)` 這類續行結束符，續行就提前回到 Normal，之後到 `*/` 為止的註解本文會進入重複索引，兩檔都這樣寫就可能生出假的分身怪。只會多生怪，不影響資料或 tick。（來源：B10 hetero code review g3，grok-4.7 finding `d06d04b2`，審查已達 3 輪上限而延後。）
-**Proposed**: 加一個「續行內的註解」狀態：遇到含 `*/` 的行之前一律略過、不檢查結束符；`*/` 之後若續行還沒結束就回到續行，直到真正的結束行。加兩檔各寫一段這種結構的負例測試。
-**Trigger**: 下次動 `dup_detect.rs` 的行分類，或實際觀察到這種假分身怪。
-**Not done**: 只記錄；B10 已修掉 g1、g2 的兩個同類問題（`c2679ad`、`bd59ca5`）。
-
-## B38 — MOB scanner 會掃進 `.claude/worktrees` 等 worktree 副本 ✅ 2026-11-17
-
-**Area**: `src/daemon/mob_scanner.rs` `should_skip_dir`
-**Premise**: skip 清單只有 `target`、`node_modules`、`.git`、`dist`、`build` 等；有 git worktree 放在 repo 內（例如 `.claude/worktrees/<lane>/`）時，scanner 會把 worktree 裡的副本當成獨立檔案。B10 實測 autopilot repo：3 隻分身怪全是 worktree 副本與主檔之間的重複；殭屍、Boss 等既有怪也會重複出現。
-**Proposed**: skip `.claude/worktrees`，或更一般地跳過含 `.git` 檔案（worktree 標記）的子目錄；加 tempdir 測試。
-**Trigger**: 在有 repo 內 worktree 的專案上跑 daemon，或下次動 `should_skip_dir`。
-**Done**: `should_skip_dir` 跳過含 `.git`（檔案或目錄）的子目錄及 `.claude/worktrees`（掃描根目錄本身不跳過），並補上 tempdir 測試。
-
-## B45 — G40 配額顯示（forge-stats）的後續
-
-**Area**: `plugins/forge-stats/hooks/{quota,quota-view,register}.ts(x)`、`src/usage/quota_mirror*.rs`、`src/usage/quota_view.rs`
-**Effort**: M
-**Premise**: G40 顯示端已完成 forge-stats（band 晶片＋用量分頁）與 Rust 端（statusline、`codeforge usage accounts`，TS↔Rust `QUOTA_CONTRACT` 同步測試），都用測試資料開發（develop，2026-11-04）。留下：
-- `scripts/lib/quota-contract.json`（autopilot P3）出現後，`QUOTA_CONTRACT` 的 30／7 天、6 h、300 s 改成跟它同步測試（契約 §21.4、N35）。
-- 契約 N37 的 `<live_dir>` 對照向量目前只有名稱沒有值；有具體值後移植成測試。mod 無法判斷 `/tmp` 是否在 RAM、目錄擁有者與權限，現在一律不採 `/tmp`、以「存在」代替 autopilot 的檢查。
-- forge-stats 的 `$.fs.read` 沒有 no-follow、限大小選項：讀後重驗大小與 stat，殘餘競態已註明；API 有了再改（Rust 端已用 `openat` 相對目錄描述元開檔，沒有這個問題）。
-- 真實 mirror 樣本與 Claude 的 `starts_window` 等操作員帳號卡 d-2a19fdb5；拿到後跑 `scripts/g40-real-data/check.sh <live_dir>`（statusline 與 panel/1 五級寬度、`acct-`、`$`；2026-11-07 備好，合成 fixture 綠、負控制紅），再看一次畫面。
-**Trigger**: autopilot 宣布 P3／N37 落地或 plan amendment 回覆；或拿到真實 mirror 樣本；或下次動配額顯示。
-**Not done**: 只記錄。
-
-## B42 — G38 本機 release 流程 review 列為後續的項目
-
-**Area**: `install.sh`、`scripts/package.sh`、`scripts/release-local.sh`
-**Premise**: autopilot 四席審查 G38 第 1 輪（範圍 `70f541d..213a746`，full_range_sha256 fc0b0322）判為可延後的項目：
-- 3bd8512b／d04d809f：`CODEFORGE_DOWNLOAD_BASE` 不是預設值時，install.sh 往 stderr 印一行提示，讓使用者看得出下載來源被換掉。
-- d5e5ae1f：aarch64 的 binary 用主機的 `strip` 處理不了（印「strip skipped」）。release profile 已設 `strip = "symbols"`，影響應該很小；要補就在 cross 映像內 strip，或改用 `aarch64-linux-gnu-strip`。
-- b83770c7：package.sh 的 smoke 只在 target 等於主機時才跑，等於預設只驗 x86_64；aarch64 要實跑需要 qemu-user 或 aarch64 主機。
-第 2 輪（範圍 `213a746..d13e477`，full_range_sha256 668b2d70）可延後的：
-- 766757d0：check-all.sh 的 EXIT trap 改成共用一個 cleanup 函式（目前 smoke 段自己設、自己清）。
-- 63489a31：`--out` 有 RELEASE.txt 時整個目錄會被換掉，裡面不相關的檔案也一起刪；改成只換掉 release 檔名。
-第 3 輪（SHIP-AS-IS，範圍 `d13e477..1c09125`，full_range_sha256 34888da4）的 Suggestion，都是 fail-closed 的操作摩擦：
-- e604b875／8feb02e9：`origin_repo` 只認 `git@github.com:`、`https://github.com/`、`ssh://git@github.com/`；帶 port、帶 `user@`、主機名大小寫不同、GitHub Enterprise 主機都會被拒絕。
-- 07c2e1c1：`GH_REPO` 與 origin 的比對區分大小寫，GitHub 的 owner／repo 名稱本身不區分。
-- fcc923d1／0bfbf871：第二次 tag 檢查到 `gh release create` 之間仍有幾秒窗口；產出只是 draft，由操作者手動 publish，視為可接受。
-**Trigger**: 下次改 install.sh 或 release 流程，或 fleet 有了 aarch64 主機／qemu 時。
-**Not done**: 只記錄。
-
-## B41 — G36 第 2–5 階段 review 列為後續的項目
-
-**Area**: `src/usage/collect.rs`、`src/usage/store.rs` 測試
-**Premise**: autopilot 四席審查第 2 輪（範圍 `d754c4c..22e90c4`）判為後續、不擋合併的項目：659de784、383eb39a（Codex 基準被修剪後從頭重讀的邊界情況）、6635affb（bucket 溢位的檔案每次 collect 都會重試、每次都被略過）、247999e5（store 測試用到 unix-only API 的部分要加 `#[cfg(unix)]`）、38b0450a（`MAX_LINE`／`MAX_COUNT` 等上限的調整）。
-第 3 輪（SHIP-AS-IS，範圍 `22e90c4..979a0d2`）的 Suggestion：
-- a364a204：`the_open_connection_keeps_its_shm_lock` 的第二輪多半仍走新建路徑（最後一條連線關閉時 SQLite 會 checkpoint 並刪掉 -wal/-shm）；要測到「重開既有 sidecar」，drop 前另開一條連線留住它，或設 PERSIST_WAL。
-- 47336cc9：預檢到 SQLite 開 -wal/-shm 之間有 TOCTOU 窗口（`SQLITE_OPEN_NOFOLLOW` 只保護主 db）。利用它需要同 uid 且能寫 0700 目錄的程序，不是新的權限邊界，列為已知殘餘風險。
-- 8f1b90b2：本機配額快照的 `resets_at`／`written_at_ms` 超出範圍時，整份 summary 驗證失敗（`usage collect` 每次都報錯），而不是只略過那個帳號；可在 build 時略過該帳號列。
-- `codeforge usage` 表格用 `format!("{:<10}")` 補空白，算的是字元數不是顯示寬度：中文表頭（日期、輸入、輸出…）讓欄位對不齊（2026-11-03 首次實機安裝時看到）。改用顯示寬度補齊（`unicode-width` 或與 forge-stats 相同的寬度表）。
-**Trigger**: 下次動 `codeforge usage` 的收集器，或在非 unix 平台建置測試；8f1b90b2 在第一次看到 `usage collect` 因配額快照驗證失敗時。
-**Not done**: 只記錄；詳情見 autopilot lane/g36rest 第 2、3 輪的 finding。
-
-## B46 — 其他會改行程環境變數的測試（B40 的同類）
-
-**Area**: `src/cli/statusline.rs`（NO_COLOR）、`src/cli/subagent_statusline.rs`（AUTOPILOT_LIVE_DIR）、`src/llm.rs`（CODEFORGE_AGY_MODEL、CODEFORGE_LLM_MAX_LOAD_PER_CORE）、`src/mnemos/health.rs`（XDG_RUNTIME_DIR）、`src/commentary/budget.rs`
-**Effort**: S
-**Premise**: B40 的根因是 `src/live.rs` 測試把整個行程的 PATH 換掉，平行跑的測試用名字 spawn 指令就 ENOENT；已改成把環境當參數傳入（fix/b40，紅 46/60 → 綠 0/60）。上列測試仍用 `set_var`／`remove_var`，各自只有模組內的鎖，跟其他讀同一變數的測試仍可能互撞。
-**Trigger**: `target/flaky-tests.log` 再出現 FLAKY 紀錄且測試名落在上列模組，或下次動這些測試。
-**Not done**: 只記錄。
-
-## B47 — forge-stats 的 `claude plugin validate` 提醒（上架外觀）
-
-**Area**: `plugins/forge-stats/.claude-plugin/plugin.json`、`plugins/forge-stats/README.md`
-**Effort**: XS
-**Premise**: 2026-11-05 升 0.0.9 時 `claude plugin validate plugins/forge-stats` 通過，但有 3 個提醒：plugin.json 沒有 `author`；沒有 icon（ICON_MISSING，要 512–2048 px 的方形 PNG）；README 有個連結 `http://127.0.0.1:8845/v1/ingest/ledger` 被當成 documentationUrl，因為不是 https:// 被丟掉（LISTING_URL_SCHEME）。都不影響載入，`claude plugin test` 146/146。PM 說不擋任何事。
-**Trigger**: 下次動 forge-stats 的 manifest 或 README，或要把 mod 上架到 plugin 目錄。
-**Not done**: 只記錄。
-
-## B48 — MUD TUI 的戰鬥紀錄改成聊天室式（tui-guideline §13）
-
-**Area**: `src/tui/panels/combat_log.rs`、`src/tui/layout.rs`
-**Effort**: S
-**Premise**: 2026-11-05 forge-stats pane 照 §13 改成操作區在底、內容往上長；PM 決定 MUD TUI 這次不改（MUD 在 Goal 的「目前不做」）。`codeforge tui` 的戰鬥紀錄是最新的排最上面（`merge_newest_first`），也沒有操作區，跟 §13 相反。
-**Trigger**: 下次動 MUD TUI（Goal 把 MUD 後段放回目前目標時）。
-**Not done**: 只記錄。
-
-## B39 — G36 第 1 階段 review 的後續（statusline 配額列）
-
-**Area**: `src/usage/quota.rs`、`src/cli/statusline.rs`（`others_segment`、`own_bars_yellow`、`render_full`）
-**Premise**: G36 第 1 階段四席審查（g2 SHIP-AS-IS，f6baef59）留下的小項：
-- `wider_than_0600` 用 `mode & 0o077`：0700 的快照不會被改回 0600（只多 owner execute，不外洩，審查方駁回為 Major），但字面上和計畫書「0600」不一致，可改成 `(mode & !0o600) != 0`。
-- 非 unix 平台沒有 O_NOFOLLOW，`read_bounded` 不擋 symlink；可補 `symlink_metadata` 的 pre-check。
-- `own_bars_yellow` 看資料不看畫面：ctx 或倒數因寬度被截掉時仍算一個黃，其他帳號可能少拿到黃色。
-- 其他帳號的資訊可能把「→ codeforge adopt」提示擠掉（Minor a0aa9d06）。
-- 16 檔上限套在過濾之前；0.795 顯示成 80% 但顏色門檻用原值；`render_full` 沒有測試骨架。
-- glyph ▲●⊘ 屬 East Asian Ambiguous 寬度（G33 Suggestion），`parseFleet` 的 `error: ''` 被當成沒有錯誤（G33 Suggestion）。
-- forge-stats 寵物分頁在窄 pane（約 37 欄、sprite 並排）時，「屬性」那列每個 Text 各自被截成 `…AT……`：`petLines` 依 `cols - sprite.width - 2` 排版，五項屬性放不下時應改折行或少放幾項（G36 第 4 階段截圖 cfcc6f80 看到，既有問題，非 G36 引入）。
-**Trigger**: 下次動 statusline 用量列或 forge-stats 摘要列／寵物分頁。
-**Not done**: 只記錄；G36 第 1 階段與 G33 皆已合併。
+# CodeForge backlog
+
+格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。
+
+### pane 80x24 艦隊頁、額度頁被裁切卻沒有溢位提示（第二批 M1、M2）
+- **Id**: B49
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 80x24 時艦隊頁只列 3 條線，產線摘要和「離線 2 台主機」整段被裁掉；額度頁只畫 2 池，其餘 10 池和「o: 展開各席」被裁掉，兩頁都沒有「↓ 還有 N 項」。
+- **Impact**: 操作員在小終端機上會以為主機都在線、額度都沒事，也點不到展開各席。
+- **Trigger**: ready；第 1 批 pin 之後即可寫處置交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 閘門 b1 第 3 輪 carbon M1、M2；PM 01M7P1HY 排第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Done-Check**: `grep -q "^B49 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
+- **Context**: 實作在 autopilot；本 lane 寫處置與紅測要求、交 autopilot、拍 80x24 截圖送閘門
+
+### pane 待決頁提示「z 收合」卻沒有 z 的 Button（第二批 M3）
+- **Id**: B50
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 待決頁的「其他待決（z 收合）」標題要人按 z，但底部操作列沒有綁 z 的 Button。
+- **Impact**: 提示列有焦點時按 z 會打進對話框；用滑鼠也找不到可點的收合。
+- **Trigger**: ready；第 1 批 pin 之後即可交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: XS
+- **Source**: 閘門 b1 第 3 輪 carbon M3；PM 01M7P1HY 排第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Done-Check**: `grep -q "^B50 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
+- **Context**: 加一條測試：畫面上提到的每個鍵都有對應的可點 Button
+
+### pane 艦隊頁展開的正常線被印成「閒置」（第二批 M4）
+- **Id**: B51
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 摘要寫 2 條運轉中，展開其餘產線時沒有異常紀錄的線卻印成「閒置」，和摘要數字矛盾。
+- **Impact**: 操作員會以為整個艦隊沒有線在跑。
+- **Trigger**: ready；第 1 批 pin 之後即可交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 閘門 b1 第 3 輪 carbon M4；PM 01M7P1HY 排第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Done-Check**: `grep -q "^B51 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
+- **Context**: 跟 R3「兩頁共用同一個狀態判定」同一個函式；沒有明細時寫「正常（無異常明細）」
+
+### band 的過期原因和修復指令被截斷（第二批 M5）
+- **Id**: B52
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: band 中間還有約 38 格空白，左側的過期原因和修復指令卻被截成「請執行：autopilot status run…」，結尾的 --watch 被吃掉。
+- **Impact**: 違反「過期原因不截斷」（PM 01M7N33J）；照畫面打指令會跑錯。
+- **Trigger**: ready；第 1 批 pin 之後即可交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 閘門 b1 第 3 輪 carbon M5；PM 01M7P1HY 排第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Done-Check**: `grep -q "^B52 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
+- **Context**: band 仍須剛好 2 列（A9 矩陣）
+
+### pane 關著時 band 第 2 列的計數不完整（第二批 M6）
+- **Id**: B53
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: pane 關著時「額度」沒附任何異常計數；「艦隊(✗6)」把黃色閒置線也算成 ✗；9、0 頁籤消失；[+] 和 [-] 同列沒有標籤。
+- **Impact**: 不開 pane 時操作員會以為額度全部正常，艦隊的嚴重度也被誇大。
+- **Trigger**: ready；第 1 批 pin 之後即可交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 閘門 b1 第 3 輪 carbon M6；PM 01M7P1HY 排第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Done-Check**: `grep -q "^B53 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
+- **Context**: 計數分紅（✗）和黃（▲/?）兩種；band 上的 Button 仍不綁數字 hotkey（A5'）
+
+### pane 第二批小項：焦點順序、無作用游標、折行縮排、過期寫法（N1–N4）
+- **Id**: B54
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 現況頁預告的最舊卡在待決頁不是預設焦點（N1）；現況頁有沒作用的「▸」，兩頁排序相反（N2）；保留完整原因時孤字折到第 0 欄（N3）；過期列重複寫「資料已過期」且主機舊值被抹掉（N4）。
+- **Impact**: 掃讀時對不上卡片、看錯焦點線、誤以為多一筆項目、規則前後不一。
+- **Trigger**: ready；第 1 批 pin 之後，可以跟 B49–B53 一起送閘門
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 閘門 b1 第 3 輪 carbon N1–N4；PM 01M7P1HY 排第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Done-Check**: `grep -q "^B54 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
+
+### pane 第 1 批補 astra 評審（等 codex 重新登入）
+- **Id**: B55
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 閘門 b1 第 3 輪 astra 的 runner 失敗（team 帳號 codex token 失效），第 1 批只有 carbon 的判定。
+- **Impact**: 閘門要求兩家都 ≥8；第二批送審時要補 astra。
+- **Trigger**: 操作員完成 team 帳號 codex 登入（PM 開卡）
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: PM 01M7P1HY：astra 補評等登入恢復後放到第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+
+
+### 兩個 dream 同時跑時 signal cursor 競態
+- **Id**: B1
+- **Status**: open
+- **Since**: 2026-04-16
+- **Origin**: self
+- **Problem**: 兩個 dream 同時執行時，signal cursor 可能在任一方寫入前被讀兩次，造成重複的 L1 條目。
+- **Impact**: 偶爾出現重複的 L1 知識條目；目前單人使用風險低。
+- **Trigger**: Phase 2 daemon 接手所有寫入之後；或多專案共用 CODEFORGE_DIR 時出現重複條目
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: 早期設計審查；2026-06-15 global SessionEnd 上線後重新評估
+- **Pointer**: none
+- **Context**: 範圍 dream compile 與 signal_cursors；已由 busy_timeout=5000 緩解；daemon 尚未接管 signal_cursors（2026-04-17 確認）
+
+### FTS5 搜尋支援中日韓斷詞
+- **Id**: B2
+- **Status**: open
+- **Since**: 2026-04-16
+- **Origin**: self
+- **Problem**: 全文搜尋的分詞器不會切中文，搜「重複」這類詞可能漏掉結果。
+- **Impact**: 中文記憶搜尋有漏檢，條目變多後更明顯。
+- **Trigger**: 使用者回報中文搜尋漏檢，或 FTS 語料超過 500 筆
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: 早期設計審查
+- **Pointer**: none
+- **Context**: 需 ICU 或 jieba 外部相依，要先 survey；範圍 memory_fts 與 memory/fts.rs
+
+### 徽章系統沒有任何事件會授予
+- **Id**: B3
+- **Status**: open
+- **Since**: 2026-04-16
+- **Origin**: self
+- **Problem**: 徽章表和授予函式都在，但沒有任何遊戲事件會去授予徽章，寵物頁只會列出空的清單。
+- **Impact**: 徽章功能形同不存在，玩家看不到成就回饋。
+- **Trigger**: 決定哪些事件（擊殺、區域精通、里程碑）授予徽章時
+- **Trigger-Type**: owner
+- **Effort**: M
+- **Source**: Phase 2b 出貨時留下
+- **Pointer**: doc/specs/codeforge-mud-engine.md
+- **Context**: 範圍 pet/badges.rs 與 badges 表
+
+### ingest 的 ChatGPT 匯出格式解析
+- **Id**: B5
+- **Status**: open
+- **Since**: 2026-04-16
+- **Origin**: self
+- **Problem**: ingest 指令宣告支援 ChatGPT 匯出，但解析器可能處理不了所有格式變體（JSON 與 markdown）。
+- **Impact**: 匯入 ChatGPT 對話時可能失敗或漏資料。
+- **Trigger**: 有人要求 ChatGPT 遷移，或第二位使用者採用 CodeForge
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: 早期設計審查
+- **Pointer**: none
+- **Context**: 範圍 cli/ingest.rs
+
+### 真實 production ship 對 live Mnemos 端到端驗證
+- **Id**: B13
+- **Status**: open
+- **Since**: 2026-06-15
+- **Origin**: self
+- **Problem**: ship 的端到端只在隔離測試庫驗過；真實 session 結束後對正式 Mnemos 的整條鏈還沒跑過一次。
+- **Impact**: 正式環境的 ledger 是否真的落地沒有證據，且失敗佇列會持續累積。
+- **Trigger**: 下次 Mnemos server 在跑時，確認真實 session-end 的 ledger 進了正式腦
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: ship-online 專案上線後的收尾缺口
+- **Pointer**: doc/specs/codeforge-ship.md
+- **Context**: 驗完後用 ship --resend 清掉 ship-failed 佇列；失敗只排隊不阻塞，非 blocker
+
+### improvement-queue 提示一般化成跨專案
+- **Id**: B15
+- **Status**: open
+- **Since**: 2026-06-15
+- **Origin**: self
+- **Problem**: 其他專案寫進共用改善佇列的項目，沒有任何地方會在該專案顯示，因為顯示用的 hook 只裝在 codeforge 自己的 clone。
+- **Impact**: 其他專案的待改善項目寫了卻沒人看到。
+- **Trigger**: 想讓其他專案 session 看到自己的待改善項，或把該 hook 納入全域安裝鏈時
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: 2026-06-15 改善佇列歸屬修正後留下的增強項
+- **Pointer**: doc/plans/2026-11-02-autopilot-hook-bridge.md
+- **Context**: 2026-11-01 併入 B31（hooks 改由 autopilot 清單註冊），不單獨做；需讓專案根改由 hook 提供
+
+### memory-recall 的 T2.1 非同步 worker 與 Phase C
+- **Id**: B16
+- **Status**: open
+- **Since**: 2026-06-16
+- **Origin**: self
+- **Problem**: recall 第二階段只做了對帳與排序；非同步背景 worker 和第三階段（本機語意檢索、失敗記憶、矛盾偵測）都還沒做。
+- **Impact**: SessionEnd 變慢時沒有現成解法；關鍵字檢索品質不足時沒有升級路。
+- **Trigger**: dream/ship 在 SessionEnd 開始有感卡頓；或關鍵字 recall 品質證實不足
+- **Trigger-Type**: event
+- **Effort**: L
+- **Source**: 2026-06-17 使用者決定延後（觸發條件未成立）
+- **Pointer**: doc/plans/2026-06-17-memory-recall-phase-b.md
+- **Context**: 語意檢索依分工歸 mnemos（B33），開做前先確認不重複；設計母本 doc/proposals 下的 memory-recall 提案
+
+### session-digest 落地審查的低優先殘留
+- **Id**: B17
+- **Status**: open
+- **Since**: 2026-06-17
+- **Origin**: self
+- **Problem**: digest 落地審查留下三個已接受的小問題：ingest 刪檔前有極小的時間競態、權限錯誤被靜默吞掉、改善佇列不是原子寫入。
+- **Impact**: 極少數情況下 digest 被誤刪或漏記，且難以診斷。
+- **Trigger**: 觀察到靜默漏記或 digest 競態丟失，或順手整理改善佇列寫入時
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: 2026-06-17 獨立審查
+- **Pointer**: none
+- **Context**: 範圍 session-digest.js 與 dream/ingest_digests.rs；2026-06-17 審查處置為接受現狀
+
+### spec 寫了設計但程式還沒跟上（ship 與 MUD）
+- **Id**: B18
+- **Status**: open
+- **Since**: 2026-06-18
+- **Origin**: self
+- **Problem**: 文件審查發現幾處設計尚未實作：ship 不掃 session 紀錄取證據、provenance 欄位不全、已 ship 仍先做 digest、寵物技能無戰鬥效果、缺少 Void 怪與傳說村莊。
+- **Impact**: ledger 缺 session 證據，浪費重複的 LLM 呼叫，MUD 深度不足。
+- **Trigger**: 各子項獨立：想要 ledger 帶證據、成本統計、省重複 digest、技能戰鬥或新怪物村莊時
+- **Trigger-Type**: event
+- **Effort**: L
+- **Source**: 2026-06-18 doc-code-drift 審查
+- **Pointer**: doc/specs/codeforge-ship.md
+- **Context**: spec 頂部有未實作標記，補程式時一併清；auto-cite 已於 2026-07-02 完成，不在此列
+
+### should_refresh 的 cache_stale 分支是死路徑
+- **Id**: B21
+- **Status**: open
+- **Since**: 2026-06-23
+- **Origin**: self
+- **Problem**: 健康檢查的重新探測判斷中，快取過期那一支在現有常數下永遠被先判斷的 TTL 條件蓋住，不會被執行。
+- **Impact**: 日後調高常數時語意可能出錯；目前無影響。
+- **Trigger**: 調高 PROBE_TTL_MAX 超過 3600 秒，或決定清掉這道保險分支時
+- **Trigger-Type**: event
+- **Effort**: XS
+- **Source**: 程式碼審查
+- **Pointer**: none
+- **Context**: 範圍 mnemos/health.rs 的 should_refresh；程式碼已加註解
+
+### statusline 每次繪製逐檔解析 L1 概念數
+- **Id**: B24
+- **Status**: open
+- **Since**: 2026-06-23
+- **Origin**: self
+- **Problem**: 計算有效概念數時每次繪製都逐檔解析前置資料，沒有快取；概念變多後每次繪製都變慢。
+- **Impact**: 概念數成長到數百筆後 statusline 會有感變慢。
+- **Trigger**: concepts 目錄超過 200 筆，或 statusline 繪製延遲有感變慢
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: 效能審查
+- **Pointer**: none
+- **Context**: 改法二選一：存進 DB 計數欄位由 dream 更新，或快取到 runtime 目錄由 dream 失效；範圍 memory/l1.rs
+
+### 央腦燈即時反映能否真正 ship（authed 探測）
+- **Id**: B25
+- **Status**: open
+- **Since**: 2026-06-24
+- **Origin**: self
+- **Problem**: 健康探測的 liveness 端點不驗 token，token 錯或缺時燈號仍是綠的，要等到 session 結束 ship 失敗才翻黃。
+- **Impact**: 艦隊機器 token 設錯時，燈號整個 session 都是假綠。
+- **Trigger**: Mnemos 正式環境開啟驗證，或艦隊開始多機收錄時
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: Mnemos 協作討論，2026-06-24
+- **Pointer**: doc/specs/codeforge-mnemos-runtime.md
+- **Context**: 背景探測改打 Mnemos 的 whoami 端點（已上線）餵進既有 readiness 軸，不做第三盞燈；與 Mnemos 的 fleet-ingest-rollout 對齊
+
+### statusline 中段預留給其他狀態燈
+- **Id**: B27
+- **Status**: open
+- **Since**: 2026-06-25
+- **Origin**: self
+- **Problem**: statusline 底邊中段留了空位給未來的即時狀態燈（跨 agent 連線、autopilot 模式），但目前沒有狀態來源也沒有語意。
+- **Impact**: 沒有，純預留；做早了反而讓窄終端更擠。
+- **Trigger**: 有 indicator 具備明確語意與狀態來源時；且須先決定是否由 autopilot band 取代
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: statusline 版號右對齊改動時預留
+- **Pointer**: doc/specs/codeforge-mod-ui.md
+- **Context**: 2026-11-01：autopilot 狀態已由它自己的 band 畫，隨 B31 決定留不留；擴充步驟寫在 statusline 程式註解內
+
+### 小圖行數規格三處說法不一
+- **Id**: B29
+- **Status**: open
+- **Since**: 2026-10-31
+- **Origin**: self
+- **Problem**: 繪圖指南說小圖最多 4 行，程式註解寫 6 行，實際五個村落都是 6 行、畫面放 5 行，新增村落時不知該畫幾行。
+- **Impact**: 新村落圖案可能畫錯行數而被截掉。
+- **Trigger**: 下次新增或重畫村落圖案，或動 statusline 的圖案欄
+- **Trigger-Type**: event
+- **Effort**: XS
+- **Source**: 2026-10-31 pet-view-snapshot 收尾的文件掃描
+- **Pointer**: none
+- **Context**: 先量實際能放幾列，再統一指南與註解並在測試釘住上限；只記錄，未改行數規格
+
+### 其他四個村落的像素 sprite
+- **Id**: B30
+- **Status**: open
+- **Since**: 2026-10-31
+- **Origin**: self
+- **Problem**: 目前只有 Rust 村的 Ferris 有像素圖，其他四個村落的寵物在面板上退回字元圖。
+- **Impact**: 非 Rust 的寵物沒有像素圖，視覺不一致。
+- **Trigger**: 使用者領養非 Rust 村落的寵物，或要求其他村落也有像素圖
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: pixel-pet 專案（2026-10-31）刻意縮小範圍
+- **Pointer**: doc/plans/2026-10-31-pixel-pet.md
+- **Context**: 每村一組 24x24 兩幀，驗證函式會自動涵蓋；畫法要補進繪圖 skill
+
+### codeforge 成為 autopilot 的 extension
+- **Id**: B31
+- **Status**: open
+- **Since**: 2026-10-31
+- **Origin**: owner
+- **Problem**: 決定 codeforge 走 autopilot 的 extension 契約，hooks、分頁、狀態片段、設定、執行檔需求分段接上，使用者只裝 autopilot。
+- **Impact**: 不做的話使用者要分別安裝兩套，hooks 仍寫進全域設定。
+- **Trigger**: autopilot v3.0.0-alpha.7 重整發布後；開工前先有 extension 機制計畫並過審查
+- **Trigger-Type**: event
+- **Effort**: XL
+- **Source**: 操作員決定 2026-11-01（卡 d-0e2e6e0d）
+- **Pointer**: doc/plans/2026-11-02-autopilot-hook-bridge.md
+- **Context**: Rust 本體不搬、須能單獨降級執行；hooks 段只有契約沒有程式；alpha.7 搬家期間不定掛載點
+
+### 專案範圍知識的正本改放 pm
+- **Id**: B33
+- **Status**: open
+- **Since**: 2026-11-01
+- **Origin**: self
+- **Problem**: 本機知識庫整個被 gitignore，多機開發彼此看不到；專案範圍的 lesson 計畫改由 pm CLI 寫入並跟著 repo 走。
+- **Impact**: 不做的話專案知識無法跨機器共享。
+- **Trigger**: 操作員對 pm 計畫拍板、fleet 通知 codeforge 寫遷移計畫；之後先開決策卡，不先動程式
+- **Trigger-Type**: owner
+- **Effort**: L
+- **Source**: fleet 討論 2026-11-01，codeforge 已提出六項限制
+- **Pointer**: doc/specs/codeforge-memory-contract.md
+- **Context**: 需新增 atom 的 scope 欄位與來源 repo 欄位；遷移計畫與程式全部未開始
+
+### 分身偵測：續行裡的 block comment 含結束符會提前結束
+- **Id**: B37
+- **Status**: open
+- **Since**: 2026-11-02
+- **Origin**: self
+- **Problem**: 同一行同時有跨行續行與未閉合的區塊註解時，續行狀態蓋掉註解狀態；註解本文若含結束符，續行提前結束，可能生出假的分身怪。
+- **Impact**: 只會多生假怪，不影響資料或 tick。
+- **Trigger**: 下次動 dup_detect.rs 的行分類，或實際看到這種假分身怪
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: B10 hetero code review 第 3 輪延後項（finding d06d04b2）
+- **Pointer**: none
+- **Context**: 加續行內註解狀態並補兩檔負例測試；範圍 daemon/dup_detect.rs 的 classify
+
+### G40 配額顯示的後續
+- **Id**: B45
+- **Status**: open
+- **Since**: 2026-11-04
+- **Origin**: self
+- **Problem**: 配額顯示端已完成，但還等 autopilot 的契約檔與對照向量、真實 mirror 樣本與帳號卡，才能用真資料驗證。
+- **Impact**: G40 里程碑（真資料顯示正確）無法驗收。
+- **Trigger**: autopilot 宣布 P3 與 N37 落地，或拿到真實 mirror 樣本（卡 d-2a19fdb5），或下次動配額顯示
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: G40 顯示端完成時（develop，2026-11-04）
+- **Pointer**: doc/specs/codeforge-usage.md
+- **Context**: 拿到樣本後跑 scripts/g40-real-data/check.sh；另有 QUOTA_CONTRACT 同步測試與 fs.read 無 no-follow 選項兩項
+
+### G38 本機 release 流程 review 的後續
+- **Id**: B42
+- **Status**: open
+- **Since**: 2026-11-03
+- **Origin**: self
+- **Problem**: release 流程審查列為可延後的項目：自訂下載來源無提示、aarch64 strip 與 smoke 驗不到、清理函式未共用、輸出目錄整個被換掉、GitHub 來源辨識太嚴。
+- **Impact**: 都是操作摩擦或驗證缺口，不擋出貨。
+- **Trigger**: 下次改 install.sh 或 release 流程，或艦隊有了 aarch64 主機或 qemu
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: autopilot 四席審查 G38 第 1 至 3 輪
+- **Pointer**: none
+- **Context**: 範圍 install.sh、package.sh、release-local.sh；細節在審查 finding（3bd8512b、d5e5ae1f、b83770c7 等）
+
+### G36 第 2 至 5 階段 review 的後續
+- **Id**: B41
+- **Status**: open
+- **Since**: 2026-11-03
+- **Origin**: self
+- **Problem**: 用量收集器審查留下小項：Codex 基準修剪後重讀、非 unix 測試、快照時間超出範圍整份驗證失敗、中文表頭對不齊。
+- **Impact**: 邊界情況下收集失敗或表格錯位，不影響主流程。
+- **Trigger**: 下次動用量收集器，或非 unix 建置測試；快照驗證失敗時處理 8f1b90b2
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: autopilot 四席審查 G36 第 2、3 輪
+- **Pointer**: doc/specs/codeforge-usage.md
+- **Context**: 範圍 usage/collect.rs 與 store 測試；詳見 lane/g36rest 第 2、3 輪 finding
+
+### 其他改行程環境變數的測試（B40 同類）
+- **Id**: B46
+- **Status**: open
+- **Since**: 2026-11-05
+- **Origin**: self
+- **Problem**: 數個測試仍用 set_var 改行程環境，只有模組內的鎖，與其他讀同一變數的測試平行跑時仍可能互撞。
+- **Impact**: 偶發的測試 flaky，要靠重跑才過。
+- **Trigger**: flaky-tests.log 再出現落在這些模組的 FLAKY 紀錄，或下次動這些測試
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: B40 修完 live.rs 後盤點
+- **Pointer**: none
+- **Context**: 改成把環境當參數傳入；涉及 statusline、subagent_statusline、llm、mnemos/health、commentary/budget
+
+### forge-stats 的 plugin validate 提醒
+- **Id**: B47
+- **Status**: open
+- **Since**: 2026-11-05
+- **Origin**: self
+- **Problem**: plugin 驗證通過但有三個上架外觀提醒：缺 author、缺 icon、README 有非 https 連結被丟掉。
+- **Impact**: 不影響載入；上架目錄時外觀不完整。
+- **Trigger**: 下次動 forge-stats 的 manifest 或 README，或要上架 plugin 目錄
+- **Trigger-Type**: event
+- **Effort**: XS
+- **Source**: 0.0.9 升版驗證；PM 說不擋任何事
+- **Pointer**: none
+- **Context**: icon 需 512 至 2048 px 方形 PNG
+
+### MUD TUI 戰鬥紀錄改成聊天室式
+- **Id**: B48
+- **Status**: open
+- **Since**: 2026-11-05
+- **Origin**: self
+- **Problem**: forge-stats pane 已改成操作區在底、內容往上長，但 MUD TUI 的戰鬥紀錄仍是最新在最上面，與準則相反。
+- **Impact**: 兩個介面的閱讀方向不一致。
+- **Trigger**: Goal 把 MUD 後段放回目前目標，下次動 MUD TUI 時
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: PM 決定 MUD TUI 這次不改（2026-11-05）
+- **Pointer**: doc/specs/tui-guideline.md
+- **Context**: 範圍 tui/panels/combat_log.rs 與 tui/layout.rs
+
+### G36 第 1 階段 review 的後續（statusline 配額列）
+- **Id**: B39
+- **Status**: open
+- **Since**: 2026-11-03
+- **Origin**: self
+- **Problem**: 配額列審查留下小項：權限檢查字面與計畫不一致、非 unix 不擋 symlink、黃色計算看資料不看畫面、提示被擠掉、窄 pane 寵物屬性列被截斷。
+- **Impact**: 都是邊角的顯示或強健性問題，不擋使用。
+- **Trigger**: 下次動 statusline 用量列或 forge-stats 摘要列、寵物分頁
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: G36 第 1 階段四席審查（g2 SHIP-AS-IS，f6baef59）
+- **Pointer**: doc/specs/codeforge-usage.md
+- **Context**: 範圍 usage/quota.rs 與 cli/statusline.rs；glyph 寬度與 parseFleet 空錯誤兩項為 G33 Suggestion
