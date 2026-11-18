@@ -10,7 +10,7 @@
 >
 > 此 spec 寫於實作前，部分段落與 `src/cli/ship.rs` / `src/mnemos/*` 實際行為有出入。canonical = code。逐項：
 >
-> **(a) STALE — LLM backend（§6 / §6.3）**：digest 主力已是 `claude -p` headless（預設 Opus，免 key），鏈為 `claude -p` → `ANTHROPIC_API_KEY`(Haiku) → rule-based。§6/§6.3 把 Haiku 當主、「無 key 即 passthrough」的描述已過時（§5.2 已自我修正）。`provenance.haiku_model` 永遠硬寫 `HAIKU_MODEL` 常數，不反映實際 backend/model。
+> **(a) STALE — LLM backend（§6 / §6.3）**：digest 主力已是 `claude -p` headless（預設 Opus，免 key），鏈為 `claude -p` → `agy`(Gemini) → `codex exec` → `ANTHROPIC_API_KEY`(Haiku) → rule-based（`src/llm.rs`）。§6/§6.3 把 Haiku 當主、「無 key 即 passthrough」的描述已過時（§5.2 已自我修正）。`provenance.haiku_model` 永遠硬寫 `HAIKU_MODEL` 常數，不反映實際 backend/model。
 >
 > **(b) STALE — date window（§5 / §3.1）**：git log 實際用 `--since=<date> 00:00 --until=<date> 23:59`（同日 23:59 截止），非到次日 00:00 的半開區間。
 >
@@ -234,13 +234,13 @@ ledger 是中央 Mnemos 腦的 episodic 輸入,**只該收「這個 repo、第�
 - **防回灌/防重複**:不靠路徑黑名單,靠 Mnemos 端既有離峰 `dedup --scan`(= 睡眠鞏固);相似 atom 合併,mnemos 自身記憶若漏入也在此收斂。
 - **Cutover(收嚴前的舊資料)**:`origin` 欄是收嚴時新加。(a)**在途 signal**:收嚴前 `absorb` 標 `ClaudeCodeSession` 的未編譯 backlog,`origin_for` 已把 `ClaudeCodeSession` 一併判為 `absorbed`(該 variant 現已無其他生產者)→ 一編譯即被擋,免逐 repo 手清。(b)**已編譯舊 concept**(frontmatter 無 `origin` → 反序列化為 `""` → 不被 `!= "absorbed"` 擋)**不回溯**:各機上線前應清 per-machine 的 `<repo>/.codeforge/store/*`(gitignored runtime,重跑 `dream` 即以正確 origin 重建),否則首輪靠 Mnemos `dedup --scan` 收斂。
 - **隱私**:`ingest-digests` 對 error/correction 等值套 `mask_secrets`(手刻 prefix + 高熵啟發式,遮 sk-/ghp_/AKIA/AIza/xox… 與 32+ 高熵字串;路徑不遮);session-digest content 屬第一人稱 dev = work-tier,另依賴 Mnemos 端 sensitivity 分層。
-- **LLM backend(2026-06-17)**:digest 與 compile **優先走 `claude -p` headless**(codeforge 是 Claude Code 套件 → 免 API key、用訂閱、零 per-token 成本)。預設 model `opus`(env `CODEFORGE_DIGEST_MODEL`;bake-off 實測 ship digest prompt × haiku/sonnet/opus,**Opus 品質最高** —— title/detail/source_evidence 最正規,Haiku 會丟教訓+編假 evidence)。fallback 鏈:`claude -p` → `ANTHROPIC_API_KEY`(Haiku API)→ rule-based passthrough。`absorbed` 來源走 rule-based(ship 排除,不浪費 LLM)。模組 `src/llm.rs`;§6「Haiku Digest Pipeline」的直接 API 呼叫退為 fallback。
+- **LLM backend(2026-06-17)**:digest 與 compile **優先走 `claude -p` headless**(codeforge 是 Claude Code 套件 → 免 API key、用訂閱、零 per-token 成本)。ship digest 預設 model `opus`(env `CODEFORGE_DIGEST_MODEL`;dream compile/reconcile 預設 `haiku`,env `CODEFORGE_COMPILE_MODEL`;bake-off 實測 ship digest prompt × haiku/sonnet/opus,**Opus 品質最高** —— title/detail/source_evidence 最正規,Haiku 會丟教訓+編假 evidence)。fallback 鏈:`claude -p` → `agy`(env `CODEFORGE_AGY_MODEL`)→ `codex exec` → `ANTHROPIC_API_KEY`(Haiku API)→ rule-based passthrough。`absorbed` 來源走 rule-based(ship 排除,不浪費 LLM)。模組 `src/llm.rs`;§6「Haiku Digest Pipeline」的直接 API 呼叫退為 fallback。
 
 ---
 
 ## 6. Haiku Digest Pipeline
 
-> ⚠️ 標題與下文以 Haiku 為主述為**過時用詞**（見頂部 banner (a)）。實際 backend 三層：`claude -p`（預設 Opus，免 key，主力）→ `ANTHROPIC_API_KEY`(Haiku) → rule-based。「Haiku」一詞保留為歷史標題。
+> ⚠️ 標題與下文以 Haiku 為主述為**過時用詞**（見頂部 banner (a)）。實際 backend 五層：`claude -p`（預設 Opus，免 key，主力）→ `agy` → `codex exec` → `ANTHROPIC_API_KEY`(Haiku) → rule-based。「Haiku」一詞保留為歷史標題。
 
 把「當日 L1 entries（已 compiled markdown）+ git log 摘要 + session jsonl 線索」reduce 成結構化 `lessons[]`。沿用既有 `src/dream/compile.rs` 的 Anthropic API 呼叫模式（`claude-haiku-4-5-20251001`、`x-api-key`、`anthropic-version: 2023-06-01`、抽 JSON）。
 
@@ -299,12 +299,12 @@ git HEAD: {git_head_sha} ({git_branch})
 
 - **歸因強制**：prompt 明確要求每條 lesson 至少一個 `source_evidence`，且「找不到出處就丟棄」。這把 citations-mandatory 推到 digest 階段，而非寄望 Mnemos 補救（Mnemos 只 filter null，不會補）。
 - **寧缺勿濫**：ledger 是長期記憶輸入，noise 成本高（每條變成永久 atom）。prompt 偏保守。
-- **JSON 抽取**：沿用 compile.rs 的 `extract_json`（找首 `{` 末 `}`）。輸出 parse 失敗 → 視為 digest 失敗（§7.5），不送半截 payload。
-- **多 lesson**：一個 prompt 一次出 0..N lesson（不是 per-concept 各呼叫一次，省 token、利於跨 concept 去重）。輸入過大時分批，結果再 merge + §5.1 去重。
+- **JSON 抽取**：沿用 compile.rs 的 `extract_json`（找首 `{` 末 `}`）。輸出 parse 失敗 → fallback 到 rule-based passthrough（§7.5），不送半截 payload。
+- **多 lesson**：一個 prompt 一次出 0..N lesson（不是 per-concept 各呼叫一次，省 token、利於跨 concept 去重）。目前不分批：選中的 L1（每條取前 8 行）組成單一 prompt。
 
 ### 6.3 No-API fallback
 
-> ⚠️ **過時**（見頂部 banner (a)）：無 `ANTHROPIC_API_KEY` 並非直接 passthrough。若 `claude` CLI 可用，第一層 `claude -p`（Opus）仍會 digest；只有 `claude -p` 與 Haiku API 都不可用才 rule-based passthrough。
+> ⚠️ **過時**（見頂部 banner (a)）：無 `ANTHROPIC_API_KEY` 並非直接 passthrough。若 `claude` CLI 可用，第一層 `claude -p`（Opus）仍會 digest；只有 `claude -p`、`agy`、`codex` 與 Haiku API 都不可用才 rule-based passthrough。
 
 `ANTHROPIC_API_KEY` 未設時：不做 LLM digest，直接把當日 active L1 entries **一條一 lesson** passthrough（title=L1 title、detail=body 摘要、source_evidence=該 L1 `l1_concept` ref）。品質較低但仍 citable，且不阻塞 ship。記 warn。
 
@@ -318,7 +318,7 @@ git HEAD: {git_head_sha} ({git_branch})
 
 - 每次「新 digest」產生**一個** ULID 當 `ship_id`，寫進 envelope。
 - 此 ULID 一旦寫進 ship-failed/ 檔，重送時沿用，**不重新產生**。
-- re-ship 同一日（`--date` 重跑）會產生**新的** ship_id → Mnemos 視為新 ship。但因 Mnemos document 的 `source_id = <repo>:<date>:<ship_id>` 含 ship_id，兩次 re-ship 會建兩個 document。**避免重複 ship 同一日**；真要重送請用 ship-failed/ 機制（沿用原 ship_id）而非 `--date` 重跑。
+- 同一日重跑（含 `--date`）：`ship-state` 已記錄該 `<repo>:<date>` 已 ship 時直接略過（不 digest、不 POST，只 flush ship-failed/ queue；見 §7.6），不會產生第二個 ship_id。要重送請用 ship-failed/ 機制（沿用原 ship_id）。
 
 ### 7.2 Backoff schedule（預設模式 / `--resend`）
 
@@ -347,8 +347,8 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 
 ### 7.5 Digest 失敗（POST 之前）
 
-- L1 讀取失敗 / Haiku digest 失敗 / JSON parse 失敗：記 error，**不送、不寫 ship-failed/**（沒有有效 payload）。exit 非 0（`--no-hook` 下 exit 0 + warn）。
-- 空 lessons：依 §5.1 rule 2，預設不送。
+- digest 失敗（headless 引擎全失敗、API 失敗或 JSON parse 失敗）：印 warning，**fallback 到 rule-based passthrough**，ledger 照送（`ship.rs` 的 `unwrap_or_else(… pass())`）。
+- 空 lessons：依 §5.1 rule 2，不送（`ship.empty_ledger` warning）。
 
 ### 7.6 ship-state（避免重複 ship 同一日）
 
@@ -401,12 +401,17 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 {
   "hooks": {
     "SessionEnd": [
+      "codeforge hook emit-session session_end",
+      "codeforge hook session-digest",
       "codeforge dream --quiet",
-      "codeforge ship --no-hook"
+      "codeforge ship --no-hook",
+      "codeforge usage collect --quiet"
     ]
   }
 }
 ```
+
+（示意；實際為 `codeforge install --hooks` 寫入的 hook 群組，各條帶 timeout，dream／ship／usage collect 尾端為 `2>/dev/null || true`。PreCompact 另跑 `session-digest`；SessionStart 另有 `emit-session`、本地 `memory context --hook` 與央腦 `mnemos-cli context --hook`。）
 
 `dream` 先跑（產出 / refresh L1），`ship --no-hook` 接著（讀當日 L1 → digest → 單次 POST，失敗靜默落 ship-failed/，永不阻塞 session 結束）。互動式 `codeforge ship` 或排程 `--resend` 負責清 ship-failed/ queue。
 
@@ -416,7 +421,7 @@ attempt 4 → fail                → 寫 ~/.codeforge/ship-failed/<ship_id>.jso
 
 ```
 codeforge dream             # L0 → L1（既有）
-codeforge ship --no-hook    # 當日 L1 + git → LLM digest（claude -p→Haiku→rule-based）→ lessons[] → envelope
+codeforge ship --no-hook    # 當日 L1 + git → LLM digest（claude -p→agy→codex→Haiku→rule-based）→ lessons[] → envelope
   → POST /v1/ingest/ledger (127.0.0.1:8845)
   → Mnemos：1 Document（source_id=<repo>:<date>:<ship_id>, ref_locator_json 帶 provenance + lessons_source_evidence）
             + 每 lesson 1 lesson-atom（evidence_refs = doc 三元組）
@@ -437,7 +442,7 @@ dream→ship 鏈安裝在 **global** `~/.claude/settings.json` SessionEnd（`cod
 ## 12. 待實作清單（✅ 已完成 — 2026-06-15）
 
 - ✅ `src/cli/ship.rs`：flag parsing（§3）、endpoint 解析（§8）、retry/queue（§7）。
-- ✅ L1 reading（§5）：複用 `l1::scan_all` + 日期過濾 + git log / jsonl 窗口掃描。
+- ✅ L1 reading（§5）：複用 `l1::scan_all` + 日期過濾 + git log（不掃 session jsonl，見頂部 banner (c)）。
 - ✅ Haiku digest（§6）：複用 compile.rs API 呼叫 + JSON 抽取 + §6.1 prompt;無 key 時 rule-based passthrough。
 - ✅ ship-failed/ + ship-state IO。
 - ✅ `source_evidence` builder（§4.4 結構）。
