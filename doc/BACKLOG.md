@@ -173,6 +173,114 @@
 - **Context**: 資料走 pet.json 契約；閘門照 forge-stats-ux-gate
 
 
+### pane 現況頁 80x24 計數錯、120x30 漏掉本席花費項
+- **Id**: B58
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 80x24 現況頁寫「資料過期 0 分」（160x40 同時有 3 池過期）、「另有 25 項（艦隊 0 · 額度浪費 ▲2）」（艦隊實為 產線 52 ⊘7，0+2 也湊不到 25）；120x30 的「另有 8 項」沒算進 160x40 第 32 列的「花費 ✗ seats --quota 沒有本席這一列」，該項在 120x30 整個看不到。
+- **Impact**: 操作員在小終端機上讀到錯的數字，也看不到本席的花費錯誤。（Major）
+- **Trigger**: ready；寫處置交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
+- **Pointer**: none
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
+- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+
+### pane 資料過期年紀顯示成「- 分未更新」
+- **Id**: B59
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 額度池沒有年紀時，現況頁和額度頁都畫「✗ 額度 … - 分未更新（>10 分）」或「✗ — 分未更新」，數字是破折號、單位還在。
+- **Impact**: 讀起來像壞掉；看不出到底多久沒更新、是沒資料還是過期。（Major）
+- **Trigger**: ready；寫處置交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: XS
+- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
+- **Pointer**: none
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
+- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+
+### pane 名稱截到分不出：額度池名、艦隊卡住線的 peer
+- **Id**: B60
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 額度頁 160x40 池名也截在約 11 字，「agyclaude」和「agyclaude(alias 2)」畫成一樣，別名的序號被截掉；艦隊頁卡住線的 peer 截成「Claude (主機名前幾…」「Claude (c…」，120x30 兩列分不出是哪台。
+- **Impact**: 操作員沒辦法從畫面判斷是哪個池、哪台機器出事。（Major）
+- **Trigger**: ready；寫處置交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
+- **Pointer**: none
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
+- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+
+### pane 沒有專案的 session：派工、審查、殘留頁只剩錯誤和不對的修復指令
+- **Id**: B61
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 不在 autopilot 專案層級的一般 session 開 pane，派工、審查、殘留三頁只畫「✗ 本席…資料不是最新：沒有專案 · 請執行：autopilot status runs --watch」和「資料不足，無法判定」；照做也不會有專案。標題列每頁都帶「✗ 槽位 無來源」，沒說要做什麼。
+- **Impact**: 一般 session 是常態；三頁永遠是空的錯誤頁，修復指令誤導，紅色 ✗ 天天都在、失去警示作用。（Major）
+- **Trigger**: ready；寫處置交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
+- **Pointer**: none
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
+- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+
+### pane 花費頁沒有任何花費數字
+- **Id**: B62
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 花費頁只畫 5h／7d 額度百分比和「✗ seats --quota 沒有本席這一列」，判定「資料不足，無法判定」；160x40 帳號列還露出英文原始欄位「primary_owner」。80x24 連本席錯誤列都被擠掉。
+- **Impact**: 頁名是花費卻看不到花費，操作員不知道該看哪裡。（Major）
+- **Trigger**: ready；寫處置交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
+- **Pointer**: none
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
+- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+
+### pane 120x30 分頁列換成兩列、「0: 鍛」截字
+- **Id**: B63
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 120x30 dock 寬 70 欄，分頁列換成兩列（1–6／7–0），每種尺寸都把「鍛造」截成「鍛」；純文字截圖也看不出選中哪一頁，只能靠標題列。
+- **Impact**: 多佔一列正文；標籤不一致。（Minor）
+- **Trigger**: ready；寫處置交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: XS
+- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
+- **Pointer**: none
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
+- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
 - **Status**: open
