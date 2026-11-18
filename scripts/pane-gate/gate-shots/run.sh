@@ -6,11 +6,11 @@ G=$(cd "$(dirname "$0")" && pwd); ap=$(cd "$1" && pwd); label=${2:-run}; O=$G/ou
 . "$G/lib.sh"
 rm -f "$G/cwd/.claude/console.json"; : > "$G/fleet.log"
 # the mod reads HOME for live-pointer / console fallback; real HOME stays except the s5fail scenario (see HOMEBOX)
-start() { # start <scenario> <home>
+start() { # start <scenario> <home> [extra claude args]
   echo "$1" > "$G/scenario"; s=gs-$$
   tmux kill-session -t "$s" 2>/dev/null
   : > "$G/cwd/.fleet-no-register"  # fleet skips sessions whose cwd holds this (fleet 6353fad2): a shot session never joins the patrol list
-  tmux new-session -d -s "$s" -x 160 -y 40 -c "$G/cwd" "env HOME=$2 PATH=$G/bin:$PATH GATE_DIR=$G AUTOPILOT_CARD_MIRROR_DIR=$G/mirror AUTOPILOT_ROOMS_DIR=$G/rooms AUTOPILOT_LOCALE=zh-TW LANG=zh_TW.UTF-8 claude --plugin-dir $ap"
+  tmux new-session -d -s "$s" -x 160 -y 40 -c "$G/cwd" "env HOME=$2 PATH=$G/bin:$PATH GATE_DIR=$G AUTOPILOT_CARD_MIRROR_DIR=$G/mirror AUTOPILOT_ROOMS_DIR=$G/rooms AUTOPILOT_LOCALE=zh-TW LANG=zh_TW.UTF-8 claude --plugin-dir $ap ${3:-}"
   sleep 7; if cap | grep -qi "trust this folder"; then key Down; sleep .5; key Enter; fi
   sleep 14; key '/live-pane'; sleep 1.5; key Enter; sleep 4
 }
@@ -25,7 +25,9 @@ shots() { # shots <tag> <size...>
 }
 REALHOME=$HOME
 HOMEBOX=$G/home; mkdir -p "$HOMEBOX"; ln -sfn "$REALHOME/.claude" "$HOMEBOX/.claude"; ln -sf "$REALHOME/.claude.json" "$HOMEBOX/.claude.json"
-start full "$REALHOME";  shots S1-full 160x40 120x30 80x24; stop
+start full "$REALHOME";  shots S1-full 160x40 120x30 80x24 80x20 80x16; stop
+# light terminal (gate b2 carbon M5): Claude Code's light theme for this session only, via --settings (nothing is written to the global config)
+start full "$REALHOME" "--settings '{\"theme\":\"light\"}'"; shots S1-light 160x40 80x24; stop
 start small "$REALHOME"; shots S4-small 160x40; stop
 start s5stale "$REALHOME"; shots S5-stale-10min 160x40; stop
 start s5fail "$HOMEBOX"; shots S5-console-exit1-nofile 160x40; stop

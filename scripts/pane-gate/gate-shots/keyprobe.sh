@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# keyprobe.sh <autopilot-dir> <tag> [forge-stats-dir] — at 80x24, press digits and log the pane header + composer after each (does a digit land in the prompt?)
+# keyprobe.sh <autopilot-dir> <tag> [forge-stats-dir] — at 80x24, press digits and log the selected tab + composer after each (does a digit land in the prompt, does it reach its page?)
+# Each line ends ok (composer empty and the strip selects the pressed digit) or BAD; the selected tab comes from the strip's colours (seltab.py), not the
+# pane's first row, which a scrolled page fills with "上面還有 N 行" (gate b2 astra M03). page=[...] stays as the first row, for the reader.
 set -uo pipefail
 G=$(cd "$(dirname "$0")" && pwd); ap=$(cd "$1" && pwd); tag=$2; fsarg=""; [ -n "${3:-}" ] && fsarg="--plugin-dir $(cd "$3" && pwd)"
 . "$G/lib.sh"; P=$G/../pet-shots; O=$G/out/keyprobe-$tag; mkdir -p "$O"
@@ -15,7 +17,8 @@ n=0
 for k in ${KEYS:-2 2 9 9 1 9}; do
   n=$((n+1)); key "$k"; sleep 2.5
   c=$(composer); hdr=$(cap | grep -m1 -o '│ [^ │]*' | head -1)
-  cap > "$O/$n-key$k.txt"
-  echo "$n key=$k page=[$hdr] composer=[$c]"
+  cap > "$O/$n-key$k.txt"; tmux capture-pane -p -e -t "$s" > "$O/$n-key$k.ans"; sel=$(python3 -I "$G/seltab.py" < "$O/$n-key$k.ans")
+  v=BAD; [ -z "$c" ] && [ "${sel%%:*}" = "$k" ] && v=ok
+  echo "$n key=$k tab=[$sel] page=[$hdr] composer=[$c] $v"
   [ -n "$c" ] && { key C-u; sleep .4; }
 done

@@ -7,9 +7,13 @@ gate-shots/scenario
 gate-shots/*.log
 gate-shots/*.ans
 pet-shots/cwd/
-pet-shots/petdata/
+pet-shots/petdata
 pet-shots/out/
 *.log
 gate-b2.md
 gate-b2-*.out
 gate-b2-*.err
+__pycache__/
+b2-*.json
+gate-shots/home-own/
+gate-shots/live-own/
