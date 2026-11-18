@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Layout, PetIcon, PetView, SessionView } from '../types'
+import type { PetIcon, PetView, SessionView } from '../types'
 import {
   GLYPH,
   KEY_W,
@@ -66,8 +66,8 @@ let locale: Locale = 'en'
 let spriteFrame = 0
 let lastCells: string | null = null
 const SPRITE_KEY = 'pet-sprite'
-// Band and heartbeat (statusline-band plan §2.5). `layout` comes from $.store at session.start.
-let layout: Layout = 'band'
+// Band and heartbeat (statusline-band plan §2.5). The band is the only layout (shared-TUI plan P1b): a stored `layout: pane` is
+// migrated to `band` at session.start, and the pane opens only on an explicit `/forge-stats` (it is never a standing layout).
 let sid = ''
 // The live base codeforge wrote pet.json into: heartbeats go there, so the statusline finds them.
 let liveBase: string | null = null
@@ -154,7 +154,7 @@ async function writeHeartbeat($: EngineInterface) {
       bandDrew = false
     }
     const age = bandSeenAt === null ? Infinity : now - bandSeenAt
-    await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, layout, layout === 'band' && age < BAND_SEEN_MS))
+    await $.fs.write(heartbeatPath(liveBase, sid), heartbeatText(sid, now, 'band', age < BAND_SEEN_MS))
   } catch {
     // best effort: a missed beat is retried at the next tick
   }
@@ -548,11 +548,9 @@ export const register: Register = on => {
     spriteFrame = 0
     lastCells = null
     sid = await $.session.id().catch(() => '')
-    const stored = await $.store.get('layout').catch(() => undefined)
-    layout = stored === 'pane' ? 'pane' : 'band'
+    // P1b: the pane layout is retired; a session that stored it gets the band, and the pane is not opened
+    if ((await $.store.get('layout').catch(() => undefined)) === 'pane') await $.store.set('layout', 'band').catch(() => undefined)
     await $.command.register({ name: 'forge-stats', description: t()('cmdDesc') })
-    // the band layout draws above the prompt instead of opening the pane (plan KR5)
-    if (layout === 'pane') void $.ui.open({ id: PANE, title: t()('title') })
     await refreshPet($)
     await refreshQuota($, true)
     await refreshFleetPresent($)
@@ -577,14 +575,10 @@ export const register: Register = on => {
   on('command.run', { command: 'forge-stats' }, async ($, e) => {
     const [verb, arg] = e.args.trim().split(/\s+/)
     if (verb === 'layout') {
-      if (arg !== 'band' && arg !== 'pane') return { text: t()('layoutUsage', { layout }) }
-      layout = arg
-      // the open asks for the keys before any wait (§13 rule 7)
-      if (arg === 'pane') await $.ui.open({ id: PANE, title: t()('title'), focus: true })
-      await $.store.set('layout', arg)
-      $.ui.invalidate('ui.render')
-      await writeHeartbeat($)
-      return { text: t()('layoutSet', { layout: arg }) }
+      // P1b: `band` is the only layout; `pane` (and anything else) is refused and changes nothing
+      if (arg !== 'band') return { text: t()('layoutUsage') }
+      await $.store.set('layout', 'band')
+      return { text: t()('layoutSet', { layout: 'band' }) }
     }
     // `/forge-stats usage` / `/forge-stats pet` open the pane on that tab (a path that needs no pointer)
     if (verb === 'usage' || verb === 'pet') {
@@ -768,7 +762,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const props = e.props
-    if (e.surface !== 'terminal' || layout !== 'band' || props.hasSurvey || props.maxRows < 1) {
+    if (e.surface !== 'terminal' || props.hasSurvey || props.maxRows < 1) {
       return next(e)
     }
     // 01M7MBV76H: the band is at most ONE row and never a sprite (the pet's art lives only in forge-stats' own pane). With autopilot loaded (its fleet atom is

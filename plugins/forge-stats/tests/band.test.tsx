@@ -29,9 +29,6 @@ const SNAP = {
 }
 const SESSION = { schema: 'codeforge.session-view/1', session_id: SID, written_at: '2026-10-31T00:00:00Z', memory: { light: 'active', active: 12 }, brain: { light: 'ok' } }
 
-// `/forge-stats <args>` as the person types it
-const cmd = (args: string) => ({ command: 'forge-stats', args, origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 120 } }) as const
-
 const band = (bodyColumns: number, over: Record<string, unknown> = {}) =>
   ({
     plugin: 'forge-stats',
@@ -172,13 +169,7 @@ test('the band layout is the default and does not open the pane', async ($, on) 
   expect(w.opened).toBe(0)
 })
 
-test('the stored pane layout opens the pane at session start', async ($, on) => {
-  const w = world(on, 'pane')
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  expect(w.opened).toBe(1)
-})
-
-test('the band passes on a survey, desktop, or the pane layout', async ($, on) => {
+test('the band passes on a survey or desktop', async ($, on) => {
   world(on)
   mock.clock(on, { now: 1_000_000 })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
@@ -187,26 +178,6 @@ test('the band passes on a survey, desktop, or the pane layout', async ($, on) =
     expect(await ui.find({ type: 'Raster' })).toBe(undefined)
     await ui.unmount()
   }
-  await $.command.run(cmd('layout pane'))
-  const ui = await $.ui.mount(band(100))
-  expect(await ui.find({ type: 'Raster' })).toBe(undefined)
-  await ui.unmount()
-})
-
-test('/forge-stats layout switches, persists, and the beat follows', async ($, on) => {
-  const w = world(on)
-  const clock = mock.clock(on, { now: 1_000_000 })
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
-  await clock.settle()
-  const out = await $.command.run(cmd('layout pane'))
-  expect(out.text?.includes('pane')).toBe(true)
-  expect(w.store.layout).toBe('pane')
-  expect(w.opened).toBe(1)
-  await clock.advance(2000)
-  expect(lastBeat(w)).toEqual({ schema: 'codeforge.mod-alive/1', session_id: SID, written_at_ms: 1_002_000, layout: 'pane', summary_row: true, band_seen: false })
-  const bad = await $.command.run(cmd('layout sideways'))
-  expect(bad.text?.includes('band|pane')).toBe(true)
-  expect(w.store.layout).toBe('pane')
 })
 
 // ---------------------------------------------------------------------------------------------

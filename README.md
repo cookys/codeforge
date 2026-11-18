@@ -381,9 +381,9 @@ claude plugin install forge-stats@codeforge
 ```
 
 It draws the pet — Ferris as an animated half-block pixel sprite in the terminal — with the memory and brain lights. Model
-speed (tok/s) is not forge-stats': autopilot's live mod measures and draws it. It has two layouts, kept across sessions: `/forge-stats layout band` (the default) draws a band
-right above the prompt and `/forge-stats layout pane` opens a side pane instead (`/forge-stats` alone opens the
-pane in either layout). The band shows as many columns as the width allows, in this order: Ferris, pet (level, XP,
+speed (tok/s) is not forge-stats': autopilot's live mod measures and draws it. It has one layout, the band
+right above the prompt (a stored `layout pane` from an older version becomes `band` at the next session start, and
+`/forge-stats layout pane` is refused); `/forge-stats` opens the full view in a pane on demand. The band shows as many columns as the width allows, in this order: Ferris, pet (level, XP,
 stats), memory and brain — 2 columns from 56 cells, 3 from 86 (Ferris alone below 56; under 26 cells the band is a
 one-line summary). Its size follows the rows it is given: 12 or more draw the full band, 6 to 11 the 16×6 mini Ferris,
 1 to 5 (or under 26 columns) a one-line summary. With autopilot's live mod in the session the summary leads with the fleet:

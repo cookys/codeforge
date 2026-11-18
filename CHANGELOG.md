@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- forge-stats has one layout, the band (shared-TUI plan P1b): a stored `layout: pane` is migrated to `band` at session start without opening the pane, and `/forge-stats layout pane` is refused. `/forge-stats` still opens the full view on demand.
+
 ### Added
 - `codeforge.quota/1` snapshot gains an optional `org_id` (the login's `organizationUuid` verbatim, omitted when absent; schema name unchanged) so the fleet courier can match a seat to a hangar pool key (fleet 01M7MMSB). Not in the summary, `fleet-quota.json` or `usage push`.
 
