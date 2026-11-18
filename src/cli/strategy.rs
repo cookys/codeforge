@@ -1,16 +1,13 @@
 //! `codeforge strategy [name]` — Phase 3b CLI surface for Strategy Mode.
 //!
 //! No args → print current strategy + multiplier summary.
-//! With name → validate, upsert into `pet_snapshot.strategy`, confirm.
+//! With name → validate, write `settings.pet_strategy`, confirm.
 //!
-//! Writing directly to `pet_snapshot` is safe because the race with the
-//! daemon's tick-end `serialize_to_db` is mitigated: the daemon calls
-//! `GameWorld::refresh_strategy_from_db` at tick step 3b (inside the tick
-//! transaction, before combat + serialize), so any CLI-written value is
-//! picked up into the ECS `PetStrategy` component and written back
-//! unchanged. The spec keeps strategy user-toggled (not daemon-derived),
-//! and this mitigation preserves that ownership without routing through
-//! `event_inbox`.
+//! The daemon owns `pet_snapshot`; the CLI never writes it. The daemon
+//! calls `GameWorld::refresh_strategy_from_db` at tick step 3b, which
+//! copies `settings.pet_strategy` into the ECS `PetStrategy` component and
+//! serialises it into `pet_snapshot.strategy`. Readers prefer the setting
+//! (see `read_current`) so the choice shows before the first tick.
 
 use anyhow::{bail, Result};
 use rusqlite::OptionalExtension;
@@ -52,10 +49,12 @@ pub fn run(ctx: &db::Context, name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Read the persisted strategy. Falls back to `DEFAULT_STRATEGY` when:
-///   - `pet_snapshot` is empty (daemon has never ticked, Phase 1 adopt only)
-///   - the stored value fails to parse (corrupt — should not happen)
+/// Read the chosen strategy: `settings.pet_strategy`, else
+/// `pet_snapshot.strategy`, else `DEFAULT_STRATEGY`.
 pub(crate) fn read_current(conn: &rusqlite::Connection) -> Result<Strategy> {
+    if let Some(s) = crate::daemon::strategy::read_setting(conn)? {
+        return Ok(s);
+    }
     let stored: Option<String> = conn
         .query_row("SELECT strategy FROM pet_snapshot WHERE id = 1", [], |r| {
             r.get(0)
@@ -66,26 +65,8 @@ pub(crate) fn read_current(conn: &rusqlite::Connection) -> Result<Strategy> {
         .unwrap_or(DEFAULT_STRATEGY))
 }
 
-/// UPSERT so `codeforge strategy <name>` works even when no daemon tick
-/// has ever written a snapshot row (fresh adopt → strategy flip before
-/// first tick). For a greenfield row we seed reasonable defaults that
-/// the daemon will overwrite on first tick; for an existing row we touch
-/// only the strategy column. `updated_at` is set explicitly (rather than
-/// leaning on the column DEFAULT) so both branches write the same value
-/// and there's no risk of a CHECK/NOT NULL regression if the schema
-/// default is ever relaxed.
 fn upsert_strategy(conn: &rusqlite::Connection, s: Strategy) -> Result<()> {
-    conn.execute(
-        "INSERT INTO pet_snapshot
-             (id, village, level, hp, hp_max, xp, xp_to_next,
-              atk, def, sup, ver, strategy, updated_at)
-         VALUES (1, 'rust', 1, 10, 10, 0, 100, 10, 10, 10, 10, ?1,
-                 datetime('now'))
-         ON CONFLICT(id) DO UPDATE SET
-             strategy = excluded.strategy,
-             updated_at = excluded.updated_at",
-        rusqlite::params![s.as_str()],
-    )?;
+    crate::daemon::strategy::write_setting(conn, s)?;
     Ok(())
 }
 
@@ -124,46 +105,59 @@ mod tests {
     }
 
     #[test]
-    fn upsert_preserves_existing_row_fields() {
+    fn strategy_set_does_not_touch_pet_snapshot() {
         let conn = fresh();
-        // Pre-seed a snapshot with real pet state (simulating daemon tick)
+        upsert_strategy(&conn, Strategy::Aggressive).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pet_snapshot", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0, "CLI must not create a pet_snapshot row");
+
+        // Existing row stays byte-for-byte unchanged (incl. strategy).
         conn.execute(
             "INSERT INTO pet_snapshot
                  (id, village, level, hp, hp_max, xp, xp_to_next,
-                  atk, def, sup, ver, last_message, mood, mood_tick_stamp,
-                  strategy)
-             VALUES (1, 'python', 7, 70, 80, 500, 1000,
-                     25, 18, 15, 20, 'hi', 80, 12, 'explorer')",
+                  atk, def, sup, ver, strategy)
+             VALUES (1, 'python', 7, 70, 80, 500, 1000, 25, 18, 15, 20, 'explorer')",
             [],
         )
         .unwrap();
-
         upsert_strategy(&conn, Strategy::Scholar).unwrap();
-
-        // Strategy changed; other fields intact.
-        let (village, level, hp, mood, strategy): (String, i64, i64, i64, String) = conn
-            .query_row(
-                "SELECT village, level, hp, mood, strategy FROM pet_snapshot WHERE id = 1",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-            )
+        let snap: String = conn
+            .query_row("SELECT strategy FROM pet_snapshot WHERE id = 1", [], |r| {
+                r.get(0)
+            })
             .unwrap();
-        assert_eq!(village, "python");
-        assert_eq!(level, 7);
-        assert_eq!(hp, 70);
-        assert_eq!(mood, 80);
-        assert_eq!(strategy, "scholar");
+        assert_eq!(snap, "explorer");
     }
 
     #[test]
-    fn upsert_overwrites_same_column_only() {
+    fn status_prefers_setting_over_snapshot() {
+        let conn = fresh();
+        conn.execute(
+            "INSERT INTO pet_snapshot
+                 (id, village, level, hp, hp_max, xp, xp_to_next,
+                  atk, def, sup, ver, strategy)
+             VALUES (1, 'rust', 1, 10, 10, 0, 100, 10, 10, 10, 10, 'explorer')",
+            [],
+        )
+        .unwrap();
+        upsert_strategy(&conn, Strategy::Defensive).unwrap();
+        assert_eq!(read_current(&conn).unwrap(), Strategy::Defensive);
+    }
+
+    #[test]
+    fn upsert_overwrites_same_key_only() {
         let conn = fresh();
         upsert_strategy(&conn, Strategy::Aggressive).unwrap();
         upsert_strategy(&conn, Strategy::Defensive).unwrap();
         assert_eq!(read_current(&conn).unwrap(), Strategy::Defensive);
-        // Exactly one row must exist — single-row pet_snapshot PK.
         let n: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pet_snapshot", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM settings WHERE key = 'pet_strategy'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(n, 1);
     }

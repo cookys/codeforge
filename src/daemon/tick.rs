@@ -559,6 +559,24 @@ mod tests {
     }
 
     #[test]
+    fn tick_copies_setting_strategy_into_snapshot() {
+        let (conn, mut world) = fresh();
+        // Set before any tick: no snapshot row exists yet.
+        super::super::strategy::write_setting(&conn, super::super::strategy::Strategy::Scholar)
+            .unwrap();
+        run_one(&conn, &mut world).unwrap();
+        let strategy: String = conn
+            .query_row("SELECT strategy FROM pet_snapshot WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(strategy, "scholar");
+        use super::super::ecs::PetStrategy;
+        let ps = world.world().get::<&PetStrategy>(world.pet()).unwrap();
+        assert_eq!(ps.value.as_str(), "scholar");
+    }
+
+    #[test]
     fn tick_atomic_rollback_on_error_preserves_state() {
         // If combat errors (e.g. UPDATE fails), the tx should roll back: no
         // mob changes, no loot, no anchor advance. Hard to reliably force a

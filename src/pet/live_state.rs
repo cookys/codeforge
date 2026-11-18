@@ -74,6 +74,10 @@ impl LiveState {
         let Some((mut state, last_message, mood, strategy)) = load_base(conn)? else {
             return Ok(None);
         };
+        // The user's choice (`settings.pet_strategy`) wins over the daemon's
+        // last-serialised snapshot value, so a fresh `codeforge strategy`
+        // shows before the next tick. Only when a pet exists at all.
+        let strategy = crate::daemon::strategy::read_setting(conn)?.or(strategy);
         let (pending_events, pending_xp) = sum_unseen_xp(conn)?;
         if pending_xp > 0 {
             state.add_xp(pending_xp);
@@ -242,6 +246,15 @@ mod tests {
             rusqlite::params![payload],
         )
         .unwrap();
+    }
+
+    #[test]
+    fn load_prefers_strategy_setting_over_snapshot() {
+        let conn = fresh();
+        seed_snapshot(&conn, 0, 1);
+        crate::daemon::strategy::write_setting(&conn, Strategy::Defensive).unwrap();
+        let live = LiveState::load(&conn).unwrap().unwrap();
+        assert_eq!(live.strategy, Some(Strategy::Defensive));
     }
 
     #[test]
