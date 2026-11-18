@@ -273,18 +273,35 @@ pub fn parse_claude_json(raw: &str) -> Result<(String, Option<TokenUsage>)> {
 
 /// 跑 `claude -p --model <model> --output-format json`,prompt 走 stdin,回傳 `(result, usage)`。
 pub fn claude_p(prompt: &str, model: &str) -> Result<(String, Option<TokenUsage>)> {
-    let raw = run_cli(
-        "claude -p",
-        &["claude", "-p", "--model", model, "--output-format", "json"],
-        prompt,
-    )?;
+    let raw = run_cli("claude -p", &claude_argv(model), prompt)?;
     parse_claude_json(&raw)
 }
 
 /// 跑 `agy -p --model <agy_model>`(Gemini headless,免 Anthropic key),prompt 走 stdin。
 pub fn agy_p(prompt: &str) -> Result<String> {
     let model = agy_model();
-    run_cli("agy", &["agy", "-p", "--model", &model], prompt)
+    run_cli("agy", &agy_argv(&model), prompt)
+}
+
+/// The prompt embeds untrusted transcript text, so the model gets no tools at all
+/// (`--tools ""`, last so the variadic flag swallows nothing) and no MCP servers.
+fn claude_argv(model: &str) -> Vec<&str> {
+    vec![
+        "claude",
+        "-p",
+        "--model",
+        model,
+        "--output-format",
+        "json",
+        "--strict-mcp-config",
+        "--tools",
+        "",
+    ]
+}
+
+/// agy: sandboxed terminal + read-only plan mode (checked: `--mode plan` works in print mode).
+fn agy_argv(model: &str) -> Vec<&str> {
+    vec!["agy", "-p", "--model", model, "--sandbox", "--mode", "plan"]
 }
 
 /// 跑 `codex exec`(OpenAI/ChatGPT headless),prompt(指令)走 stdin。
@@ -351,6 +368,20 @@ pub fn headless_digest(prompt: &str, model: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn claude_argv_has_no_tools_and_strict_mcp() {
+        let a = claude_argv("m");
+        assert!(a.windows(2).any(|w| w == ["--tools", ""]), "{a:?}");
+        assert!(a.contains(&"--strict-mcp-config"), "{a:?}");
+    }
+
+    #[test]
+    fn agy_argv_is_sandboxed_plan_mode() {
+        let a = agy_argv("m");
+        assert!(a.contains(&"--sandbox"), "{a:?}");
+        assert!(a.windows(2).any(|w| w == ["--mode", "plan"]), "{a:?}");
+    }
 
     // CODEFORGE_AGY_MODEL 是本檔唯一讀者,測試獨佔此 env key(不與他測爭用)。
     #[test]

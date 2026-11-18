@@ -7,16 +7,24 @@ pub struct AbsorbResult {
     pub absorbed: usize,
 }
 
+/// The project dream runs for: the dir that holds `.codeforge`. With a shared store
+/// (`CODEFORGE_DIR` not named `.codeforge`) the CWD itself is the project: never widened.
+fn project_root(ctx: &db::Context) -> std::path::PathBuf {
+    match (ctx.project_dir.file_name(), ctx.project_dir.parent()) {
+        (Some(n), Some(parent)) if n == ".codeforge" => parent.to_path_buf(),
+        _ => std::env::current_dir().unwrap_or_default(),
+    }
+}
+
 pub fn run(ctx: &db::Context) -> Result<AbsorbResult> {
     let projects_root = dirs::home_dir()
         .map(|h| h.join(".claude").join("projects"))
         .unwrap_or_default();
-    let cwd = std::env::current_dir().unwrap_or_default();
-    run_from(ctx, &projects_root, &cwd)
+    run_from(ctx, &projects_root, &project_root(ctx))
 }
 
-/// `projects_root` = `~/.claude/projects`; `cwd` = the project dream runs for
-/// (the SessionEnd hook's CWD is the project root).
+/// `projects_root` = the Claude projects dir; `cwd` = the project dream runs for
+/// (`project_root`: the store's repo, else the SessionEnd hook's CWD).
 pub fn run_from(
     ctx: &db::Context,
     projects_root: &std::path::Path,
@@ -158,5 +166,21 @@ mod tests {
             "own memory must still be absorbed"
         );
         assert_eq!(r.absorbed, 1);
+    }
+    /// A `<repo>/.codeforge` store resolves to its repo even when the CWD is elsewhere;
+    /// a shared store (`CODEFORGE_DIR` not named `.codeforge`) falls back to the CWD.
+    #[test]
+    fn project_root_is_the_stores_repo() {
+        let mk = |pd: std::path::PathBuf| db::Context {
+            project_dir: pd,
+            brain_dir: "b".into(),
+            db_path: "d".into(),
+        };
+        let repo = std::path::Path::new("work/proj-a");
+        assert_eq!(project_root(&mk(repo.join(".codeforge"))), repo);
+        assert_eq!(
+            project_root(&mk("shared-store".into())),
+            std::env::current_dir().unwrap()
+        );
     }
 }
