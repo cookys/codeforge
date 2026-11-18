@@ -47,7 +47,7 @@ for e in read_list(os.environ["CODEFORGE_LEAKS_ALLOW"]):
 OK_DOMAINS = ("example.com", "example.org", "example.net")
 OK_SUFFIX = (".invalid", ".test", ".example", ".local")
 OK_DOMAIN_EXACT = {"x.com", "a.com", "b.com", "x.rs"}
-OK_ADDR = {"noreply@anthropic.com", "git@github.com"}
+OK_ADDR = {"noreply@anthropic.com", "noreply@openai.com", "noreply@google.com", "git@github.com"}
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})")
 HOME = re.compile(r"(?:/home/|-home-)([A-Za-z0-9_]+)")
 SPLIT = re.compile(r"[^A-Za-z0-9.-]+")
