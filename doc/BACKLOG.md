@@ -281,6 +281,24 @@
 - **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
 - **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
 
+### 推版的 binary 不可重現：同一 commit 各機 sha16 不同
+- **Id**: B64
+- **Status**: open
+- **Since**: 2026-11-19
+- **Origin**: PM
+- **Problem**: 推版走 `cargo install`，沒加 `--remap-path-prefix`，所以 binary 裡帶了 clone 路徑和 `$HOME`。43e15c9 在 rustc 1.99.1 下，team 建出 7bd44069，host-infra 從 bundle 建出 19726637，兩邊對不上，推版只能改看 HEAD 加功能字串來驗收。`scripts/package.sh` 已經做到可重現（B43：remap checkout、cargo home、sysroot，`SOURCE_DATE_EPOCH`），`repro-check.sh` 也證明同一台機器兩個路徑建出來一致；缺的是推版沒走這條路，另外跨機器（不同 `$HOME` 和使用者）還沒驗過。
+- **Impact**: 推版不能直接比 sha16，驗收得多一步功能檢查，也證明不了各席跑的是同一份 binary。（Minor）
+- **Trigger**: ready；做法是推版改從 `package.sh` 的封存檔安裝（或套用同一組 RUSTFLAGS），再補一個跨 `$HOME`、跨使用者的 repro 檢查；推版腳本那一側歸 hangar
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 01M7QPEX 推版結果（14/14 7bd44069）與 hangar 01M7QQ2Y 的比對
+- **Pointer**: scripts/package.sh:72-77, scripts/repro-check.sh
+- **Needs**: none
+- **ms**: none
+- **Used-by**: e2e 推版驗收直接比 sha16
+- **Queued-By**: PM 01M7QPZ6（經 hangar 01M7QQ2YC29S5N8AZ61JKYCG4T）
+- **Context**: 同一 commit、同一 rustc，建出來應該一樣；做好後推版要求可以改成「各席 sha16 等於 package.sh 封存檔裡的那支」
+
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
 - **Status**: open
