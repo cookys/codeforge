@@ -94,72 +94,20 @@
 - **Context**: 資料走 pet.json 契約；閘門照 forge-stats-ux-gate
 
 
-### pane 現況頁 80x24 計數錯、120x30 漏掉本席花費項
-- **Id**: B58
-- **Status**: open
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: 80x24 現況頁寫「資料過期 0 分」（160x40 同時有 3 池過期）、「另有 25 項（艦隊 0 · 額度浪費 ▲2）」（艦隊實為 產線 52 ⊘7，0+2 也湊不到 25）；120x30 的「另有 8 項」沒算進 160x40 第 32 列的「花費 ✗ seats --quota 沒有本席這一列」，該項在 120x30 整個看不到。
-- **Impact**: 操作員在小終端機上讀到錯的數字，也看不到本席的花費錯誤。（Major）
-- **Trigger**: ready；寫處置交 autopilot
-- **Trigger-Type**: ready
-- **Effort**: S
-- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
-- **Pointer**: none
-- **Needs**: none
-- **ms**: pane-batch3
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
-- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
-
-### pane 資料過期年紀顯示成「- 分未更新」
-- **Id**: B59
-- **Status**: open
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: 額度池沒有年紀時，現況頁和額度頁都畫「✗ 額度 … - 分未更新（>10 分）」或「✗ — 分未更新」，數字是破折號、單位還在。
-- **Impact**: 讀起來像壞掉；看不出到底多久沒更新、是沒資料還是過期。（Major）
-- **Trigger**: ready；寫處置交 autopilot
-- **Trigger-Type**: ready
-- **Effort**: XS
-- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
-- **Pointer**: none
-- **Needs**: none
-- **ms**: pane-batch3
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
-- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
-
-### pane 名稱截到分不出：額度池名、艦隊卡住線的 peer
-- **Id**: B60
-- **Status**: open
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: 額度頁 160x40 池名也截在約 11 字，「agyclaude」和「agyclaude(alias 2)」畫成一樣，別名的序號被截掉；艦隊頁卡住線的 peer 截成「Claude (主機名前幾…」「Claude (c…」，120x30 兩列分不出是哪台。
-- **Impact**: 操作員沒辦法從畫面判斷是哪個池、哪台機器出事。（Major）
-- **Trigger**: ready；寫處置交 autopilot
-- **Trigger-Type**: ready
-- **Effort**: S
-- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
-- **Pointer**: none
-- **Needs**: none
-- **ms**: pane-batch3
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
-- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
-
 ### pane 沒有專案的 session：派工、審查、殘留頁只剩錯誤和不對的修復指令
 - **Id**: B61
 - **Status**: open
 - **Since**: 2026-11-18
 - **Origin**: self
-- **Problem**: 不在 autopilot 專案層級的一般 session 開 pane，派工、審查、殘留三頁只畫「✗ 本席…資料不是最新：沒有專案 · 請執行：autopilot status runs --watch」和「資料不足，無法判定」；照做也不會有專案。標題列每頁都帶「✗ 槽位 無來源」，沒說要做什麼。
+- **Problem**: 非 autopilot 專案的 session 開 pane，派工、審查、殘留三頁只畫「✗ 本席資料不是最新：沒有專案」加一條照做也無效的修復指令，和「資料不足，無法判定」；標題列每頁帶「✗ 槽位 無來源」，沒說要做什麼。
 - **Impact**: 一般 session 是常態；三頁永遠是空的錯誤頁，修復指令誤導，紅色 ✗ 天天都在、失去警示作用。（Major）
 - **Trigger**: ready；寫處置交 autopilot
 - **Trigger-Type**: ready
 - **Effort**: S
 - **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
 - **Pointer**: none
+- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
+- **Artifact**: code
 - **Needs**: none
 - **ms**: pane-batch3
 - **Used-by**: user
@@ -178,6 +126,8 @@
 - **Effort**: S
 - **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
 - **Pointer**: none
+- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
+- **Artifact**: code
 - **Needs**: none
 - **ms**: pane-batch3
 - **Used-by**: user
@@ -191,11 +141,13 @@
 - **Origin**: self
 - **Problem**: 120x30 dock 寬 70 欄，分頁列換成兩列（1–6／7–0），每種尺寸都把「鍛造」截成「鍛」；純文字截圖也看不出選中哪一頁，只能靠標題列。
 - **Impact**: 多佔一列正文；標籤不一致。（Minor）
-- **Trigger**: ready；寫處置交 autopilot
-- **Trigger-Type**: ready
+- **Trigger**: 120x30 真機確認仍會換成兩列（autopilot 0138545 起 STRIP_SPLIT_COLS=66，基準上重現不出來；PM 01M7TBE4 留列待確認）
+- **Trigger-Type**: event
 - **Effort**: XS
 - **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
 - **Pointer**: none
+- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
+- **Artifact**: code
 - **Needs**: none
 - **ms**: pane-batch3
 - **Used-by**: user
@@ -206,54 +158,60 @@
 - **Id**: B64
 - **Status**: open
 - **Since**: 2026-11-19
-- **Origin**: PM
-- **Problem**: 推版走 `cargo install`，沒加 `--remap-path-prefix`，所以 binary 裡帶了 clone 路徑和 `$HOME`。43e15c9 在 rustc 1.99.1 下，team 建出 7bd44069，host-infra 從 bundle 建出 19726637，兩邊對不上，推版只能改看 HEAD 加功能字串來驗收。`scripts/package.sh` 已經做到可重現（B43：remap checkout、cargo home、sysroot，`SOURCE_DATE_EPOCH`），`repro-check.sh` 也證明同一台機器兩個路徑建出來一致；缺的是推版沒走這條路，另外跨機器（不同 `$HOME` 和使用者）還沒驗過。
+- **Origin**: self
+- **Problem**: 推版走 `cargo install`，沒加 `--remap-path-prefix`，binary 帶了 clone 路徑和 `$HOME`，同一 commit 各機 sha16 不同，只能看 HEAD 加功能字串驗收。`package.sh` 已可重現（B43），缺推版改走它，以及跨 `$HOME`、跨使用者的 repro 驗證。
 - **Impact**: 推版不能直接比 sha16，驗收得多一步功能檢查，也證明不了各席跑的是同一份 binary。（Minor）
 - **Trigger**: ready；做法是推版改從 `package.sh` 的封存檔安裝（或套用同一組 RUSTFLAGS），再補一個跨 `$HOME`、跨使用者的 repro 檢查；推版腳本那一側歸 hangar
 - **Trigger-Type**: ready
 - **Effort**: S
 - **Source**: 01M7QPEX 推版結果（14/14 7bd44069）與 hangar 01M7QQ2Y 的比對
-- **Pointer**: scripts/package.sh:72-77, scripts/repro-check.sh
+- **Pointer**: none
+- **Done-Check**: `bash scripts/repro-check.sh x86_64-unknown-linux-gnu`
+- **Artifact**: code
 - **Needs**: none
 - **ms**: none
-- **Used-by**: e2e 推版驗收直接比 sha16
-- **Queued-By**: PM 01M7QPZ6（經 hangar 01M7QQ2YC29S5N8AZ61JKYCG4T）
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7QPZ6
 - **Context**: 同一 commit、同一 rustc，建出來應該一樣；做好後推版要求可以改成「各席 sha16 等於 package.sh 封存檔裡的那支」
 
 ### absorb 寫入 L0 時沒有記來源 slug，事後查不出某列來自哪個專案
 - **Id**: B65
 - **Status**: open
 - **Since**: 2026-11-19
-- **Origin**: PM
-- **Problem**: `src/dream/absorb.rs` 用 `Signal::new(content, SignalSource::AbsorbedMemory)` 寫入，沒有記下讀的是哪個 Claude 專案目錄（slug）和檔名。8a5f30a 之後只讀當前專案，但換版後一台機器在 codeforge 專案新增 41 列，事後只能用名稱比對證明「不是 PM 的記憶」，證明不了「全部是本專案的」；換版前已吸進來的跨專案條目也分不出來。
-- **Impact**: 隱私稽核時沒辦法直接數「來自其他專案」的列數，得去讀操作員的 Claude 目錄（要卡）。（Minor：這些列 origin=absorbed，不會 ship，只存在本機）
+- **Origin**: self
+- **Problem**: `src/dream/absorb.rs` 寫入 signal 時沒記讀的是哪個 Claude 專案目錄（slug）和檔名。8a5f30a 後只讀當前專案，但事後只能用名稱比對證明不是 PM 的記憶，證明不了全部是本專案的；換版前吸進來的跨專案條目也分不出。
+- **Impact**: 隱私稽核無法只計數回答「有沒有跨專案」，得去讀操作員的 Claude 目錄（要卡）。（Minor：absorbed 列不會 ship）
 - **Trigger**: ready；做法是 absorb 寫入時在 signal 上帶 `source_slug`（加檔名），加測試；再出一個只計數的檢查：L0 裡 absorbed 列的 slug 不等於當前專案 slug 的數量
 - **Trigger-Type**: ready
 - **Effort**: S
 - **Source**: PM 01M7R1SD 的只讀比對（41 列，39 個名稱，和 PM 記憶重疊 0）
-- **Pointer**: src/dream/absorb.rs:76-80, src/memory/l0.rs
+- **Pointer**: none
+- **Done-Check**: `bash scripts/test-flake-guard.sh cargo`
+- **Artifact**: code
 - **Needs**: none
 - **ms**: none
-- **Used-by**: e2e 隱私稽核只計數就能回答「有沒有跨專案」
-- **Queued-By**: PM 01M7R1SDE4K3HVE0HFCB7H389H
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H
 - **Context**: 換版前吸進來的舊列沒有 slug，只能靠新的列往後查；舊列要不要清，另外問 PM
 
 ### 有一台主機的登入 shell PATH 找不到 codeforge
 - **Id**: B66
 - **Status**: open
 - **Since**: 2026-11-19
-- **Origin**: PM
-- **Problem**: 03531cc 換版後，hangar 在一台主機的登入 shell 實跑 `codeforge dream --only absorb` 得到 rc=127（command not found）。其他 13 個帳號都正常。全域 hook 的 SessionEnd 鏈和 statusline 也靠 PATH 找 codeforge，所以那台的 dream、ship、usage collect、statusline 可能都沒在跑。
+- **Origin**: self
+- **Problem**: 03531cc 換版後，hangar 在一台主機的登入 shell 跑 `codeforge dream --only absorb` 得 rc=127，其他 13 個帳號正常。全域 hook 的 SessionEnd 鏈和 statusline 也靠 PATH 找 codeforge，那台的 dream、ship、usage collect、statusline 可能都沒在跑。
 - **Impact**: 那台的記憶、用量和 statusline 可能整個缺席，而且不會報錯。（Major：要先確認 hook 執行時的 PATH 是否也找不到）
-- **Trigger**: ready；先查清楚：binary 裝在哪、登入 shell 和 Claude Code hook 的 PATH 各是什麼、`codeforge doctor` 結果；修法歸 hangar（PATH 設定或安裝位置），codeforge 這側視需要讓 install 寫絕對路徑或在 doctor 報出來
-- **Trigger-Type**: ready
+- **Trigger**: hangar 回報那台的 binary 位置、登入 shell 與 hook 的 PATH、`codeforge doctor` 結果；修法歸 hangar，codeforge 視需要讓 install 寫絕對路徑或 doctor 報出
+- **Trigger-Type**: peer
 - **Effort**: S
 - **Source**: hangar 01M7R1PJ 換版回報
-- **Pointer**: src/cli/install.rs:805-865
-- **Needs**: hangar
+- **Pointer**: none
+- **Done-Check**: `bash scripts/check-all.sh`
+- **Artifact**: code
+- **Needs**: none
 - **ms**: none
-- **Used-by**: e2e 那台實跑 dream rc=0
-- **Queued-By**: PM 01M7R1SDE4K3HVE0HFCB7H389H
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H
 - **Context**: 主機名照隱私規則不寫進 repo，見 hangar 01M7R1PJ
 
 ### 兩個 dream 同時跑時 signal cursor 競態
