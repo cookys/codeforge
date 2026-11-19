@@ -110,7 +110,8 @@ shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh 
   scripts/g40-real-data/check.sh scripts/g40-real-data/check.test.sh scripts/g40-real-data/scan-statusline.test.sh \
   scripts/trinity-import/trinity-import.sh scripts/trinity-import/trinity-import.test.sh \
   scripts/check-private-leaks.sh scripts/check-private-leaks.test.sh scripts/hook-env.test.sh \
-  .githooks/pre-push scripts/push-ref-guard.sh scripts/push-ref-guard.test.sh
+  .githooks/pre-push scripts/push-ref-guard.sh scripts/push-ref-guard.test.sh \
+  scripts/pet-cross.sh scripts/pet-cross.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh
@@ -122,6 +123,10 @@ step "trinity quota import (fake fleet, tmpfs live dir)"
 step "checkout guard (the main clone stays on develop)"
 ./scripts/checkout-guard.test.sh
 ./scripts/hook-env.test.sh
+
+step "pet-cross (forge-stats panel/1 vs autopilot pet-tab reader; sibling absent = skip)"
+./scripts/pet-cross.test.sh
+./scripts/pet-cross.sh
 
 step "public push guard (origin is public: only develop/main)"
 ./scripts/push-ref-guard.test.sh
