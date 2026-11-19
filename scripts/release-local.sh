@@ -14,6 +14,8 @@
 #    local server (CODEFORGE_DOWNLOAD_BASE) into a temp dir, and the binary must print the version.
 #    Other targets are checked for their ELF machine.
 # 3. Writes RELEASE.txt: files, sha256 and glibc needs.
+# Before building it runs scripts/pet-cross.sh --release: forge-stats' panel/1 must still be read
+# by the sibling autopilot's pet-tab reader (shared-TUI plan §4.3); a missing sibling fails here.
 #
 # Everything is built and verified in a staging dir of this run only; the verified files are then
 # copied to <out> (default: dist). <out> is replaced, so it must be absent, empty, or hold a
@@ -96,6 +98,9 @@ if [ -e "$out" ] || [ -L "$out" ]; then
     fail "--out $out is not empty and holds no RELEASE.txt; refusing to replace it"
   fi
 fi
+
+# forge-stats' pet panel against the autopilot pet-tab reader that the live pin will run
+./scripts/pet-cross.sh --release >&2 || fail "pet-cross failed: forge-stats panel/1 and autopilot's pet-tab reader disagree"
 
 work="$(mktemp -d)"
 stage="$work/dist"
