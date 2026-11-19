@@ -92,6 +92,10 @@ else
   echo "check-all: SKIP forge-stats plugin tests (claude is not on PATH)."
 fi
 
+step "tux vocabulary lint"
+python3 scripts/tux-lint.py --test
+python3 scripts/tux-lint.py
+
 step "cjk-safe"
 ./scripts/check-cjk-safe.sh
 
@@ -111,7 +115,8 @@ shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh 
   scripts/trinity-import/trinity-import.sh scripts/trinity-import/trinity-import.test.sh \
   scripts/check-private-leaks.sh scripts/check-private-leaks.test.sh scripts/hook-env.test.sh \
   .githooks/pre-push scripts/push-ref-guard.sh scripts/push-ref-guard.test.sh \
-  scripts/pet-cross.sh scripts/pet-cross.test.sh
+  scripts/tux-sync.sh scripts/tux-lock.sh scripts/tux-lock.test.sh \
+  scripts/tux-cross.sh scripts/tux-cross.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh
@@ -124,9 +129,14 @@ step "checkout guard (the main clone stays on develop)"
 ./scripts/checkout-guard.test.sh
 ./scripts/hook-env.test.sh
 
-step "pet-cross (forge-stats panel/1 vs autopilot pet-tab reader; sibling absent = skip)"
-./scripts/pet-cross.test.sh
-./scripts/pet-cross.sh
+step "tux-lock (vendor shas and file list)"
+./scripts/tux-lock.test.sh
+./scripts/tux-lock.sh
+
+step "tux-cross (pinned tux vs autopilot; sibling absent = SKIP)"
+./scripts/tux-cross.test.sh
+TUX_CROSS_RESULT=$(./scripts/tux-cross.sh)
+printf '%s\n' "$TUX_CROSS_RESULT"
 
 step "public push guard (origin is public: only develop/main)"
 ./scripts/push-ref-guard.test.sh
@@ -165,4 +175,8 @@ if [ "$IS_WINDOWS" = 1 ] && [ "$WITH_WSL" = 1 ]; then
   fi
 fi
 
-printf '\n\033[1;32mcheck-all: all gates green\033[0m\n'
+if [[ "$TUX_CROSS_RESULT" == *'tux-cross: skip:'* ]]; then
+  printf '\ncheck-all: other gates green; SKIP tux-cross (sibling unavailable)\n'
+else
+  printf '\n\033[1;32mcheck-all: all gates green\033[0m\n'
+fi

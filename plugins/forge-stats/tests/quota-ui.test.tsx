@@ -150,14 +150,14 @@ test('pane at 100: every state, in the §6.2 order (▲, tight, 429, the rest al
   // L3, token far off: the days go in the header, windows with a meter, a percent and a countdown
   expect(block(lines, 'claude:work')).toEqual([
     'claude:work  L3 · token 到期 214 天',
-    '  5h    ▰▰▰▰▰▰▱▱▱▱  62%  ◷ 2h5m 後重置',
-    '  週    ▰▰▰▱▱▱▱▱▱▱  31%  ◷ 3d4h 後重置',
+    '  5h    ▰▰▰▰▰▰▱▱▱▱  62%  ◷ 2h05m 後重置',
+    '  週    ▰▰▰▱▱▱▱▱▱▱  31%  ◷ 3d04h 後重置',
   ])
   // tight: the word, no colour; token urgent: ▲ before the text
   expect(block(lines, 'claude:home')).toEqual([
     'claude:home  L3 · ▲ token 到期 6 天',
     '  5h    ▰▱▱▱▱▱▱▱▱▱  12%  ◷ 4h40m 後重置',
-    '  週    ▰▰▰▰▰▰▰▰▰▱  91% 緊  ◷ 1d2h 後重置',
+    '  週    ▰▰▰▰▰▰▰▰▰▱  91% 緊  ◷ 1d02h 後重置',
   ])
   expect(block(lines, 'claude:gone')[0]).toBe('claude:gone  L3 · ▲ token 已過期')
   // invalid: the header alone, no meter and no percent
@@ -165,7 +165,7 @@ test('pane at 100: every state, in the §6.2 order (▲, tight, 429, the rest al
   // credits remaining only: no meter, no %; an aged weekly beside it; both carry the age (> 30 min)
   expect(block(lines, 'codex:main')).toEqual([
     'codex:main  L2',
-    '  週    ▰▱▱▱▱▱▱▱▱▱  17%  ◷ 3d0h 後重置 · 2h10m 前',
+    '  週    ▰▱▱▱▱▱▱▱▱▱  17%  ◷ 3d00h 後重置 · 2h10m 前',
     '  額度  剩 12.50 credits · 2h10m 前',
   ])
   expect(block(lines, 'glm:main')[1]).toBe('  日    ▰▰▰▰▱▱▱▱▱▱  估 41%  重置時間未知')
@@ -178,7 +178,7 @@ test('pane at 100: every state, in the §6.2 order (▲, tight, 429, the rest al
   expect(block(lines, 'claude:multi')[0]).toBe('claude:multi  L3 · host agent、desk')
   expect(lines.filter(l => l.includes('host ')).length).toBe(1)
   // the legend names what is used
-  expect(lines[lines.length - 1]).toBe('估 = 本機計數，不是供應商回報；緊 = 已用 ≥ 90%')
+  expect(lines[lines.length - 1]).toBe('估 = 本機計數，不是供應商回報；緊 = 已用 ≥ 80%')
   // no age under 30 min: claude:work has a 60 s old observation
   expect(block(lines, 'claude:work').some(l => l.includes('前'))).toBe(false)
   // never a bare 0% or a meter for the L1 / L0 states
@@ -189,7 +189,7 @@ test('pane in English, and the empty / unreadable footers', () => {
   const lines = paneText(stateOf(['claude:home', 'kimi:main']), 100, en)
   expect(lines).toContain('claude:home  L3 · ▲ token expires in 6 d')
   expect(lines).toContain('  429 cooling  ◷ 1h19m to retry')
-  expect(lines).toContain('  week  ▰▰▰▰▰▰▰▰▰▱  91% tight  ◷ 1d2h to reset')
+  expect(lines).toContain('  week  ▰▰▰▰▰▰▰▰▰▱  91% tight  ◷ 1d02h to reset')
   expect(paneText({ ...NO_QUOTA, present: true }, 100)).toEqual(['  尚未收到配額資料（由 autopilot 的 reporter／wrapper 寫入）'])
   expect(paneText(stateOf(['claude:work'], { bad: 3, skipped: 5 }), 100).slice(-2)).toEqual(['  3 筆無法讀取', '  另有 5 筆未讀取'])
   // the legend line only for what is shown
@@ -203,29 +203,29 @@ test('pane narrows by dropping the age, then 後重置, then the meter; below 60
   const st = stateOf(['codex:main'], {}, fx)
   const credits = (cols: number) => paneText(st, cols).find(l => l.startsWith('  額度')) as string
   const full = credits(100)
-  expect(full).toBe('  額度  ▰▰▰▰▰▰▰▰▰▱  估 91% 緊  剩 9,000,000,000 credits  ◷ 3d0h 後重置 · 2h10m 前')
+  expect(full).toBe('  額度  ▰▰▰▰▰▰▰▰▰▱  估 91% 緊  剩 9,000,000,000 credits  ◷ 3d00h 後重置 · 2h10m 前')
   expect(displayWidth(full) > 60).toBe(true)
   const noAge = credits(displayWidth(full) - 1)
-  expect(noAge).toBe('  額度  ▰▰▰▰▰▰▰▰▰▱  估 91% 緊  剩 9,000,000,000 credits  ◷ 3d0h 後重置')
+  expect(noAge).toBe('  額度  ▰▰▰▰▰▰▰▰▰▱  估 91% 緊  剩 9,000,000,000 credits  ◷ 3d00h 後重置')
   const noWord = credits(displayWidth(noAge) - 1)
-  expect(noWord).toBe('  額度  ▰▰▰▰▰▰▰▰▰▱  估 91% 緊  剩 9,000,000,000 credits  ◷ 3d0h')
+  expect(noWord).toBe('  額度  ▰▰▰▰▰▰▰▰▰▱  估 91% 緊  剩 9,000,000,000 credits  ◷ 3d00h')
   expect(displayWidth(noWord) >= 60).toBe(true)
   // last, the meter goes; the numbers stay
-  expect(credits(displayWidth(noWord) - 1)).toBe('  額度  估 91% 緊  剩 9,000,000,000 credits  ◷ 3d0h')
+  expect(credits(displayWidth(noWord) - 1)).toBe('  額度  估 91% 緊  剩 9,000,000,000 credits  ◷ 3d00h')
   // 60 keeps blocks, 59 is one line per alias
   expect(paneText(stateOf(ALL), 60)[0]).toBe('claude:gone  L3 · ▲ token 已過期')
   const compact = paneText(stateOf(ALL), 59)
   expect(compact.filter(l => /^[a-z]/.test(l))).toHaveLength(11)
-  expect(compact).toContain('claude:gone 5h 20% ◷ 2h5m ▲ token 已過期')
-  expect(compact).toContain('claude:home 週 91% 緊 ◷ 1d2h ▲ token 到期 6 天')
+  expect(compact).toContain('claude:gone 5h 20% ◷ 2h05m ▲ token 已過期')
+  expect(compact).toContain('claude:home 週 91% 緊 ◷ 1d02h ▲ token 到期 6 天')
   expect(compact).toContain('kimi:main 429 冷卻 ◷ 1h19m')
   expect(compact).toContain('agy:main 無資料')
   expect(compact).toContain('claude:old ▲ token 已失效')
-  expect(compact).toContain('codex:main 週 17% ◷ 3d0h · 2h10m 前')
+  expect(compact).toContain('codex:main 週 17% ◷ 3d00h · 2h10m 前')
   // narrower: whole fields drop, the name stays
-  expect(paneText(stateOf(['codex:main']), 30)[0]).toBe('codex:main 週 17% ◷ 3d0h')
+  expect(paneText(stateOf(['codex:main']), 30)[0]).toBe('codex:main 週 17% ◷ 3d00h')
   expect(paneText(stateOf(['claude:home']), 40)[0]).toBe('claude:home 週 91% 緊 ▲ token 到期 6 天')
-  expect(paneText(stateOf(['claude:work']), 40)[0]).toBe('claude:work 5h 62% ◷ 2h5m')
+  expect(paneText(stateOf(['claude:work']), 40)[0]).toBe('claude:work 5h 62% ◷ 2h05m')
   expect(paneText(stateOf(['claude:home']), 30)[0]).toBe('claude:home 週 91% 緊')
   expect(paneText(stateOf(['claude:home']), 5)[0]).toBe('claude:home')
 })
@@ -241,8 +241,8 @@ test('a peer row counts only past the namespace guard; with no guard the local r
 test('band group: order ▲, tight, 429, the rest by utilization, then 無資料 N; the drop order of §6.1', () => {
   const forms = bandText(stateOf(ALL))
   expect(forms[0]).toBe(
-    '▲ claude:gone token 已過期  ▲ claude:home token 到期 6 天  ▲ claude:old token 已失效  claude:home 週 91% 緊 ◷ 1d2h  kimi:main 429 冷卻 ◷ 1h19m  ' +
-      'claude:work 5h 62% ◷ 2h5m  claude:multi 5h 50% ◷ 2h5m  glm:main 日 估 41%  qoder:main 額度 剩 3,100  claude:gone 5h 20% ◷ 2h5m  codex:main 週 17% ◷ 3d0h · 2h10m 前  無資料 2',
+    '▲ claude:gone token 已過期  ▲ claude:home token 到期 6 天  ▲ claude:old token 已失效  claude:home 週 91% 緊 ◷ 1d02h  kimi:main 429 冷卻 ◷ 1h19m  ' +
+      'claude:work 5h 62% ◷ 2h05m  claude:multi 5h 50% ◷ 2h05m  glm:main 日 估 41%  qoder:main 額度 剩 3,100  claude:gone 5h 20% ◷ 2h05m  codex:main 週 17% ◷ 3d00h · 2h10m 前  無資料 2',
   )
   // 1: no 無資料   2: no ages   3: no countdowns   then whole chips from the tail   last: the alias alone
   expect(forms[1]).toBe(forms[0]!.replace('  無資料 2', ''))
@@ -272,7 +272,7 @@ test('band chips: remaining-only credits, rpm and an invalid token draw no usage
   const noData = bandText(stateOf(['agy:main', 'minimax:main']))
   expect(noData).toEqual(['無資料 2'])
   // codex has a weekly: its chip; the credits remaining-only line is the pane's
-  expect(bandText(stateOf(['codex:main']))[0]).toBe('codex:main 週 17% ◷ 3d0h · 2h10m 前')
+  expect(bandText(stateOf(['codex:main']))[0]).toBe('codex:main 週 17% ◷ 3d00h · 2h10m 前')
 })
 
 test('band chip colours: ▲ warning (the only yellow), 429 and 無資料 inactive, tight and 估 none', () => {
@@ -280,27 +280,24 @@ test('band chip colours: ▲ warning (the only yellow), 429 and 無資料 inacti
   expect(colours(['claude:home', 'kimi:main', 'agy:main', 'glm:main'])).toEqual(['▲:warning', '429 冷卻:inactive', '無資料:inactive', '1:inactive'])
 })
 
-test('band spacing invariants hold at every width 0..160, with and without fleet and pet (§3.5)', () => {
-  const FLEET = { v: 1, fetchedMs: 1, error: null, totals: { needYou: 1, failed: 0, stuck: 2, running: 4, waiting: 11 } } as const
+test('band spacing invariants hold at every width 0..160, with and without the pet (§3.5)', () => {
   for (const keys of [ALL, ['claude:work'], ['claude:home', 'kimi:main', 'glm:main'], ['agy:main']]) {
     for (const lang of [zh, en]) {
       const forms = quotaBandForms(quotaBand(quotaEntries(stateOf(keys), N), NOW_MS, lang))
-      for (const fleet of [null, FLEET]) {
-        for (const pet of [null, 'Ferris Lv.3']) {
-          for (let cols = 0; cols <= 160; cols++) {
-            const parts = summaryParts(fleet as never, pet, cols, 'fleet', forms)
-            const t = parts?.map(p => p.text).join('') ?? ''
-            if (parts !== null) expect(t.length > 0 && [...t].length <= cols * 2).toBe(true)
-            // a glyph is always followed by a space; never three spaces in a row; no meter glyph on the band
-            expect(/[▲✗⊘●⋯◷▰▱][^ ]/.test(t)).toBe(false)
-            expect(/ {3}/.test(t)).toBe(false)
-            expect(/[▰▱]/.test(t)).toBe(false)
-            // a label belongs to its chip: provider:alias, one space, the value
-            for (const k of keys) {
-              const at = t.indexOf(k + ' ')
-              if (at >= 0) expect(/^[^ ]+ [^ ]/.test(t.slice(at))).toBe(true)
-              expect(t.includes(k + '  ')).toBe(false)
-            }
+      for (const pet of [null, 'Ferris Lv.3']) {
+        for (let cols = 0; cols <= 160; cols++) {
+          const parts = summaryParts(pet, cols, forms)
+          const t = parts?.map(p => p.text).join('') ?? ''
+          if (parts !== null) expect(t.length > 0 && [...t].length <= cols * 2).toBe(true)
+          // a glyph is always followed by a space; never three spaces in a row; no meter glyph on the band
+          expect(/[▲✗⊘●⋯◷▰▱][^ ]/.test(t)).toBe(false)
+          expect(/ {3}/.test(t)).toBe(false)
+          expect(/[▰▱]/.test(t)).toBe(false)
+          // a label belongs to its chip: provider:alias, one space, the value
+          for (const k of keys) {
+            const at = t.indexOf(k + ' ')
+            if (at >= 0) expect(/^[^ ]+ [^ ]/.test(t.slice(at))).toBe(true)
+            expect(t.includes(k + '  ')).toBe(false)
           }
         }
       }
@@ -308,24 +305,15 @@ test('band spacing invariants hold at every width 0..160, with and without fleet
   }
 })
 
-test('the quota group sits after the fleet part and before the pet; the pet goes first, the fleet counts only after the whole group', () => {
-  const FLEET = { v: 1, fetchedMs: 1, error: null, totals: { needYou: 1, failed: 0, stuck: 0, running: 4, waiting: 0 } } as const
+test('the quota group leads the pet; the pet goes before the group narrows', () => {
   const forms = quotaBandForms(quotaBand(quotaEntries(stateOf(['claude:work', 'claude:home']), N), NOW_MS, zh))
-  const at = (cols: number) => summaryParts(FLEET as never, 'Ferris Lv.3', cols, '艦隊', forms)?.map(p => p.text).join('')
-  const all = '艦隊 ▲ 1  ● 4 · ▲ claude:home token 到期 6 天  claude:home 週 91% 緊 ◷ 1d2h  claude:work 5h 62% ◷ 2h5m · Ferris Lv.3'
+  const at = (cols: number) => summaryParts('Ferris Lv.3', cols, forms)?.map(p => p.text).join('')
+  const all = '▲ claude:home token 到期 6 天  claude:home 週 91% 緊 ◷ 1d02h  claude:work 5h 62% ◷ 2h05m · Ferris Lv.3'
   expect(at(200)).toBe(all)
   expect(at(displayWidth(all))).toBe(all)
-  // the pet is the first to go
-  const noPet = all.replace(' · Ferris Lv.3', '')
-  expect(at(displayWidth(all) - 1)).toBe(noPet)
-  // narrow enough to lose the whole group: the fleet forms, then the pet alone
-  const noGroup = summaryParts(FLEET as never, 'Ferris Lv.3', 12, '艦隊', forms)?.map(p => p.text).join('')
-  expect(noGroup).toBe('艦隊 ▲ 1')
-  // without autopilot the group leads
-  expect(summaryParts(null, 'Ferris Lv.3', 200, 'fleet', forms)?.map(p => p.text).join('')?.startsWith('▲ claude:home token')).toBe(true)
-  // no quota at all: today's output exactly
-  expect(summaryParts(FLEET as never, 'Ferris Lv.3', 200, '艦隊')?.map(p => p.text).join('')).toBe('艦隊 ▲ 1  ● 4 · Ferris Lv.3')
-  expect(summaryParts(FLEET as never, 'Ferris Lv.3', 200, '艦隊', [])?.map(p => p.text).join('')).toBe('艦隊 ▲ 1  ● 4 · Ferris Lv.3')
+  expect(at(displayWidth(all) - 1)).toBe(all.replace(' · Ferris Lv.3', ''))
+  expect(summaryParts('Ferris Lv.3', 200)?.map(p => p.text).join('')).toBe('Ferris Lv.3')
+  expect(summaryParts('Ferris Lv.3', 200, [])?.map(p => p.text).join('')).toBe('Ferris Lv.3')
 })
 
 // ---- the reset time counts down on the local clock ----
@@ -371,7 +359,7 @@ test('band: provider prefixes drop before any chip does, but only where the alia
   expect(uniq.slice(0, bareAt).every(t => t.includes('work') && t.includes('main') && t.includes('home'))).toBe(true)
   const forms = quotaBandForms(quotaBand(quotaEntries(stateOf(['claude:work', 'claude:home', 'kimi:main']), N), NOW_MS, zh))
   const cols = displayWidth(uniq[bareAt] as string)
-  const at = (c: number) => summaryParts(null, null, c, 'fleet', forms)?.map(p => p.text).join('')
+  const at = (c: number) => summaryParts(null, c, forms)?.map(p => p.text).join('')
   expect(at(cols)).toBe(BARE)
   const prev = displayWidth(uniq[bareAt - 1] as string)
   expect(prev > cols).toBe(true)
@@ -544,7 +532,7 @@ test('the reader caps views at 256 and counts the rest without reading them', as
   await ui.unmount()
 })
 
-test('the band: chips after the fleet counts and before the pet, nothing without the mirror, today\'s row with an empty one', async ($, on) => {
+test('the band: quota chips before the pet, nothing without the mirror, today\'s row with an empty one', async ($, on) => {
   const f = mirror(on, { ...viewFiles(['claude:work', 'claude:home', 'kimi:main', 'agy:main']), ...NS })
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const at = async (cols: number) => {
@@ -558,7 +546,7 @@ test('the band: chips after the fleet counts and before the pet, nothing without
     await ui.unmount()
     return t
   }
-  const chips = '▲ claude:home token 到期 6 天  claude:home 週 91% 緊 ◷ 1d2h  kimi:main 429 冷卻 ◷ 1h19m  claude:work 5h 62% ◷ 2h5m'
+  const chips = '▲ claude:home token 到期 6 天  claude:home 週 91% 緊 ◷ 1d02h  kimi:main 429 冷卻 ◷ 1h19m  claude:work 5h 62% ◷ 2h05m'
   const full = chips + '  無資料 1 · Ferris Lv.3'
   // the row keeps a 2-cell margin
   expect(await at(displayWidth(full) + 2)).toBe(full)
@@ -825,4 +813,13 @@ test('without autopilot\'s panel and nothing drawn, the 15 s tick reads no quota
   const before = f.lists.filter(d => d === LIVE + '/quota').length
   await clock.advance(15_000)
   expect(f.lists.filter(d => d === LIVE + '/quota').length).toBe(before)
+})
+
+// P5: both pane and band consume the shared percent-floor contract.
+test('quota pane and band floor fractional utilization with the tux epsilon', () => {
+  for (const [ratio, want] of [[0.29, '29%'], [0.896, '89%'], [0.58, '58%']] as const) {
+    const state = stateOf(['codex:main'], {}, { 'codex:main': [row0(N, [win0(N, 'rolling_5h', ratio, N - 60)])] })
+    expect(paneText(state, 120).join('\n').includes(' ' + want)).toBe(true)
+    expect(bandText(state)[0].includes(' ' + want)).toBe(true)
+  }
 })

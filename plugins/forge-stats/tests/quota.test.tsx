@@ -1,7 +1,7 @@
 // G40 quota model: the pure reader of autopilot's `fleet.quota/1` mirror view (parse + §5.2 merge + token warn + tightest).
 import { expect, test } from 'claude-code/testing'
 
-import { mergeQuota, parseQuotaView, QUOTA_CONTRACT, tightest, tokenWarn } from '../hooks/quota'
+import { mergeQuota, parseQuotaView, QUOTA_CONTRACT, isTight, tightest, tokenWarn } from '../hooks/quota'
 import type { QuotaView } from '../hooks/quota'
 
 const N = 1793700000
@@ -399,4 +399,12 @@ test('B45 shape c (token state only, never any window) says it never had a windo
   expect(merged([row(D1())]).hadWindow).toBe(true)
   // a placeholder never had a window either
   expect(merged([row(rec({ visibility: 'L0', source: 'registry' }, 'agy', 'main'))]).hadWindow).toBe(false)
+})
+
+test('shared tux warning starts at 80 percent, including the floored boundary', () => {
+  expect(isTight(0.799)).toBe(false)
+  expect(isTight(0.8)).toBe(true)
+  expect(isTight(0.896)).toBe(true)
+  expect(isTight(1)).toBe(true)
+  expect(QUOTA_CONTRACT.tight).toBe(0.8)
 })

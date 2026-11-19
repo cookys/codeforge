@@ -1,3 +1,6 @@
+import { GLYPHS } from '../vendor/tux/glyphs'
+import { PALETTE } from '../vendor/tux/palette'
+import { pct } from '../vendor/tux/format'
 // G40 display of the quota mirror (pure: no `$`, no I/O). The model is ./quota.ts; the words come from ./strings.ts.
 // Spec: doc/plans/2026-11-03-g40-usage-accounts.md §3-§6 and §10 (v4 deltas), TUI guideline §3.1-§3.5.
 
@@ -163,7 +166,6 @@ export function factsOf(entries: readonly QEntry[], nowS: number, tr: T): Fact[]
 // ---------------------------------------------------------------------------------------------
 // shared text
 
-const pctOf = (u: number) => `${Math.round(u * 100)}%`
 const withCommas = (s: string) => s.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 export function fmtNum(n: number): string {
   if (Number.isInteger(n)) return withCommas(String(n))
@@ -180,7 +182,7 @@ const winTight = (w: MergedWindow) => isGauge(w) && w.utilization !== null && is
 const ageText = (ageS: number, nowMs: number, tr: T) => tr('quotaAge', { t: countdown(nowMs + ageS * 1000, nowMs) })
 
 /** `62%`, `估 41%`; the tight word is a separate field. */
-const pctText = (w: MergedWindow, tr: T) => (w.estimated ? tr('quotaEst') + ' ' : '') + pctOf(w.utilization as number)
+const pctText = (w: MergedWindow, tr: T) => (w.estimated ? tr('quotaEst') + ' ' : '') + pct(w.utilization as number)
 
 // ---------------------------------------------------------------------------------------------
 // pane lines
@@ -214,7 +216,7 @@ function winLine(w: MergedWindow, nowMs: number, tr: T, f: WinForm): QLine {
     const left = w.kind === 'credits' ? leftOf(w) : null
     if (left !== null) out.push(seg('  ' + tr('quotaLeft', { n: fmtNum(left), unit: w.unit ?? '' })))
   }
-  if (w.resetsAtLocal !== null) out.push(seg('  ◷ ' + countdown(w.resetsAtLocal * 1000, nowMs) + (f.fullReset ? ' ' + tr('quotaReset') : ''), 'dim'))
+  if (w.resetsAtLocal !== null) out.push(seg('  ' + GLYPHS.structure.age + ' ' + countdown(w.resetsAtLocal * 1000, nowMs) + (f.fullReset ? ' ' + tr('quotaReset') : ''), 'dim'))
   else if (w.utilization !== null && isGauge(w)) out.push(seg('  ' + tr('quotaResetUnknown'), 'dim'))
   if (f.age && w.ageS > AGE_SHOW_S) out.push(seg(' · ' + ageText(w.ageS, nowMs, tr), 'dim'))
   return out
@@ -222,7 +224,7 @@ function winLine(w: MergedWindow, nowMs: number, tr: T, f: WinForm): QLine {
 
 function refusalLine(m: MergedQuota, nowMs: number, tr: T, full: boolean): QLine {
   const r = m.refusal as NonNullable<MergedQuota['refusal']>
-  return [seg('  '), seg(tr('quotaCooldown'), 'idle'), seg('  ◷ ' + countdown(r.endS * 1000, nowMs) + (full ? ' ' + tr('quotaRetry') : ''), 'dim')]
+  return [seg('  '), seg(tr('quotaCooldown'), 'idle'), seg('  ' + GLYPHS.structure.age + ' ' + countdown(r.endS * 1000, nowMs) + (full ? ' ' + tr('quotaRetry') : ''), 'dim')]
 }
 
 function headerLines(f: Fact, cols: number, tr: T): QLine {
@@ -231,7 +233,7 @@ function headerLines(f: Fact, cols: number, tr: T): QLine {
   const dot = () => seg(' · ', 'dim')
   const host = m.multiHost ? seg(tr('quotaHost', { roles: [...new Set(m.hosts)].join(tr('quotaRoleSep')) }), 'dim') : null
   const tok: QSeg[] =
-    f.tok === null ? [] : f.tok.flag ? [seg('▲', undefined, 'warning'), seg(' ' + f.tok.text)] : [seg(f.tok.text, 'dim')]
+    f.tok === null ? [] : f.tok.flag ? [seg(GLYPHS.state.need_you, undefined, PALETTE.attention), seg(' ' + f.tok.text)] : [seg(f.tok.text, 'dim')]
   const join = (parts: (QSeg | QSeg[])[]): QLine => {
     const out: QLine = [name, seg('  '), seg(m.level, 'dim')]
     for (const p of parts) out.push(dot(), ...(Array.isArray(p) ? p : [p]))
@@ -249,16 +251,16 @@ function headerLines(f: Fact, cols: number, tr: T): QLine {
 function compactLine(f: Fact, nowMs: number, cols: number, tr: T): QLine {
   const m = f.e.m
   const name = seg(f.e.key, 'bold')
-  const flag: QLine = f.tok?.flag ? [seg(' '), seg('▲', undefined, 'warning'), seg(' ' + f.tok.text)] : []
+  const flag: QLine = f.tok?.flag ? [seg(' '), seg(GLYPHS.state.need_you, undefined, PALETTE.attention), seg(' ' + f.tok.text)] : []
   const state = (cd: boolean, age: boolean): QLine => {
     const w = f.main
-    if (m.refusal) return [seg(' '), seg(tr('quotaCooldown'), 'idle'), ...(cd ? [seg(' ◷ ' + countdown(m.refusal.endS * 1000, nowMs), 'dim')] : [])]
+    if (m.refusal) return [seg(' '), seg(tr('quotaCooldown'), 'idle'), ...(cd ? [seg(' ' + GLYPHS.structure.age + ' ' + countdown(m.refusal.endS * 1000, nowMs), 'dim')] : [])]
     if (f.kind === 'never' || f.kind === 'nousage' || f.kind === 'dropped') return [seg(' '), seg(tr('quotaNoData'), 'idle')]
     if (f.kind === 'tokenonly' || w === null) return []
     if (w.utilization === null) return [seg(' ' + labelOf(w, tr) + ' ' + tr('quotaLeft', { n: fmtNum(w.remaining ?? 0), unit: w.unit ?? '' }))]
     return [
       seg(' ' + labelOf(w, tr) + ' ' + pctText(w, tr) + (winTight(w) ? ' ' + tr('quotaTight') : '')),
-      ...(cd && w.resetsAtLocal !== null ? [seg(' ◷ ' + countdown(w.resetsAtLocal * 1000, nowMs), 'dim')] : []),
+      ...(cd && w.resetsAtLocal !== null ? [seg(' ' + GLYPHS.structure.age + ' ' + countdown(w.resetsAtLocal * 1000, nowMs), 'dim')] : []),
       ...(age && w.ageS > AGE_SHOW_S ? [seg(' · ' + ageText(w.ageS, nowMs, tr), 'dim')] : []),
     ]
   }
@@ -372,14 +374,14 @@ export function quotaBand(entries: readonly QEntry[], nowMs: number, tr: T): QBa
 
 type ChipForm = { age: boolean; countdown: boolean }
 function chipPartsOf(c: QBandChip, label: string, f: ChipForm, aliasOnly: boolean): SummaryPart[] {
-  if (c.token) return chipParts('▲', 'warning', `${label} ${c.head}`)
-  const head: SummaryPart = c.inactive ? { text: aliasOnly ? c.short : c.head, color: 'inactive' } : { text: aliasOnly ? c.short : c.head }
+  if (c.token) return chipParts(GLYPHS.state.need_you, PALETTE.attention, `${label} ${c.head}`)
+  const head: SummaryPart = c.inactive ? { text: aliasOnly ? c.short : c.head, color: PALETTE.idle } : { text: aliasOnly ? c.short : c.head }
   const out: SummaryPart[] = [{ text: label }, { text: CHIP_SPACE }, head]
-  if (!aliasOnly && f.countdown && c.reset !== null) out.push({ text: CHIP_SPACE }, ...chipParts('◷', undefined, c.reset))
+  if (!aliasOnly && f.countdown && c.reset !== null) out.push({ text: CHIP_SPACE }, ...chipParts(GLYPHS.structure.age, undefined, c.reset))
   if (!aliasOnly && f.age && c.age !== null) out.push({ text: ' · ', dim: true }, { text: c.age })
   return out
 }
-const noDataParts = (b: QBand): SummaryPart[] => [{ text: b.noDataWord, color: 'inactive' }, { text: CHIP_SPACE }, { text: String(b.noData), color: 'inactive' }]
+const noDataParts = (b: QBand): SummaryPart[] => [{ text: b.noDataWord, color: PALETTE.idle }, { text: CHIP_SPACE }, { text: String(b.noData), color: PALETTE.idle }]
 const textOf = (parts: readonly SummaryPart[]) => parts.map(p => p.text).join('')
 
 /**

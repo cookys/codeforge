@@ -104,7 +104,7 @@ test('parseUsage accepts the optional codex_sessions array (sorted rollout ids, 
 test('countdown reads minutes, hours and days, and a dash once past', () => {
   expect(countdown(NOW + 45 * 60_000, NOW)).toBe('45m')
   expect(countdown(NOW + 130 * 60_000, NOW)).toBe('2h10m')
-  expect(countdown(NOW + (3 * 24 + 4) * 3_600_000, NOW)).toBe('3d4h')
+  expect(countdown(NOW + (3 * 24 + 4) * 3_600_000, NOW)).toBe('3d04h')
   expect(countdown(NOW - 1, NOW)).toBe('—')
 })
 
