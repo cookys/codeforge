@@ -1,3 +1,4 @@
+import { GLYPHS } from '../vendor/tux/glyphs'
 // The pet tab's icon (PM 01M7MD5Z, plan item 6): one pet emoji on autopilot-live's tab row, exactly 2 cells, with a plain 2-cell fallback for a terminal
 // that cannot draw it. forge-stats picks the candidate and decides emoji vs fallback; autopilot only draws `text` (contract: codeforge.panel/1 `pet.icon`).
 import type { PetIcon } from '../types'
@@ -6,11 +7,7 @@ export type PetIconCandidate = { id: string; emoji: string; fallback: string }
 
 // Each emoji is one code point with Emoji_Presentation=Yes (drawn as emoji with no U+FE0F) and East Asian Width W, so every terminal that draws it gives it 2 cells.
 // Each fallback is two printable ASCII characters: 2 cells everywhere, never East Asian Ambiguous (a CJK locale cannot widen it).
-export const PET_ICON_CANDIDATES: readonly PetIconCandidate[] = [
-  { id: 'cat', emoji: '\u{1F431}', fallback: ':3' }, // 🐱 cat face
-  { id: 'chick', emoji: '\u{1F423}', fallback: 'o<' }, // 🐣 hatching chick
-  { id: 'crab', emoji: '\u{1F980}', fallback: '}{' }, // 🦀 crab (Ferris, the pet's sprite)
-]
+export const PET_ICON_CANDIDATES: readonly PetIconCandidate[] = Object.values(GLYPHS.pet.icons).map(({ id, emoji, fallback }) => ({ id, emoji, fallback }))
 export const DEFAULT_PET_ICON = 'cat'
 
 // What the env says about the terminal, read once at session start ($.env.get with literal names; see register.tsx).

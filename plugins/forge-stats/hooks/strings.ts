@@ -1,3 +1,5 @@
+import { GLYPHS } from '../vendor/tux/glyphs'
+import { THRESHOLDS } from '../vendor/tux/palette'
 // UI strings, en + zh-TW. Locale order mirrors codeforge's own: CODEFORGE_LOCALE,
 // then Claude Code's `language` setting, then LC_ALL / LANG, else en.
 
@@ -54,7 +56,7 @@ const EN = {
   fleetOld: '{h} old',
   fleetWinReset: 'reset',
   fleetSkipped: '{n} files skipped',
-  paneHint: '↑↓ scroll · PgUp/PgDn page · Home oldest · End newest',
+  paneHint: `↑${GLYPHS.structure.behind} scroll · PgUp/PgDn page · Home oldest · End newest`,
   paneMore: '↑ {n} more',
   usage: 'Usage',
   usageAccounts: 'accounts',
@@ -92,7 +94,7 @@ const EN = {
   quotaUsedPct: '{p} used',
   quotaNoData: 'no data',
   quotaLegendEst: 'est = local count, not provider-reported',
-  quotaLegendTight: 'tight = used >= 90%',
+  quotaLegendTight: `tight = used >= ${THRESHOLDS.warn}%`,
   quotaW5h: '5h',
   quotaWWeekly: 'week',
   quotaWDaily: 'day',
@@ -158,7 +160,7 @@ const ZH_TW: Record<StringId, string> = {
   fleetOld: '{h} 舊',
   fleetWinReset: '已重置',
   fleetSkipped: '{n} 份略過',
-  paneHint: '↑↓ 捲動 · PgUp/PgDn 翻頁 · Home 最舊 · End 最新',
+  paneHint: `↑${GLYPHS.structure.behind} 捲動 · PgUp/PgDn 翻頁 · Home 最舊 · End 最新`,
   paneMore: '↑ 還有 {n} 行',
   usage: '用量',
   usageAccounts: '帳號',
@@ -196,7 +198,7 @@ const ZH_TW: Record<StringId, string> = {
   quotaUsedPct: '已用 {p}',
   quotaNoData: '無資料',
   quotaLegendEst: '估 = 本機計數，不是供應商回報',
-  quotaLegendTight: '緊 = 已用 ≥ 90%',
+  quotaLegendTight: `緊 = 已用 ≥ ${THRESHOLDS.warn}%`,
   quotaW5h: '5h',
   quotaWWeekly: '週',
   quotaWDaily: '日',

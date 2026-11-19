@@ -1,3 +1,5 @@
+import { dur } from '../vendor/tux/format'
+import { GLYPHS } from '../vendor/tux/glyphs'
 // Pure helpers for the forge-stats band and pane: no `$`, so tests and the renderer share them.
 // Visual vocabulary follows autopilot's live pane design system
 // (~/projects/autopilot/docs/plans/2026-10-13-live-pane-design-system.md): grid 0/2/4/12,
@@ -6,21 +8,10 @@
 import type { Layout, PetData, PetView, SessionView, SpriteData, VillageData } from '../types'
 
 // ---------------------------------------------------------------------------------------------
-// display width (copied from autopilot mods/live/ui.ts: a plugin cannot import another plugin)
+// display width: pinned autopilot tux implementation (including ANSI stripping)
 
-export function cellWidth(c: number): number {
-  if (c === 0 || (c >= 0x0300 && c <= 0x036f) || (c >= 0x200b && c <= 0x200f) || (c >= 0xfe00 && c <= 0xfe0f) || (c >= 0x20d0 && c <= 0x20ff)) return 0
-  if ((c >= 0x1100 && c <= 0x115f) || (c >= 0x2e80 && c <= 0x303e) || (c >= 0x3041 && c <= 0x33ff) || (c >= 0x3400 && c <= 0x4dbf)
-    || (c >= 0x4e00 && c <= 0x9fff) || (c >= 0xa000 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff)
-    || (c >= 0xfe30 && c <= 0xfe4f) || (c >= 0xff00 && c <= 0xff60) || (c >= 0xffe0 && c <= 0xffe6)
-    || (c >= 0x1f300 && c <= 0x1f64f) || (c >= 0x1f900 && c <= 0x1f9ff) || (c >= 0x20000 && c <= 0x3fffd)) return 2
-  return 1
-}
-export function displayWidth(text: string): number {
-  let w = 0
-  for (const ch of text) w += cellWidth(ch.codePointAt(0) as number)
-  return w
-}
+import { cellWidth, displayWidth } from '../vendor/tux/width'
+export { cellWidth, displayWidth }
 export const padRight = (t: string, w: number) => t + ' '.repeat(Math.max(0, w - displayWidth(t)))
 export const padLeft = (t: string, w: number) => ' '.repeat(Math.max(0, w - displayWidth(t))) + t
 
@@ -29,13 +20,13 @@ export const padLeft = (t: string, w: number) => ' '.repeat(Math.max(0, w - disp
 
 export const KEY_W = 12
 export const GLYPH = {
-  open: '▾',
-  rule: '─',
-  bullet: '◦',
-  latest: '●',
-  empty: '—',
-  meterOn: '▰',
-  meterOff: '▱',
+  open: GLYPHS.structure.open,
+  rule: GLYPHS.structure.rule,
+  bullet: GLYPHS.structure.bullet,
+  latest: GLYPHS.structure.fresh,
+  empty: GLYPHS.structure.empty,
+  meterOn: GLYPHS.chart.meterOn,
+  meterOff: GLYPHS.chart.meterOff,
 } as const
 
 // ---------------------------------------------------------------------------------------------
@@ -233,38 +224,6 @@ export function heartbeatText(sid: string, now: number, layout: Layout, bandSeen
   return JSON.stringify({ schema: HEARTBEAT_SCHEMA, session_id: sid, written_at_ms: now, layout, summary_row: true, band_seen: bandSeen })
 }
 
-export const BAND_MIN_ROWS = 12
-export const BAND_MIN_COLUMNS = 26
-export const BAND_GAP = 2
-
-export const BAND_PET_W = 30
-export const BAND_MEMORY_W = 28
-
-export type BandColumnId = 'ferris' | 'pet' | 'memory'
-export type BandColumn = { id: BandColumnId; width: number }
-
-/**
- * The band's columns, left to right, in priority order: Ferris, pet, memory and brain (forge-columns plan §2.5; speed
- * and the request table moved to autopilot, B32). As many as fit in `bodyColumns`, a gap before each but the first;
- * the first that does not fit ends the row.
- */
-export function bandLayout(bodyColumns: number, spriteWidth: number): BandColumn[] {
-  const want: BandColumn[] = [
-    { id: 'ferris', width: spriteWidth },
-    { id: 'pet', width: BAND_PET_W },
-    { id: 'memory', width: BAND_MEMORY_W },
-  ]
-  const out: BandColumn[] = []
-  let used = 0
-  for (const c of want) {
-    const need = (out.length > 0 ? BAND_GAP : 0) + c.width
-    if (used + need > bodyColumns) break
-    out.push({ ...c })
-    used += need
-  }
-  return out
-}
-
 const LIGHTS_MEMORY = ['active', 'empty', 'hidden'] as const
 const LIGHTS_BRAIN = ['ok', 'degraded', 'offline', 'pending', 'hidden'] as const
 
@@ -294,17 +253,6 @@ export function parseSessionView(text: string | null, sid: string): SessionView 
 
 export const MINI_WIDTH = 16
 export const MINI_HEIGHT = 12
-export const MINI_MIN_ROWS = 6
-
-export type BandTier = 'label' | 'summary' | 'mini' | 'full'
-
-/** One row → nothing (the tab label is autopilot's, B32); 2–5 rows or a thin column → a one-row summary; 6–11 → mini Ferris; 12+ → full. */
-export function bandTier(maxRows: number, bodyColumns: number, hasMini: boolean): BandTier {
-  if (maxRows <= 1) return 'label'
-  if (maxRows < MINI_MIN_ROWS || bodyColumns < BAND_MIN_COLUMNS) return 'summary'
-  if (maxRows < BAND_MIN_ROWS) return hasMini ? 'mini' : 'summary'
-  return 'full'
-}
 
 /** `village.rgb` as a `#rrggbb` text colour; null when it is not three 0–255 integers. */
 export function rgbHex(rgb: readonly number[]): string | null {
@@ -336,14 +284,6 @@ export function parseFleet(value: unknown): FleetSummary | null {
 
 // One part of the summary line: a glyph in its state colour, a number or word in the default colour, a dim separator. Colours are theme keys (guideline §3.3-4).
 export type SummaryPart = { text: string; color?: 'warning' | 'error' | 'suggestion' | 'inactive' | 'success'; dim?: boolean }
-// the state glyphs of the shared table (guideline §3.1), most severe first: ▲ need_you, ✗ failed, ⊘ stalled, ● running, ⋯ waiting
-const COUNTS: readonly { key: keyof FleetCounts; glyph: string; color: SummaryPart['color'] }[] = [
-  { key: 'needYou', glyph: '▲', color: 'warning' },
-  { key: 'failed', glyph: '✗', color: 'error' },
-  { key: 'stuck', glyph: '⊘', color: 'error' },
-  { key: 'running', glyph: '●', color: 'suggestion' },
-  { key: 'waiting', glyph: '⋯', color: 'inactive' },
-]
 /** Spacing rule (guideline §3.5): a chip is glyph, ONE half-width space, count (`⊘ 12`); chips are CHIP_GAP apart; the word and the first chip are one space apart. */
 export const CHIP_GAP = '  '
 export const CHIP_SPACE = ' '
@@ -353,49 +293,18 @@ export function chipParts(glyph: string, color: SummaryPart['color'], value: str
 }
 const partsWidth = (parts: readonly SummaryPart[]) => parts.reduce((n, p) => n + displayWidth(p.text), 0)
 
-// The line, widest form first, the first that fits `cols` wins (guideline §2.2):
-//   艦隊 ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11 · Ferris Lv.3   (chip = glyph + one space + count; two spaces between chips; one space after the word)
-// dropping from the end: the pet, then ⋯, ●, ⊘, ✗ (each only while a more severe count stays), then the word, leaving the most severe non-zero count alone.
-// No count: 「艦隊 ✓」 only after a fetch that succeeded, 「艦隊 ?」 when the last fetch failed or none succeeded yet. No summary (`fleet` null): the pet alone.
-// null when nothing fits or there is nothing to draw: the caller passes the row on (`next(e)`), never draws a blank row.
-export function summaryParts(fleet: FleetSummary | null, petTag: string | null, cols: number, word: string, quota: SummaryPart[][] | null = null): SummaryPart[] | null {
-  const sep: SummaryPart = { text: ' · ', dim: true }
+/** Quota forms first (pet only on the widest), then the pet alone; null passes the row on. */
+export function summaryParts(petTag: string | null, cols: number, quota: SummaryPart[][] | null = null): SummaryPart[] | null {
   const pet: SummaryPart[] = petTag === null ? [] : [{ text: petTag }]
   const forms: SummaryPart[][] = []
-  // the quota group (G40 §6.1) sits after the fleet part and before the pet; `quota` is its forms, widest first. The pet goes before any of them narrows
-  // (only the widest is tried with it); once the group is gone the fleet forms below take over, then the pet alone.
-  let fleetFull: SummaryPart[] = []
-  if (fleet === null) {
-    if (pet.length > 0) forms.push(pet)
-  } else {
-    const label: SummaryPart = { text: word, dim: true }
-    const counts = COUNTS.filter(c => fleet.totals[c.key] > 0).map(c => chipParts(c.glyph, c.color, String(fleet.totals[c.key])))
-    if (counts.length === 0) {
-      const mark: SummaryPart = fleet.error === null && fleet.fetchedMs !== null ? { text: '✓', color: 'success' } : { text: '?', color: 'inactive' }
-      const line = [label, { text: CHIP_SPACE }, mark]
-      fleetFull = line
-      if (pet.length > 0) forms.push([...line, sep, ...pet])
-      forms.push(line)
-    } else {
-      const chips = (n: number) => counts.slice(0, n).flatMap((c, i) => (i === 0 ? c : [{ text: CHIP_GAP }, ...c]))
-      const withWord = (n: number) => [label, { text: CHIP_SPACE }, ...chips(n)]
-      fleetFull = withWord(counts.length)
-      if (pet.length > 0) forms.push([...withWord(counts.length), sep, ...pet])
-      for (let n = counts.length; n >= 1; n--) forms.push(withWord(n))
-      forms.push(counts[0]) // the most severe count alone, no word
-    }
-  }
-  if (quota !== null && quota.length > 0) {
-    const lead = fleetFull.length > 0 ? [...fleetFull, sep] : []
-    const withQuota: SummaryPart[][] = []
-    quota.forEach((g, i) => {
-      if (i === 0 && pet.length > 0) withQuota.push([...lead, ...g, sep, ...pet])
-      withQuota.push([...lead, ...g])
+  if (quota !== null) {
+    quota.forEach((group, i) => {
+      if (i === 0 && pet.length > 0) forms.push([...group, { text: ' · ', dim: true }, ...pet])
+      forms.push(group)
     })
-    forms.unshift(...withQuota)
   }
-  for (const f of forms) if (partsWidth(f) <= cols) return f
-  return null
+  if (pet.length > 0) forms.push(pet)
+  return forms.find(f => partsWidth(f) <= cols) ?? null
 }
 
 // ---- the usage summary (PM G36): `codeforge usage collect` writes <live_base>/codeforge/usage/summary.json (`codeforge.usage-summary/1`,
@@ -573,11 +482,5 @@ export function compactCount(n: number): string {
   return (n / 1e6).toFixed(1) + 'M'
 }
 
-/** A countdown to `atMs`: `2h10m`, `45m`, `3d4h`; `—` once past. */
-export function countdown(atMs: number, now: number): string {
-  const m = Math.floor((atMs - now) / 60_000)
-  if (m < 0) return GLYPH.empty
-  if (m < 60) return `${m}m`
-  if (m < 24 * 60) return `${Math.floor(m / 60)}h${m % 60}m`
-  return `${Math.floor(m / 1440)}d${Math.floor((m % 1440) / 60)}h`
-}
+/** Countdown using the shared duration units, with zero-padded minutes after hours. */
+export const countdown = (atMs: number, now: number): string => dur(atMs - now)

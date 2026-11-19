@@ -1,3 +1,6 @@
+import { GLYPHS } from '../vendor/tux/glyphs'
+import { PALETTE } from '../vendor/tux/palette'
+import { pct } from '../vendor/tux/format'
 // The 全部帳號 / all-accounts pane tab: reads `codeforge.fleet-quota/1` (written by `codeforge usage collect` when CODEFORGE_FLEET_USAGE_DIR is
 // set), pure: no `$`, no I/O. The JSON already carries the warnings and projections; nothing is recomputed here, a stale file is shown with its age.
 // Spec: doc/specs/codeforge-usage.md (全帳號配額表), doc/specs/codeforge-mod-ui.md.
@@ -155,7 +158,7 @@ export function parseFleetQuota(text: string | null): FleetQuotaView {
 
 const seg = (text: string, role?: QSeg['role'], color?: string): QSeg => ({ text, ...(role ? { role } : {}), ...(color ? { color } : {}) })
 const width = (l: QLine) => l.reduce((n, s) => n + displayWidth(s.text), 0)
-const pctText = (p: number) => `${Math.round(p * 100)}%`
+
 const SEP = ' · '
 /** The widest the name column (name · email) may be; a narrow pane leaves it less, so the numbers stay on the line. */
 const NAME_MAX = 40
@@ -185,10 +188,10 @@ const label = (a: FleetAccount, _tr: T) => (a.email === null || a.email === a.na
 function warnLine(a: FleetAccount, useTarget: number, cols: number, tr: T, now: number): QLine | null {
   const w = a.weekly
   if (w === null || w.reset || w.warn === null) return null
-  const head: QLine = [seg(tr(w.warn === 'waste' ? 'fleetWaste' : 'fleetShort'), 'bold', 'warning'), seg(SEP, 'dim'), seg(clipCells(label(a, tr), Math.min(NAME_MAX, Math.max(10, cols - 26))), 'bold'), seg(SEP, 'dim'), seg(`${tr('quotaWWeekly')} ${pctText(w.pct)}`)]
+  const head: QLine = [seg(tr(w.warn === 'waste' ? 'fleetWaste' : 'fleetShort'), 'bold', PALETTE.attention), seg(SEP, 'dim'), seg(clipCells(label(a, tr), Math.min(NAME_MAX, Math.max(10, cols - 26))), 'bold'), seg(SEP, 'dim'), seg(`${tr('quotaWWeekly')} ${pct(w.pct)}`)]
   const runout: QLine = w.warn === 'short' && w.exhaustAt !== null ? [seg(SEP, 'dim'), seg(tr('fleetRunout', { t: countdown(w.exhaustAt * 1000, now) }))] : []
-  const reset: QLine = [seg(SEP, 'dim'), seg(`${tr('fleetReset')} ◷ ${countdown(w.resetsAt * 1000, now)}`, 'dim')]
-  const target: QLine = w.warn === 'waste' ? [seg(SEP, 'dim'), seg(tr('fleetTarget', { p: pctText(useTarget) }), 'dim')] : []
+  const reset: QLine = [seg(SEP, 'dim'), seg(`${tr('fleetReset')} ${GLYPHS.structure.age} ${countdown(w.resetsAt * 1000, now)}`, 'dim')]
+  const target: QLine = w.warn === 'waste' ? [seg(SEP, 'dim'), seg(tr('fleetTarget', { p: pct(useTarget) }), 'dim')] : []
   return fit([[...head, ...runout, ...reset, ...target], [...head, ...runout, ...reset], [...head, ...runout], head], cols)
 }
 
@@ -198,7 +201,7 @@ const NOTE_MIN_CELLS = 8
 
 /** The row's operator tail: the note, then `◷ 2d3h` to the next rule reset; the note is cut with `…` before the countdown is. `null` when too little room. */
 function noteTail(a: FleetAccount, room: number, now: number): string | null {
-  const cd = a.noteResetsAt === null ? null : '◷ ' + countdown(a.noteResetsAt * 1000, now)
+  const cd = a.noteResetsAt === null ? null : GLYPHS.structure.age + ' ' + countdown(a.noteResetsAt * 1000, now)
   const note = a.note
   const cut = (n: string, r: number) => (displayWidth(n) <= r ? n : clipCells(n, r - 1) + '…')
   if (note === null) return cd !== null && displayWidth(cd) <= room ? cd : null
@@ -230,7 +233,7 @@ function accountBody(a: FleetAccount, aliasW: number, cols: number, tr: T, now: 
   const shown = [...a.hosts.filter(h => !a.oldHosts.includes(h)), ...a.hosts.filter(h => a.oldHosts.includes(h)).map(h => tr('fleetOld', { h }))]
   const hosts: QLine = shown.length > 0 ? [seg('  ' + shown.join(','), 'dim')] : []
   const plan: QLine = [seg('  ' + tr('fleetPlan', { p: a.plan === null ? tr('fleetPlanUnknown') : PLAN_NAME[a.plan] }), 'dim')]
-  const tight = (p: number): QLine => (isTight(p) ? [seg(' ' + tr('quotaTight'), 'bold', 'warning')] : [])
+  const tight = (p: number): QLine => (isTight(p) ? [seg(' ' + tr('quotaTight'), 'bold', PALETTE.attention)] : [])
   const word = (id: 'fleetNoSource' | 'fleetExpired' | 'fleetStale'): QLine => [seg(tr(id), 'idle')]
   if (a.state !== 'ok') {
     const w = word(a.state === 'no_source' ? 'fleetNoSource' : a.state === 'expired' ? 'fleetExpired' : 'fleetStale')
@@ -241,10 +244,10 @@ function accountBody(a: FleetAccount, aliasW: number, cols: number, tr: T, now: 
   const wk = a.weekly
   const five = a.fiveHour
   // a window past its reset says so instead of its old pct
-  const W: QLine = wk === null ? [] : wk.reset ? [seg(`${tr('quotaWWeekly')} ${tr('fleetWinReset')}`, 'idle')] : [seg(`${tr('quotaWWeekly')} ${pctText(wk.pct)}`), ...tight(wk.pct)]
-  const R: QLine = wk === null || wk.reset ? [] : [seg(` ◷ ${countdown(wk.resetsAt * 1000, now)}`, 'dim')]
+  const W: QLine = wk === null ? [] : wk.reset ? [seg(`${tr('quotaWWeekly')} ${tr('fleetWinReset')}`, 'idle')] : [seg(`${tr('quotaWWeekly')} ${pct(wk.pct)}`), ...tight(wk.pct)]
+  const R: QLine = wk === null || wk.reset ? [] : [seg(` ${GLYPHS.structure.age} ${countdown(wk.resetsAt * 1000, now)}`, 'dim')]
   const lead = wk === null ? '' : '  '
-  const F: QLine = five === null ? (a.fiveNoSource ? [seg(`${lead}${tr('quotaW5h')} ${tr('fleetNoSource')}`, 'idle')] : []) : [seg((wk === null ? '' : '  ') + `${tr('quotaW5h')} ${five.reset ? tr('fleetWinReset') : pctText(five.pct)}`, five.reset ? 'idle' : undefined), ...(five.reset ? [] : tight(five.pct))]
+  const F: QLine = five === null ? (a.fiveNoSource ? [seg(`${lead}${tr('quotaW5h')} ${tr('fleetNoSource')}`, 'idle')] : []) : [seg((wk === null ? '' : '  ') + `${tr('quotaW5h')} ${five.reset ? tr('fleetWinReset') : pct(five.pct)}`, five.reset ? 'idle' : undefined), ...(five.reset ? [] : tight(five.pct))]
   // the widest form first; a field is dropped whole: hosts, the age, the 5h window, then the countdown
   return fit(
     [

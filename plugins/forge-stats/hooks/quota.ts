@@ -1,9 +1,11 @@
+import { THRESHOLDS } from '../vendor/tux/palette'
+import { pctInt } from '../vendor/tux/format'
 // G40 quota model: the pure reader side of autopilot's `fleet.quota/1` mirror (no I/O, no rendering).
 // Contract: autopilot `project/plans/2026-11-03-g40-agent-lane-quota.md` §5.2 (merge), §20-§22 (record, view, refusal, token state);
 // display rules: doc/plans/2026-11-03-g40-usage-accounts.md §10.
 
 // contract:begin quota — `fleet.quota/1` mirror constants. Every number the contract names lives here and nowhere else.
-export const QUOTA_CONTRACT = {
+const MIRROR_CONTRACT = {
   "schema": "fleet.quota/1",
   "view_schema": "fleet.quota-view/1",
   "ns_schema": "fleet.quota-ns/1",
@@ -26,6 +28,9 @@ export const QUOTA_CONTRACT = {
   "epoch_s_max": 100000000000
 } as const
 // contract:end
+
+// Keep the Rust wire-contract snapshot above stable; display thresholds belong to tux.
+export const QUOTA_CONTRACT = { ...MIRROR_CONTRACT, tight: THRESHOLDS.warn / 100 } as const
 
 const Q = QUOTA_CONTRACT
 const PROVIDER_RE = new RegExp(Q.provider)
@@ -364,4 +369,4 @@ export function tightest(merged: MergedQuota): MergedWindow | null {
   return best
 }
 
-export const isTight = (utilization: number) => utilization >= Q.tight
+export const isTight = (utilization: number) => pctInt(utilization) >= THRESHOLDS.warn

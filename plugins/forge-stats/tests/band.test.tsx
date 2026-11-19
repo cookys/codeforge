@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { bandLayout, halfBlockCells, rgbHex, parseFleet, parseSessionView, parseSprite, sanitizeSessionId, summaryParts } from '../hooks/model'
+import { halfBlockCells, rgbHex, parseFleet, parseSessionView, parseSprite, sanitizeSessionId, summaryParts } from '../hooks/model'
 import { FERRIS_MINI } from './ferris-mini'
 import { FERRIS } from './ferris-sprite'
 import { VECTORS } from './session-id-vectors'
@@ -92,23 +92,6 @@ const lastBeat = (w: World) => {
 test('sanitizeSessionId matches codeforge on the shared vectors', () => {
   expect(VECTORS.length > 0).toBe(true)
   for (const v of VECTORS) expect(sanitizeSessionId(v.input)).toBe(v.expected)
-})
-
-test('bandLayout adds columns in priority order as the width allows, 1 to 3: no speed or request table (B32)', () => {
-  const ids = (cols: number, sprite = 24) => bandLayout(cols, sprite).map(c => c.id).join(' ')
-  // each threshold and one cell below it (24-wide Ferris: 24, 56, 86)
-  expect(ids(23)).toBe('')
-  expect(ids(24)).toBe('ferris')
-  expect(ids(55)).toBe('ferris')
-  expect(ids(56)).toBe('ferris pet')
-  expect(ids(85)).toBe('ferris pet')
-  expect(ids(86)).toBe('ferris pet memory')
-  expect(ids(300)).toBe('ferris pet memory')
-  // the 16-wide mini Ferris moves every threshold down by 8
-  expect(ids(78, 16)).toBe('ferris pet memory')
-  expect(ids(77, 16)).toBe('ferris pet')
-  // the columns keep their widths: nothing takes the spare width
-  expect(bandLayout(200, 24).map(c => c.width)).toEqual([24, 30, 28])
 })
 
 test('parseSessionView reads this session only', () => {
@@ -262,7 +245,7 @@ const AUTOPILOT_V2 = {
   }) as never,
 }
 
-test('parseFleet takes autopilot.fleet v 1 only; summaryParts gives the widest form that fits, dropping from the end and keeping the most severe count', () => {
+test('parseFleet takes autopilot.fleet v 1 only, with valid fetch fields', () => {
   expect(parseFleet(FLEET)?.totals).toEqual(FLEET.totals)
   for (const bad of [null, 3, {}, { ...FLEET, v: 2 }, { ...FLEET, totals: { ...FLEET.totals, stuck: -1 } }, { ...FLEET, totals: { ...FLEET.totals, waiting: '1' } }]) expect(parseFleet(bad)).toBe(null)
   // review g1 (e4ebee78): odd fetch fields are no summary, so a broken atom can never draw ✓
@@ -271,46 +254,14 @@ test('parseFleet takes autopilot.fleet v 1 only; summaryParts gives the widest f
   const { fetchedMs: _drop2, ...noTime } = zeroed
   for (const bad of [noError, noTime, { ...zeroed, error: 42 }, { ...zeroed, error: false }, { ...zeroed, fetchedMs: NaN }, { ...zeroed, fetchedMs: Infinity }, { ...zeroed, fetchedMs: '1' }]) {
     expect(parseFleet(bad)).toBe(null)
-    expect(summaryParts(parseFleet(bad), null, 40, 'fleet')).toBe(null) // nothing drawn: the row is passed on
   }
-  expect(summaryParts(parseFleet(zeroed), null, 40, 'fleet')?.map(p => p.text).join('')).toBe('fleet ✓') // the good one still does
-  // the zh-TW word: 艦隊 is 4 cells
-  expect(summaryParts(parseFleet(FLEET), null, 18, '艦隊')?.map(p => p.text).join('')).toBe('艦隊 ▲ 1  ✗ 1  ⊘ 2')
-  const f = parseFleet(FLEET)
-  const text = (cols: number, pet: string | null = 'Ferris Lv.3') => summaryParts(f, pet, cols, 'fleet')?.map(p => p.text).join('')
-  expect(text(80)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11 · Ferris Lv.3')
-  expect(text(43)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11') // the pet goes first
-  expect(text(30)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4  ⋯ 11') // 30 cells: fits exactly
-  expect(text(29)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4') // then ⋯
-  expect(text(24)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2  ● 4') // 24 cells: fits exactly
-  expect(text(23)).toBe('fleet ▲ 1  ✗ 1  ⊘ 2') // then ●
-  expect(text(18)).toBe('fleet ▲ 1  ✗ 1') // then ⊘
-  expect(text(13)).toBe('fleet ▲ 1')
-  expect(text(8)).toBe('▲ 1') // the most severe count alone, no word
-  expect(text(2)).toBe(undefined) // nothing fits: the row is passed on
-  // the most severe non-zero count leads when ▲ is 0
-  const noNeed = parseFleet({ ...FLEET, totals: { needYou: 0, failed: 0, stuck: 2, running: 1, waiting: 0 } })
-  expect(summaryParts(noNeed, null, 3, 'fleet')?.map(p => p.text).join('')).toBe('⊘ 2')
-  // spacing invariant: a count glyph is always followed by a space, never three spaces in a row, at every width
-  const all = parseFleet({ ...FLEET, totals: { needYou: 1, failed: 1, stuck: 2, running: 4, waiting: 11 } })
-  for (let cols = 0; cols <= 80; cols++) {
-    const t = summaryParts(all, 'Ferris Lv.3', cols, 'fleet')?.map(p => p.text).join('') ?? ''
-    expect(/[▲✗⊘●⋯][^ ]/.test(t)).toBe(false)
-    expect(/ {3}/.test(t)).toBe(false)
-    // a label belongs to its chip (§3.5 rule 2): the word is followed by exactly one space, never the two-space chip gap
-    if (t.startsWith('fleet')) expect(/^fleet [▲✗⊘●⋯] /.test(t)).toBe(true)
-  }
-  // colours are the shared table's theme keys; the word and separator dim
-  const parts = summaryParts(f, 'Ferris Lv.3', 80, 'fleet')!
-  expect(parts.filter(p => p.color).map(p => p.text + ':' + p.color)).toEqual(['▲:warning', '✗:error', '⊘:error', '●:suggestion', '⋯:inactive'])
-  expect(parts.filter(p => p.dim).map(p => p.text)).toEqual(['fleet', ' · '])
-  // no count: ✓ only after a fetch that succeeded; ? on an error or before any fetch
-  const zero = { needYou: 0, failed: 0, stuck: 0, running: 0, waiting: 0 }
-  expect(summaryParts(parseFleet({ ...FLEET, totals: zero }), null, 40, 'fleet')?.map(p => p.text).join('')).toBe('fleet ✓')
-  expect(summaryParts(parseFleet({ ...FLEET, totals: zero, error: 'hub unreachable' }), null, 40, 'fleet')?.map(p => p.text).join('')).toBe('fleet ?')
-  expect(summaryParts(parseFleet({ ...FLEET, totals: zero, fetchedMs: null }), null, 40, 'fleet')?.map(p => p.text).join('')).toBe('fleet ?')
-  // no summary and no pet: nothing to draw
-  expect(summaryParts(null, null, 40, 'fleet')).toBe(null)
+  expect(parseFleet(zeroed)?.totals).toEqual(zeroed.totals)
+})
+
+test('summaryParts draws the pet alone only when it fits', () => {
+  expect(summaryParts('Ferris Lv.3', 11)).toEqual([{ text: 'Ferris Lv.3' }])
+  expect(summaryParts('Ferris Lv.3', 10)).toBe(null)
+  expect(summaryParts(null, 40)).toBe(null)
 })
 
 test('a label alone never blits the band', async ($, on) => {

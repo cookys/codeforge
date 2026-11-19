@@ -80,14 +80,14 @@ test('with the file the strip gains the tab, and it draws warnings first, then o
   await ui.press({ key: 'tab-fleet' })
   const rows = rowsOf(await ui.drawn()).filter(r => r.trim() !== '')
   expect(rows[0]).toMatch(/^▾ All accounts +merged 3 min ago ─+$/)
-  expect(rows[1]).toMatch(/^will waste · waste · week 50% · resets ◷ 1d6h · target 85%$/)
-  expect(rows[2]).toMatch(/^will fall short \(est\.\) · short · week 60% · est\. out in 2d5h · resets ◷ 2d23h$/)
+  expect(rows[1]).toMatch(/^will waste · waste · week 50% · resets ◷ 1d06h · target 85%$/)
+  expect(rows[2]).toMatch(/^will fall short \(est\.\) · short · week 60% · est\. out in 2d05h · resets ◷ 2d23h$/)
   const body = rows.slice(3)
-  expect(body.find(r => r.startsWith('waste'))).toMatch(/^waste +week 50% ◷ 1d6h {2}5h 20% {2}plan unknown {2}gpu-a$/)
+  expect(body.find(r => r.startsWith('waste'))).toMatch(/^waste +week 50% ◷ 1d06h {2}5h 20% {2}plan unknown {2}gpu-a$/)
   expect(body.find(r => r.startsWith('short'))).toMatch(/^short +week 60% ◷ 2d23h {2}5h 91% tight {2}plan unknown {2}gpu-a$/)
-  expect(body.find(r => r.startsWith('tight'))).toMatch(/^tight +week 91% tight ◷ 4d5h {2}5h 10% {2}plan unknown {2}gpu-a,pm {2}45m ago$/)
+  expect(body.find(r => r.startsWith('tight'))).toMatch(/^tight +week 91% tight ◷ 4d05h {2}5h 10% {2}plan unknown {2}gpu-a,pm {2}45m ago$/)
   expect(body.find(r => r.startsWith('codeforge') || r.startsWith('codex'))).toMatch(/^codex +no source {2}plan unknown {2}gpu-a$/)
-  expect(body.find(r => r.startsWith('old-acct'))).toMatch(/^old-acct +expired {2}plan unknown {2}gpu-a {2}8h0m ago$/)
+  expect(body.find(r => r.startsWith('old-acct'))).toMatch(/^old-acct +expired {2}plan unknown {2}gpu-a {2}8h00m ago$/)
   await ui.unmount()
 })
 
@@ -97,8 +97,8 @@ test('zh-TW draws the tab with the CLI wording', async ($, on) => {
   expect(await strip(ui)).toEqual(['寵物', '用量', '全部帳號'])
   await ui.press({ key: 'tab-fleet' })
   const rows = rowsOf(await ui.drawn())
-  expect(rows.some(r => /^會浪費 · waste · 週 50% · 重置 ◷ 1d6h · 目標 85%$/.test(r))).toBe(true)
-  expect(rows.some(r => /^會不夠 估 · short · 週 60% · 估 2d5h 後用完 · 重置 ◷ 2d23h$/.test(r))).toBe(true)
+  expect(rows.some(r => /^會浪費 · waste · 週 50% · 重置 ◷ 1d06h · 目標 85%$/.test(r))).toBe(true)
+  expect(rows.some(r => /^會不夠 估 · short · 週 60% · 估 2d05h 後用完 · 重置 ◷ 2d23h$/.test(r))).toBe(true)
   expect(rows.some(r => /^codex +無來源/.test(r))).toBe(true)
   expect(rows.some(r => /^old-acct +過期/.test(r))).toBe(true)
   await ui.unmount()
@@ -386,7 +386,7 @@ test('parseFleetQuota reads source_note and note; an old file without them still
   expect(parseFleetQuota(JSON.stringify(fleet([acct({ alias: 'a', note: 'x'.repeat(40) })]))).status).toBe('ok')
 })
 
-// the operator's weekly reset rule: `note_resets_at` + `note_reset_rule` (both or neither), drawn as a dim `◷ 2d3h` after the note
+// the operator's weekly reset rule: `note_resets_at` + `note_reset_rule` (both or neither), drawn as a dim `◷ 2d03h` after the note
 const RULED = () =>
   fleet([
     acct({ alias: 'acct-11111111', name: 'cookys', weekly: wk({ pct: 0.2 }) }),
@@ -438,10 +438,10 @@ test('the rule countdown is drawn dim after the note, and alone on a row without
   const wide = await open($, 102)
   await wide.press({ key: 'tab-fleet' })
   const rows = rowsOf(await wide.drawn())
-  expect(rows.some(r => /^kimi +/.test(r) && r.endsWith('  本週已用完 ◷ 2d3h'))).toBe(true)
+  expect(rows.some(r => /^kimi +/.test(r) && r.endsWith('  本週已用完 ◷ 2d03h'))).toBe(true)
   expect(rows.some(r => /^twgame +/.test(r) && r.endsWith('  ◷ 1h29m'))).toBe(true) // a rule without a note
   const dim = (await wide.findAll({ type: 'Text' })).filter(n => (n as Node).props?.dimColor === true).map(n => textOf(n as Node))
-  expect(dim.some(t => t.includes('本週已用完 ◷ 2d3h'))).toBe(true)
+  expect(dim.some(t => t.includes('本週已用完 ◷ 2d03h'))).toBe(true)
   await wide.unmount()
 })
 
@@ -455,7 +455,7 @@ test('a narrow pane cuts the rule row note with … and keeps the countdown', as
     for (const l of r) expect(displayWidth(l) <= bodyColumns - 2).toBe(true)
     const kimi = r.find(l => l.startsWith('kimi')) as string
     // the countdown is never the part that is cut
-    if (bodyColumns >= 62) expect(kimi.endsWith('… ◷ 2d3h')).toBe(true)
+    if (bodyColumns >= 62) expect(kimi.endsWith('… ◷ 2d03h')).toBe(true)
     await ui.unmount()
   }
 })
@@ -517,4 +517,19 @@ test('parseFleetQuota reads five_hour_state no_source only with a null five_hour
     acct({ alias: 'a', five_hour_state: 'no_source', five_hour: { pct: 0.99, resets_at: 5, reset: true } }),
   ])
     expect(parseFleetQuota(JSON.stringify(fleet([bad]))).status).toBe('bad')
+})
+
+test('fleet usage turns yellow at 80 percent and stays plain just below it', async ($, on) => {
+  world(on, { fleet: JSON.stringify(fleet([
+    acct({ alias: 'below', weekly: wk({ pct: 0.799 }) }),
+    acct({ alias: 'at', weekly: wk({ pct: 0.8 }) }),
+  ])) })
+  const ui = await open($, 120)
+  await ui.press({ key: 'tab-fleet' })
+  const yellow = (await ui.findAll({ type: 'Text' })).filter(t => t.props.color === 'warning')
+  expect(yellow.map(t => t.text)).toEqual([' tight'])
+  const rows = rowsOf(await ui.drawn())
+  expect(rows.some(r => r.startsWith('below ') && r.includes('79%') && !r.includes('tight'))).toBe(true)
+  expect(rows.some(r => r.startsWith('at ') && r.includes('80% tight'))).toBe(true)
+  await ui.unmount()
 })

@@ -1,3 +1,6 @@
+import { GLYPHS } from '../vendor/tux/glyphs'
+import { PALETTE } from '../vendor/tux/palette'
+import { pct as tuxPct, pctInt } from '../vendor/tux/format'
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
@@ -225,7 +228,7 @@ function petLines(view: PetView, cols: number, tr: T, now: number, withArt = tru
   if (p.xp_to_next > 0) {
     const width = cols >= 100 ? 40 : Math.max(8, Math.min(20, cols - KEY_W - 18))
     const m = meter(p.xp / p.xp_to_next, width)
-    const pct = Math.floor((p.xp / p.xp_to_next) * 100)
+    const pct = pctInt(p.xp / p.xp_to_next)
     out.push(kv(tr('xp'), seg(m.on), seg(m.off, 'idle'), seg(padLeft(`${pct}%`, 5)), seg(`  ${p.xp}/${p.xp_to_next}`, 'dim')))
   }
   const stats: [string, number][] = [['ATK', p.atk], ['HP', p.hp], ['DEF', p.def], ['SUP', p.sup], ['VER', p.ver]]
@@ -483,7 +486,7 @@ function usageLines(view: UsageView, cols: number, tr: T, now: number, quota: { 
     const win = (label: string, w: UsageView['accounts'][number]['fiveHour'], withReset: boolean): Seg[] =>
       w === null
         ? [seg(`  ${label} `, 'dim'), seg(GLYPH.empty, 'dim')]
-        : [seg(`  ${label} `, 'dim'), seg(`${Math.floor(w.pct * 100)}%`), ...(withReset ? [seg(' ' + countdown(w.resetsAtMs, now), 'dim')] : [])]
+        : [seg(`  ${label} `, 'dim'), seg(tuxPct(w.pct)), ...(withReset ? [seg(' ' + countdown(w.resetsAtMs, now), 'dim')] : [])]
     const name = seg('  ' + padRight(a.name, KEY_W))
     // the widest form that fits: both windows with countdowns, then without, then 5h alone; a field is dropped whole, never cut
     const forms: Line[] = [
@@ -654,17 +657,17 @@ export const register: Register = on => {
       const k = "s" + i
       switch (s.role) {
         case 'structure':
-          return <Text key={k} color="subtle" wrap="truncate">{s.text}</Text>
+          return <Text key={k} color={PALETTE.structure} wrap="truncate">{s.text}</Text>
         case 'idle':
-          return <Text key={k} color="inactive" wrap="truncate">{s.text}</Text>
+          return <Text key={k} color={PALETTE.idle} wrap="truncate">{s.text}</Text>
         case 'dim':
           return <Text key={k} dimColor wrap="truncate">{s.text}</Text>
         case 'bold':
-          return <Text key={k} bold wrap="truncate">{s.text}</Text>
+          return <Text key={k} bold {...(s.color ? { color: s.color } : {})} wrap="truncate">{s.text}</Text>
         case 'mono':
           return <Text key={k} mono wrap="truncate">{s.text}</Text>
         default:
-          return <Text key={k} wrap="truncate">{s.text}</Text>
+          return <Text key={k} {...(s.color ? { color: s.color } : {})} wrap="truncate">{s.text}</Text>
       }
     }
 
@@ -721,7 +724,7 @@ export const register: Register = on => {
     paneTotal[paneTab] = total
     const win = windowOf(total, bodyRows, dock, paneScroll[paneTab])
     const shown = petBlock === null ? lines.slice(win.top, win.top + win.area) : lines
-    const more = [win.above > 0 ? tr('paneMore', { n: win.above }) : '', win.below > 0 ? '↓ ' + win.below : ''].filter(x => x !== '').join(' · ')
+    const more = [win.above > 0 ? tr('paneMore', { n: win.above }) : '', win.below > 0 ? GLYPHS.structure.behind + ' ' + win.below : ''].filter(x => x !== '').join(' · ')
 
     // top to bottom: blank pad (dock, short content), the "n more" row, the content, then the operation area. An overflowing tree carries one spare row under it so the engine
     // still has a row to scroll and raises ui.scroll for the arrows (UiScrollInput.by: "an arrow a row while the engine has rows to scroll"); the hook never lets it move.
@@ -780,7 +783,7 @@ export const register: Register = on => {
     const quotaForms = quotaState.present ? quotaBandForms(quotaBand(quotaEntries(quotaState, Math.floor(clockMs / 1000)), clockMs, tr)) : null
     // the one-line summary (TUI guideline §2.2): the pet and the quota chips; the widest form that fits, never wider than the row (bodyColumns may run ~2 wider)
     const petTag = p.status === 'ok' && p.pet !== null ? `${p.pet.name} Lv.${p.pet.level}` : null
-    const parts = summaryParts(null, petTag, Math.max(0, props.bodyColumns - 2), tr('fleet'), quotaForms)
+    const parts = summaryParts(petTag, Math.max(0, props.bodyColumns - 2), quotaForms)
     // with nothing to draw the row is passed on, never left blank
     if (parts === null) return next(e)
     bandDrew = true
