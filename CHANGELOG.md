@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - forge-stats has one layout, the band (shared-TUI plan P1b): a stored `layout: pane` is migrated to `band` at session start without opening the pane, and `/forge-stats layout pane` is refused. `/forge-stats` still opens the full view on demand.
 
 ### Added
+- Pre-push public guard (`scripts/push-ref-guard.sh`, PM 01M7RZVD): origin is public, so a push of any ref other than `develop` or `main` to a GitHub remote is refused. Deleting a remote ref stays allowed. Override one push with `CODEFORGE_PUBLIC_PUSH_OVERRIDE="<card or message id>: <reason>"`, which appends an audit line to `<git common dir>/codeforge-push-audit.log`. Re-run `./scripts/check-all.sh --install-hook` to pick it up.
 - `codeforge.quota/1` snapshot gains an optional `org_id` (the login's `organizationUuid` verbatim, omitted when absent; schema name unchanged) so the fleet courier can match a seat to a hangar pool key (fleet 01M7MMSB). Not in the summary, `fleet-quota.json` or `usage push`.
 
 - `codeforge usage` grew since 0.0.9: `export` (usage-sessions/1 per-session export), `fleet` and the all-accounts view, `plan` and `note` (monthly and one-shot resets), kimi, grok and agy collectors, and a Trinity quota import (`trinity-import`, run by a 15-minute timer).

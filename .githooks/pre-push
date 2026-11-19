@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
 # Enabled by `./scripts/check-all.sh --install-hook`. Local stand-in for CI: refuse the push if
 # any gate fails. Skip once with `git push --no-verify`.
-exec "$(git rev-parse --show-toplevel)/scripts/check-all.sh"
+# First the public-ref guard (origin is public: only develop/main; scripts/push-ref-guard.sh),
+# which reads git's ref lines on stdin, then the full gate.
+top="$(git rev-parse --show-toplevel)"
+"$top/scripts/push-ref-guard.sh" "$@" || exit 1
+exec "$top/scripts/check-all.sh"
