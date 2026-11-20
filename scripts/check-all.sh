@@ -77,6 +77,7 @@ CARGO=(cargo)
 step() { printf '\n\033[1m── %s ──\033[0m\n' "$*"; }
 
 step "fmt (pinned)"
+./scripts/fmt.test.sh
 ./scripts/fmt.sh --check
 
 step "clippy -D warnings (${TC:-default toolchain})"
@@ -117,7 +118,7 @@ shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh 
   scripts/check-private-leaks.sh scripts/check-private-leaks.test.sh scripts/hook-env.test.sh \
   .githooks/pre-push scripts/push-ref-guard.sh scripts/push-ref-guard.test.sh \
   scripts/tux-sync.sh scripts/tux-sync.test.sh scripts/tux-lock.sh scripts/tux-lock.test.sh \
-  scripts/tux-cross.sh scripts/tux-cross.test.sh scripts/check-cjk-safe.test.sh scripts/tux-golden-data.test.sh
+  scripts/tux-cross.sh scripts/tux-cross.test.sh scripts/check-cjk-safe.test.sh scripts/tux-golden-data.test.sh scripts/fmt.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh
