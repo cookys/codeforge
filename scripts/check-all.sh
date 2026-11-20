@@ -108,6 +108,10 @@ step "private-leaks (hashed denylist + email allowlist, public tree)"
 step "doc-drift"
 python3 scripts/check-doc-drift.py 2>/dev/null || python scripts/check-doc-drift.py
 
+step "architecture map coverage (ARCHITECTURE.md)"
+./scripts/check-architecture-coverage.test.sh
+./scripts/check-architecture-coverage.sh
+
 step "cargo deny (licenses)"
 cargo deny check licenses
 
@@ -120,7 +124,8 @@ shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh 
   scripts/tux-sync.sh scripts/tux-sync.test.sh scripts/tux-lock.sh scripts/tux-lock.test.sh \
   scripts/tux-cross.sh scripts/tux-cross.test.sh scripts/check-cjk-safe.test.sh scripts/tux-golden-data.test.sh scripts/fmt.test.sh \
   scripts/pane-gate/nojump-check.test.sh scripts/pane-gate/v74-keys/parse.test.sh \
-  scripts/pane-gate/v74-keys/ux-review.sh scripts/pane-gate/v74-keys/ux-review.test.sh
+  scripts/pane-gate/v74-keys/ux-review.sh scripts/pane-gate/v74-keys/ux-review.test.sh \
+  scripts/check-architecture-coverage.sh scripts/check-architecture-coverage.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh

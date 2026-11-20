@@ -12,6 +12,10 @@ CodeForge is also the first **Mnemos source** — Sprint 1 of the [Mnemos](https
 
 Full architecture in [`doc/specs/codeforge-mud-engine.md`](doc/specs/codeforge-mud-engine.md).
 
+Feature map (what the repo has, its status and how each feature is accepted): [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+Feature map (what the repo has, status, how each is accepted): [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Lore — Why CodeForge
 
 CodeForge is the personal smithy of the CodePower ecosystem.
