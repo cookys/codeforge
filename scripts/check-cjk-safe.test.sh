@@ -121,4 +121,4 @@ grep -q "SKIP" <<<"$GATE_OUTPUT" \
   || fail "control 8 output did not contain SKIP: $GATE_OUTPUT"
 passed=$((passed + 1))
 
-echo "ok - $passed controls passed"
+echo "check-cjk-safe.test.sh: ok ($passed controls)"

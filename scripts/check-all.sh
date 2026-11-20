@@ -97,6 +97,7 @@ python3 scripts/tux-lint.py --test
 python3 scripts/tux-lint.py
 
 step "cjk-safe"
+./scripts/check-cjk-safe.test.sh
 ./scripts/check-cjk-safe.sh
 
 step "private-leaks (hashed denylist + email allowlist, public tree)"
@@ -116,7 +117,7 @@ shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh 
   scripts/check-private-leaks.sh scripts/check-private-leaks.test.sh scripts/hook-env.test.sh \
   .githooks/pre-push scripts/push-ref-guard.sh scripts/push-ref-guard.test.sh \
   scripts/tux-sync.sh scripts/tux-lock.sh scripts/tux-lock.test.sh \
-  scripts/tux-cross.sh scripts/tux-cross.test.sh
+  scripts/tux-cross.sh scripts/tux-cross.test.sh scripts/check-cjk-safe.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh
