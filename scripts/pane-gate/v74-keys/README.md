@@ -2,6 +2,8 @@
 
 pane 每次交件都要附上 `run.py` 的輸出（全綠）和擷取圖，PM 才會實按。
 
+每個情境的沙盒都會設 `AUTOPILOT_V74_KEYLOG=<輸出目錄>/keylog-<情境>.jsonl`。autopilot r6 以後的 pane 會在這個檔逐行記下每個 v7.4 輸入 handler 收到的事件（不含輸入框文字），紅燈回報時連同擷取一起附上。
+
 ```
 ./run.py <autopilot-checkout> [--out DIR] [--only project|noproject]
 ```
