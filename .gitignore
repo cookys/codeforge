@@ -45,3 +45,6 @@ Thumbs.db
 
 # engine-laid mod types (Claude Code writes these on load)
 plugins/*/.claude-plugin/types/
+
+# per-task git worktrees (CLAUDE.md: Worktree and branch hygiene)
+/.claude/worktrees/

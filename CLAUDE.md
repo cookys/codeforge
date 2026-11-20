@@ -6,13 +6,41 @@
 - Not goals now: MUD 後段、自己產生配額資料、hosted CI。
 - Source: operator 已確認。；操作員 d-fb9989dc 定案（2026-11-05）
 
-## 這個 repo 是你的
+## This repo is yours
 
 這個 repo 是你的，你是它的長期維護者。看到壞掉、過時、重複或缺測試的地方，在授權範圍內直接修，不用等人指派；修不了的登進 backlog，寫明影響。不要把問題留給「之後的人」。
 
-## 授權範圍內做到驗收才停
+## Within your grant, stop only at acceptance
 
-授權範圍內的工作做到驗收才停：真實使用者在真實 build 上走過核心路徑，並附一行證據（截圖、指令或 URL）。測試綠、審查通過、推送都只是中間步驟。只有三種情況可以中途停下：需要 tier-2 破壞性操作、超出授權、要改 Goal 或里程碑。停下時一次說清楚，附上選項和建議。
+授權範圍內的工作做到驗收才停：已合併、live 已 pin 到那個 sha、真實使用者在真實 build 上走過核心路徑，並附一行證據（截圖、指令或 URL）。測試綠、審查通過、推送都只是中間步驟。守門類的改動（check-all 的閘門、pre-push guard、private-leaks 這類），還要在 live 上做一次反向探針：故意違規，確認真的會被擋下。
+
+只有三種情況可以中途停下：需要 tier-2 破壞性操作、超出授權、要改 Goal 或里程碑。停下時一次說清楚，附上選項和建議。
+
+## How we work
+
+- 工作狀態只記在 fleet task。開工、卡住、改期、交件都寫回單上，不用聊天代替。
+- 能開工的全部同時開工。實作交給便宜的引擎席（codex 優先；機械性的單交給更便宜的席），每條各用一個 worktree。本席只做判斷、審查和整合，不把工作排成單線。每條做完就立刻審，不等全部做完。
+- 隨時至少保留兩件可以直接開工的工作（`doc/BACKLOG.md` 的 ready 列）。手上這件卡住或做完時，下一件的預檢已經通過。
+- 要 go 的時候，同一時間把下一件準備好，不空等。內部換版的 go 跟 PM 要，先跑 canary，再全面換。
+- KR 和觀察期只量測，不擋上線。計畫要寫上線日和 fleet 單號，不能一放好幾週。
+- 卡住時只回報一次，附上建議，回報對象是 PM。在等別人時，寫上帶型別的 waiting_on（等哪張單、哪張卡、哪個人的哪則訊息）。
+- 同一件事失敗兩次，就換做法或換引擎。
+
+## Worktree and branch hygiene
+
+- **先確認分支再動手**：每次開始編輯前，以及恢復 session 或切換情境之後，先跑 `git status` 和 `git branch --show-current`，確認自己在對的分支和對的 worktree。
+- **一件工作一條分支一個 worktree**：分支命名用 `feat/<slug>`、`fix/<slug>`、`docs/<slug>`、`chore/<slug>`，從最新的 develop 開出來：`git worktree add .claude/worktrees/<slug> -b <branch> develop`（`.claude/worktrees/` 在 `.gitignore` 裡）。主 clone 永遠停在 develop，只用來整合（理由見 Conventions）。
+- **平行 worktree 不共用相依目錄**：每個 worktree 各有自己的 `target/`、node_modules 和 build 輸出，不用 symlink。
+- **commit 要帶 trailer**：每個 commit 都加上 `Fleet-Task: <26 碼單號>`。不在 develop 或 main 上直接 commit 功能改動。
+- **合併方式**：用 `git merge --no-ff` 合進 develop，合併前在獨立的一次呼叫裡跑 `./scripts/check-all.sh` 並看結束碼；合併訊息寫審查結論和 tip 測試綠燈。main 只在 PM 給 go 後合併。共用分支一律禁止 force-push 和改寫歷史。
+- **origin 是公開 repo**：只推 develop（自己的 lane 可直接推）和 main（要 PM 本人的 go）；pre-push guard 會擋其他 ref。功能分支不推 origin，所以「刪遠端分支」不是例行步驟；遠端已有的非 develop/main 分支要刪，先問 PM。
+- **合併後當場清乾淨**（屬於 tier 0）：`git branch -d <branch>`、`git worktree remove .claude/worktrees/<slug>`，最後 `git worktree prune`。
+- **不留孤兒**：
+  - 超過 3 天沒有 commit、又沒有對應活單的分支或 worktree，要嘛開單接著做，要嘛刪掉。
+  - 沒合併過的工作在刪除前，先打 tag `archive/<branch>`，再 `git bundle create` 到本機備份目錄並 `git bundle verify`，這樣才算 tier 1。archive tag 不推公開 origin。
+- **不把 stash 當倉庫**：stash 堆疊是所有 worktree 共用的，不用裸的 `git stash`。一輪結束時還有未提交的工作，就在分支上提交一個 WIP commit。
+- **live 只跑 pin 住的 sha 或 tag**，不跑分支的最新 commit。換版走既有的換版流程：每台主機先備份並記下 sha16，寫好回滾指令。
+- **測試不碰正式環境**：worktree 和測試一律用沙箱 HOME 或暫存目錄。手動餵 stdin 跑真的 `codeforge statusline` 會寫 live 配額檔，要設沙箱的 `AUTOPILOT_LIVE_DIR` 和 `CODEFORGE_DATA_DIR`。
 
 Claude Code 工作指南。
 
