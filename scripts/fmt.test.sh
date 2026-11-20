@@ -87,7 +87,7 @@ log_line() {
 
 # --- Control 1: no rustup on PATH → exit 1, stderr mentions rustup, cargo never called.
 BARE_PATH="/usr/bin:/bin"
-if command -v rustup >/dev/null 2>&1 || command -v cargo >/dev/null 2>&1; then
+if PATH="$BARE_PATH" command -v rustup >/dev/null 2>&1 || PATH="$BARE_PATH" command -v cargo >/dev/null 2>&1; then
   fail "control 1 premise broken: bare PATH $BARE_PATH resolves a real rustup or cargo"
 fi
 reset_log
