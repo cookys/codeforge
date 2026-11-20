@@ -16,3 +16,16 @@ pane 每次交件都要附上 `run.py` 的輸出（全綠）和擷取圖，PM �
 `parse.test.sh`（check-all 會跑）：用存下來的紅燈擷取（autopilot 94100764e）和手寫的綠燈框，檢查 `run.py` 的畫面解析；另用設計稿 ux-v7.4 的 S3 彩色擷取（`fixtures/design-S3.ans`）驗顏色判讀，用舊版設計稿（`fixtures/design-r3-S3.txt`，分頁列獨立一行）當反例。反向探針（沒換行的長句、還有空列卻截斷、★ 那行沒樣式、★ 那行樣式和 a: 一樣、純文字擷取判不出反白）必須判失敗。
 
 共 29 步：project 28 步、noproject 1 步。
+
+## UX 審查（PM 01M7XARR、01M7XBE2）
+
+`run.py` 全綠之後才跑：
+
+```
+./ux-review.sh <run.py 的輸出目錄> <autopilot sha>     # 用 Bash 的 run_in_background 跑
+```
+
+- `ux-review.py` 把這次實按的逐鍵序列、每一步的擷取（只留 pane 的框到畫面底部，連續空白寫成 ⟨N⟩，相同的畫面只指向第一次出現的步驟）、從彩色擷取讀出的樣式（目前分頁、每個選項），和設計稿 `doc/design/ux-gate/v74/`（S1–S10、窄寬度下框線）組成評審包 `ux-review.md`。驗收是紅的就拒絕組包（`--allow-red` 只給演練用）。組包前跑跟 `build-b2.py` 一樣的私有名稱檢查，命中就不寫檔。
+- 兩家異質引擎並行當嚴格 UX 總監：gemini-4-carbon-high（agy）和 gpt-6-astra（codex）。評四項：好不好用（各動作按幾個鍵）、資訊密度、與設計稿一致、閱讀舒適度；最後附 json（overall、axes、findings、verdict）。
+- `ux-review.py --verdict` 讀兩份輸出：兩家都 overall ≥ 8 且沒有 Critical 才 exit 0；分數不夠或有 Critical exit 1；沒有可讀的 json exit 2。結果在 `ux-verdict.txt`。
+- `ux-review.test.sh`（check-all 會跑）：不叫引擎，驗紅燈拒絕、組包內容、私有 email 擋下、四種判定。
