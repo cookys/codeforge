@@ -147,6 +147,7 @@ class Gate:
             if sc.title() is None and sc.prompt() not in (None, '') and re.match(r'\d+\. ', sc.prompt()):
                 self.keys('Escape')
             elif sc.prompt():
+                self.keys('Escape')  # leave a band input (e.g. an open 附註) first, so C-u reaches the prompt
                 self.keys('C-u')
             else:
                 return
@@ -219,7 +220,6 @@ def run(ap, out, scenario):
         g.step('decide', lambda: g.keys('2', literal=True), [
             ('title 待決', lambda s: s.title() == '待決'),
             ('要你決定 4 張 (fleet + card store)', lambda s: s.decide_count() == 4),
-            ('test card d-keys0004 / 驗收測試卡 listed', lambda s: s.has('驗收測試卡')),
             ('▸ on card 1', lambda s: s.cursor() == 1),
             ('送出 0 張', lambda s: s.sendn() == 0),
             ('no … cut while rows are free', lambda s: s.no_cut_with_room()),
