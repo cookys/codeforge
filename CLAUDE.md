@@ -5,6 +5,7 @@
 - Current milestone: G40 配額顯示：用真的本機鏡像資料顯示正確。這項卡在新帳號註冊 d-2a19fdb5。
   - 追蹤：backlog B45；fleet 單 01M7VAKYT6KFQQ2001X8Q7HHC5（等卡 d-2a19fdb5 的真實鏡像樣本）；上線日：卡解後 1 天內跑 `scripts/g40-real-data/check.sh` 並 pin 上 live（PM 01M7VAG6 補欄位）。
 - Not goals now: MUD 後段、自己產生配額資料、hosted CI。
+- Feature map: [ARCHITECTURE.md](ARCHITECTURE.md)（功能狀態只記在那裡）
 - Source: operator 已確認。；操作員 d-fb9989dc 定案（2026-11-05）
 
 ## This repo is yours
