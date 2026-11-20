@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+# fake fleet for the v7.4 key gate: answers the argv the live mod runs from $V74_FIX (the autopilot checkout's mods/live/fixtures),
+# logs every call to $V74_KEYS_LOG, and never reaches a real courier. The fleet decision cards here mirror the repo card store's
+# d-a1b2c3e1..3 (gen-data.py); the store's test card d-keys0004 is in the store only, so a page that reads one source shows 3, both 4.
+import json, os, sys, time
+a = sys.argv[1:]; F = os.environ['V74_FIX']
+with open(os.environ['V74_KEYS_LOG'], 'a', encoding='utf-8') as log: log.write(json.dumps(a, ensure_ascii=False) + '\n')
+def fixture(p):
+    with open(os.path.join(F, p), encoding='utf-8') as f: return json.load(f)
+def shifted(d, at_key):
+    shift = int(time.time() * 1000) - d[at_key]  # every *_ms stamp moved by the same amount: the snapshot reads as just generated
+    def mv(o):
+        if isinstance(o, dict): return {k: (v + shift if k.endswith('_ms') and isinstance(v, int) and v > 10**12 else mv(v)) for k, v in o.items()}
+        if isinstance(o, list): return [mv(x) for x in o]
+        return o
+    return mv(d)
+if a[:2] == ['pm', 'status']:
+    sys.stdout.write(json.dumps(fixture('v74/pm-status.json'), ensure_ascii=False))
+elif a[:2] == ['decision', 'list']:
+    rows = fixture('v74/decide.json')
+    print(json.dumps({'cards': [{'card': {'card_id': r['id'], 'kind': r['title'], 'question': r['question'], 'background': r.get('background'),
+        'options': [{'label': o['label'], 'description': o.get('detail', '')} for o in r['options']],
+        'recommendation': next((o['label'] for o in r['options'] if o.get('recommended')), None)}} for r in rows]}, ensure_ascii=False))
+elif a[:1] == ['console']:
+    print(json.dumps(shifted(fixture('console/c0/console-full.json'), 'generated_at_ms'), ensure_ascii=False))
+elif a[:1] == ['tasks']:
+    print('[]')
+else:
+    sys.stderr.write('fake fleet: unsupported: ' + ' '.join(a) + '\n'); sys.exit(1)
