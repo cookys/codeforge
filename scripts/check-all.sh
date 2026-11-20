@@ -117,7 +117,7 @@ shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh 
   scripts/check-private-leaks.sh scripts/check-private-leaks.test.sh scripts/hook-env.test.sh \
   .githooks/pre-push scripts/push-ref-guard.sh scripts/push-ref-guard.test.sh \
   scripts/tux-sync.sh scripts/tux-sync.test.sh scripts/tux-lock.sh scripts/tux-lock.test.sh \
-  scripts/tux-cross.sh scripts/tux-cross.test.sh scripts/check-cjk-safe.test.sh
+  scripts/tux-cross.sh scripts/tux-cross.test.sh scripts/check-cjk-safe.test.sh scripts/tux-golden-data.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh
@@ -132,6 +132,9 @@ step "checkout guard (the main clone stays on develop)"
 
 step "tux-sync (fixture upstream, isolated repo copy)"
 ./scripts/tux-sync.test.sh
+
+step "tux-golden-data (bridge generator, isolated copy)"
+./scripts/tux-golden-data.test.sh
 
 step "tux-lock (vendor shas and file list)"
 ./scripts/tux-lock.test.sh
