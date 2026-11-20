@@ -119,7 +119,7 @@ shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh 
   .githooks/pre-push scripts/push-ref-guard.sh scripts/push-ref-guard.test.sh \
   scripts/tux-sync.sh scripts/tux-sync.test.sh scripts/tux-lock.sh scripts/tux-lock.test.sh \
   scripts/tux-cross.sh scripts/tux-cross.test.sh scripts/check-cjk-safe.test.sh scripts/tux-golden-data.test.sh scripts/fmt.test.sh \
-  scripts/pane-gate/nojump-check.test.sh
+  scripts/pane-gate/nojump-check.test.sh scripts/pane-gate/v74-keys/parse.test.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh
@@ -137,6 +137,9 @@ step "tux-sync (fixture upstream, isolated repo copy)"
 
 step "pane-gate nojump check (fixture frames)"
 ./scripts/pane-gate/nojump-check.test.sh
+
+step "v74-keys screen parser (stored red/green captures + negative probes)"
+./scripts/pane-gate/v74-keys/parse.test.sh
 
 step "tux-golden-data (bridge generator, isolated copy)"
 ./scripts/tux-golden-data.test.sh

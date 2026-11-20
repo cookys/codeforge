@@ -11,6 +11,7 @@ codeforge 主導 pane 搬到共用 TUI（PM 01M7N307），實作在 autopilot；
 - `run-gate-b2.sh <autopilot-worktree>`：拍照 → 本席卡 → keyprobe → `build-b2.py` 組評審包 → carbon 和 astra 並行評審。用 Bash 的 run_in_background 跑。第 2、3 輪加 `GATE_ROUND=<n>`，評審包會帶上一輪的處置（`doc/design/ux-gate/pane-batch2/r<n-1>-dispositions.md`）。
 - `NO_REVIEW=1 run-gate-b2.sh <ap>`：只拍截圖、本席卡、keyprobe，不組包也不送評審（PM 01M7Q8H2 第 3 輪後的點驗）。每個情境設 `AUTOPILOT_MODS_PANE_PROBE=out/<label>/probe-<情境>.jsonl`，autopilot fix/pane-r4 起把 host 給的 placement、bodyRows 寫進去，跟截圖逐列對照（W1）。
 - 每一輪的評審原文、處置和送審包都存在 `doc/design/ux-gate/pane-batch2/`，判定紀錄在那裡的 `verdicts.md`。
+- `v74-keys/run.py <autopilot-dir>`：v7.4 pane 互動驗收，209x49 逐鍵實按、擷取並斷言（詳見 `v74-keys/README.md`）；pane 每次交件都附它的全綠輸出。`v74-keys/parse.test.sh` 在 check-all 裡。
 - `pet-shots/`：寵物分頁截圖。
 
 截圖 session 的 cwd 都會放 `.fleet-no-register`（`gate-shots/lib.sh`、`pet-shots/shot*.sh`），fleet 6353fad2 起就不會把它們登記到巡查名單（PM 01M7PMF7）。截圖只用假資料，`build-b2.py` 會檢查評審包裡沒有真實主機名或組織名。
