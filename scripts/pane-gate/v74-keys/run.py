@@ -15,10 +15,64 @@ def dw(t):
     return sum(2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in t)
 
 
+SGR = re.compile(r'\x1b\[([0-9;:]*)m')
+ESC = re.compile(r'\x1b\[[0-9;:?]*[A-Za-z]')
+
+
+def sgr_apply(st, params):
+    """Fold one SGR sequence into the state {bold, rev, fg, bg}; the off codes tmux emits (22/27/39/49) clear their part."""
+    ps = [int(x) if x.isdigit() else 0 for x in re.split('[;:]', params)] if params else [0]
+    i = 0
+    while i < len(ps):
+        p = ps[i]
+        if p == 0:
+            st.clear()
+        elif p == 1:
+            st['bold'] = 1
+        elif p == 22:
+            st.pop('bold', None)
+        elif p == 7:
+            st['rev'] = 1
+        elif p == 27:
+            st.pop('rev', None)
+        elif p in (38, 48):
+            n = 3 if i + 1 < len(ps) and ps[i + 1] == 5 else 5
+            st['fg' if p == 38 else 'bg'] = tuple(ps[i:i + n]); i += n - 1
+        elif p == 39:
+            st.pop('fg', None)
+        elif p == 49:
+            st.pop('bg', None)
+        elif 30 <= p <= 37 or 90 <= p <= 97:
+            st['fg'] = p
+        elif 40 <= p <= 47 or 100 <= p <= 107:
+            st['bg'] = p
+        i += 1
+
+
+def sgr_at(line, col_text):
+    """The style {bold, rev, fg, bg} in force at the first character of col_text on an ANSI line."""
+    plain, st, pos = '', {}, 0
+    for m in SGR.finditer(line + '\x1b[m'):
+        chunk = ESC.sub('', (line + '\x1b[m')[pos:m.start()])
+        j = (plain + chunk).find(col_text)
+        if j >= 0 and j >= len(plain) - len(col_text) + 1 and j < len(plain) + len(chunk):
+            if j >= len(plain):
+                return dict(st)
+        plain += chunk
+        sgr_apply(st, m.group(1))
+        pos = m.end()
+    return dict(st)
+
+
 class Screen:
-    def __init__(self, text):
+    def __init__(self, text, ansi=None):
         self.text = text
         self.lines = text.split('\n')
+        self.ansi = ansi.split('\n') if ansi is not None else None
+
+    @classmethod
+    def from_ansi(cls, ansi):
+        return cls('\n'.join(ESC.sub('', l) for l in ansi.split('\n')), ansi)
 
     def title(self):  # the pane frame's title: text after '╭─ ' up to ' · ' or the rule
         for l in self.lines:
@@ -78,6 +132,38 @@ class Screen:
         idx = [i for i, l in enumerate(b) if re.match(r'^\s*[ab]: ', l)]
         return len(idx) == 2 and any(b[j].strip() == '' for j in range(idx[0] + 1, idx[1]))
 
+    def band_below_frame(self):  # PM 01M7XB0B: under the frame only the band row; nothing between ╰ and the band
+        bot = next((i for i, l in enumerate(self.lines) if '╰─' in l), None)
+        nxt = self.lines[bot + 1] if bot is not None and bot + 1 < len(self.lines) else ''
+        return '艦隊' in nxt and '待決' in nxt and '│' in nxt and '1 現況' not in nxt
+
+    def strip_fits(self, title):  # narrow width: one bottom-border row ending in ╯, current page named, no page row elsewhere
+        bot = [l for l in self.lines if '╰─' in l]
+        return (len(bot) == 1 and bot[0].rstrip().endswith('╯') and title in bot[0]
+                and not any(re.match(r'^\s*[1-9] \S', l) for l in self.lines if '╰─' not in l and '│' not in l))
+
+    def active_tab_marked(self, k, title):  # the current page in the strip is reverse video or has a background colour
+        if self.ansi is None:
+            return False
+        line = next((l for l in self.ansi if '╰─' in ESC.sub('', l)), None)
+        if line is None:
+            return False
+        st = sgr_at(line, '%s %s' % (k, title))
+        return 'rev' in st or 'bg' in st
+
+    def rec_emphasized(self):  # PM 01M7XBE2: the ★ option differs from the others by bold or colour, not by the star alone
+        if self.ansi is None:
+            return False
+        opt = [(ESC.sub('', l), l) for l in self.ansi if re.search(r'(^|\s)[abc]: ', ESC.sub('', l)) and '│' in ESC.sub('', l)]
+        star = [(p, a) for p, a in opt if '★' in p]
+        rest = [(p, a) for p, a in opt if '★' not in p]
+        if len(star) != 1 or not rest:
+            return False
+        label = lambda p: re.search(r'[abc]: (\S)', p).group(1)
+        mine = sgr_at(star[0][1], label(star[0][0]))
+        return all(('bold' in mine and 'bold' not in o) or (mine.get('fg') is not None and mine.get('fg') != o.get('fg'))
+                   for o in (sgr_at(a, label(p)) for p, a in rest))
+
     def has(self, s):
         return s in self.text
 
@@ -102,7 +188,7 @@ class Gate:
         return subprocess.run(['tmux', '-L', self.sock] + list(a), capture_output=True, text=True, check=check)
 
     def snap(self):
-        return Screen(self.tmux('capture-pane', '-p', '-J', '-t', self.sess).stdout)
+        return Screen.from_ansi(self.tmux('capture-pane', '-p', '-e', '-J', '-t', self.sess).stdout)
 
     def keys(self, *ks, literal=False):
         for k in ks:
@@ -124,7 +210,7 @@ class Gate:
         with open(os.path.join(self.out, tag + '.txt'), 'w', encoding='utf-8') as f:
             f.write(sc.text)
         with open(os.path.join(self.out, tag + '.ans'), 'w', encoding='utf-8') as f:
-            f.write(self.tmux('capture-pane', '-p', '-e', '-J', '-t', self.sess).stdout)
+            f.write('\n'.join(sc.ansi))
         ok = all(o for _, o in res)
         self.fails += 0 if ok else 1
         seen = dict(title=sc.title(), prompt=sc.prompt(), cursor=sc.cursor(), send_n=sc.sendn(), decide_n=sc.decide_count(), band=sc.band())
@@ -216,6 +302,8 @@ def run(ap, out, scenario):
                 ('title %s' % t, lambda s, t=t: s.title() == t),
                 ('prompt empty', lambda s: s.prompt() == ''),
                 ('page strip in the bottom border (no strip row)', lambda s: s.strip_in_border()),
+                ('current page %d marked (reverse or background)' % i, lambda s, i=i, t=t: s.active_tab_marked(str(i), t)),
+                ('band right under the frame', lambda s: s.band_below_frame()),
             ])
         g.step('decide', lambda: g.keys('2', literal=True), [
             ('title 待決', lambda s: s.title() == '待決'),
@@ -225,7 +313,15 @@ def run(ap, out, scenario):
             ('no … cut while rows are free', lambda s: s.no_cut_with_room()),
             ('text column ≤ 90 wide (not the full 209)', lambda s: s.text_width_ok()),
             ('blank row between options a: and b:', lambda s: s.blank_between_options()),
+            ('★ option bold or coloured apart from the others', lambda s: s.rec_emphasized()),
         ])
+        # PM 01M7XB0B width rule: at 100 columns the hint and the strip shrink, never wrap, never overlap; the current page keeps its name
+        g.step('narrow-100', lambda: g.tmux('resize-window', '-t', g.sess, '-x', '100', '-y', '49'), [
+            ('one bottom border ending in ╯, 待決 named, no strip row', lambda s: s.strip_fits('待決')),
+            ('band right under the frame', lambda s: s.band_below_frame()),
+        ], wait=8)
+        g.tmux('resize-window', '-t', g.sess, '-x', '209', '-y', '49')
+        time.sleep(2)
         before = {}
         def grab():
             before['b'] = g.snap().line_with('b: 再審一輪')
