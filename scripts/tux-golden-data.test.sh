@@ -47,7 +47,7 @@ gen
 
 before=$(cat "$default_out")
 gen "$t/explicit.ts" || fail 'explicit output path failed'
-[ -f "$t/explicit.ts" ] || fail 'explicit output path wrote nothing'
+cmp -s "$t/explicit.ts" "$default_out" || fail 'explicit output differs from the default output'
 [ "$(cat "$default_out")" = "$before" ] || fail 'explicit output path rewrote the default output'
 
 grep -qF '●' "$default_out" || fail 'non-ASCII glyph escaped in generated ts'
