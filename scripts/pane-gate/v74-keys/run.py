@@ -273,6 +273,7 @@ def run(ap, out, scenario):
         senv = ['env', 'HOME=' + home, 'PATH=' + os.path.join(HERE, 'bin') + ':' + os.environ['PATH'], 'V74_FIX=' + env['V74_FIX'],
                 'V74_KEYS_LOG=' + env['V74_KEYS_LOG'], 'AUTOPILOT_LIVE_DIR=' + os.path.join(data, 'live'), 'CODEFORGE_DATA_DIR=' + os.path.join(data, 'cfdata'),
                 'AUTOPILOT_CARD_MIRROR_DIR=' + os.path.join(data, 'mirror'), 'AUTOPILOT_ROOMS_DIR=' + os.path.join(data, 'rooms'),
+                'AUTOPILOT_V74_KEYLOG=' + os.path.join(os.path.abspath(out), 'keylog-%s.jsonl' % scenario),
                 'AUTOPILOT_LOCALE=zh-TW', 'LANG=zh_TW.UTF-8', 'claude', '--session-id', sid, '--plugin-dir', ap, '--model', 'haiku']
         g.tmux('new-session', '-d', '-s', g.sess, '-x', '209', '-y', '49', '-c', cwd, ' '.join("'%s'" % a.replace("'", "'\\''") for a in senv))
         t0 = time.time()
