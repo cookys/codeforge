@@ -81,8 +81,9 @@ ln -s format.ts "$ap/mods/tux/link"
 git -C "$ap" add -A
 git -C "$ap" commit -qm C
 shaC=$(git -C "$ap" rev-parse HEAD)
-! AUTOPILOT_DIR="$ap" "$repo/scripts/tux-sync.sh" "$shaC" >/dev/null 2>&1 \
+! AUTOPILOT_DIR="$ap" "$repo/scripts/tux-sync.sh" "$shaC" >/dev/null 2>"$t/err" \
   || fail 'committed symlink passed'
+grep -q 'refusing symlink' "$t/err" || fail 'symlink sync failed for another reason'
 rm "$ap/mods/tux/link"
 
 # 7. A committed upstream mods/tux/VENDOR.lock is refused.
@@ -90,7 +91,13 @@ printf 'x\n' >"$ap/mods/tux/VENDOR.lock"
 git -C "$ap" add -A
 git -C "$ap" commit -qm D
 shaD=$(git -C "$ap" rev-parse HEAD)
-! AUTOPILOT_DIR="$ap" "$repo/scripts/tux-sync.sh" "$shaD" >/dev/null 2>&1 \
+! AUTOPILOT_DIR="$ap" "$repo/scripts/tux-sync.sh" "$shaD" >/dev/null 2>"$t/err" \
   || fail 'upstream VENDOR.lock passed'
+grep -q 'upstream tree contains VENDOR.lock' "$t/err" || fail 'VENDOR.lock sync failed for another reason'
+git -C "$ap" show "$shaB:mods/tux/format.ts" | cmp - "$vendor/format.ts" || fail 'refused sync changed the vendor tree'
 
-echo 'tux-sync.test.sh: ok (7 controls)'
+# 8. Wrong argument count exits 2.
+set +e; AUTOPILOT_DIR="$ap" "$repo/scripts/tux-sync.sh" >/dev/null 2>&1; rc=$?; set -e
+[ "$rc" = 2 ] || fail "no-argument call exited $rc, not 2"
+
+echo 'tux-sync.test.sh: ok (8 controls)'
