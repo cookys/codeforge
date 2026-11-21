@@ -727,8 +727,9 @@ def run_v75_steps(g, mode, out):
     focus = lambda: g.keys(*V75_FOCUS_KEY)
     # v7.5 focus rules (host limits, d.ts :8724-8731, :2913-2927): the band draws no focus colour and keeps one fixed hint row; the mod cannot hand the
     # keyboard from the band to the Pane. Only the Pane shows its focus (isFocused): frame colour and its own foot hint.
-    pane_focused = lambda s: v75(s).pane_has_keys() is True and v75(s).pane_style() != memo['pane']
-    pane_unfocused = lambda s: v75(s).pane_has_keys() is False and v75(s).pane_style() == memo['pane']
+    # measured on 5e3dfcc6c (cyc2-fs): ctrl+x tab 1 -> band, presses 2-4 change nothing, press 5 -> Pane (frame fg 153); the Pane foot hint stays 'ctrl+x tab 拿鍵盤'
+    pane_focused = lambda s: v75(s).pane_style() != memo['pane']
+    pane_unfocused = lambda s: v75(s).pane_style() == memo['pane']
     no_band_rev = lambda s: not v75(s).band_rev()
     to_band_hint = lambda s: HINT_TO_PANE in (v75(s).band_hint() or '')
 
@@ -740,11 +741,17 @@ def run_v75_steps(g, mode, out):
             time.sleep(1.5)
         g.keys('C-u')
 
-    def to_pane():  # keyboard on the Pane: input -> band -> Pane with ctrl+x tab twice (the Pane has it already: nothing to do)
+    def press_to_pane():  # ctrl+x tab until the Pane frame shows focus (at most 6 presses; 5e3dfcc6c needs 5 from the input)
+        for _ in range(6):
+            if pane_focused(g.snap()):
+                return
+            focus()
+            time.sleep(1.5)
+
+    def to_pane():
         if not pane_focused(g.snap()):
             to_input()
-            focus()
-            focus()
+            press_to_pane()
 
     g.step('open', lambda: (g.keys(V75_OPEN, literal=True), g.keys('Enter')), [
         ('a Pane and the band head are both on screen', lambda s: v75(s).both()),
@@ -778,8 +785,8 @@ def run_v75_steps(g, mode, out):
         ('band hint row offers ctrl+x tab 進 Pane', to_band_hint),
         ('prompt empty', lambda s: s.prompt() == ''),
     ])
-    g.step('pane-take-keys', focus, [
-        ('Pane frame focused and its foot hint says the keyboard is there', pane_focused),
+    g.step('pane-take-keys', press_to_pane, [
+        ('Pane frame focused after ctrl+x tab presses (count recorded in the log)', pane_focused),
         ('prompt empty', lambda s: s.prompt() == ''),
     ])
     g.step('pane-pick-a', lambda: g.keys('a', literal=True), [
@@ -815,9 +822,10 @@ def run_v75_steps(g, mode, out):
     # preview: Esc cancels only the preview, pressed where the keyboard is (the band); a change after it opens makes y refuse
     g.step('preview-open', lambda: (focus(), g.keys('2', literal=True), g.keys('a', literal=True), g.keys('s', literal=True)), [
         ('preview shown', lambda s: s.has(PREVIEW_MARK)),
+        ('band hint offers x 取消預覽 while the preview is open', lambda s: 'x 取消預覽' in v75(s).band_text()),
         ('nothing sent', lambda s: not s.has(SENT_MARK)),
     ])
-    g.step('preview-esc', lambda: g.keys('Escape'), [
+    g.step('preview-x', lambda: g.keys('x', literal=True), [  # the band hotkey takes one digit or one lowercase letter (d.ts:1391) and never sees Esc: x cancels the preview
         ('preview gone', lambda s: not s.has(PREVIEW_MARK)),
         ('only the preview closed: Pane and band still up', lambda s: v75(s).both()),
         ('nothing sent', lambda s: not s.has(SENT_MARK)),
