@@ -14,12 +14,19 @@ second=${V74_UX_SECOND:-grok}
 case $second in
   grok) sr=(--runner grok --model grok-4.7) ;;
   carbon) sr=(--runner agy --model gemini-4-carbon-high) ;;
-  *) echo "ux-review: V74_UX_SECOND must be grok or carbon"; exit 2 ;;
+  opus) sr=(--runner claude-native --model claude-opus-5-5) ;; # PM 01M7Y4HJ: same family as this seat; the verdict is marked same-family
+  *) echo "ux-review: V74_UX_SECOND must be grok, carbon or opus"; exit 2 ;;
 esac
 bash "$D" "${sr[@]}" --timeout 30m --prompt-file "$out/ux-review.md" > "$out/ux-$second.out" 2> "$out/ux-$second.err" &
 pc=$!
 bash "$D" --runner codex --model gpt-6-astra --timeout 30m --prompt-file "$out/ux-review.md" > "$out/ux-astra.out" 2> "$out/ux-astra.err" &
 pa=$!
+pr=
+if [ "${V74_UX_REF:-}" = glm ]; then # PM 01M7Y4HJ: on-prem GLM as a third, non-scoring reference; never part of the verdict
+  bash "$D" --runner cc-shim --model GLM-5.3 --endpoint glm_local --timeout 30m --prompt-file "$out/ux-review.md" > "$out/ux-glm-ref.out" 2> "$out/ux-glm-ref.err" &
+  pr=$!
+fi
 wait $pc; echo "$second exit=$?"; wait $pa; echo "astra exit=$?"
+if [ -n "$pr" ]; then wait "$pr"; echo "glm-ref exit=$?"; python3 -I "$here/ux-review.py" --verdict "$out/ux-glm-ref.out" | sed 's/^/reference (not scored): /' | tee "$out/ux-glm-ref.txt"; fi
 python3 -I "$here/ux-review.py" --verdict "$out/ux-$second.out" "$out/ux-astra.out" | tee "$out/ux-verdict.txt"
 exit "${PIPESTATUS[0]}"
