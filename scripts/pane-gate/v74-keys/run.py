@@ -719,6 +719,18 @@ def fold_steps(g, out, mode, tag):
     fold_cycle(g, out, tag, soft)
     g.step('%s-reload' % tag, lambda: (g.keys(RELOAD_CMD, literal=True), g.keys('Enter')), [('prompt empty after /reload-plugins', lambda s: s.prompt() == '')], wait=15)
     time.sleep(3)
+    if getattr(g, 'work', None):  # v7.5: what the reopen did (band-reload.log): retried and placed, or gave up
+        rows = []
+        for root, _, files in os.walk(g.work):
+            if 'band-reload.log' in files:
+                with open(os.path.join(root, 'band-reload.log'), encoding='utf-8') as f:
+                    rows = [json.loads(l) for l in f if l.strip()]
+                break
+        opens = [r for r in rows if r.get('step') in ('open', 'retry', 'gave-up')]
+        print('      band-reload.log: ' + ' | '.join(json.dumps({k: v for k, v in r.items() if k != 'ts'}, ensure_ascii=False) for r in rows[-6:]))
+        g.step('%s-reload-log' % tag, lambda: None, [
+            ('reopen after reload placed the Pane (a retry may be needed, gave-up is a fail)', lambda s: bool(opens) and opens[-1].get('step') != 'gave-up' and (opens[-1].get('result') or {}).get('isPlaced', True) is True),
+        ], wait=1)
     fold_cycle(g, out, tag + '-after-reload', soft)
     fo = v75(g.snap()).fold()  # leave the band expanded for whatever runs next
     if fo['folded'] is not None:
@@ -864,12 +876,16 @@ def run_v75_steps(g, mode, out):
             g.keys('Down')
     g.step('to-long-card', to_long, [('cursor on the long card', lambda s: v75(s).cursor_no() == LONG_CARD)], soft=no_pane)
     memo['pre'] = v75(g.snap())
+    more = re.search(r'還有\s*(\d+)\s*列', ' '.join(memo['pre'].pane_foot()) + ' ' + ' '.join(memo['pre'].pane_body()))
+    body_n, room_n = len(memo['pre'].pane_body()), len(memo['pre'].pane_lines())
+    print('      pgdn precondition: body rows %d, pane rows %d, overflow %s' % (body_n, room_n, more.group(1) if more else 'none'))
+    no_scroll = None if more else 'no long card found: the card fits the Pane (body %d rows, pane %d rows), a clamp at 0 is not an implementation fault' % (body_n, room_n)
     g.step('pgdn', lambda: g.keys('PageDown'), [
         ('Pane body scrolled', lambda s: v75(s).pane_body() != memo['pre'].pane_body()),
         ('Pane title row and foot did not move', lambda s: (v75(s).pane_head(), v75(s).pane_foot()) == (memo['pre'].pane_head(), memo['pre'].pane_foot())),
         ('band did not move at all', lambda s: v75(s).band_lines() == memo['pre'].band_lines()),
         ('prompt empty', lambda s: s.prompt() == ''),
-    ], soft=no_pane)
+    ], soft=no_pane or no_scroll)
     g.step('pgup', lambda: g.keys('PageUp'), [
         ('Pane body back where it was', lambda s: v75(s).pane_body() == memo['pre'].pane_body()),
         ('band did not move', lambda s: v75(s).band_lines() == memo['pre'].band_lines()),
