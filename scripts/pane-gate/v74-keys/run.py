@@ -1010,7 +1010,7 @@ def run_v75(ap, out, mode, alias=None):
     g.eta = os.path.join(work, 'pool-eta.json')
     write_eta(g.eta, 0)
     try:
-        launch(g, ap, out, scenario, data, home, cwd, env, sid, alias, extra_env=('CLAUDE_CODE_NO_FLICKER=%d' % (1 if mode == 'fs' else 0), 'AUTOPILOT_POOL_ETA=' + g.eta))
+        launch(g, ap, out, scenario, data, home, cwd, env, sid, alias, extra_env=('CLAUDE_CODE_NO_FLICKER=%d' % (1 if mode == 'fs' else 0), 'AUTOPILOT_POOL_ETA=' + g.eta, 'V74_LONGCARD=1'))
         time.sleep(8)
         run_v75_steps(g, mode, out)
         return g.fails
