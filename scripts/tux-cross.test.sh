@@ -36,7 +36,7 @@ chmod +x "$work/bin/node" "$work/bin/claude"
 export PATH="$work/bin:$PATH" AUTOPILOT_DIR="$work/ap"
 out=$("$here/tux-cross.sh" --release) || fail 'matching sibling failed release'
 case "$out" in *'tux-cross: ok'*) ;; *) fail "no ok ($out)" ;; esac
-printf '2\n' >"$work/ap/mods/tux/VERSION"
+printf '%s\n' "$(($(cat "$here/../plugins/forge-stats/vendor/tux/VERSION") + 1))" >"$work/ap/mods/tux/VERSION"
 ! "$here/tux-cross.sh" >/dev/null 2>&1 || fail 'version drift passed'
 cp "$here/../plugins/forge-stats/vendor/tux/VERSION" "$work/ap/mods/tux/VERSION"
 printf '\n' >>"$work/ap/mods/tux/format.ts"
