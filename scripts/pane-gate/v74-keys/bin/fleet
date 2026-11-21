@@ -14,7 +14,11 @@ def shifted(d, at_key):
         if isinstance(o, list): return [mv(x) for x in o]
         return o
     return mv(d)
-if a[:2] == ['pm', 'status']:
+if a[:1] == ['--help']:  # fleet-decision.js probe(): a usage section with a `fleet decision` line means the courier supports claims
+    print('usage:\n  fleet decision claim <card> [--option <label>] [--free-text <text>]\n  fleet pm status\n  fleet console')
+elif a[:2] == ['decision', 'claim']:  # open-decision.js close claims on the courier first; the store card closes only on a claim
+    print(json.dumps({'answer_id': 'ans-' + a[2], 'card_id': a[2]}))
+elif a[:2] == ['pm', 'status']:
     sys.stdout.write(json.dumps(fixture('v74/pm-status.json'), ensure_ascii=False))
 elif a[:2] == ['decision', 'list']:
     rows = fixture('v74/decide.json')
