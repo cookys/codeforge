@@ -50,9 +50,11 @@ pane 每次交件都要附上 `run.py` 的輸出（全綠）和擷取圖，PM �
 
 判斷條件盡量看結構，不看頁面用字：`V75` 類別把畫面切成 Pane 區（框的角字元以右，或 inline 時 band 以上）和 band 區（`▲ i/n 卡號` 那列到輸入框），再比卡號、→字母、ANSI 色碼。要對字串時只改 `run.py` 檔頭 `V75_*` 常數。
 
-步驟：open（Pane 和 band 都在）→ ctrl+x tab 焦點到 band（band 色碼變、Pane 色碼不變、下框線提示變）→ band 按 b（band 顯示 →b）→ band 按 2（Pane 跳 待決、Pane 顯示 →b、焦點移到 Pane）→ Pane ↓（cursor 換、band 的卡號跟著換）→ Pane 按 a（兩邊都顯示 →a）→ Esc（色碼和提示回到輸入框、再打字進輸入框）→ band 按 3（Pane 跳 派工、焦點在 Pane）→ band 焦點 Esc → 預覽（Esc 只關預覽、焦點不變；預覽中改選再按 y 被拒、不送出）→ PgDn/PgUp（只有 Pane 中間捲、標題列和 band 不動）→ 滑鼠：SGR `\e[<0;X;Ym` / `m` 點 Pane 左邊框的卡號，cursor 要跳過去；全螢幕必過，一般畫面收不到就記成已知限制（`KNOWN-LIMIT`，不算失敗）→ 只在全螢幕 session：110 欄停靠、109 欄不停靠、30 列退回單一 band（沒有 Pane 框和 band 頭並存）。
+步驟：open（Pane 和 band 都在）→ band 按 b（band 顯示 →b）→ band 按 2（Pane 跳 待決、Pane 顯示 →b、鍵盤仍在 band、提示列寫「ctrl+x tab 進 Pane」）→ ctrl+x tab 連按到 Pane 框亮起→ Pane ↓（cursor 換、band 的卡號跟著換）→ Pane 按 a（兩邊都顯示 →a）→ Esc（再打 z 進輸入框，band 沒有反白）→ band 按 3（Pane 跳 派工、焦點在 Pane）→ band 焦點 Esc → 預覽（在 band 按 x 取消預覽、腳註有「x 取消預覽」；預覽中改選再按 y 被拒、不送出）→ PgDn/PgUp（只有 Pane 中間捲、標題列和 band 不動）→ 滑鼠：SGR `\e[<0;X;Ym` / `m` 點 Pane 左邊框的卡號，cursor 要跳過去；全螢幕必過，一般畫面收不到就記成已知限制（`KNOWN-LIMIT`，不算失敗）→ 花費頁（第 5 頁）：沙箱用 `AUTOPILOT_POOL_ETA` 指向假池 fixture（`pool-alpha`、`pool-beta`，`write_eta`），要看到 %、燒率 `%/h`、重置、用完（或「重置前不會用完」）、沒有「過期」；再把 `generated_at_ms` 改成 3 小時前，整頁要標「池預估已過期」和各列「過期」 → 只在全螢幕 session：110 欄停靠、109 欄不停靠、30 列退回單一 band（沒有 Pane 框和 band 頭並存）。
 
-滑鼠探測另寫 `mouse-probe-<fs|normal>.json`（有沒有找到卡號標記、cursor 前後、keylog 有沒有 press 事件）。每張截圖旁邊有 `<步驟>.band-geometry.log`，session 結束再留一份 `band-geometry-<情境>.log`。
+滑鼠探測另寫 `mouse-probe-<fs|normal>.json`（有沒有找到卡號標記、cursor 前後、keylog 有沒有 press 事件）。**焦點規則（宿主限制，claude-code.d.ts :1391、:8724-8731）：** band 不畫焦點色，提示列固定一行；band 熱鍵只收一個數字或小寫字母，看不到 Esc 和方向鍵，所以預覽用 `x` 取消。ctrl+x tab 的錨點鏈是 `v75:anchor` → verdict → fleet → hygiene → decide → info → speed → pane-toggle → Pane，共 9 站才到 Pane，閘門最多按 10 次，直到 Pane 框變色。一般畫面 ctrl+x tab 到不了 Pane（m75c 實測 10 站），Pane 的 ↓、PgDn 等步驟在一般畫面記 `KNOWN-LIMIT`；全螢幕照常判。
+
+每張截圖旁邊有 `<步驟>.band-geometry.log` 和 `<步驟>.band-focus.log`（每個 ctrl+x tab 停靠站：requestId、元件、element、origin），session 結束再留一份 `band-geometry-<情境>.log`。
 
 ### 收合鈕（PM 01M7YWXW；v74 和 --v75 情境都跑）
 

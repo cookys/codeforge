@@ -22,6 +22,10 @@ elif a[:2] == ['pm', 'status']:
     sys.stdout.write(json.dumps(fixture('v74/pm-status.json'), ensure_ascii=False))
 elif a[:2] == ['decision', 'list']:
     rows = fixture('v74/decide.json')
+    if os.environ.get('V74_LONGCARD'):  # the v7.5 gate's PgDn card (same id as gen-data.py's store card): 80 background rows, taller than the full-screen Pane
+        rows.append({'id': 'd-keys0005', 'title': '驗收長卡', 'question': '這張卡的背景有八十行，用來驗證 PgDn 的步長',
+                     'background': '\n'.join('第 %02d 行：假資料，只在沙盒卡片庫，用來把內文撐得比 Pane 高。' % n for n in range(1, 81)),
+                     'options': [{'label': '收到', 'detail': '', 'recommended': True}, {'label': '不收', 'detail': '', 'recommended': False}]})
     print(json.dumps({'cards': [{'card': {'card_id': r['id'], 'kind': r['title'], 'question': r['question'], 'background': r.get('background'),
         'options': [{'label': o['label'], 'description': o.get('detail', '')} for o in r['options']],
         'recommendation': next((o['label'] for o in r['options'] if o.get('recommended')), None)}} for r in rows]}, ensure_ascii=False))
