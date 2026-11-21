@@ -789,10 +789,11 @@ def run_v75_steps(g, mode, out):
         ('band hint row offers ctrl+x tab 進 Pane', to_band_hint),
         ('prompt empty', lambda s: s.prompt() == ''),
     ])
+    no_pane = None if mode == 'fs' else 'ordinary screen: ctrl+x tab never reaches the Pane (m75c measured 10 stops), host limit'
     g.step('pane-take-keys', press_to_pane, [
         ('Pane frame focused after ctrl+x tab presses (count recorded in the log)', pane_focused),
         ('prompt empty', lambda s: s.prompt() == ''),
-    ])
+    ], soft=no_pane)
     g.step('pane-pick-a', lambda: g.keys('a', literal=True), [
         ('Pane shows →a', lambda s: v75(s).picked('a', 'pane')),
         ('band shows →a (set from the Pane)', lambda s: v75(s).picked('a', 'band')),
@@ -802,7 +803,7 @@ def run_v75_steps(g, mode, out):
     g.step('pane-down', lambda: g.keys('Down'), [
         ('Pane cursor moved to another card', lambda s: v75(s).cursor_no() not in (None, memo['cur'])),
         ('band follows: its k/n is the Pane cursor card', lambda s: v75(s).band_k is not None and v75(s).band_k == v75(s).cursor_no()),
-    ])
+    ], soft=no_pane)
     g.step('esc-pane', lambda: g.keys('Escape'), [
         ('Pane frame and foot hint back to unfocused', pane_unfocused),
     ])
@@ -849,14 +850,14 @@ def run_v75_steps(g, mode, out):
             if v75(g.snap()).cursor_no() == LONG_CARD:
                 break
             g.keys('Down')
-    g.step('to-long-card', to_long, [('cursor on the long card', lambda s: v75(s).cursor_no() == LONG_CARD)])
+    g.step('to-long-card', to_long, [('cursor on the long card', lambda s: v75(s).cursor_no() == LONG_CARD)], soft=no_pane)
     memo['pre'] = v75(g.snap())
     g.step('pgdn', lambda: g.keys('PageDown'), [
         ('Pane body scrolled', lambda s: v75(s).pane_body() != memo['pre'].pane_body()),
         ('Pane title row and foot did not move', lambda s: (v75(s).pane_head(), v75(s).pane_foot()) == (memo['pre'].pane_head(), memo['pre'].pane_foot())),
         ('band did not move at all', lambda s: v75(s).band_lines() == memo['pre'].band_lines()),
         ('prompt empty', lambda s: s.prompt() == ''),
-    ])
+    ], soft=no_pane)
     g.step('pgup', lambda: g.keys('PageUp'), [
         ('Pane body back where it was', lambda s: v75(s).pane_body() == memo['pre'].pane_body()),
         ('band did not move', lambda s: v75(s).band_lines() == memo['pre'].band_lines()),
