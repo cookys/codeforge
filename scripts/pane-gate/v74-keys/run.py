@@ -368,6 +368,10 @@ def run(ap, out, scenario, alias=None):
             ('no … cut while rows are free', lambda s: s.no_cut_with_room()),
             ('text column ≤ 90 wide (long 背景 wrapped)', lambda s: s.text_width_ok()),
         ])
+        g.step('send-preview', lambda: g.keys('s', literal=True), [  # r10: the first s previews, the second sends (opus r8-4 Major)
+            ('preview 將送出 shown', lambda s: s.has('將送出')),
+            ('nothing submitted yet', lambda s: not s.has('[待決回覆]')),
+        ])
         g.step('send', lambda: g.keys('s', literal=True), [
             ('[待決回覆] submitted', lambda s: s.has('[待決回覆]')),
             ('d-keys0004 in the submitted reply', lambda s: s.has('d-keys0004')),
