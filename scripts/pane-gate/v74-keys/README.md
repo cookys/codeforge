@@ -34,3 +34,5 @@ pane 每次交件都要附上 `run.py` 的輸出（全綠）和擷取圖，PM �
 - `V74_UX_SECOND=opus`（PM 01M7Y4HJ）：第二家改用 claude-native 的 claude-opus-5-5，結果要標明「同家意見」，過關門檻不變。token 席位需要 `CLAUDE_CODE_OAUTH_TOKEN`，所以設 `V74_UX_TOKEN_ALIAS=<池 alias>`：腳本在子 shell 裡從 `~/.config/autopilot/accounts/<alias>/token` 讀進 env，值不進 argv 也不進 log；alias 只從環境帶，不寫進 repo。`V74_UX_REF=glm` 另跑本地 GLM 當參考，不計分（目前被 cn_model_dispatch_barred 擋下，要等 PM 開豁免）。
 - `ux-review.py --verdict` 讀兩份輸出：兩家都 overall ≥ 8 且沒有 Critical 才 exit 0；分數不夠或有 Critical exit 1；沒有可讀的 json exit 2。結果在 `ux-verdict.txt`。
 - `ux-review.test.sh`（check-all 會跑）：不叫引擎，驗紅燈拒絕、組包內容、私有 email 擋下、四種判定。
+
+`--hold`（PM 01M7YN17）：只開 project 沙盒、切到待決頁，不跑步驟，印出 attach、send-keys、capture、kill-session 指令，讓人在真席手按。卡全是假卡（d-keys000N，驗收測試卡），fleet 是閘門的假指令，卡片庫在沙盒 repo 裡，按 y 不會送到任何真的卡片佇列。session 結束時印出沙盒裡是否已送出。

@@ -261,7 +261,7 @@ def setup(ap, out, scenario):
     return work, data, home, cwd, env
 
 
-def run(ap, out, scenario, alias=None):
+def run(ap, out, scenario, alias=None, hold=False):
     work, data, home, cwd, env = setup(ap, out, scenario)
     sid = str(uuid.uuid4())
     gen = [sys.executable, '-I', os.path.join(HERE, 'gen-data.py'), data, sid, cwd] + (['noproject'] if scenario == 'noproject' else [])
@@ -306,6 +306,8 @@ def run(ap, out, scenario, alias=None):
             ('band shows 艦隊 + 待決 4', lambda s: s.band() is not None and '待決 4' in s.band()),
             ('prompt empty', lambda s: s.prompt() == ''),
         ], wait=15)
+        if hold:
+            return hold_session(g, store, env['V74_KEYS_LOG'])
         time.sleep(1.0)  # r8-5c: the frame drew before its hotkeys were live and digit 1 reached the prompt; r8-5d green on rerun
         for i, t in enumerate(TITLES, 1):
             g.step('digit-%d' % i, lambda i=i: g.keys(str(i), literal=True), [
@@ -405,6 +407,34 @@ def run(ap, out, scenario, alias=None):
         shutil.rmtree(work, ignore_errors=True)
 
 
+def hold_session(g, store, log):
+    """--hold (PM 01M7YN17): leave the opened sandbox session for a person to press by hand. Every card is a fixture
+    (d-keys000N, 驗收測試卡); fleet is the gate's fake bin and the card store sits in the sandbox repo, so a y here
+    answers nothing outside the sandbox. Ends when the tmux session is gone."""
+    g.keys('2', literal=True)
+    t = "tmux -L %s" % g.sock
+    print('HOLD · sandbox session open (fixture cards only; nothing reaches a real card queue)')
+    print('  watch:    %s attach -t %s     (detach: ctrl+b d)' % (t, g.sess))
+    print('  press:    %s send-keys -t %s a      then  s  (preview)  then  y  (confirm)' % (t, g.sess))
+    print('  capture:  %s capture-pane -p -e -J -t %s > shot.ans' % (t, g.sess))
+    print('  finish:   %s kill-session -t %s' % (t, g.sess))
+    sys.stdout.flush()
+    while g.tmux('has-session', '-t', g.sess, check=False).returncode == 0:
+        time.sleep(2)
+    done = []
+    try:
+        for fn in os.listdir(store):
+            done += [c.get('id') for c in json.load(open(os.path.join(store, fn), encoding='utf-8')).get('decisions', []) if c.get('status') != 'open']
+    except OSError:
+        pass
+    try:
+        calls = sum(1 for _ in open(log, encoding='utf-8'))
+    except OSError:
+        calls = 0
+    print('HOLD END · sandbox store, cards no longer open: %s · fake-fleet calls: %d' % (' '.join(done) or 'none', calls))
+    return 0
+
+
 def queued(store, log):
     """d-keys0004 left the open queue: the store marks it answered/closed, or the reply path called fleet with it."""
     try:
@@ -426,6 +456,7 @@ def main():
     ap.add_argument('checkout')
     ap.add_argument('--out', default=None)
     ap.add_argument('--only', choices=['project', 'noproject'])
+    ap.add_argument('--hold', action='store_true', help='open the project sandbox on the 待決 tab and wait for a person to press keys (no steps run)')
     ap.add_argument('--token-alias', default=None, help='log the session in with ~/.config/autopilot/accounts/<alias>/token (an existing pool token; read in the session shell, never printed)')
     a = ap.parse_args()
     chk = os.path.realpath(a.checkout)
@@ -445,8 +476,8 @@ def main():
     head = subprocess.run(['git', '-C', chk, 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
     print('v74-keys gate · autopilot %s · out %s' % (head[:10] or '?', out))
     fails = 0
-    for sc in ([a.only] if a.only else ['project', 'noproject']):
-        fails += run(chk, out, sc, a.token_alias)
+    for sc in (['project'] if a.hold else [a.only] if a.only else ['project', 'noproject']):
+        fails += run(chk, out, sc, a.token_alias, a.hold)
     print('RESULT %s · %d failed step(s) · %s' % ('GREEN' if fails == 0 else 'RED', fails, out))
     return 0 if fails == 0 else 1
 
