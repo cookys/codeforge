@@ -242,8 +242,8 @@ class Gate:
         ok = all(o for _, o in res)
         if getattr(self, 'work', None):  # v7.5: the host's band-geometry.log as it stood at this shot
             for root, _, files in os.walk(self.work):
-                if 'band-geometry.log' in files or 'band-focus.log' in files:
-                    for lg in ('band-geometry', 'band-focus'):
+                if any(l + '.log' in files for l in ('band-geometry', 'band-focus', 'band-scroll', 'band-reload')):
+                    for lg in ('band-geometry', 'band-focus', 'band-scroll', 'band-reload'):
                         if lg + '.log' in files:
                             shutil.copy(os.path.join(root, lg + '.log'), os.path.join(self.out, tag + '.' + lg + '.log'))
                     break
@@ -449,8 +449,8 @@ def run(ap, out, scenario, alias=None, hold=False):
         # keep what the host gave the band (maxRows x bodyColumns per change) next to the shots: the band-vs-Pane call
         # (PM 01M7Y9150) needs the measured rows, not the d.ts reading
         for root, _, files in os.walk(work):
-            if 'band-geometry.log' in files or 'band-focus.log' in files:
-                for lg in ('band-geometry', 'band-focus'):
+            if any(l + '.log' in files for l in ('band-geometry', 'band-focus', 'band-scroll', 'band-reload')):
+                for lg in ('band-geometry', 'band-focus', 'band-scroll', 'band-reload'):
                     if lg + '.log' in files:
                         shutil.copy(os.path.join(root, lg + '.log'), os.path.join(out, lg + '-%s.log' % scenario))
                 break
@@ -790,6 +790,13 @@ def run_v75_steps(g, mode, out):
         ('prompt empty', lambda s: s.prompt() == ''),
     ])
     no_pane = None if mode == 'fs' else 'ordinary screen: ctrl+x tab never reaches the Pane (m75c measured 10 stops), host limit'
+    memo['j0'] = v75(g.snap()).cursor_no()
+    g.step('band-j', lambda: g.keys('j', literal=True), [  # j/k change card from the band (e6d47b40c)
+        ('Pane cursor 1 -> 2', lambda s: memo['j0'] == 1 and v75(s).cursor_no() == 2),
+        ('band k/n follows', lambda s: v75(s).band_k == 2),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ])
+    g.step('band-k', lambda: g.keys('k', literal=True), [('Pane cursor back to 1', lambda s: v75(s).cursor_no() == 1)])
     g.step('pane-take-keys', press_to_pane, [
         ('Pane frame focused after ctrl+x tab presses (count recorded in the log)', pane_focused),
         ('prompt empty', lambda s: s.prompt() == ''),
@@ -799,6 +806,11 @@ def run_v75_steps(g, mode, out):
         ('band shows →a (set from the Pane)', lambda s: v75(s).picked('a', 'band')),
         ('prompt empty', lambda s: s.prompt() == ''),
     ])
+    g.step('pane-j', lambda: g.keys('j', literal=True), [  # j/k with the keyboard in the Pane
+        ('Pane cursor 1 -> 2', lambda s: v75(s).cursor_no() == 2),
+        ('band k/n follows', lambda s: v75(s).band_k == 2),
+    ], soft=no_pane)
+    g.step('pane-k', lambda: g.keys('k', literal=True), [('Pane cursor back to 1', lambda s: v75(s).cursor_no() == 1)], soft=no_pane)
     memo['cur'] = v75(g.snap()).cursor_no()
     g.step('pane-down', lambda: g.keys('Down'), [
         ('Pane cursor moved to another card', lambda s: v75(s).cursor_no() not in (None, memo['cur'])),
@@ -964,8 +976,8 @@ def run_v75(ap, out, mode, alias=None):
         regen.kill()
         g.tmux('kill-server', check=False)
         for root, _, files in os.walk(work):
-            if 'band-geometry.log' in files or 'band-focus.log' in files:
-                for lg in ('band-geometry', 'band-focus'):
+            if any(l + '.log' in files for l in ('band-geometry', 'band-focus', 'band-scroll', 'band-reload')):
+                for lg in ('band-geometry', 'band-focus', 'band-scroll', 'band-reload'):
                     if lg + '.log' in files:
                         shutil.copy(os.path.join(root, lg + '.log'), os.path.join(out, lg + '-%s.log' % scenario))
                 break
