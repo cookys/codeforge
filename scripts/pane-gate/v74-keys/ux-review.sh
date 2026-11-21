@@ -17,7 +17,16 @@ case $second in
   opus) sr=(--runner claude-native --model claude-opus-5-5) ;; # PM 01M7Y4HJ: same family as this seat; the verdict is marked same-family
   *) echo "ux-review: V74_UX_SECOND must be grok, carbon or opus"; exit 2 ;;
 esac
-bash "$D" "${sr[@]}" --timeout 30m --prompt-file "$out/ux-review.md" > "$out/ux-$second.out" 2> "$out/ux-$second.err" &
+if [ "$second" = opus ] && [ -n "${V74_UX_TOKEN_ALIAS:-}" ]; then
+  # claude-native under AUTOPILOT_TOKEN_SEAT needs CLAUDE_CODE_OAUTH_TOKEN: read from the pool's existing token file in the
+  # child shell only, never in argv or the log (hangar ops 01M7XWD3). The alias comes from the caller's env, never this repo.
+  tf="$HOME/.config/autopilot/accounts/$V74_UX_TOKEN_ALIAS/token"
+  [ -f "$tf" ] || { echo "ux-review: no token file for V74_UX_TOKEN_ALIAS"; exit 2; }
+  # shellcheck disable=SC2016  # the child shell expands $1..$@; the token never reaches this shell
+  env -u CLAUDE_CONFIG_DIR bash -c 'CLAUDE_CODE_OAUTH_TOKEN=$(cat "$1") exec bash "$2" "${@:3}"' _ "$tf" "$D" "${sr[@]}" --timeout 30m --prompt-file "$out/ux-review.md" > "$out/ux-$second.out" 2> "$out/ux-$second.err" &
+else
+  bash "$D" "${sr[@]}" --timeout 30m --prompt-file "$out/ux-review.md" > "$out/ux-$second.out" 2> "$out/ux-$second.err" &
+fi
 pc=$!
 bash "$D" --runner codex --model gpt-6-astra --timeout 30m --prompt-file "$out/ux-review.md" > "$out/ux-astra.out" 2> "$out/ux-astra.err" &
 pa=$!
