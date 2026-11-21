@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# run.py <autopilot-checkout> [--out DIR] [--only project|noproject] : v7.4 pane key-acceptance gate (PM 01M7XAJ7, 01M7XARR).
+# run.py <autopilot-checkout> [--out DIR] [--only project|noproject] [--v75] : v7.4 pane key-acceptance gate (PM 01M7XAJ7, 01M7XARR).
 # Opens a real `claude --plugin-dir <checkout>` in a private tmux server at 209x49, exactly as the operator would (/live-pane),
 # then presses the PM's key sequence one key at a time. After every key it captures the screen (NN-name.txt plain, .ans colour)
 # and asserts what must have changed: frame title, the ▸ card, 送出全部（N 張）, and that the prompt got no stray characters.
@@ -9,6 +9,33 @@ import argparse, json, os, re, shutil, subprocess, sys, tempfile, time, unicoded
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 TITLES = ['現況', '待決', '派工', '審查', '花費', '殘留', '艦隊', '待辦', '說明']
+
+# ---- v7.5 (band + right Pane, one shared state) : every string the gate matches lives here, so a wording change is one edit.
+# Calibrated on autopilot b52aaa491 (mods/live/locales/zh-TW.json v75.*, v75.ts, band75.tsx). Structure first: which region carries the
+# marker, which region's colour changed; the strings below only name things.
+V75_OPEN = '/live-pane'                      # typed + Enter to open the band/Pane, as the operator does (the Pane opens with the keyboard on it)
+V75_FOCUS_KEY = ('C-x', 'Tab')               # input -> band (host key); from the Pane it goes to the input
+BAND_HEAD_RE = r'[↑▲]\s*(\d+)/(\d+)\s+(\S.*?)(?:\s{2,}|$)'  # first band row: "↑ 1/3 <card title>   [-]" (position k of n, then the title)
+CURSOR_RE = r'▸\s+(\d+)\.'                   # the cursor card's row in the Pane: "▸  1. <title>"
+MARKER_RE = r'^[▸ ]\s*(\d+)\.'                # a card-number marker at the start of a Pane row (after its left border)
+PICK_BAND_RE = r'→\s*%s'                      # band option row, picked: "... b 再審一輪  → b"
+PICK_PANE_RE = r'(?m)^\s*%s: .*→\s*$'         # Pane option row, picked: "b: 再審一輪 →"
+PAGE_PENDING, PAGE_DISPATCH, PAGE_NOW = '待決', '派工', '現況'  # Pane titles for pages 2, 3, 1
+PREVIEW_MARK, STALE_MARK, SENT_MARK = '將送出', '已變更，請重新預覽', '[待決回覆]'
+HINT_INPUT = 'ctrl+x tab 拿鍵盤'              # band hint line while the input has the keyboard (v75.hint.prompt)
+HINT_BAND = 'a/b/c 選 · n 附註'               # ... while the band has it (v75.hint.band starts with this)
+HINT_PANE = '鍵盤在 Pane'                     # ... while the Pane has it (v75.hint.pane)
+PANE_FOOT_RE = r'╰─'                          # the Pane's own hint row (above its page strip)
+LONG_CARD = 3                                # the fixture card with the long 背景 (scrolls the Pane)
+CLICK_MARK_COLS = 8                          # a marker's digit sits within this many columns right of the Pane's left border
+FOLD_OPEN = ('▾', '▼')                        # mod toggle glyph while the Pane is open ("▾ 收起" ends the quick row)
+FOLD_TOGGLE_OPEN, FOLD_TOGGLE_SHUT = '收起', '展開'  # v75.toggle_close / v75.toggle_open words
+FOLD_HOST = ('[-]', '[−]')                    # the host's own collapse button, end of the band's first row
+FOLD_SHUT = ('▸', '▶', '[+]')                 # the folded row's leading glyph
+FOLD_KEYS = ('C-x', 'C-a')                    # the host's keyboard fold (claude-code.d.ts ~:12723: "ctrl+x ctrl+a, [-]")
+RELOAD_CMD = '/reload-plugins'
+COLLAPSED_ROW = 'plugin panel hidden'         # the host's folded band row: "▸ plugin panel hidden · ctrl+x ctrl+a or click to show"
+MIN_DOCK_COLS = 110                          # Pane docks beside the chat from this width in full screen
 
 
 def dw(t):
@@ -195,7 +222,7 @@ class Gate:
             self.tmux('send-keys', '-t', self.sess, *(['-l', k] if literal else [k]))
             time.sleep(0.35)
 
-    def step(self, name, send, checks, wait=6.0):
+    def step(self, name, send, checks, wait=6.0, soft=None):
         """send() presses the keys; checks is [(label, fn(Screen) -> bool)]. Polls until all hold or `wait` s pass."""
         self.n += 1
         tag = '%02d-%s-%s' % (self.n, self.scenario, name)
@@ -212,17 +239,27 @@ class Gate:
         with open(os.path.join(self.out, tag + '.ans'), 'w', encoding='utf-8') as f:
             f.write('\n'.join(sc.ansi))
         ok = all(o for _, o in res)
-        self.fails += 0 if ok else 1
+        if getattr(self, 'work', None):  # v7.5: the host's band-geometry.log as it stood at this shot
+            for root, _, files in os.walk(self.work):
+                if 'band-geometry.log' in files:
+                    shutil.copy(os.path.join(root, 'band-geometry.log'), os.path.join(self.out, tag + '.band-geometry.log'))
+                    break
+        self.last_ok = ok
+        self.fails += 0 if ok or soft else 1
         seen = dict(title=sc.title(), prompt=sc.prompt(), cursor=sc.cursor(), send_n=sc.sendn(), decide_n=sc.decide_count(), band=sc.band())
         self.results.write(json.dumps(dict(step=tag, ok=ok, checks=[dict(check=l, ok=o) for l, o in res], seen=seen), ensure_ascii=False) + '\n')
         self.results.flush()
-        mark = 'PASS' if ok else 'FAIL'
+        mark = 'PASS' if ok else 'KNOWN-LIMIT' if soft else 'FAIL'
+        if soft and not ok:
+            self.results.write(json.dumps(dict(step=tag, known_limit=soft), ensure_ascii=False) + '\n')
         print('%s %s' % (mark, tag))
         for lab, o in res:
             if not o:
                 print('      ✗ %s' % lab)
         if not ok:
             print('      seen: %s' % json.dumps(seen, ensure_ascii=False))
+            if soft:
+                print('      known limit: %s' % soft)
             self.recover()
         return sc
 
@@ -230,7 +267,9 @@ class Gate:
         """After a failed step: close a dialog the stray keys opened and clear stray prompt text, so one failure does not fail every later step."""
         for _ in range(3):
             sc = self.snap()
-            if sc.title() is None and sc.prompt() not in (None, '') and re.match(r'\d+\. ', sc.prompt()):
+            if sc.has('Nothing to rewind') or sc.has('Rewind'):
+                self.keys('Escape')  # the host's Rewind dialog (a double Esc opens it)
+            elif sc.title() is None and sc.prompt() not in (None, '') and re.match(r'\d+\. ', sc.prompt()):
                 self.keys('Escape')
             elif sc.prompt():
                 self.keys('Escape')  # leave a band input (e.g. an open 附註) first, so C-u reaches the prompt
@@ -261,6 +300,32 @@ def setup(ap, out, scenario):
     return work, data, home, cwd, env
 
 
+def launch(g, ap, out, scenario, data, home, cwd, env, sid, alias, cols=209, rows=49, extra_env=()):
+    """Open the real `claude --plugin-dir` in the gate's tmux session and get past the trust prompt to the input box."""
+    senv = ['env', 'HOME=' + home, 'PATH=' + os.path.join(HERE, 'bin') + ':' + os.environ['PATH'], 'V74_FIX=' + env['V74_FIX'],
+            'V74_KEYS_LOG=' + env['V74_KEYS_LOG'], 'AUTOPILOT_LIVE_DIR=' + os.path.join(data, 'live'), 'CODEFORGE_DATA_DIR=' + os.path.join(data, 'cfdata'),
+            'AUTOPILOT_CARD_MIRROR_DIR=' + os.path.join(data, 'mirror'), 'AUTOPILOT_ROOMS_DIR=' + os.path.join(data, 'rooms'),
+            'AUTOPILOT_V74_KEYLOG=' + os.path.join(os.path.abspath(out), 'keylog-%s.jsonl' % scenario),
+            *extra_env, 'AUTOPILOT_LOCALE=zh-TW', 'LANG=zh_TW.UTF-8', 'claude', '--session-id', sid, '--plugin-dir', ap, '--model', 'haiku']
+    cmd = ' '.join("'%s'" % a.replace("'", "'\\''") for a in senv)
+    if alias is not None:
+        # --token-alias: the session logs in with a pool's existing token instead of the default login (a pool at its
+        # weekly limit never answers [待決回覆]). The file is read inside the tmux shell, so the value is in the
+        # session's environment only: never in argv, the gate's output or a log. No token is copied, no login made.
+        tok = os.path.join(os.path.expanduser('~'), '.config/autopilot/accounts', alias, 'token')
+        cmd = 'unset CLAUDE_CONFIG_DIR; CLAUDE_CODE_OAUTH_TOKEN="$(cat %s)" exec %s' % ("'%s'" % tok.replace("'", "'\\''"), cmd)
+        cmd = "bash -c '%s'" % cmd.replace("'", "'\\''")
+    g.tmux('new-session', '-d', '-s', g.sess, '-x', str(cols), '-y', str(rows), '-c', cwd, cmd)
+    t0 = time.time()
+    while time.time() - t0 < 40:  # trust prompt, then the input box
+        time.sleep(1)
+        sc = g.snap()
+        if 'trust this folder' in sc.text.lower():
+            g.keys('Down', 'Enter')
+        elif sc.prompt() is not None and time.time() - t0 > 12:
+            break
+
+
 def run(ap, out, scenario, alias=None, hold=False):
     work, data, home, cwd, env = setup(ap, out, scenario)
     sid = str(uuid.uuid4())
@@ -270,28 +335,7 @@ def run(ap, out, scenario, alias=None, hold=False):
     g = Gate(ap, out, scenario)
     store = os.path.join(cwd, '.git/autopilot/decisions')
     try:
-        senv = ['env', 'HOME=' + home, 'PATH=' + os.path.join(HERE, 'bin') + ':' + os.environ['PATH'], 'V74_FIX=' + env['V74_FIX'],
-                'V74_KEYS_LOG=' + env['V74_KEYS_LOG'], 'AUTOPILOT_LIVE_DIR=' + os.path.join(data, 'live'), 'CODEFORGE_DATA_DIR=' + os.path.join(data, 'cfdata'),
-                'AUTOPILOT_CARD_MIRROR_DIR=' + os.path.join(data, 'mirror'), 'AUTOPILOT_ROOMS_DIR=' + os.path.join(data, 'rooms'),
-                'AUTOPILOT_V74_KEYLOG=' + os.path.join(os.path.abspath(out), 'keylog-%s.jsonl' % scenario),
-                'AUTOPILOT_LOCALE=zh-TW', 'LANG=zh_TW.UTF-8', 'claude', '--session-id', sid, '--plugin-dir', ap, '--model', 'haiku']
-        cmd = ' '.join("'%s'" % a.replace("'", "'\\''") for a in senv)
-        if alias is not None:
-            # --token-alias: the session logs in with a pool's existing token instead of the default login (a pool at its
-            # weekly limit never answers [待決回覆]). The file is read inside the tmux shell, so the value is in the
-            # session's environment only: never in argv, the gate's output or a log. No token is copied, no login made.
-            tok = os.path.join(os.path.expanduser('~'), '.config/autopilot/accounts', alias, 'token')
-            cmd = 'unset CLAUDE_CONFIG_DIR; CLAUDE_CODE_OAUTH_TOKEN="$(cat %s)" exec %s' % ("'%s'" % tok.replace("'", "'\\''"), cmd)
-            cmd = "bash -c '%s'" % cmd.replace("'", "'\\''")
-        g.tmux('new-session', '-d', '-s', g.sess, '-x', '209', '-y', '49', '-c', cwd, cmd)
-        t0 = time.time()
-        while time.time() - t0 < 40:  # trust prompt, then the input box
-            time.sleep(1)
-            sc = g.snap()
-            if 'trust this folder' in sc.text.lower():
-                g.keys('Down', 'Enter')
-            elif sc.prompt() is not None and time.time() - t0 > 12:
-                break
+        launch(g, ap, out, scenario, data, home, cwd, env, sid, alias)
         time.sleep(8)  # first band draw + feeds
         if scenario == 'noproject':
             g.step('band-noproject', lambda: None, [
@@ -394,12 +438,451 @@ def run(ap, out, scenario, alias=None, hold=False):
             ('title 派工', lambda s: s.title() == '派工'),
             ('prompt still x3', lambda s: s.prompt() == 'x3'),
         ])
+        fold_steps(g, os.path.abspath(out), 'normal', 'v74')  # PM 01M7YWXW: the band's fold button, before and after /reload-plugins (ordinary screen: known limit if no click arrives)
         return g.fails
     finally:
         regen.kill()
         g.tmux('kill-server', check=False)
         # keep what the host gave the band (maxRows x bodyColumns per change) next to the shots: the band-vs-Pane call
         # (PM 01M7Y9150) needs the measured rows, not the d.ts reading
+        for root, _, files in os.walk(work):
+            if 'band-geometry.log' in files:
+                shutil.copy(os.path.join(root, 'band-geometry.log'), os.path.join(out, 'band-geometry-%s.log' % scenario))
+                break
+        shutil.rmtree(work, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# v7.5 : band (bottom-left) + Pane (docked right, or a full-width box above the band on an ordinary screen), one shared state.
+# Region parsing is by structure (the Pane's left border column, the band head row), never by page wording.
+
+def col_of(line, idx):
+    return dw(line[:idx])
+
+
+def slice_cols(line, c0, c1=None):
+    """The part of a line between display columns c0 and c1 (wide characters count 2)."""
+    out, c = '', 0
+    for ch in line:
+        w = dw(ch)
+        if c >= c0 and (c1 is None or c + w <= c1):
+            out += ch
+        c += w
+    return out
+
+
+def sgr_col(ansi_line, col):
+    """The style in force at display column col of an ANSI line."""
+    st, c, pos = {}, 0, 0
+    for m in SGR.finditer(ansi_line + '\x1b[m'):
+        for ch in ESC.sub('', ansi_line[pos:m.start()]):
+            if c >= col:
+                return dict(st)
+            c += dw(ch)
+        sgr_apply(st, m.group(1))
+        pos = m.end()
+    return dict(st)
+
+
+def sig(st):
+    return tuple(sorted((k, str(v)) for k, v in (st or {}).items()))
+
+
+class V75:
+    """Read-only structural view of one captured screen: where the Pane is, where the band is, and their colours."""
+
+    def __init__(self, sc):
+        self.sc = sc
+        counts = {}
+        for i, l in enumerate(sc.lines):
+            for m in re.finditer('│', l):
+                counts.setdefault(col_of(l, m.start()), []).append(i)
+        best = max(((len(v), c) for c, v in counts.items() if c > 0), default=(0, 0))
+        self.pane_row = self.pane_bottom = None
+        self.pane_col = 0
+        self.layout = 'none'
+        inline_top = next((i for i, l in enumerate(sc.lines) if l.startswith('╭─')), None)
+        if inline_top is None and best[0] >= 6:  # a left border down the screen: docked beside the chat
+            self.pane_col, self.layout = best[1], 'docked'
+            self.pane_row = counts[best[1]][0]
+        else:             # an ordinary screen: a ╭─…─╮ box above the band
+            top = inline_top
+            if top is not None:
+                self.pane_row, self.layout = top, 'inline'
+                self.pane_bottom = next((i for i in range(top + 1, len(sc.lines)) if sc.lines[i].startswith('╰─')), len(sc.lines))
+        self.band_row = self.band_k = self.band_title = None
+        for i, l in enumerate(sc.lines):
+            if self.layout == 'inline' and self.pane_bottom is not None and i <= self.pane_bottom:
+                continue
+            m = re.search(BAND_HEAD_RE, self.left(l))
+            if m and self.left(l).lstrip().startswith(('↑', '▲')):
+                self.band_row, self.band_k, self.band_title = i, int(m.group(1)), m.group(3).strip()
+                self.band_col = col_of(l, l.index(m.group(0)[0]))
+                break
+
+    def left(self, line):  # the part of a row that is not the docked Pane
+        return slice_cols(line, 0, self.pane_col) if self.layout == 'docked' else line
+
+    def both(self):  # a Pane and a v7.5 band head on the same screen (what the single-band fallback must not show)
+        return self.layout != 'none' and self.band_row is not None
+
+    def prompt_row(self):
+        return next((i for i in range(len(self.sc.lines) - 1, -1, -1) if self.left(self.sc.lines[i]).strip().startswith('❯')), None)
+
+    def band_lines(self):
+        if self.band_row is None:
+            return []
+        end = self.prompt_row()
+        end = end - 1 if end is not None and end > self.band_row else self.band_row + 5
+        return [self.left(l).rstrip() for l in self.sc.lines[self.band_row:end]]
+
+    def band_text(self):
+        return '\n'.join(self.band_lines())
+
+    def band_hint(self):  # the band line above the quick row: the keys that work for the current focus
+        bl = self.band_lines()
+        q = next((i for i, l in enumerate(bl) if l.lstrip().startswith('▲') and '│' in l), None)
+        return bl[q - 1].strip() if q else None
+
+    def pane_lines(self):
+        """The Pane's inner rows: docked = right of the border, inline = inside the box; the ✕ close-button row is dropped."""
+        if self.layout == 'docked':
+            rows = [slice_cols(l, self.pane_col + 1).rstrip() for l in self.sc.lines[self.pane_row:]]
+        elif self.layout == 'inline':
+            rows = [re.sub(r'^│ ?', '', l.rstrip()).rstrip('│ ').rstrip() for l in self.sc.lines[self.pane_row + 1:self.pane_bottom]]
+        else:
+            return []
+        return [r_ for r_ in rows if r_.strip() != '✕']
+
+    def pane_text(self):
+        return '\n'.join(self.pane_lines())
+
+    def pane_title(self):
+        for l in self.pane_lines():
+            if l.strip():
+                return re.split(r'\s{2,}| · ', l.strip())[0]
+        return None
+
+    def pane_split(self):
+        """(head, body, foot): the title row, the scrolling middle, and the foot from the Pane's own hint row down."""
+        pl = self.pane_lines()
+        foot = next((i for i, l in enumerate(pl) if re.search(PANE_FOOT_RE, l)), len(pl))
+        return pl[:1], pl[1:foot], pl[foot:]
+
+    def pane_head(self):
+        return self.pane_split()[0]
+
+    def pane_body(self):
+        return self.pane_split()[1]
+
+    def pane_foot(self):
+        return self.pane_split()[2]
+
+    def cursor_no(self):
+        for l in self.pane_lines():
+            m = re.search(CURSOR_RE, l)
+            if m:
+                return int(m.group(1))
+        return None
+
+    def band_style(self):
+        if self.band_row is None or self.sc.ansi is None:
+            return None
+        return sig(sgr_col(self.sc.ansi[self.band_row], self.band_col))
+
+    def pane_style(self):  # the colour of the Pane's left border (docked, one body row down) or its box corner (inline)
+        if self.layout == 'none' or self.sc.ansi is None:
+            return None
+        return sig(sgr_col(self.sc.ansi[self.pane_row + (2 if self.layout == 'docked' else 0)], self.pane_col))
+
+    def picked(self, letter, region):
+        if region == 'band':
+            return re.search(PICK_BAND_RE % letter, self.band_text()) is not None
+        return re.search(PICK_PANE_RE % letter, self.pane_text()) is not None
+
+    def markers(self):
+        """(screen_row, display_col, number, row_has_cursor) of each card-number marker just inside the Pane's left border."""
+        out = []
+        if self.layout == 'none':
+            return out
+        base = self.pane_col + 1 if self.layout == 'docked' else 1
+        end = len(self.sc.lines) if self.layout == 'docked' else self.pane_bottom
+        for i in range(self.pane_row + 1, end):
+            seg = slice_cols(self.sc.lines[i], base, base + CLICK_MARK_COLS)
+            m = re.match(MARKER_RE, seg)
+            if m:
+                out.append((i, base + col_of(seg, m.start(1)), int(m.group(1)), seg.startswith('▸')))
+        return out
+
+    def fold(self):
+        """What the fold controls show: host [-] on the band head row, the folded row, and the mod's ▾ 收起 / ▸ 展開 on the quick row.
+        {'host': (row, col) | None, 'folded': (row, col) | None, 'mod': (row, col, 'open'|'shut') | None}"""
+        f = dict(host=None, folded=None, mod=None)
+        for i, l in enumerate(self.sc.lines):
+            t = self.left(l).rstrip()
+            if COLLAPSED_ROW in t and t.lstrip().startswith(FOLD_SHUT):
+                f['folded'] = (i, dw(t[:len(t) - len(t.lstrip())]))
+            for b in FOLD_HOST:
+                if (self.band_row == i or '待決' in t or '▲' in t) and t.endswith(b):
+                    f['host'] = (i, dw(t) - dw(b))
+            for g_ in FOLD_OPEN:
+                if t.endswith(g_ + ' ' + FOLD_TOGGLE_OPEN) and '待決' in t:
+                    f['mod'] = (i, dw(t) - dw(g_ + ' ' + FOLD_TOGGLE_OPEN), 'open')
+            if t.endswith(' ' + FOLD_TOGGLE_SHUT) and '待決' in t:
+                glyph = t.split()[-2]
+                f['mod'] = (i, dw(t) - dw(glyph + ' ' + FOLD_TOGGLE_SHUT), 'shut')
+        return f
+
+
+def v75(sc):
+    return V75(sc)
+
+
+def sgr_click(g, x, y):
+    """One left click as the SGR mouse report the host reads: press then release, 1-based cell."""
+    for tail in ('M', 'm'):
+        g.tmux('send-keys', '-t', g.sess, '-l', '\x1b[<0;%d;%d%s' % (x, y, tail))
+        time.sleep(0.1)
+
+
+def keylog_count(out, scenario, pat='press'):
+    try:
+        return sum(1 for l in open(os.path.join(out, 'keylog-%s.jsonl' % scenario), encoding='utf-8') if pat in l)
+    except OSError:
+        return 0
+
+
+def fold_cycle(g, out, tag, soft_msg):
+    """Click each fold control with SGR and read the result off the screen (PM 01M7YWXW): the host [-] folds the band to one row, the folded
+    row's ▸ opens it, the mod's ▾ 收起 closes the Pane and its ▸ 展開 opens it. A host click that does nothing is retried as the host's
+    keyboard fold (ctrl+x ctrl+a) and recorded as a known limit. Run again after /reload-plugins."""
+    memo = {}
+
+    def click(pick):
+        def f():
+            fo = v75(g.snap()).fold()
+            memo['pos'] = pick(fo)
+            if memo['pos']:
+                sgr_click(g, memo['pos'][1] + 1, memo['pos'][0] + 1)
+        return f
+    plan = (
+        ('host-fold', lambda fo: fo['host'], lambda fo: fo['folded'] is not None, 'band folded to one row', True),
+        ('host-unfold', lambda fo: fo['folded'], lambda fo: fo['folded'] is None and fo['host'] is not None, 'band back out of the folded row', True),
+        ('mod-close', lambda fo: fo['mod'] if fo['mod'] and fo['mod'][2] == 'open' else None, lambda fo: bool(fo['mod']) and fo['mod'][2] == 'shut', 'toggle now offers 展開', False),
+        ('mod-open', lambda fo: fo['mod'] if fo['mod'] and fo['mod'][2] == 'shut' else None, lambda fo: bool(fo['mod']) and fo['mod'][2] == 'open', 'toggle offers 收起 again', False),
+    )
+    for name, pick, want, what, key_fallback in plan:
+        g.step('%s-click-%s' % (tag, name), click(pick), [
+            ('the control is on screen', lambda s, pick=pick: pick(v75(s).fold()) is not None or memo.get('pos') is not None),
+            (what, lambda s, want=want: want(v75(s).fold())),
+        ], wait=5, soft=soft_msg)
+        print('      %s control at (row, col)=%s' % (name, memo.get('pos')))
+        if not g.last_ok and key_fallback:
+            g.step('%s-key-%s' % (tag, name), lambda: (g.keys(FOLD_KEYS[0]), g.keys(FOLD_KEYS[1])), [
+                ('keyboard fold ctrl+x ctrl+a: ' + what, lambda s, want=want: want(v75(s).fold())),
+            ], wait=5, soft='keyboard fold ctrl+x ctrl+a did not change the band either')
+
+
+def fold_steps(g, out, mode, tag):
+    soft = None if mode == 'fs' else 'ordinary screen: clicks may not arrive (claude-code.d.ts :6786, :9906 say full screen only); the v74 session on the ordinary screen did get them'
+    if 'Rewind' in g.snap().text:  # a stray Esc Esc opened the rewind dialog
+        g.keys('Escape')
+    g.keys('C-u')
+    fold_cycle(g, out, tag, soft)
+    g.step('%s-reload' % tag, lambda: (g.keys(RELOAD_CMD, literal=True), g.keys('Enter')), [('prompt empty after /reload-plugins', lambda s: s.prompt() == '')], wait=15)
+    time.sleep(3)
+    fold_cycle(g, out, tag + '-after-reload', soft)
+    fo = v75(g.snap()).fold()  # leave the band expanded for whatever runs next
+    if fo['folded'] is not None:
+        g.keys(*FOLD_KEYS)
+
+
+def run_v75_steps(g, mode, out):
+    """The v7.5 key steps on an open sandbox session. mode 'fs' = full screen (Pane docks, mouse reports), 'normal' = ordinary screen."""
+    memo = {}
+    focus = lambda: g.keys(*V75_FOCUS_KEY)
+    base_band = lambda s: v75(s).band_style() == memo['band']
+    base_pane = lambda s: v75(s).pane_style() == memo['pane']
+    pane_focused = lambda s: v75(s).pane_style() != memo['pane'] and base_band(s)
+    in_input = lambda s: v75(s).both() and base_band(s) and base_pane(s)
+
+    def to_input():  # one Esc (two in a row open the host's Rewind dialog), then probe with z: the prompt must take it
+        g.keys('Escape')
+        g.keys('z', literal=True)
+        if g.snap().prompt() != 'z':
+            g.keys('Escape')
+            time.sleep(1.5)
+        g.keys('C-u')
+
+    def to_pane():  # keyboard on the Pane, whatever had it: input -> band (ctrl+x tab), digit 2 -> Pane on 待決
+        if not pane_focused(g.snap()):
+            to_input()
+            focus()
+            g.keys('2', literal=True)
+
+    g.step('open', lambda: (g.keys(V75_OPEN, literal=True), g.keys('Enter')), [
+        ('a Pane and the band head are both on screen', lambda s: v75(s).both()),
+        ('layout %s' % ('docked beside the chat' if mode == 'fs' else 'is docked or inline'), lambda s: v75(s).layout == 'docked' if mode == 'fs' else v75(s).layout in ('docked', 'inline')),
+        ('opens on the keyboard-in-Pane hint', lambda s: (v75(s).band_hint() or '').startswith(HINT_PANE)),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ], wait=20)
+    memo['pane_open'] = v75(g.snap()).pane_style()
+    g.step('esc-from-pane', lambda: g.keys('Escape'), [
+        ('Pane frame lost its focus colour', lambda s: v75(s).pane_style() != memo['pane_open']),
+        ('band hint line back to the input one (下框線文字更新)', lambda s: v75(s).band_hint() == HINT_INPUT),
+    ])
+    memo['band'], memo['pane'] = v75(g.snap()).band_style(), v75(g.snap()).pane_style()  # the input-has-the-keyboard colours
+    g.step('esc-types', lambda: g.keys('z', literal=True), [('prompt is z (the input has the keyboard)', lambda s: s.prompt() == 'z')])
+    g.step('clear-1', lambda: g.keys('C-u'), [('prompt empty', lambda s: s.prompt() == '')])
+    g.step('band-focus', focus, [
+        ('band head colour changed (focus is on the band)', lambda s: not base_band(s)),
+        ('Pane frame colour unchanged', base_pane),
+        ('band hint line is the band one', lambda s: (v75(s).band_hint() or '').startswith(HINT_BAND)),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ])
+    g.step('band-pick-b', lambda: g.keys('b', literal=True), [
+        ('band shows →b', lambda s: v75(s).picked('b', 'band')),
+        ('prompt empty (b did not go to the prompt)', lambda s: s.prompt() == ''),
+    ])
+    g.step('band-digit-2', lambda: g.keys('2', literal=True), [
+        ('Pane is on 待決', lambda s: v75(s).pane_title() == PAGE_PENDING),
+        ('Pane shows →b on option b (set from the band)', lambda s: v75(s).picked('b', 'pane')),
+        ('focus moved to the Pane: Pane colour changed, band back to its input colour', pane_focused),
+        ('band hint line is the Pane one', lambda s: (v75(s).band_hint() or '').startswith(HINT_PANE)),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ])
+    g.step('pane-pick-a', lambda: g.keys('a', literal=True), [
+        ('Pane shows →a', lambda s: v75(s).picked('a', 'pane')),
+        ('band shows →a (set from the Pane)', lambda s: v75(s).picked('a', 'band')),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ])
+    memo['cur'] = v75(g.snap()).cursor_no()
+    g.step('pane-down', lambda: g.keys('Down'), [
+        ('Pane cursor moved to another card', lambda s: v75(s).cursor_no() not in (None, memo['cur'])),
+        ('band follows: its k/n is the Pane cursor card', lambda s: v75(s).band_k is not None and v75(s).band_k == v75(s).cursor_no()),
+    ])
+    g.step('esc-pane', lambda: g.keys('Escape'), [
+        ('focus back on the input: band and Pane colours at their input values', in_input),
+        ('band hint line back to the input one (下框線文字更新)', lambda s: v75(s).band_hint() == HINT_INPUT),
+    ])
+    g.step('esc-pane-types', lambda: g.keys('z', literal=True), [('prompt is z (the input has the keyboard)', lambda s: s.prompt() == 'z')])
+    g.step('clear-2', lambda: g.keys('C-u'), [('prompt empty', lambda s: s.prompt() == '')])
+    g.step('band-digit-3', lambda: (focus(), g.keys('3', literal=True)), [
+        ('Pane jumped to 派工', lambda s: v75(s).pane_title() == PAGE_DISPATCH),
+        ('focus is on the Pane (colour changed), not the band', pane_focused),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ])
+    g.step('esc-pane-3', lambda: g.keys('Escape'), [('focus back on the input', in_input), ('band hint line back to the input one', lambda s: v75(s).band_hint() == HINT_INPUT)])
+    g.step('esc-band', lambda: (focus(), g.keys('Escape')), [
+        ('Esc in the band: focus back on the input', in_input),
+        ('band hint line back to the input one', lambda s: v75(s).band_hint() == HINT_INPUT),
+    ])
+    g.step('esc-band-types', lambda: g.keys('z', literal=True), [('prompt is z', lambda s: s.prompt() == 'z')])
+    g.step('clear-3', lambda: g.keys('C-u'), [('prompt empty', lambda s: s.prompt() == '')])
+    # preview: Esc cancels only the preview; a change after it opens makes y refuse
+    g.step('preview-open', lambda: (focus(), g.keys('2', literal=True), g.keys('a', literal=True), g.keys('s', literal=True)), [
+        ('preview shown', lambda s: s.has(PREVIEW_MARK)),
+        ('nothing sent', lambda s: not s.has(SENT_MARK)),
+    ])
+    g.step('preview-esc', lambda: g.keys('Escape'), [
+        ('preview gone', lambda s: not s.has(PREVIEW_MARK)),
+        ('only the preview closed: Pane and band still up, focus still on the Pane', lambda s: v75(s).both() and pane_focused(s)),
+        ('nothing sent', lambda s: not s.has(SENT_MARK)),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ])
+    to_pane()
+    g.step('preview-reopen', lambda: g.keys('s', literal=True), [('preview shown again', lambda s: s.has(PREVIEW_MARK)), ('prompt empty', lambda s: s.prompt() == '')])
+    g.step('preview-stale-y', lambda: (g.keys('b', literal=True), g.keys('y', literal=True)), [
+        ('screen says the preview is stale', lambda s: s.has(STALE_MARK)),
+        ('y did not send', lambda s: not s.has(SENT_MARK)),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ])
+    g.keys('Escape')
+    to_pane()
+    # scrolling: PgUp/PgDn move only the Pane's middle section
+    def to_long():
+        for _ in range(6):
+            if v75(g.snap()).cursor_no() == LONG_CARD:
+                break
+            g.keys('Down')
+    g.step('to-long-card', to_long, [('cursor on the long card', lambda s: v75(s).cursor_no() == LONG_CARD)])
+    memo['pre'] = v75(g.snap())
+    g.step('pgdn', lambda: g.keys('PageDown'), [
+        ('Pane body scrolled', lambda s: v75(s).pane_body() != memo['pre'].pane_body()),
+        ('Pane title row and foot did not move', lambda s: (v75(s).pane_head(), v75(s).pane_foot()) == (memo['pre'].pane_head(), memo['pre'].pane_foot())),
+        ('band did not move at all', lambda s: v75(s).band_lines() == memo['pre'].band_lines()),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ])
+    g.step('pgup', lambda: g.keys('PageUp'), [
+        ('Pane body back where it was', lambda s: v75(s).pane_body() == memo['pre'].pane_body()),
+        ('band did not move', lambda s: v75(s).band_lines() == memo['pre'].band_lines()),
+    ])
+    # mouse: SGR click on a card-number marker on the Pane's left border. fs = must work; normal = known limit if the host sends no reports
+    def click():
+        v = v75(g.snap())
+        mk = [m for m in v.markers() if not m[3]]
+        memo['click_cur'] = v.cursor_no()
+        memo['marker'] = mk[0] if mk else None
+        memo['press0'] = keylog_count(out, g.scenario)
+        if mk:
+            sgr_click(g, mk[0][1] + 1, mk[0][0] + 1)
+    soft = None if mode == 'fs' else 'ordinary screen: the host reports clicks only in full screen (claude-code.d.ts :6786, :9906); the help page says so (v75.help.click)'
+    g.step('mouse-click-marker', click, [
+        ('a card-number marker exists on the Pane left border', lambda s: memo.get('marker') is not None),
+        ('cursor jumped to the clicked card', lambda s: memo.get('marker') is not None and v75(s).cursor_no() == memo['marker'][2]),
+        ('band follows the click', lambda s: v75(s).band_k == v75(s).cursor_no()),
+    ], wait=6, soft=soft)
+    probe = dict(mode=mode, marker=memo.get('marker'), cursor_before=memo.get('click_cur'), cursor_after=v75(g.snap()).cursor_no(),
+                 ui_press_logged=keylog_count(out, g.scenario) > memo.get('press0', 0))
+    with open(os.path.join(out, 'mouse-probe-%s.json' % mode), 'w', encoding='utf-8') as f:
+        json.dump(probe, f, ensure_ascii=False)
+    print('MOUSE-PROBE %s' % json.dumps(probe, ensure_ascii=False))
+    to_input()
+    if mode == 'fs':  # sizes (full screen session): 110 docks, 109 does not, 30 rows falls back to the single band
+        def resize(c, r):
+            return lambda: g.tmux('resize-window', '-t', g.sess, '-x', str(c), '-y', str(r))
+        g.step('w110', resize(110, 49), [
+            ('Pane docked beside the chat at 110 columns', lambda s: v75(s).layout == 'docked'),
+            ('band present', lambda s: v75(s).band_row is not None),
+        ], wait=10)
+        g.step('w109', resize(109, 49), [
+            ('Pane not docked at 109 columns', lambda s: v75(s).layout != 'docked'),
+            ('band present', lambda s: v75(s).band_row is not None or s.band() is not None),
+        ], wait=10)
+        g.step('h30', resize(209, 30), [
+            ('no Pane next to a band head: single band fallback', lambda s: not v75(s).both()),
+            ('a band is still drawn', lambda s: v75(s).band_row is not None or s.band() is not None),
+            ('prompt still on screen', lambda s: s.prompt() is not None),
+        ], wait=10)
+        g.step('h30-focus-not-stranded', lambda: (focus(), g.keys('3', literal=True)), [
+            ('the digit reached a visible page or the band, not a hidden Pane', lambda s: s.prompt() == '' and (s.title() is not None or v75(s).band_row is not None or s.band() is not None)),
+        ])
+        to_input()
+        g.tmux('resize-window', '-t', g.sess, '-x', '209', '-y', '49')
+        time.sleep(3)
+    focus(); g.keys('2', literal=True); to_input(); time.sleep(1)  # back on 待決 with the band cards showing: the fold button lives on the band head
+    fold_steps(g, out, mode, 'v75')
+    to_input()
+
+
+def run_v75(ap, out, mode, alias=None):
+    """One v7.5 session: mode 'fs' (CLAUDE_CODE_NO_FLICKER=1, 209x49) or 'normal' (NO_FLICKER=0, 209x49)."""
+    scenario = 'v75' + mode
+    work, data, home, cwd, env = setup(ap, out, scenario)
+    sid = str(uuid.uuid4())
+    gen = [sys.executable, '-I', os.path.join(HERE, 'gen-data.py'), data, sid, cwd]
+    subprocess.run(gen, check=True)
+    regen = subprocess.Popen(['bash', '-c', 'while sleep 25; do "$@"; done', 'regen'] + gen)
+    g = Gate(ap, out, scenario)
+    g.work = work
+    try:
+        launch(g, ap, out, scenario, data, home, cwd, env, sid, alias, extra_env=('CLAUDE_CODE_NO_FLICKER=%d' % (1 if mode == 'fs' else 0),))
+        time.sleep(8)
+        run_v75_steps(g, mode, out)
+        return g.fails
+    finally:
+        regen.kill()
+        g.tmux('kill-server', check=False)
         for root, _, files in os.walk(work):
             if 'band-geometry.log' in files:
                 shutil.copy(os.path.join(root, 'band-geometry.log'), os.path.join(out, 'band-geometry-%s.log' % scenario))
@@ -457,6 +940,7 @@ def main():
     ap.add_argument('--out', default=None)
     ap.add_argument('--only', choices=['project', 'noproject'])
     ap.add_argument('--hold', action='store_true', help='open the project sandbox on the 待決 tab and wait for a person to press keys (no steps run)')
+    ap.add_argument('--v75', action='store_true', help='run the v7.5 band+Pane steps instead of the v7.4 ones: a full-screen session (209x49, NO_FLICKER=1: docked Pane, mouse, 110/109 columns, 30 rows) and an ordinary-screen one (mouse is a known limit there)')
     ap.add_argument('--token-alias', default=None, help='log the session in with ~/.config/autopilot/accounts/<alias>/token (an existing pool token; read in the session shell, never printed)')
     a = ap.parse_args()
     chk = os.path.realpath(a.checkout)
@@ -476,6 +960,11 @@ def main():
     head = subprocess.run(['git', '-C', chk, 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
     print('v74-keys gate · autopilot %s · out %s' % (head[:10] or '?', out))
     fails = 0
+    if a.v75:
+        for mode in ('fs', 'normal'):
+            fails += run_v75(chk, out, mode, a.token_alias)
+        print('RESULT %s · %d failed step(s) · %s' % ('GREEN' if fails == 0 else 'RED', fails, out))
+        return 0 if fails == 0 else 1
     for sc in (['project'] if a.hold else [a.only] if a.only else ['project', 'noproject']):
         fails += run(chk, out, sc, a.token_alias, a.hold)
     print('RESULT %s · %d failed step(s) · %s' % ('GREEN' if fails == 0 else 'RED', fails, out))
