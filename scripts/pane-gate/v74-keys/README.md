@@ -36,3 +36,20 @@ pane 每次交件都要附上 `run.py` 的輸出（全綠）和擷取圖，PM �
 - `ux-review.test.sh`（check-all 會跑）：不叫引擎，驗紅燈拒絕、組包內容、私有 email 擋下、四種判定。
 
 `--hold`（PM 01M7YN17）：只開 project 沙盒、切到待決頁，不跑步驟，印出 attach、send-keys、capture、kill-session 指令，讓人在真席手按。卡全是假卡（d-keys000N，驗收測試卡），fleet 是閘門的假指令，卡片庫在沙盒 repo 裡，按 y 不會送到任何真的卡片佇列。session 結束時印出沙盒裡是否已送出。
+
+## v7.5：band + 右方 Pane（`--v75`，PM 01M7YW76）
+
+```
+./run.py <autopilot-checkout> --v75 [--out DIR] [--token-alias <alias>]
+```
+
+不帶 `--v75` 的 v74 三十步原樣保留（回歸用）。`--v75` 只跑 v7.5 的兩個 session，各自私有 tmux：
+
+- `v75fs`：全螢幕（`CLAUDE_CODE_NO_FLICKER=1`）209x49，Pane 要停靠在右邊。
+- `v75normal`：一般畫面（`NO_FLICKER=0`）209x49，Pane 停靠或 inline 都收。
+
+判斷條件盡量看結構，不看頁面用字：`V75` 類別把畫面切成 Pane 區（框的角字元以右，或 inline 時 band 以上）和 band 區（`▲ i/n 卡號` 那列到輸入框），再比卡號、→字母、ANSI 色碼。要對字串時只改 `run.py` 檔頭 `V75_*` 常數。
+
+步驟：open（Pane 和 band 都在）→ ctrl+x tab 焦點到 band（band 色碼變、Pane 色碼不變、下框線提示變）→ band 按 b（band 顯示 →b）→ band 按 2（Pane 跳 待決、Pane 顯示 →b、焦點移到 Pane）→ Pane ↓（cursor 換、band 的卡號跟著換）→ Pane 按 a（兩邊都顯示 →a）→ Esc（色碼和提示回到輸入框、再打字進輸入框）→ band 按 3（Pane 跳 派工、焦點在 Pane）→ band 焦點 Esc → 預覽（Esc 只關預覽、焦點不變；預覽中改選再按 y 被拒、不送出）→ PgDn/PgUp（只有 Pane 中間捲、標題列和 band 不動）→ 滑鼠：SGR `\e[<0;X;Ym` / `m` 點 Pane 左邊框的卡號，cursor 要跳過去；全螢幕必過，一般畫面收不到就記成已知限制（`KNOWN-LIMIT`，不算失敗）→ 只在全螢幕 session：110 欄停靠、109 欄不停靠、30 列退回單一 band（沒有 Pane 框和 band 頭並存）。
+
+滑鼠探測另寫 `mouse-probe-<fs|normal>.json`（有沒有找到卡號標記、cursor 前後、keylog 有沒有 press 事件）。每張截圖旁邊有 `<步驟>.band-geometry.log`，session 結束再留一份 `band-geometry-<情境>.log`。

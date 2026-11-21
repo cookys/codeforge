@@ -31,6 +31,26 @@ want = [
     ('negative: plain capture has no style', r.Screen(d3.text).active_tab_marked('2', '待決'), False),
     ('negative: … with free rows fails', r.Screen(green.text.replace('明顯。', '明…').replace('│ s: 送出', '│\n│\n│ s: 送出')).no_cut_with_room(), False),
 ]
+# v7.5 region parser: a hand-made docked frame (Pane right, band bottom-left), then the same with the cursor, picks and focus colour changed
+def docked(cur, pick, band_sgr='', pane_sgr=''):
+    L = 40
+    rows = ['對話 ...'.ljust(L) + pane_sgr + '╭─ 待決 · 3 張' + ('\x1b[m' if pane_sgr else ''),
+            ''.ljust(L) + '│ 1 d-a0001 ' + ('▸' if cur == 1 else ' ') + ' q' + (' →' + pick if pick and cur == 1 else ''),
+            ''.ljust(L) + '│ 2 d-a0002 ' + ('▸' if cur == 2 else ' ') + ' q' + (' →' + pick if pick and cur == 2 else ''),
+            band_sgr + ('▲ %d/3 d-a000%d' % (cur, cur) + (' →' + pick if pick else '')).ljust(L) + ('\x1b[m' if band_sgr else '') + '│',
+            '❯'.ljust(L) + '│', 'ctrl+x tab 拿鍵盤'.ljust(L) + '│']
+    return '\n'.join(rows)
+d1, d2 = r.V75(r.Screen.from_ansi(docked(1, 'b'))), r.V75(r.Screen.from_ansi(docked(2, '')))
+f1 = r.V75(r.Screen.from_ansi(docked(1, 'b', band_sgr='\x1b[38;5;45m')))
+want += [
+    ('v75 layout docked', d1.layout, 'docked'), ('v75 both', d1.both(), True), ('v75 pane title', d1.pane_title(), '待決'),
+    ('v75 cursor id', d1.cursor_id(), 'd-a0001'), ('v75 cursor moves', d2.cursor_id(), 'd-a0002'), ('v75 band id', d2.band_id, 'd-a0002'),
+    ('v75 pick in pane and band', (d1.picked('b', 'pane'), d1.picked('b', 'band')), (True, True)),
+    ('v75 no pick after the card changed', (d2.picked('b', 'pane'), d2.picked('b', 'band')), (False, False)),
+    ('v75 hint', d1.hint(), 'ctrl+x tab 拿鍵盤'), ('v75 colour differs only when styled', (d1.band_style() == f1.band_style(), d1.pane_style() == f1.pane_style()), (False, True)),
+    ('v75 markers: card numbers on the Pane edge', [m[2] for m in d1.markers()], [1, 2]),
+    ('negative: no Pane frame in the v7.4 single band', r.V75(green).both(), False),
+]
 bad = [(n, got, exp) for n, got, exp in want if got != exp]
 for n, got, exp in bad: print('FAIL %s: got %r want %r' % (n, got, exp))
 print('parse.test: %d/%d ok' % (len(want) - len(bad), len(want)))
