@@ -242,8 +242,10 @@ class Gate:
         ok = all(o for _, o in res)
         if getattr(self, 'work', None):  # v7.5: the host's band-geometry.log as it stood at this shot
             for root, _, files in os.walk(self.work):
-                if 'band-geometry.log' in files:
-                    shutil.copy(os.path.join(root, 'band-geometry.log'), os.path.join(self.out, tag + '.band-geometry.log'))
+                if 'band-geometry.log' in files or 'band-focus.log' in files:
+                    for lg in ('band-geometry', 'band-focus'):
+                        if lg + '.log' in files:
+                            shutil.copy(os.path.join(root, lg + '.log'), os.path.join(self.out, tag + '.' + lg + '.log'))
                     break
         self.last_ok = ok
         self.fails += 0 if ok or soft else 1
@@ -447,8 +449,10 @@ def run(ap, out, scenario, alias=None, hold=False):
         # keep what the host gave the band (maxRows x bodyColumns per change) next to the shots: the band-vs-Pane call
         # (PM 01M7Y9150) needs the measured rows, not the d.ts reading
         for root, _, files in os.walk(work):
-            if 'band-geometry.log' in files:
-                shutil.copy(os.path.join(root, 'band-geometry.log'), os.path.join(out, 'band-geometry-%s.log' % scenario))
+            if 'band-geometry.log' in files or 'band-focus.log' in files:
+                for lg in ('band-geometry', 'band-focus'):
+                    if lg + '.log' in files:
+                        shutil.copy(os.path.join(root, lg + '.log'), os.path.join(out, lg + '-%s.log' % scenario))
                 break
         shutil.rmtree(work, ignore_errors=True)
 
@@ -741,8 +745,8 @@ def run_v75_steps(g, mode, out):
             time.sleep(1.5)
         g.keys('C-u')
 
-    def press_to_pane():  # ctrl+x tab until the Pane frame shows focus (at most 6 presses; 5e3dfcc6c needs 5 from the input)
-        for _ in range(6):
+    def press_to_pane():  # ctrl+x tab until the Pane frame shows focus (at most 10: anchor, 7 band buttons, pane-toggle, then the Pane on e8d47d478)
+        for _ in range(10):
             if pane_focused(g.snap()):
                 return
             focus()
@@ -878,6 +882,23 @@ def run_v75_steps(g, mode, out):
         json.dump(probe, f, ensure_ascii=False)
     print('MOUSE-PROBE %s' % json.dumps(probe, ensure_ascii=False))
     to_input()
+    # spend page (5): capacity's pool forecast from AUTOPILOT_POOL_ETA (a fixture with made-up pool names): % / burn / reset / exhaust columns; an old generated_at marks the page 過期
+    g.step('spend-fresh', lambda: (to_input(), focus(), g.keys('1', literal=True), g.keys('5', literal=True)), [
+        ('Pane shows the spend page with the fixture pools', lambda s: 'pool-alpha' in v75(s).pane_text() and 'pool-beta' in v75(s).pane_text()),
+        ('percent column', lambda s: re.search(r'pool-alpha.*\b54%', v75(s).pane_text()) is not None),
+        ('burn column (%/h)', lambda s: re.search(r'pool-alpha.*\d+(\.\d+)?%/h', v75(s).pane_text()) is not None),
+        ('reset column (重置)', lambda s: re.search(r'pool-alpha.*重置', v75(s).pane_text()) is not None),
+        ('exhaust column (用完)', lambda s: re.search(r'pool-alpha.*用完', v75(s).pane_text()) is not None),
+        ('a pool that never exhausts says so', lambda s: re.search(r'pool-beta.*重置前不會用完', v75(s).pane_text()) is not None),
+        ('a fresh feed is not marked 過期', lambda s: '過期' not in v75(s).pane_text()),
+    ], wait=10)
+    write_eta(g.eta, 3 * 3600)
+    g.step('spend-stale', lambda: (g.keys('1', literal=True), g.keys('5', literal=True)), [
+        ('the page says the pool forecast is stale (池預估已過期)', lambda s: '池預估已過期' in v75(s).pane_text()),
+        ('each pool row carries 過期', lambda s: len(re.findall('過期', v75(s).pane_text())) >= 3),
+    ], wait=10)
+    write_eta(g.eta, 0)
+    to_input()
     if mode == 'fs':  # sizes (full screen session): 110 docks, 109 does not, 30 rows falls back to the single band
         def resize(c, r):
             return lambda: g.tmux('resize-window', '-t', g.sess, '-x', str(c), '-y', str(r))
@@ -905,6 +926,22 @@ def run_v75_steps(g, mode, out):
     to_input()
 
 
+def write_eta(path, age_s):
+    """A capacity.pool-eta/1 fixture with made-up pool names, generated age_s seconds ago (stale_after_s 1200). Times are relative to now so the rows read as live."""
+    now = int(time.time() * 1000)
+    h = 3600 * 1000
+
+    def pool(name, seven, burn, resets_h, exhaust_h):
+        return dict(pool=name, **{'class': 'claude'}, state='ok', seen_at_ms=now - 600000, seven_day_pct=seven, five_hour_pct=None, resets_at_ms=now + resets_h * h,
+                    burn_pct_per_h=burn, burn_window_h=5.8, burn_1h=None, burn_6h=None, exhaust_at_ms=(now + exhaust_h * h) if exhaust_h else None,
+                    early_by_ms=None, burn_reason=None, disposition='OK', reason_code='ahead_no_seat', disposition_source='verdicts', reset_kind='fixed',
+                    reset_kind_confidence='asserted', alerts=[])
+    doc = dict(schema='capacity.pool-eta/1', generated_at_ms=now - age_s * 1000, generated_at='2026-01-01T00:00:00Z', stale_after_s=1200,
+               pace_generated_at_ms=now - age_s * 1000, pools=[pool('pool-alpha', 54, 1.03, 90, 40), pool('pool-beta', 68, 0.52, 60, None)])
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(doc, f)
+
+
 def run_v75(ap, out, mode, alias=None):
     """One v7.5 session: mode 'fs' (CLAUDE_CODE_NO_FLICKER=1, 209x49) or 'normal' (NO_FLICKER=0, 209x49)."""
     scenario = 'v75' + mode
@@ -915,8 +952,10 @@ def run_v75(ap, out, mode, alias=None):
     regen = subprocess.Popen(['bash', '-c', 'while sleep 25; do "$@"; done', 'regen'] + gen)
     g = Gate(ap, out, scenario)
     g.work = work
+    g.eta = os.path.join(work, 'pool-eta.json')
+    write_eta(g.eta, 0)
     try:
-        launch(g, ap, out, scenario, data, home, cwd, env, sid, alias, extra_env=('CLAUDE_CODE_NO_FLICKER=%d' % (1 if mode == 'fs' else 0),))
+        launch(g, ap, out, scenario, data, home, cwd, env, sid, alias, extra_env=('CLAUDE_CODE_NO_FLICKER=%d' % (1 if mode == 'fs' else 0), 'AUTOPILOT_POOL_ETA=' + g.eta))
         time.sleep(8)
         run_v75_steps(g, mode, out)
         return g.fails
@@ -924,8 +963,10 @@ def run_v75(ap, out, mode, alias=None):
         regen.kill()
         g.tmux('kill-server', check=False)
         for root, _, files in os.walk(work):
-            if 'band-geometry.log' in files:
-                shutil.copy(os.path.join(root, 'band-geometry.log'), os.path.join(out, 'band-geometry-%s.log' % scenario))
+            if 'band-geometry.log' in files or 'band-focus.log' in files:
+                for lg in ('band-geometry', 'band-focus'):
+                    if lg + '.log' in files:
+                        shutil.copy(os.path.join(root, lg + '.log'), os.path.join(out, lg + '-%s.log' % scenario))
                 break
         shutil.rmtree(work, ignore_errors=True)
 
