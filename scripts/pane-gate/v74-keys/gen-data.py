@@ -3,10 +3,9 @@
 # All data is made up (no real host, org, amount or account). The store's first three cards share their ids with the fake fleet's
 # decision list (mods/live/fixtures/v74/decide.json), so both sources read together dedupe to 3; d-keys0004 is the store-only test card.
 # noproject: the cwd is not mapped to a project (the PM seat's case: the band must still show fleet, decisions and tok/s).
-import json, os, sys, time, datetime
+import hashlib, json, os, sys, time, datetime
 D, SID, CWD = sys.argv[1:4]
 CWD = os.path.realpath(CWD)
-KEY = 'a1b2c3d4e5f60718'
 now = time.time()
 def iso(ago_s=0): return datetime.datetime.fromtimestamp(now - ago_s, datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
 def put(path, obj):
@@ -14,11 +13,15 @@ def put(path, obj):
     tmp = path + '.tmp'
     open(tmp, 'w', encoding='utf-8').write(json.dumps(obj, ensure_ascii=False))
     os.rename(tmp, path)
-H = D + '/home'; AH = H + '/.autopilot'; LIVE = D + '/live'; REPO = D + '/demo'
-os.makedirs(REPO + '/.git', exist_ok=True)
-IDENT = 'git-common-dir:' + REPO + '/.git'
-put(AH + '/live-pointer.json', dict(schema='autopilot.live-pointer/1', live_base=LIVE, autopilot_home=AH, written_at=iso()))
+H = D + '/home'; AH = H + '/.autopilot'; LIVE = D + '/live'
 NOPROJ = len(sys.argv) > 4 and sys.argv[4] == 'noproject'
+# project: the card store lives in the session's own repo (run.py git-inits the cwd), and the key is the one autopilot derives
+# from that repo (src/status/project-key.js: sha256 of the identity, 16 hex), so open-decision.js close finds and closes the card.
+REPO = CWD if not NOPROJ else D + '/demo'
+os.makedirs(REPO + '/.git', exist_ok=True)
+IDENT = 'git-common-dir:' + os.path.realpath(REPO + '/.git')
+KEY = hashlib.sha256(IDENT.encode()).hexdigest()[:16]
+put(AH + '/live-pointer.json', dict(schema='autopilot.live-pointer/1', live_base=LIVE, autopilot_home=AH, written_at=iso()))
 if not NOPROJ: put(LIVE + '/runs/paths/demo.json', {CWD: dict(project_key=KEY)})
 put(AH + '/session-mode/%s.json' % SID, dict(session_id=SID, level=None, project_key=KEY, root_run_id=None, started_at=iso(3*3600+26*60), expires_at=iso(-6*3600)))
 def row(i, runner, role, ago, **o):

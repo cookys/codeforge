@@ -248,9 +248,9 @@ class Gate:
 def setup(ap, out, scenario):
     work = tempfile.mkdtemp(prefix='v74keys-')
     data, home, cwd = os.path.join(work, 'data'), os.path.join(work, 'data', 'home'), os.path.join(work, 'cwd')
-    for d in (home, os.path.join(cwd, '.git'), os.path.join(cwd, '.claude'), os.path.join(home, '.local/state/fleet')):
+    for d in (home, cwd, os.path.join(cwd, '.claude'), os.path.join(home, '.local/state/fleet')):
         os.makedirs(d, exist_ok=True)
-    open(os.path.join(cwd, '.git', 'HEAD'), 'w').write('ref: refs/heads/main\n')
+    subprocess.run(['git', 'init', '-q', '-b', 'main', cwd], check=True)  # a real repo: open-decision.js derives the card store's key from it
     open(os.path.join(cwd, '.fleet-no-register'), 'w').close()
     real = os.path.expanduser('~')
     os.symlink(os.path.join(real, '.claude'), os.path.join(home, '.claude'))  # login only; the session writes its transcript there
@@ -261,21 +261,29 @@ def setup(ap, out, scenario):
     return work, data, home, cwd, env
 
 
-def run(ap, out, scenario):
+def run(ap, out, scenario, alias=None):
     work, data, home, cwd, env = setup(ap, out, scenario)
     sid = str(uuid.uuid4())
     gen = [sys.executable, '-I', os.path.join(HERE, 'gen-data.py'), data, sid, cwd] + (['noproject'] if scenario == 'noproject' else [])
     subprocess.run(gen, check=True)
     regen = subprocess.Popen(['bash', '-c', 'while sleep 25; do "$@"; done', 'regen'] + gen)
     g = Gate(ap, out, scenario)
-    store = os.path.join(data, 'demo/.git/autopilot/decisions')
+    store = os.path.join(cwd, '.git/autopilot/decisions')
     try:
         senv = ['env', 'HOME=' + home, 'PATH=' + os.path.join(HERE, 'bin') + ':' + os.environ['PATH'], 'V74_FIX=' + env['V74_FIX'],
                 'V74_KEYS_LOG=' + env['V74_KEYS_LOG'], 'AUTOPILOT_LIVE_DIR=' + os.path.join(data, 'live'), 'CODEFORGE_DATA_DIR=' + os.path.join(data, 'cfdata'),
                 'AUTOPILOT_CARD_MIRROR_DIR=' + os.path.join(data, 'mirror'), 'AUTOPILOT_ROOMS_DIR=' + os.path.join(data, 'rooms'),
                 'AUTOPILOT_V74_KEYLOG=' + os.path.join(os.path.abspath(out), 'keylog-%s.jsonl' % scenario),
                 'AUTOPILOT_LOCALE=zh-TW', 'LANG=zh_TW.UTF-8', 'claude', '--session-id', sid, '--plugin-dir', ap, '--model', 'haiku']
-        g.tmux('new-session', '-d', '-s', g.sess, '-x', '209', '-y', '49', '-c', cwd, ' '.join("'%s'" % a.replace("'", "'\\''") for a in senv))
+        cmd = ' '.join("'%s'" % a.replace("'", "'\\''") for a in senv)
+        if alias is not None:
+            # --token-alias: the session logs in with a pool's existing token instead of the default login (a pool at its
+            # weekly limit never answers [待決回覆]). The file is read inside the tmux shell, so the value is in the
+            # session's environment only: never in argv, the gate's output or a log. No token is copied, no login made.
+            tok = os.path.join(os.path.expanduser('~'), '.config/autopilot/accounts', alias, 'token')
+            cmd = 'unset CLAUDE_CONFIG_DIR; CLAUDE_CODE_OAUTH_TOKEN="$(cat %s)" exec %s' % ("'%s'" % tok.replace("'", "'\\''"), cmd)
+            cmd = "bash -c '%s'" % cmd.replace("'", "'\\''")
+        g.tmux('new-session', '-d', '-s', g.sess, '-x', '209', '-y', '49', '-c', cwd, cmd)
         t0 = time.time()
         while time.time() - t0 < 40:  # trust prompt, then the input box
             time.sleep(1)
@@ -406,6 +414,7 @@ def main():
     ap.add_argument('checkout')
     ap.add_argument('--out', default=None)
     ap.add_argument('--only', choices=['project', 'noproject'])
+    ap.add_argument('--token-alias', default=None, help='log the session in with ~/.config/autopilot/accounts/<alias>/token (an existing pool token; read in the session shell, never printed)')
     a = ap.parse_args()
     chk = os.path.realpath(a.checkout)
     if not os.path.isdir(os.path.join(chk, 'mods/live')):
@@ -413,13 +422,19 @@ def main():
     for tool in ('tmux', 'claude'):
         if shutil.which(tool) is None:
             print('setup: %s not on PATH' % tool); return 2
+    if a.token_alias is not None:
+        if not re.fullmatch(r'[A-Za-z0-9._-]+', a.token_alias):
+            print('setup: --token-alias must be a plain alias name'); return 2
+        tok = os.path.join(os.path.expanduser('~'), '.config/autopilot/accounts', a.token_alias, 'token')
+        if not os.path.isfile(tok) or os.stat(tok).st_mode & 0o077:
+            print('setup: no 0600 token file for alias %s' % a.token_alias); return 2
     out = os.path.realpath(a.out or tempfile.mkdtemp(prefix='v74keys-out-'))
     os.makedirs(out, exist_ok=True)
     head = subprocess.run(['git', '-C', chk, 'rev-parse', 'HEAD'], capture_output=True, text=True).stdout.strip()
     print('v74-keys gate · autopilot %s · out %s' % (head[:10] or '?', out))
     fails = 0
     for sc in ([a.only] if a.only else ['project', 'noproject']):
-        fails += run(chk, out, sc)
+        fails += run(chk, out, sc, a.token_alias)
     print('RESULT %s · %d failed step(s) · %s' % ('GREEN' if fails == 0 else 'RED', fails, out))
     return 0 if fails == 0 else 1
 

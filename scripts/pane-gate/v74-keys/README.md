@@ -4,6 +4,8 @@ pane 每次交件都要附上 `run.py` 的輸出（全綠）和擷取圖，PM �
 
 每個情境的沙盒都會設 `AUTOPILOT_V74_KEYLOG=<輸出目錄>/keylog-<情境>.jsonl`。autopilot r6 以後的 pane 會在這個檔逐行記下每個 v7.4 輸入 handler 收到的事件（不含輸入框文字），紅燈回報時連同擷取一起附上。
 
+`--token-alias <alias>`：沙盒 session 改用 `~/.config/autopilot/accounts/<alias>/token` 這個池裡現有的權杖登入（檔案權限要 0600），不用預設登入。預設登入的池碰到週限額時，[待決回覆] 那一輪永遠不會回應，所以要換池。權杖在 tmux 裡的 shell 讀進 `CLAUDE_CODE_OAUTH_TOKEN`，值不進 argv，也不進閘門輸出或 log；不複製權杖，也不新登入。`CLAUDE_CONFIG_DIR` 會先 unset。
+
 ```
 ./run.py <autopilot-checkout> [--out DIR] [--only project|noproject]
 ```
