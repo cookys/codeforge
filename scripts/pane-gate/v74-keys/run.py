@@ -24,6 +24,7 @@ PAGE_PENDING, PAGE_DISPATCH, PAGE_NOW = '待決', '派工', '現況'  # Pane tit
 PREVIEW_MARK, STALE_MARK, SENT_MARK = '將送出', '已變更，請重新預覽', '[待決回覆]'
 HINT_INPUT = 'ctrl+x tab 拿鍵盤'              # band hint line while the input has the keyboard (v75.hint.prompt)
 HINT_BAND = 'a/b/c 選 · n 附註'               # ... while the band has it (v75.hint.band starts with this)
+HINT_TO_PANE = '進 Pane'                      # the band hint row after a digit: the keyboard stayed in the band (ctrl+x tab 進 Pane)
 HINT_PANE = '鍵盤在 Pane'                     # ... while the Pane has it (v75.hint.pane)
 PANE_FOOT_RE = r'╰─'                          # the Pane's own hint row (above its page strip)
 LONG_CARD = 3                                # the fixture card with the long 背景 (scrolls the Pane)
@@ -590,6 +591,29 @@ class V75:
             return None
         return sig(sgr_col(self.sc.ansi[self.band_row], self.band_col))
 
+    def pane_has_keys(self):
+        """True when the Pane's own foot hint says the keyboard is on it (鍵盤在 pane), False when it offers ctrl+x tab 拿鍵盤, None if neither shows."""
+        foot = ' '.join(self.pane_foot()[:2]).lower()
+        if '鍵盤在 pane' in foot:
+            return True
+        if 'ctrl+x tab 拿鍵盤' in foot:
+            return False
+        return None
+
+    def band_rev(self):
+        """True if any cell of the band rows (left of a docked Pane) is drawn in reverse video: v7.5 shows no focus highlight on the band."""
+        if self.band_row is None or self.sc.ansi is None:
+            return False
+        end = self.prompt_row()
+        end = end if end is not None and end > self.band_row else self.band_row + 5
+        width = self.pane_col if self.layout == 'docked' else 400
+        for i in range(self.band_row, end):
+            line = self.sc.ansi[i]
+            for c in range(min(width, dw(self.sc.lines[i]))):
+                if 'rev' in dict(sgr_col(line, c)):
+                    return True
+        return False
+
     def pane_style(self):  # the colour of the Pane's left border (docked, one body row down) or its box corner (inline)
         if self.layout == 'none' or self.sc.ansi is None:
             return None
@@ -701,10 +725,12 @@ def run_v75_steps(g, mode, out):
     """The v7.5 key steps on an open sandbox session. mode 'fs' = full screen (Pane docks, mouse reports), 'normal' = ordinary screen."""
     memo = {}
     focus = lambda: g.keys(*V75_FOCUS_KEY)
-    base_band = lambda s: v75(s).band_style() == memo['band']
-    base_pane = lambda s: v75(s).pane_style() == memo['pane']
-    pane_focused = lambda s: v75(s).pane_style() != memo['pane'] and base_band(s)
-    in_input = lambda s: v75(s).both() and base_band(s) and base_pane(s)
+    # v7.5 focus rules (host limits, d.ts :8724-8731, :2913-2927): the band draws no focus colour and keeps one fixed hint row; the mod cannot hand the
+    # keyboard from the band to the Pane. Only the Pane shows its focus (isFocused): frame colour and its own foot hint.
+    pane_focused = lambda s: v75(s).pane_has_keys() is True and v75(s).pane_style() != memo['pane']
+    pane_unfocused = lambda s: v75(s).pane_has_keys() is False and v75(s).pane_style() == memo['pane']
+    no_band_rev = lambda s: not v75(s).band_rev()
+    to_band_hint = lambda s: HINT_TO_PANE in (v75(s).band_hint() or '')
 
     def to_input():  # one Esc (two in a row open the host's Rewind dialog), then probe with z: the prompt must take it
         g.keys('Escape')
@@ -714,30 +740,31 @@ def run_v75_steps(g, mode, out):
             time.sleep(1.5)
         g.keys('C-u')
 
-    def to_pane():  # keyboard on the Pane, whatever had it: input -> band (ctrl+x tab), digit 2 -> Pane on 待決
+    def to_pane():  # keyboard on the Pane: input -> band -> Pane with ctrl+x tab twice (the Pane has it already: nothing to do)
         if not pane_focused(g.snap()):
             to_input()
             focus()
-            g.keys('2', literal=True)
+            focus()
 
     g.step('open', lambda: (g.keys(V75_OPEN, literal=True), g.keys('Enter')), [
         ('a Pane and the band head are both on screen', lambda s: v75(s).both()),
         ('layout %s' % ('docked beside the chat' if mode == 'fs' else 'is docked or inline'), lambda s: v75(s).layout == 'docked' if mode == 'fs' else v75(s).layout in ('docked', 'inline')),
-        ('opens on the keyboard-in-Pane hint', lambda s: (v75(s).band_hint() or '').startswith(HINT_PANE)),
+        ('the Pane foot hint is on screen', lambda s: v75(s).pane_has_keys() is not None),
         ('prompt empty', lambda s: s.prompt() == ''),
     ], wait=20)
     memo['pane_open'] = v75(g.snap()).pane_style()
     g.step('esc-from-pane', lambda: g.keys('Escape'), [
-        ('Pane frame lost its focus colour', lambda s: v75(s).pane_style() != memo['pane_open']),
-        ('band hint line back to the input one (下框線文字更新)', lambda s: v75(s).band_hint() == HINT_INPUT),
+        ('Pane foot hint switched to ctrl+x tab 拿鍵盤 (isFocused false)', lambda s: v75(s).pane_has_keys() is False),
     ])
-    memo['band'], memo['pane'] = v75(g.snap()).band_style(), v75(g.snap()).pane_style()  # the input-has-the-keyboard colours
-    g.step('esc-types', lambda: g.keys('z', literal=True), [('prompt is z (the input has the keyboard)', lambda s: s.prompt() == 'z')])
+    memo['pane'] = v75(g.snap()).pane_style()  # the Pane-not-focused frame colour
+    g.step('esc-types', lambda: g.keys('z', literal=True), [
+        ('prompt is z (the input has the keyboard)', lambda s: s.prompt() == 'z'),
+        ('no reverse video on the band', no_band_rev),
+    ])
     g.step('clear-1', lambda: g.keys('C-u'), [('prompt empty', lambda s: s.prompt() == '')])
     g.step('band-focus', focus, [
-        ('band head colour changed (focus is on the band)', lambda s: not base_band(s)),
-        ('Pane frame colour unchanged', base_pane),
-        ('band hint line is the band one', lambda s: (v75(s).band_hint() or '').startswith(HINT_BAND)),
+        ('Pane frame still unfocused', pane_unfocused),
+        ('the band hint row is there (one fixed row)', lambda s: v75(s).band_hint() is not None),
         ('prompt empty', lambda s: s.prompt() == ''),
     ])
     g.step('band-pick-b', lambda: g.keys('b', literal=True), [
@@ -747,8 +774,12 @@ def run_v75_steps(g, mode, out):
     g.step('band-digit-2', lambda: g.keys('2', literal=True), [
         ('Pane is on 待決', lambda s: v75(s).pane_title() == PAGE_PENDING),
         ('Pane shows →b on option b (set from the band)', lambda s: v75(s).picked('b', 'pane')),
-        ('focus moved to the Pane: Pane colour changed, band back to its input colour', pane_focused),
-        ('band hint line is the Pane one', lambda s: (v75(s).band_hint() or '').startswith(HINT_PANE)),
+        ('the keyboard stays in the band: Pane frame still unfocused', pane_unfocused),
+        ('band hint row offers ctrl+x tab 進 Pane', to_band_hint),
+        ('prompt empty', lambda s: s.prompt() == ''),
+    ])
+    g.step('pane-take-keys', focus, [
+        ('Pane frame focused and its foot hint says the keyboard is there', pane_focused),
         ('prompt empty', lambda s: s.prompt() == ''),
     ])
     g.step('pane-pick-a', lambda: g.keys('a', literal=True), [
@@ -762,35 +793,36 @@ def run_v75_steps(g, mode, out):
         ('band follows: its k/n is the Pane cursor card', lambda s: v75(s).band_k is not None and v75(s).band_k == v75(s).cursor_no()),
     ])
     g.step('esc-pane', lambda: g.keys('Escape'), [
-        ('focus back on the input: band and Pane colours at their input values', in_input),
-        ('band hint line back to the input one (下框線文字更新)', lambda s: v75(s).band_hint() == HINT_INPUT),
+        ('Pane frame and foot hint back to unfocused', pane_unfocused),
     ])
-    g.step('esc-pane-types', lambda: g.keys('z', literal=True), [('prompt is z (the input has the keyboard)', lambda s: s.prompt() == 'z')])
+    g.step('esc-pane-types', lambda: g.keys('z', literal=True), [
+        ('prompt is z (the input has the keyboard)', lambda s: s.prompt() == 'z'),
+        ('no reverse video on the band', no_band_rev),
+    ])
     g.step('clear-2', lambda: g.keys('C-u'), [('prompt empty', lambda s: s.prompt() == '')])
     g.step('band-digit-3', lambda: (focus(), g.keys('3', literal=True)), [
         ('Pane jumped to 派工', lambda s: v75(s).pane_title() == PAGE_DISPATCH),
-        ('focus is on the Pane (colour changed), not the band', pane_focused),
+        ('the keyboard stays in the band: Pane frame unfocused', pane_unfocused),
+        ('band hint row offers ctrl+x tab 進 Pane', to_band_hint),
         ('prompt empty', lambda s: s.prompt() == ''),
     ])
-    g.step('esc-pane-3', lambda: g.keys('Escape'), [('focus back on the input', in_input), ('band hint line back to the input one', lambda s: v75(s).band_hint() == HINT_INPUT)])
-    g.step('esc-band', lambda: (focus(), g.keys('Escape')), [
-        ('Esc in the band: focus back on the input', in_input),
-        ('band hint line back to the input one', lambda s: v75(s).band_hint() == HINT_INPUT),
+    g.step('esc-band', lambda: g.keys('Escape'), [('Pane frame unfocused', pane_unfocused)])
+    g.step('esc-band-types', lambda: g.keys('z', literal=True), [
+        ('prompt is z (Esc in the band gave the keyboard to the input)', lambda s: s.prompt() == 'z'),
+        ('no reverse video on the band', no_band_rev),
     ])
-    g.step('esc-band-types', lambda: g.keys('z', literal=True), [('prompt is z', lambda s: s.prompt() == 'z')])
     g.step('clear-3', lambda: g.keys('C-u'), [('prompt empty', lambda s: s.prompt() == '')])
-    # preview: Esc cancels only the preview; a change after it opens makes y refuse
+    # preview: Esc cancels only the preview, pressed where the keyboard is (the band); a change after it opens makes y refuse
     g.step('preview-open', lambda: (focus(), g.keys('2', literal=True), g.keys('a', literal=True), g.keys('s', literal=True)), [
         ('preview shown', lambda s: s.has(PREVIEW_MARK)),
         ('nothing sent', lambda s: not s.has(SENT_MARK)),
     ])
     g.step('preview-esc', lambda: g.keys('Escape'), [
         ('preview gone', lambda s: not s.has(PREVIEW_MARK)),
-        ('only the preview closed: Pane and band still up, focus still on the Pane', lambda s: v75(s).both() and pane_focused(s)),
+        ('only the preview closed: Pane and band still up', lambda s: v75(s).both()),
         ('nothing sent', lambda s: not s.has(SENT_MARK)),
         ('prompt empty', lambda s: s.prompt() == ''),
     ])
-    to_pane()
     g.step('preview-reopen', lambda: g.keys('s', literal=True), [('preview shown again', lambda s: s.has(PREVIEW_MARK)), ('prompt empty', lambda s: s.prompt() == '')])
     g.step('preview-stale-y', lambda: (g.keys('b', literal=True), g.keys('y', literal=True)), [
         ('screen says the preview is stale', lambda s: s.has(STALE_MARK)),
