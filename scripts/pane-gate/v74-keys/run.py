@@ -371,8 +371,9 @@ def run(ap, out, scenario, alias=None):
         g.step('send-preview', lambda: g.keys('s', literal=True), [  # r10: the first s previews, the second sends (opus r8-4 Major)
             ('preview 將送出 shown', lambda s: s.has('將送出')),
             ('nothing submitted yet', lambda s: not s.has('[待決回覆]')),
+            ('preview names y as the confirm key', lambda s: s.has('y 確認送出')),
         ])
-        g.step('send', lambda: g.keys('s', literal=True), [
+        g.step('send', lambda: g.keys('y', literal=True), [  # r11 (PM 01M7YDY4): y confirms the preview; a second s only redraws it
             ('[待決回覆] submitted', lambda s: s.has('[待決回覆]')),
             ('d-keys0004 in the submitted reply', lambda s: s.has('d-keys0004')),
         ], wait=30)
