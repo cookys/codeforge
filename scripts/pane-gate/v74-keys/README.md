@@ -53,3 +53,7 @@ pane 每次交件都要附上 `run.py` 的輸出（全綠）和擷取圖，PM �
 步驟：open（Pane 和 band 都在）→ ctrl+x tab 焦點到 band（band 色碼變、Pane 色碼不變、下框線提示變）→ band 按 b（band 顯示 →b）→ band 按 2（Pane 跳 待決、Pane 顯示 →b、焦點移到 Pane）→ Pane ↓（cursor 換、band 的卡號跟著換）→ Pane 按 a（兩邊都顯示 →a）→ Esc（色碼和提示回到輸入框、再打字進輸入框）→ band 按 3（Pane 跳 派工、焦點在 Pane）→ band 焦點 Esc → 預覽（Esc 只關預覽、焦點不變；預覽中改選再按 y 被拒、不送出）→ PgDn/PgUp（只有 Pane 中間捲、標題列和 band 不動）→ 滑鼠：SGR `\e[<0;X;Ym` / `m` 點 Pane 左邊框的卡號，cursor 要跳過去；全螢幕必過，一般畫面收不到就記成已知限制（`KNOWN-LIMIT`，不算失敗）→ 只在全螢幕 session：110 欄停靠、109 欄不停靠、30 列退回單一 band（沒有 Pane 框和 band 頭並存）。
 
 滑鼠探測另寫 `mouse-probe-<fs|normal>.json`（有沒有找到卡號標記、cursor 前後、keylog 有沒有 press 事件）。每張截圖旁邊有 `<步驟>.band-geometry.log`，session 結束再留一份 `band-geometry-<情境>.log`。
+
+### 收合鈕（PM 01M7YWXW；v74 和 --v75 情境都跑）
+
+band 列右端有兩個控制：mod 的 ▾（關/開 Pane 框，按了變 ▴）和宿主的 `[-]`（把整個 band 收成一列「▸ plugin panel hidden · ctrl+x …」）。步驟：點 ▾ → 點 `[-]`（要收成一列）→ 點收合列開頭的 ▸（要展開）→ 送 `/reload-plugins` → 再點一次收合、展開。點擊走 SGR，座標從截圖找；點不到就改按宿主的 ctrl+x ctrl+a 並記成 `KNOWN-LIMIT`。判斷字串在 `run.py` 檔頭 `FOLD_*`、`COLLAPSED_ROW`、`RELOAD_CMD`。

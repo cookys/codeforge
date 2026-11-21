@@ -25,6 +25,11 @@ PREVIEW_MARK, STALE_MARK, SENT_MARK = '將送出', '已變更，請重新預覽'
 PAGE_KEYS = 'PgUp/PgDn'                      # documentation only
 CLICK_MARK_COLS = 6                          # a card-number marker sits within this many columns right of the Pane's left border
 MARKER_RE = r'^[│┃]?\s*(\d+)(?!\d)'          # the marker at the start of a Pane row (after the left border)
+FOLD_OPEN = ('▾', '▼', '[-]', '[−]')          # the band's collapse button while the band is expanded (r11 draws ▾ at the right end of the band row)
+FOLD_SHUT = ('▸', '▶', '[+]', '▴', '▲')       # ... while it is collapsed (▲ only counts at the row end, never the v7.5 band head)
+FOLD_KEYS = ('C-x', 'C-a')                    # the host's keyboard fold (claude-code.d.ts ~:12723: "ctrl+x ctrl+a, [-]")
+RELOAD_CMD = '/reload-plugins'
+COLLAPSED_ROW = 'plugin panel hidden'         # the host's folded band row: ▸ plugin panel hidden · ctrl+x ...
 MIN_DOCK_COLS = 110                          # Pane docks beside the chat from this width in full screen
 
 
@@ -234,6 +239,7 @@ class Gate:
                 if 'band-geometry.log' in files:
                     shutil.copy(os.path.join(root, 'band-geometry.log'), os.path.join(self.out, tag + '.band-geometry.log'))
                     break
+        self.last_ok = ok
         self.fails += 0 if ok or soft else 1
         seen = dict(title=sc.title(), prompt=sc.prompt(), cursor=sc.cursor(), send_n=sc.sendn(), decide_n=sc.decide_count(), band=sc.band())
         self.results.write(json.dumps(dict(step=tag, ok=ok, checks=[dict(check=l, ok=o) for l, o in res], seen=seen), ensure_ascii=False) + '\n')
@@ -425,6 +431,7 @@ def run(ap, out, scenario, alias=None, hold=False):
             ('title 派工', lambda s: s.title() == '派工'),
             ('prompt still x3', lambda s: s.prompt() == 'x3'),
         ])
+        fold_steps(g, os.path.abspath(out), 'normal', 'v74')  # PM 01M7YWXW: the band's fold button, before and after /reload-plugins (ordinary screen: known limit if no click arrives)
         return g.fails
     finally:
         regen.kill()
@@ -596,6 +603,65 @@ def keylog_count(out, scenario, pat='press'):
         return 0
 
 
+def fold_state(sc):
+    """(kind, screen_row, display_col, glyph) of the band's fold control, read off the screen (r11 draws two on the band row's right end:
+    the mod's ▾ / ▴ that closes/opens the pane frame, and the host's [-] that folds the whole band to one row; the folded row starts with ▸).
+    kinds: 'mod-open' (▾ only), 'host-expanded' ([-] present, ▴ before it), 'host-collapsed' (row holding COLLAPSED_ROW), None."""
+    for i, l in enumerate(sc.lines):
+        t = l.rstrip()
+        if COLLAPSED_ROW in t and t.lstrip().startswith(tuple(FOLD_SHUT)):
+            return ('host-collapsed', i, dw(l[:len(l) - len(l.lstrip())]), t.lstrip()[0])
+    hit = None
+    for i, l in enumerate(sc.lines):
+        t = l.rstrip()
+        if '待決' in t or '▲' in t:
+            for g_ in ('[-]', '[−]'):
+                if t.endswith(g_) and dw(t) > dw(g_) + 4:
+                    hit = ('host-expanded', i, dw(t) - dw(g_), g_)
+            for g_ in FOLD_OPEN:
+                if t.endswith(g_) and g_ not in ('[-]', '[−]') and dw(t) > dw(g_) + 4:
+                    hit = ('mod-open', i, dw(t) - dw(g_), g_)
+    return hit
+
+
+def fold_cycle(g, out, tag, soft_msg):
+    """Click through the fold controls with SGR and read the result off the screen (PM 01M7YWXW). A click that does nothing is retried as
+    the host's keyboard fold (ctrl+x ctrl+a) and recorded as a known limit. Run again after /reload-plugins."""
+    memo = {}
+
+    def click(expect_kind):
+        def f():
+            memo['before'] = fold_state(g.snap())
+            if memo['before'] and (expect_kind is None or memo['before'][0] == expect_kind):
+                sgr_click(g, memo['before'][2] + 1, memo['before'][1] + 1)
+        return f
+    kind_is = lambda k: (lambda s: (fold_state(s) or (None,))[0] == k)
+    if (fold_state(g.snap()) or (None,))[0] == 'mod-open':  # the mod's own ▾ first: it opens the host's [-]
+        g.step('%s-click-mod-glyph' % tag, click('mod-open'), [('clicking ▾ changed the band (now shows ▴ [-])', kind_is('host-expanded'))], wait=5, soft=soft_msg)
+        print('      mod glyph: %s' % (memo.get('before'),))
+    for what, want, kind in (('collapse', 'host-collapsed', 'host-expanded'), ('expand', None, 'host-collapsed')):
+        g.step('%s-click-%s' % (tag, what), click(kind), [
+            ('the fold control is on screen (%s)' % kind, lambda s: memo.get('before') is not None and memo['before'][0] == kind),
+            ('band %s' % ('folded to one row (▸ ... hidden)' if want else 'back out of the folded row'), kind_is(want) if want else (lambda s: (fold_state(s) or ('host-collapsed',))[0] != 'host-collapsed' and fold_state(s) is not None)),
+        ], wait=5, soft=soft_msg)
+        print('      %s control: %s' % (what, memo.get('before')))
+        if not g.last_ok:
+            g.step('%s-key-%s' % (tag, what), lambda: (g.keys(FOLD_KEYS[0]), g.keys(FOLD_KEYS[1])), [
+                ('keyboard fold changed the band (%s)' % what, lambda s: (fold_state(s) or (None,))[0] != memo['before'][0] if memo.get('before') else False),
+            ], wait=5, soft='keyboard fold ctrl+x ctrl+a did not change the band either')
+
+
+def fold_steps(g, out, mode, tag):
+    soft = None if mode == 'fs' else 'ordinary screen: clicks may not arrive (claude-code.d.ts :6786, :9906 say full screen only); the v74 session on the ordinary screen did get them'
+    if 'Nothing to rewind' in g.snap().text or 'Rewind' in g.snap().text:  # a stray Esc Esc opened the rewind dialog
+        g.keys('Escape')
+    g.keys('C-u')
+    fold_cycle(g, out, tag, soft)
+    g.step('%s-reload' % tag, lambda: (g.keys(RELOAD_CMD, literal=True), g.keys('Enter')), [('prompt empty after /reload-plugins', lambda s: s.prompt() == '')], wait=15)
+    time.sleep(3)
+    fold_cycle(g, out, tag + '-after-reload', soft)
+
+
 def run_v75_steps(g, mode, out):
     """The v7.5 key steps on an open sandbox session. mode 'fs' = full screen (Pane docks, mouse reports), 'normal' = ordinary screen."""
     memo = {}
@@ -716,6 +782,8 @@ def run_v75_steps(g, mode, out):
     with open(os.path.join(out, 'mouse-probe-%s.json' % mode), 'w', encoding='utf-8') as f:
         json.dump(probe, f, ensure_ascii=False)
     print('MOUSE-PROBE %s' % json.dumps(probe, ensure_ascii=False))
+    to_input()
+    fold_steps(g, out, mode, 'v75')
     to_input()
     if mode != 'fs':
         return
