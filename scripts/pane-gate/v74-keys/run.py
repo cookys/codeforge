@@ -247,7 +247,7 @@ class Gate:
 
 def setup(ap, out, scenario):
     work = tempfile.mkdtemp(prefix='v74keys-')
-    data, home, cwd = os.path.join(work, 'data'), os.path.join(work, 'data', 'home'), os.path.join(work, 'cwd')
+    data, home, cwd = os.path.join(work, 'data'), os.path.join(work, 'data', 'home'), os.path.join(work, 'demo')  # the design's project name (S2: 本席 專案 demo)
     for d in (home, cwd, os.path.join(cwd, '.claude'), os.path.join(home, '.local/state/fleet')):
         os.makedirs(d, exist_ok=True)
     subprocess.run(['git', 'init', '-q', '-b', 'main', cwd], check=True)  # a real repo: open-decision.js derives the card store's key from it
