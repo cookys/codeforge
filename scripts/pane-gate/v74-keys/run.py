@@ -395,6 +395,12 @@ def run(ap, out, scenario, alias=None):
     finally:
         regen.kill()
         g.tmux('kill-server', check=False)
+        # keep what the host gave the band (maxRows x bodyColumns per change) next to the shots: the band-vs-Pane call
+        # (PM 01M7Y9150) needs the measured rows, not the d.ts reading
+        for root, _, files in os.walk(work):
+            if 'band-geometry.log' in files:
+                shutil.copy(os.path.join(root, 'band-geometry.log'), os.path.join(out, 'band-geometry-%s.log' % scenario))
+                break
         shutil.rmtree(work, ignore_errors=True)
 
 
