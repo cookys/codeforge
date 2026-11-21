@@ -727,9 +727,11 @@ def fold_steps(g, out, mode, tag):
                     rows = [json.loads(l) for l in f if l.strip()]
                 break
         opens = [r for r in rows if r.get('step') in ('open', 'retry', 'gave-up')]
+        renders = [r for r in rows if r.get('step') == 'first-render']
+        kept = bool(renders) and any(p.get('isPlaced') for p in renders[-1].get('panes', []))  # the Pane survived the reload: no reopen needed
         print('      band-reload.log: ' + ' | '.join(json.dumps({k: v for k, v in r.items() if k != 'ts'}, ensure_ascii=False) for r in rows[-6:]))
         g.step('%s-reload-log' % tag, lambda: None, [
-            ('reopen after reload placed the Pane (a retry may be needed, gave-up is a fail)', lambda s: bool(opens) and opens[-1].get('step') != 'gave-up' and (opens[-1].get('result') or {}).get('isPlaced', True) is True),
+            ('reopen after reload placed the Pane (a retry may be needed, gave-up is a fail)', lambda s: kept or (bool(opens) and opens[-1].get('step') != 'gave-up' and (opens[-1].get('result') or {}).get('isPlaced', True) is True)),
         ], wait=1)
     fold_cycle(g, out, tag + '-after-reload', soft)
     fo = v75(g.snap()).fold()  # leave the band expanded for whatever runs next
