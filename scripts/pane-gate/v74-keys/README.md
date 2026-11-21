@@ -19,7 +19,7 @@ pane 每次交件都要附上 `run.py` 的輸出（全綠）和擷取圖，PM �
 
 `parse.test.sh`（check-all 會跑）：用存下來的紅燈擷取（autopilot 94100764e）和手寫的綠燈框，檢查 `run.py` 的畫面解析；另用設計稿 ux-v7.4 的 S3 彩色擷取（`fixtures/design-S3.ans`）驗顏色判讀，用舊版設計稿（`fixtures/design-r3-S3.txt`，分頁列獨立一行）當反例。反向探針（沒換行的長句、還有空列卻截斷、★ 那行沒樣式、★ 那行樣式和 a: 一樣、純文字擷取判不出反白）必須判失敗。
 
-共 30 步：project 29 步（r10 起送出前多一步 send-preview：第一下 s 預覽、第二下才送）、noproject 1 步。
+共 30 步：project 29 步（r10 起送出前多一步 send-preview：s 預覽，r11 起 y 確認送出）、noproject 1 步。
 
 ## UX 審查（PM 01M7XARR、01M7XBE2）
 
