@@ -27,6 +27,8 @@ HINT_BAND = 'a/b/c 選 · n 附註'               # ... while the band has it (v
 HINT_TO_PANE = '進 Pane'                      # the band hint row after a digit: the keyboard stayed in the band (ctrl+x tab 進 Pane)
 HINT_PANE = '鍵盤在 Pane'                     # ... while the Pane has it (v75.hint.pane)
 PANE_FOOT_RE = r'╰─'                          # the Pane's own hint row (above its page strip)
+PANE_PENDING = 'Pane 待開：按 ▴ 開啟'            # the band hint row while the Pane could not be placed after a reload
+LONG_TITLE = '驗收長卡'                        # the gen-data.py 'longcard' card: 80 background rows, taller than the full-screen Pane
 LONG_CARD = 3                                # the fixture card with the long 背景 (scrolls the Pane)
 CLICK_MARK_COLS = 8                          # a marker's digit sits within this many columns right of the Pane's left border
 FOLD_OPEN = ('▾', '▼')                        # mod toggle glyph while the Pane is open ("▾ 收起" ends the quick row)
@@ -730,9 +732,29 @@ def fold_steps(g, out, mode, tag):
         renders = [r for r in rows if r.get('step') == 'first-render']
         kept = bool(renders) and any(p.get('isPlaced') for p in renders[-1].get('panes', []))  # the Pane survived the reload: no reopen needed
         print('      band-reload.log: ' + ' | '.join(json.dumps({k: v for k, v in r.items() if k != 'ts'}, ensure_ascii=False) for r in rows[-6:]))
-        g.step('%s-reload-log' % tag, lambda: None, [
-            ('reopen after reload placed the Pane (a retry may be needed, gave-up is a fail)', lambda s: kept or (bool(opens) and opens[-1].get('step') != 'gave-up' and (opens[-1].get('result') or {}).get('isPlaced', True) is True)),
-        ], wait=1)
+        placed = kept or (bool(opens) and opens[-1].get('step') != 'gave-up' and (opens[-1].get('result') or {}).get('isPlaced', True) is True)
+        if placed:
+            g.step('%s-reload-log' % tag, lambda: None, [('the Pane is placed after the reload (kept, or reopened by a retry)', lambda s: v75(s).pane_title() is not None)], wait=3)
+        else:  # new design: isPlaced false -> the band hint row offers 「Pane 待開：按 ▴ 開啟」; clicking ▴ opens the Pane and the log gets the full reason
+            g.step('%s-reload-pending' % tag, lambda: None, [
+                ('band hint row says ' + PANE_PENDING, lambda s: PANE_PENDING in v75(s).band_text()),
+            ], wait=4)
+            pos = {}
+
+            def click_toggle():
+                fo = v75(g.snap()).fold()
+                pos['p'] = fo['mod']
+                if fo['mod']:
+                    sgr_click(g, fo['mod'][1] + 1, fo['mod'][0] + 1)
+            g.step('%s-reload-click-open' % tag, click_toggle, [
+                ('the ▴ toggle is on screen', lambda s: pos.get('p') is not None),
+                ('the Pane appears after the click', lambda s: v75(s).both()),
+            ], wait=6)
+            for root, _, files in os.walk(g.work):
+                if 'band-reload.log' in files:
+                    with open(os.path.join(root, 'band-reload.log'), encoding='utf-8') as f:
+                        print('      band-reload.log after the click: ' + ' | '.join(l.strip()[:200] for l in f.readlines()[-4:]))
+                    break
     fold_cycle(g, out, tag + '-after-reload', soft)
     fo = v75(g.snap()).fold()  # leave the band expanded for whatever runs next
     if fo['folded'] is not None:
@@ -871,12 +893,13 @@ def run_v75_steps(g, mode, out):
     g.keys('Escape')
     to_pane()
     # scrolling: PgUp/PgDn move only the Pane's middle section
+    on_long = lambda s: any(re.search(CURSOR_RE, l) and LONG_TITLE in l for l in v75(s).pane_lines())
     def to_long():
         for _ in range(6):
-            if v75(g.snap()).cursor_no() == LONG_CARD:
+            if on_long(g.snap()):
                 break
             g.keys('Down')
-    g.step('to-long-card', to_long, [('cursor on the long card', lambda s: v75(s).cursor_no() == LONG_CARD)], soft=no_pane)
+    g.step('to-long-card', to_long, [('cursor on the long card (驗收長卡, 80 background rows)', on_long)], soft=no_pane)
     memo['pre'] = v75(g.snap())
     more = re.search(r'還有\s*(\d+)\s*列', ' '.join(memo['pre'].pane_foot()) + ' ' + ' '.join(memo['pre'].pane_body()))
     body_n, room_n = len(memo['pre'].pane_body()), len(memo['pre'].pane_lines())
@@ -884,6 +907,7 @@ def run_v75_steps(g, mode, out):
     no_scroll = None if more else 'no long card found: the card fits the Pane (body %d rows, pane %d rows), a clamp at 0 is not an implementation fault' % (body_n, room_n)
     g.step('pgdn', lambda: g.keys('PageDown'), [
         ('Pane body scrolled', lambda s: v75(s).pane_body() != memo['pre'].pane_body()),
+        ('first body row moved by min(42,12) = 12 rows', lambda s: len(memo['pre'].pane_body()) > 12 and bool(v75(s).pane_body()) and v75(s).pane_body()[0] == memo['pre'].pane_body()[12]),
         ('Pane title row and foot did not move', lambda s: (v75(s).pane_head(), v75(s).pane_foot()) == (memo['pre'].pane_head(), memo['pre'].pane_foot())),
         ('band did not move at all', lambda s: v75(s).band_lines() == memo['pre'].band_lines()),
         ('prompt empty', lambda s: s.prompt() == ''),
@@ -978,7 +1002,7 @@ def run_v75(ap, out, mode, alias=None):
     scenario = 'v75' + mode
     work, data, home, cwd, env = setup(ap, out, scenario)
     sid = str(uuid.uuid4())
-    gen = [sys.executable, '-I', os.path.join(HERE, 'gen-data.py'), data, sid, cwd]
+    gen = [sys.executable, '-I', os.path.join(HERE, 'gen-data.py'), data, sid, cwd, 'longcard']
     subprocess.run(gen, check=True)
     regen = subprocess.Popen(['bash', '-c', 'while sleep 25; do "$@"; done', 'regen'] + gen)
     g = Gate(ap, out, scenario)
