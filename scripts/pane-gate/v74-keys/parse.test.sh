@@ -31,25 +31,34 @@ want = [
     ('negative: plain capture has no style', r.Screen(d3.text).active_tab_marked('2', '待決'), False),
     ('negative: … with free rows fails', r.Screen(green.text.replace('明顯。', '明…').replace('│ s: 送出', '│\n│\n│ s: 送出')).no_cut_with_room(), False),
 ]
-# v7.5 region parser: a hand-made docked frame (Pane right, band bottom-left), then the same with the cursor, picks and focus colour changed
+# v7.5 region parser (autopilot b52aaa491 layout): a hand-made docked frame, Pane at the right with a left border only, band at the bottom-left
 def docked(cur, pick, band_sgr='', pane_sgr=''):
-    L = 40
-    rows = ['對話 ...'.ljust(L) + pane_sgr + '╭─ 待決 · 3 張' + ('\x1b[m' if pane_sgr else ''),
-            ''.ljust(L) + '│ 1 d-a0001 ' + ('▸' if cur == 1 else ' ') + ' q' + (' →' + pick if pick and cur == 1 else ''),
-            ''.ljust(L) + '│ 2 d-a0002 ' + ('▸' if cur == 2 else ' ') + ' q' + (' →' + pick if pick and cur == 2 else ''),
-            band_sgr + ('▲ %d/3 d-a000%d' % (cur, cur) + (' →' + pick if pick else '')).ljust(L) + ('\x1b[m' if band_sgr else '') + '│',
-            '❯'.ljust(L) + '│', 'ctrl+x tab 拿鍵盤'.ljust(L) + '│']
+    L = 60
+    def row(left, right, st=''):
+        plain = r.ESC.sub('', left)
+        return left + ' ' * (L - r.dw(plain)) + st + '│' + ('\x1b[m' if st else '') + right
+    cards = ['合併 plan', '外掛更新']
+    rows = [row('對話 ...', '✕'), row('', '現況  ✗ 額度預測 無來源', pane_sgr), row('', '▾ 要你決定 3 張', pane_sgr),
+            row('', ('▸' if cur == 1 else ' ') + '  1. ' + cards[0], pane_sgr), row('', '      b: 再審一輪' + (' →' if pick else ''), pane_sgr),
+            row('', ('▸' if cur == 2 else ' ') + '  2. ' + cards[1], pane_sgr), row('', '      · 今晚'),
+            row(band_sgr + '↑ %d/3 %s' % (cur, cards[cur - 1]) + ('\x1b[m' if band_sgr else ''), '╰─ ↑↓ 換張 · Esc 還給輸入框'),
+            row('合併 plan ▸ a 合併 ★ · b 再審一輪' + ('  → b' if pick else ''), '資料'), row('n 附註', ''), row('ctrl+x tab 拿鍵盤', '1: 現況 2: 待決'),
+            row('▲ 要你決定 │ 待決 4 │ ⓘ   ▾ 收起', ''), '─' * 80, '❯', '─' * 80]
     return '\n'.join(rows)
 d1, d2 = r.V75(r.Screen.from_ansi(docked(1, 'b'))), r.V75(r.Screen.from_ansi(docked(2, '')))
-f1 = r.V75(r.Screen.from_ansi(docked(1, 'b', band_sgr='\x1b[38;5;45m')))
+f1 = r.V75(r.Screen.from_ansi(docked(1, 'b', band_sgr='\x1b[38;5;174m', pane_sgr='\x1b[38;5;153m')))
 want += [
-    ('v75 layout docked', d1.layout, 'docked'), ('v75 both', d1.both(), True), ('v75 pane title', d1.pane_title(), '待決'),
-    ('v75 cursor id', d1.cursor_id(), 'd-a0001'), ('v75 cursor moves', d2.cursor_id(), 'd-a0002'), ('v75 band id', d2.band_id, 'd-a0002'),
+    ('v75 layout docked', d1.layout, 'docked'), ('v75 both', d1.both(), True), ('v75 pane title', d1.pane_title(), '現況'),
+    ('v75 cursor no', d1.cursor_no(), 1), ('v75 cursor moves', d2.cursor_no(), 2), ('v75 band k', (d1.band_k, d2.band_k), (1, 2)),
+    ('v75 band title', d1.band_title, '合併 plan'),
     ('v75 pick in pane and band', (d1.picked('b', 'pane'), d1.picked('b', 'band')), (True, True)),
-    ('v75 no pick after the card changed', (d2.picked('b', 'pane'), d2.picked('b', 'band')), (False, False)),
-    ('v75 hint', d1.hint(), 'ctrl+x tab 拿鍵盤'), ('v75 colour differs only when styled', (d1.band_style() == f1.band_style(), d1.pane_style() == f1.pane_style()), (False, True)),
-    ('v75 markers: card numbers on the Pane edge', [m[2] for m in d1.markers()], [1, 2]),
-    ('negative: no Pane frame in the v7.4 single band', r.V75(green).both(), False),
+    ('v75 no pick without the mark', (d2.picked('b', 'pane'), d2.picked('b', 'band')), (False, False)),
+    ('v75 band hint', d1.band_hint(), 'ctrl+x tab 拿鍵盤'),
+    ('v75 colours differ only where styled', (d1.band_style() == f1.band_style(), d1.pane_style() == f1.pane_style()), (False, False)),
+    ('v75 pane split foot starts at the hint row', d1.pane_foot()[0].startswith('╰─'), True),
+    ('v75 markers: card numbers inside the Pane edge', [m[2] for m in d1.markers()], [1, 2]),
+    ('v75 fold: mod toggle found', (d1.fold()['mod'] or (0, 0, None))[2], 'open'),
+    ('negative: no Pane in the v7.4 single band', r.V75(green).both(), False),
 ]
 bad = [(n, got, exp) for n, got, exp in want if got != exp]
 for n, got, exp in bad: print('FAIL %s: got %r want %r' % (n, got, exp))
