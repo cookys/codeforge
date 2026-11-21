@@ -306,6 +306,7 @@ def run(ap, out, scenario, alias=None):
             ('band shows 艦隊 + 待決 4', lambda s: s.band() is not None and '待決 4' in s.band()),
             ('prompt empty', lambda s: s.prompt() == ''),
         ], wait=15)
+        time.sleep(1.0)  # r8-5c: the frame drew before its hotkeys were live and digit 1 reached the prompt; r8-5d green on rerun
         for i, t in enumerate(TITLES, 1):
             g.step('digit-%d' % i, lambda i=i: g.keys(str(i), literal=True), [
                 ('title %s' % t, lambda s, t=t: s.title() == t),
