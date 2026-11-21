@@ -97,7 +97,7 @@ class Screen:
         return None
 
     def sendn(self):
-        m = re.search(r'送出全部（(\d+) 張）', self.text)
+        m = re.search(r'送出(?:全部（|已選 )(\d+) 張', self.text)  # r10: 送出已選 N 張; before it 送出全部（N 張）
         return int(m.group(1)) if m else None
 
     def decide_count(self):
@@ -135,7 +135,7 @@ class Screen:
     def band_below_frame(self):  # PM 01M7XB0B: under the frame only the band row; nothing between ╰ and the band
         bot = next((i for i, l in enumerate(self.lines) if '╰─' in l), None)
         nxt = self.lines[bot + 1] if bot is not None and bot + 1 < len(self.lines) else ''
-        return '艦隊' in nxt and '待決' in nxt and '│' in nxt and '1 現況' not in nxt
+        return ('艦隊' in nxt or '產線' in nxt) and '待決' in nxt and '│' in nxt and '1 現況' not in nxt
 
     def strip_fits(self, title):  # narrow width: one bottom-border row ending in ╯, current page named, no page row elsewhere
         bot = [l for l in self.lines if '╰─' in l]
@@ -170,8 +170,8 @@ class Screen:
     def line_with(self, s):
         return next((l for l in self.lines if s in l), None)
 
-    def band(self):  # the band row: holds 艦隊 and 待決 with │ separators, below the page strip
-        rows = [l for l in self.lines if '│' in l and '艦隊' in l and '待決' in l and not l.lstrip().startswith('│')]
+    def band(self):  # the band row: holds 艦隊 (r10: 產線, same source as 現況) and 待決 with │ separators, below the page strip
+        rows = [l for l in self.lines if '│' in l and ('艦隊' in l or '產線' in l) and '待決' in l and not l.lstrip().startswith('│')]
         return rows[-1].strip() if rows else None
 
 
