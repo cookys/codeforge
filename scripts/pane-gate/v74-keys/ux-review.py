@@ -137,6 +137,13 @@ def verdict(paths):
     for p in paths:
         txt = open(p, encoding='utf-8', errors='replace').read() if os.path.exists(p) else ''
         blocks = re.findall(r'```json\s*(\{.*?\})\s*```', txt, re.S)
+        if not blocks:  # dispatch-author's stdout is its receipt; the reviewer's text is in the receipt's raw_log
+            try:
+                raw = json.loads(txt.strip().splitlines()[-1]).get('raw_log')
+            except (ValueError, IndexError, AttributeError):
+                raw = None
+            if isinstance(raw, str) and os.path.isfile(raw):
+                blocks = re.findall(r'```json\s*(\{.*?\})\s*```', open(raw, encoding='utf-8', errors='replace').read(), re.S)
         try:
             v = json.loads(blocks[-1])
             overall = int(v['overall'])
