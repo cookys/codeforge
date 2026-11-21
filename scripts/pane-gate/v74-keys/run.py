@@ -917,6 +917,12 @@ def run_v75_steps(g, mode, out):
         ('Pane body back where it was', lambda s: v75(s).pane_body() == memo['pre'].pane_body()),
         ('band did not move', lambda s: v75(s).band_lines() == memo['pre'].band_lines()),
     ])
+    def to_first():  # the long card fills the Pane: go back to card 1 (keyboard k) so several card-number markers are on the border to click
+        for _ in range(5):
+            if v75(g.snap()).band_k == 1:
+                break
+            g.keys('k', literal=True)
+    g.step('to-first-card', to_first, [('cursor back on card 1', lambda s: v75(s).band_k == 1)], soft=no_pane)
     # mouse: SGR click on a card-number marker on the Pane's left border. fs = must work; normal = known limit if the host sends no reports
     def click():
         v = v75(g.snap())
