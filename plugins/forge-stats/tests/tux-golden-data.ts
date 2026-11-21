@@ -19,6 +19,7 @@ export const TUX_GOLDEN = {
     "structure": {
       "open": "▾",
       "folded": "▸",
+      "foldUp": "▴",
       "rule": "─",
       "detail": "└",
       "command": "$",
@@ -28,11 +29,13 @@ export const TUX_GOLDEN = {
       "tabMark": "━",
       "residue": "⚑",
       "behind": "↓",
+      "up": "↑",
       "bandSep": "│",
       "info": "ⓘ",
       "speed": "ϟ",
       "round": "↺",
       "decisions": "◆",
+      "remoteDecision": "◇",
       "age": "◷",
       "recommend": "★",
       "fresh": "✦",
@@ -92,6 +95,8 @@ export const TUX_GOLDEN = {
       }
     },
     "verified": {
+      "▴": "pending-owner",
+      "◇": "pending-owner",
       "⊘": "2026-10-13 owner-ssh-tmux",
       "△": "2026-10-13 owner-ssh-tmux",
       "○": "2026-10-13 owner-ssh-tmux",
