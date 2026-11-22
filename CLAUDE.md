@@ -82,6 +82,7 @@ cargo build --release          # release build → target/release/codeforge
 cargo check                    # fast type-check (no binary)
 cargo test                     # run tests
 cargo clippy                   # lint
+./scripts/lane-run.sh --scratch <dir> <mods-test|gate|dispatch|result>  # lane runner; --help lists path overrides and fixed logs
 ./scripts/check-all.sh         # THE merge gate (no hosted CI since G38): fmt, clippy --all-targets, test (flake guard), cjk-safe, doc-drift, cargo deny, shellcheck, forge-stats plugin tests, g40 real-data scans, trinity-import test, checkout guard (main clone stays on develop), public push guard (pre-push refuses any ref but develop/main to the public origin; override `CODEFORGE_PUBLIC_PUSH_OVERRIDE="<id>: <reason>"`, audit line in the git dir), release archive hermetic test (B43), MSRV release smoke
 ./scripts/package.sh <target>  # release tarball + .sha256 named as install.sh downloads them (dist/); --cross, --max-glibc; reproducible
 ./scripts/repro-check.sh <target> # build HEAD twice at two paths; archives must match
