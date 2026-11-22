@@ -33,9 +33,8 @@ pub fn run_from(
     // Only this project's own memory dir (PM 01M7QZ9Y): dream runs at SessionEnd
     // in every project, so scanning all of `projects_root` copied every other
     // project's memory into this one's L0 (and from there into LLM prompts).
-    let claude_memory = projects_root
-        .join(crate::mnemos::autocite::claude_project_slug(cwd))
-        .join("memory");
+    let slug = crate::mnemos::autocite::claude_project_slug(cwd);
+    let claude_memory = projects_root.join(&slug).join("memory");
 
     if !claude_memory.exists() {
         return Ok(AbsorbResult { absorbed: 0 });
@@ -75,7 +74,12 @@ pub fn run_from(
                 if let Ok(content) = std::fs::read_to_string(&proj_entry) {
                     let content = content.trim().to_string();
                     if content.len() > 20 {
-                        let signal = Signal::new(content, SignalSource::AbsorbedMemory);
+                        let file_name = proj_entry
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default();
+                        let signal = Signal::new(content, SignalSource::AbsorbedMemory)
+                            .with_absorb_source(slug.clone(), file_name);
                         if writer.append(&signal).is_ok() {
                             absorbed += 1;
                         }
@@ -112,6 +116,53 @@ fn walkdir_shallow(base: &std::path::Path, max_depth: usize) -> Vec<std::path::P
     let mut result = Vec::new();
     walk(base, 0, max_depth, &mut result);
     result
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct AbsorbAudit {
+    pub cross_project: usize,
+    pub legacy_no_slug: usize,
+}
+
+/// 只計數稽核：統計 L0 signals 中 `AbsorbedMemory` 列的跨專案與無 slug 舊列數量。
+pub fn audit(ctx: &db::Context) -> Result<AbsorbAudit> {
+    let current_slug = crate::mnemos::autocite::claude_project_slug(&project_root(ctx));
+    audit_for_slug(ctx, &current_slug)
+}
+
+pub fn audit_for_slug(ctx: &db::Context, current_slug: &str) -> Result<AbsorbAudit> {
+    let signal_dir = ctx.project_dir.join("signals");
+    if !signal_dir.exists() {
+        return Ok(AbsorbAudit::default());
+    }
+
+    let mut result = AbsorbAudit::default();
+    for entry in std::fs::read_dir(&signal_dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let Ok(signal) = serde_json::from_str::<Signal>(trimmed) else {
+                continue;
+            };
+            if matches!(signal.source, SignalSource::AbsorbedMemory) {
+                match signal.source_slug.as_deref() {
+                    None => result.legacy_no_slug += 1,
+                    Some(s) if s != current_slug => result.cross_project += 1,
+                    Some(_) => {}
+                }
+            }
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -181,6 +232,112 @@ mod tests {
         assert_eq!(
             project_root(&mk("shared-store".into())),
             std::env::current_dir().unwrap()
+        );
+    }
+
+    #[test]
+    fn absorb_records_source_slug_and_filename_only() {
+        let temp = TempDir::new().unwrap();
+        let projects_root = temp.path().join("claude-projects");
+        let repo_a = temp.path().join("work").join("repo-a");
+        let expected_slug = crate::mnemos::autocite::claude_project_slug(&repo_a);
+        let mem = projects_root.join(&expected_slug).join("memory");
+        std::fs::create_dir_all(&mem).unwrap();
+        std::fs::write(
+            mem.join("note.md"),
+            "a memory note long enough to absorb into L0",
+        )
+        .unwrap();
+
+        let project_dir = repo_a.join(".codeforge");
+        std::fs::create_dir_all(project_dir.join("signals")).unwrap();
+        let ctx = db::Context {
+            project_dir,
+            brain_dir: temp.path().join("brain"),
+            db_path: temp.path().join("state.db"),
+        };
+
+        let r = run_from(&ctx, &projects_root, &repo_a).unwrap();
+        assert_eq!(r.absorbed, 1);
+
+        let text = signals_text(&ctx);
+        let sig: Signal = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+        assert_eq!(sig.source_slug.as_deref(), Some(expected_slug.as_str()));
+        assert_eq!(sig.source_file.as_deref(), Some("note.md"));
+    }
+
+    #[test]
+    fn legacy_signal_without_source_fields_deserializes() {
+        let legacy_json = r#"{"id":"11111111-1111-1111-1111-111111111111","content":"legacy absorbed memory","source":"AbsorbedMemory","timestamp":"2026-01-01T00:00:00Z","compiled":false}"#;
+        let sig: Signal = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(sig.source_slug, None);
+        assert_eq!(sig.source_file, None);
+    }
+
+    #[test]
+    fn audit_counts_cross_project_and_legacy_signals() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().join("proj").join(".codeforge");
+        let signals_dir = project_dir.join("signals");
+        std::fs::create_dir_all(&signals_dir).unwrap();
+        let ctx = db::Context {
+            project_dir,
+            brain_dir: temp.path().join("brain"),
+            db_path: temp.path().join("state.db"),
+        };
+        let current_slug = "slug-current";
+
+        // Case 1: all same project
+        let own = Signal::new("own memory".into(), SignalSource::AbsorbedMemory)
+            .with_absorb_source(current_slug.into(), "a.md".into());
+        let manual = Signal::new("manual note".into(), SignalSource::Manual);
+        std::fs::write(
+            signals_dir.join("2026-01-01.jsonl"),
+            format!(
+                "{}\n{}\n",
+                serde_json::to_string(&own).unwrap(),
+                serde_json::to_string(&manual).unwrap()
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            audit_for_slug(&ctx, current_slug).unwrap(),
+            AbsorbAudit {
+                cross_project: 0,
+                legacy_no_slug: 0
+            }
+        );
+
+        // Case 2: mixed with another slug
+        let other = Signal::new("other memory".into(), SignalSource::AbsorbedMemory)
+            .with_absorb_source("slug-other".into(), "b.md".into());
+        std::fs::write(
+            signals_dir.join("2026-01-02.jsonl"),
+            format!("{}\n", serde_json::to_string(&other).unwrap()),
+        )
+        .unwrap();
+        assert_eq!(
+            audit_for_slug(&ctx, current_slug).unwrap(),
+            AbsorbAudit {
+                cross_project: 1,
+                legacy_no_slug: 0
+            }
+        );
+
+        // Case 3: legacy without slug
+        let legacy = Signal::new("legacy memory".into(), SignalSource::AbsorbedMemory);
+        std::fs::write(
+            signals_dir.join("2026-01-01.jsonl"),
+            format!("{}\n", serde_json::to_string(&legacy).unwrap()),
+        )
+        .unwrap();
+        std::fs::remove_file(signals_dir.join("2026-01-02.jsonl")).unwrap();
+        assert_eq!(
+            audit_for_slug(&ctx, current_slug).unwrap(),
+            AbsorbAudit {
+                cross_project: 0,
+                legacy_no_slug: 1
+            }
         );
     }
 }

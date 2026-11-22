@@ -3,7 +3,20 @@ use crate::dream::runner::DreamRunner;
 use crate::dream::{compile, ingest_digests};
 use anyhow::Result;
 
-pub fn run(ctx: &db::Context, only: Option<&str>, quiet: bool, dry_run: bool) -> Result<()> {
+pub fn run(
+    ctx: &db::Context,
+    only: Option<&str>,
+    quiet: bool,
+    dry_run: bool,
+    audit: bool,
+) -> Result<()> {
+    if audit {
+        let r = crate::dream::absorb::audit(ctx)?;
+        println!("跨專案 absorbed 列數：{}", r.cross_project);
+        println!("無來源 slug 舊列數：{}", r.legacy_no_slug);
+        return Ok(());
+    }
+
     // dry-run 純讀預覽:不 ensure_initialized(不建目錄)、不寫 L0、不刪 digest、不產 L1。
     if dry_run {
         return run_dry_preview(ctx);

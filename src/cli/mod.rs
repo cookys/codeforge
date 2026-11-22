@@ -149,6 +149,9 @@ pub enum Commands {
         /// Dry-run 預覽：印出會 ingest 的 signal + 會編出的 L1，不寫 L0、不刪 digest、不產 L1
         #[arg(long)]
         dry_run: bool,
+        /// 只計數稽核：輸出 L0 裡 absorbed 列的跨專案與無 slug 舊列數量（不印內容與路徑）
+        #[arg(long)]
+        audit: bool,
     },
     /// 批量匯入知識來源（web chat export、markdown 檔）
     Ingest {
@@ -577,7 +580,8 @@ pub fn run(cli: Cli) -> Result<()> {
             only,
             quiet,
             dry_run,
-        } => dream::run(&ctx, only.as_deref(), quiet, dry_run),
+            audit,
+        } => dream::run(&ctx, only.as_deref(), quiet, dry_run, audit),
         Commands::Ingest { path, source } => ingest::run(&ctx, &path, &source),
         Commands::Adopt => adopt::run(&ctx),
         Commands::Pet => pet::run(&ctx),
