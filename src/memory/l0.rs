@@ -31,6 +31,10 @@ pub struct Signal {
     pub source: SignalSource,
     pub timestamp: String,
     pub compiled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_slug: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_file: Option<String>,
 }
 
 impl Signal {
@@ -41,7 +45,15 @@ impl Signal {
             source,
             timestamp: Utc::now().to_rfc3339(),
             compiled: false,
+            source_slug: None,
+            source_file: None,
         }
+    }
+
+    pub fn with_absorb_source(mut self, slug: String, file: String) -> Self {
+        self.source_slug = Some(slug);
+        self.source_file = Some(file);
+        self
     }
 }
 
