@@ -112,6 +112,7 @@ run 0 gate gate 'work tree' 'gate output' --v76
 run 2 gate gate 'work tree' 'gate output' --invalid
 run 2 gate gate 'work tree'
 CODEFORGE_LANE_GATE_WORKTREE="$T/missing" run 2 gate gate 'work tree' 'gate output'
+[[ "$output" == *'set CODEFORGE_LANE_GATE_WORKTREE'* ]] || fail 'missing gate script does not name the variable'
 
 export CODEFORGE_LANE_REPO="$T/codeforge repo"
 export CODEFORGE_LANE_DISPATCH="$T/bin/fake-dispatch"

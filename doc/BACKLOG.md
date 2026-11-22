@@ -234,6 +234,26 @@
 - **Queued-By**: cookys/host-console/pm--claude 01M80RW9WV721Z113FS7QXJ1NJ
 - **Context**: 宿主是 Claude Code 本身，我們改不了；等宿主版本更新時重驗
 
+### Autopilot mods 的 bandlayout 在 12 列有 4 條測試本來就紅
+- **Id**: B68
+- **Status**: open
+- **Since**: 2026-11-22
+- **Origin**: self
+- **Problem**: autopilot develop 的 `mods/live/run-tests.sh` 有 4 條 bandlayout 測試在 12 列失敗（「scrolled through at 12 rows, every line of a card is complete and none is wider than the main window」與「a tall card at 12 rows is never taller than maxRows, ends with the menu row and the quick row」各兩次）。同一批 10 條 speed tab 失敗是已記的基線，這 4 條不是；分支測試看到 14 條失敗時，要靠這張單認出它們不是新增的。
+- **Impact**: 每次分支測試都得人工分辨「基線 14 條」與新增失敗，容易把新退步當基線放過（Minor）。
+- **Trigger**: 下一次動 `mods/live/band*` 或 12 列以下版面時，先修這 4 條或把它們收進已知紅名單
+- **Trigger-Type**: internal
+- **Effort**: S
+- **Source**: v7.5 修正版驗證（fa3f0246b 之前後的 mod 全套都出現同樣 4 條，AP develop 基底本來就紅）
+- **Pointer**: none
+- **Done-Check**: AP develop 上 `bash mods/live/run-tests.sh` 除 10 條 speed tab 外沒有失敗
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M81JXZAA4PZ351VY39ZYXRT9
+- **Context**: 在 autopilot repo，不是 codeforge；開單給 autopilot 席時引用這張
+
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
 - **Status**: open

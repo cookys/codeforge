@@ -60,6 +60,8 @@ gate() {
   [[ "$version" == --v76 || "$version" == --v75 ]] || die 'gate expects --v76 or --v75'
   checkout=$(readlink -f -- "$1")
   out=$(readlink -m -- "$2")
+  [[ -f "$gate_worktree/scripts/pane-gate/v74-keys/run.py" ]] \
+    || die "gate script not found under $gate_worktree: set CODEFORGE_LANE_GATE_WORKTREE to the worktree that holds scripts/pane-gate/v74-keys/run.py"
   python3 "$gate_worktree/scripts/pane-gate/v74-keys/run.py" "$checkout" "$version" --out "$out" \
     </dev/null >"$log" 2>&1 || rc=$?
   grep -E '(^|[[:space:]])(FAIL|RESULT)([[:space:]]|$)' "$log" | tail -n 20 || true
