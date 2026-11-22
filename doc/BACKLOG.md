@@ -176,7 +176,7 @@
 
 ### absorb 寫入 L0 時沒有記來源 slug，事後查不出某列來自哪個專案
 - **Id**: B65
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-19
 - **Origin**: self
 - **Problem**: `src/dream/absorb.rs` 寫入 signal 時沒記讀的是哪個 Claude 專案目錄（slug）和檔名。8a5f30a 後只讀當前專案，但事後只能用名稱比對證明不是 PM 的記憶，證明不了全部是本專案的；換版前吸進來的跨專案條目也分不出。
