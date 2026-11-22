@@ -231,7 +231,7 @@
 - **Needs**: none
 - **ms**: none
 - **Used-by**: user
-- **Queued-By**: cookys/aimax395/pm--claude 01M80RW9WV721Z113FS7QXJ1NJ
+- **Queued-By**: cookys/host-console/pm--claude 01M80RW9WV721Z113FS7QXJ1NJ
 - **Context**: 宿主是 Claude Code 本身，我們改不了；等宿主版本更新時重驗
 
 ### 兩個 dream 同時跑時 signal cursor 競態
