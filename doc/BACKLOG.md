@@ -4,7 +4,7 @@
 
 ### band 的過期原因和修復指令被截斷（第二批 M5）
 - **Id**: B52
-- **Status**: open
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
 - **Since**: 2026-11-18
 - **Origin**: self
 - **Problem**: band 中間還有約 38 格空白，左側的過期原因和修復指令卻被截成「請執行：autopilot status run…」，結尾的 --watch 被吃掉。
@@ -24,7 +24,7 @@
 
 ### pane 關著時 band 第 2 列的計數不完整（第二批 M6）
 - **Id**: B53
-- **Status**: open
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
 - **Since**: 2026-11-18
 - **Origin**: self
 - **Problem**: pane 關著時「額度」沒附任何異常計數；「艦隊(✗6)」把黃色閒置線也算成 ✗；9、0 頁籤消失；[+] 和 [-] 同列沒有標籤。
@@ -57,7 +57,7 @@
 
 ### pane 開著時終端機縮窄，數字熱鍵改打進提示列（第二批 B56）
 - **Id**: B56
-- **Status**: open
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
 - **Since**: 2026-11-18
 - **Origin**: self
 - **Problem**: pane 在寬終端機（側邊）開著，終端機縮到 80 寬後 pane 改疊在提示列上方，之後按 1–9、0 一律打進提示列，分頁不切換；一開始就是 80 寬、或只縮高度（160x24）都正常。
@@ -96,7 +96,7 @@
 
 ### pane 沒有專案的 session：派工、審查、殘留頁只剩錯誤和不對的修復指令
 - **Id**: B61
-- **Status**: open
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
 - **Since**: 2026-11-18
 - **Origin**: self
 - **Problem**: 非 autopilot 專案的 session 開 pane，派工、審查、殘留三頁只畫「✗ 本席資料不是最新：沒有專案」加一條照做也無效的修復指令，和「資料不足，無法判定」；標題列每頁帶「✗ 槽位 無來源」，沒說要做什麼。
@@ -116,7 +116,7 @@
 
 ### pane 花費頁沒有任何花費數字
 - **Id**: B62
-- **Status**: open
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
 - **Since**: 2026-11-18
 - **Origin**: self
 - **Problem**: 花費頁只畫 5h／7d 額度百分比和「✗ seats --quota 沒有本席這一列」，判定「資料不足，無法判定」；160x40 帳號列還露出英文原始欄位「primary_owner」。80x24 連本席錯誤列都被擠掉。
@@ -176,7 +176,7 @@
 
 ### absorb 寫入 L0 時沒有記來源 slug，事後查不出某列來自哪個專案
 - **Id**: B65
-- **Status**: done
+- **Status**: shipped b5dbeac 2026-11-22
 - **Since**: 2026-11-19
 - **Origin**: self
 - **Problem**: `src/dream/absorb.rs` 寫入 signal 時沒記讀的是哪個 Claude 專案目錄（slug）和檔名。8a5f30a 後只讀當前專案，但事後只能用名稱比對證明不是 PM 的記憶，證明不了全部是本專案的；換版前吸進來的跨專案條目也分不出。
