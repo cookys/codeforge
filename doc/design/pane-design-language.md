@@ -218,9 +218,8 @@
 - `doc/specs/codeforge-mod-ui.md`：Claude Code mod UI 開發依據（能力階梯、鍵盤與焦點限制、`bodyColumns` 預留 2 格）。
 - `doc/specs/forge-stats-ux-gate.md`：UX 閘門規範（評分項目 1–14、Critical 條件、必交截圖）。
 - `doc/design/ux-gate/pane-batch2/verdicts.md`：pane 第 2 批 UX 閘門判定與各輪結果。
-- `/home/team/projects/autopilot/mods/live/design.md`：O4 band shell 設計與捲動／座標／r5 規則。
-- `/home/team/projects/autopilot/mods/live/locales/zh-TW.json`：zh-TW 實際用字與頁籤名稱。
-- `/home/team/.tmp/claude-1001/-home-team-projects-codeforge/be512828-fb6d-4dc0-a527-288c49cc831a/scratchpad/current-pane-A-209x50.box.txt`：現行 209x50 待決頁實拍基準。
+- `autopilot:mods/live/design.md`：O4 band shell 設計與捲動／座標／r5 規則。
+- `autopilot:mods/live/locales/zh-TW.json`：zh-TW 實際用字與頁籤名稱。
 - `doc/plans/evidence/2026-11-18-pane-batch1`：未找到（未執行 shell 搜尋）。
 - `git log` / `git show b84dd83b`（carbon r3）：未找到（未執行 shell 指令）。
-- `/home/team/projects/autopilot/mods/live/pages/*.ts` 及測試檔（v74-r10b 等）：未找到（未執行 shell 搜尋）。
+- `autopilot:mods/live/pages/*.ts` 及測試檔（v74-r10b 等）：未找到（未執行 shell 搜尋）。
