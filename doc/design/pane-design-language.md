@@ -4,7 +4,7 @@
 
 ## 現行畫面基準（209x50，待決頁 A 樣式）
 
-來源：`/home/team/.tmp/claude-1001/-home-team-projects-codeforge/be512828-fb6d-4dc0-a527-288c49cc831a/scratchpad/current-pane-A-209x50.box.txt`
+來源：操作員 pane 實拍（209x50，待決頁 A 樣式；本機實拍檔）
 
 ```text
 ╭─ 待決 · 資料 fleet decisions list --json（schema fleet.decisions v1）· 10 秒 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮ [-]
