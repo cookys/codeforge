@@ -214,6 +214,26 @@
 - **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H
 - **Context**: 主機名照隱私規則不寫進 repo，見 hangar 01M7R1PJ
 
+### 宿主 Input 在一般畫面放長值時 inline 重畫撕裂
+- **Id**: B67
+- **Status**: blocked
+- **Since**: 2026-11-22
+- **Origin**: self
+- **Problem**: mod 的 `Input rows={1}` 在一般畫面（非全螢幕）收到很長的值時，宿主 inline 重畫錯位：上方的送出預覽、頁碼和底框疊在一起或掉到狀態列。宿主文件寫 rows=1 時長文字應在欄內捲動，全螢幕同一步驟正常，所以判定是宿主問題。
+- **Impact**: 一般畫面打長附註時，預覽和確認入口看不清楚（Major）。mod 端已用「一般畫面限長、超過提示改用全螢幕」緩解（v7.6 r10 之後）。
+- **Trigger**: 宿主（Claude Code）修好 inline 重畫後，拿掉一般畫面的附註長度限制並重跑 v7.6 閘門的長附註步驟
+- **Trigger-Type**: external
+- **Effort**: S
+- **Source**: v7.6 UX 雙評 r9（兩家都列 Critical）；PM 01M80RW9 裁定 A：算宿主限制，不對外送任何東西
+- **Pointer**: none
+- **Done-Check**: v7.6 閘門一般畫面長附註步驟畫面可判讀
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M80RW9WV721Z113FS7QXJ1NJ
+- **Context**: 宿主是 Claude Code 本身，我們改不了；等宿主版本更新時重驗
+
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
 - **Status**: open
