@@ -2,7 +2,7 @@
 
 > 操作員卡 d-8046739d（2026-11-23，答 A）願景：「從 transcript 提取知識，變成全機隊共用的技能、知識、SOP」。PM 單 01M836C68Y0EC65D15WWNKNMKJ。
 > 狀態：初稿，等 plan loop（hetero 審）。本文件不授權任何讀取別席 transcript；讀取範圍見第 5 節，授權由 PM 另開卡。
-> 盤點依據：`doc/plans/2026-11-23-transcript-knowledge-inventory.md`（每個零件的輸入、輸出、觸發、owner、缺口、讀取範圍，附證據路徑）。
+> 盤點依據：`doc/plans/2026-11-23-knowledge-inventory.md`（每個零件的輸入、輸出、觸發、owner、缺口、讀取範圍，附證據路徑）。
 
 ## 1. 目標與不做的事
 
