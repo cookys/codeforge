@@ -618,9 +618,9 @@
 - **Pointer**: fleet 單 01M83ZQ3ACJD97H1SXJ6JDV9TG
 - **Context**: 範圍 autopilot mods/live；走 AP 分支交 autopilot 審併
 
-### 追溯單的真終端驗收（pin 之後）
+### （已驗收結案，11-24）追溯單的真終端驗收
 - **Id**: B70
-- **Status**: open
+- **Status**: done（r48 trace 四頁真終端實拍 blob 74dae1c3…@7f7b5b95b；r51 最終 sha 8351ccf84 pane 實拍；PM 01M84V54T 裁 sandbox 驗收即結、操作員自己看真 pane）
 - **Since**: 2026-11-23
 - **Origin**: self
 - **Problem**: 追溯補齊（s1–s4）只有單元與整合測試，沒有真終端實拍；產線計數頁頂、來源跳殘留、花費頁 tok/s、過舊與讀取失敗各頁第一列都要看實際畫面。
