@@ -447,7 +447,7 @@ pub(crate) fn header_line(f: &Fact, cols: usize, tr: &Tr, org: Option<&str>) -> 
     let host: Option<Part> = (m.multi_host && !roles.is_empty()).then(|| host_k(roles.len()));
     let tok: Vec<Part> = match &f.tok {
         None => vec![],
-        Some(t) if t.flag => vec![p("▲", Style::Warn), pl(format!(" {}", t.text))],
+        Some(t) if t.flag => vec![p("⏶", Style::Warn), pl(format!(" {}", t.text))],
         Some(t) => vec![p(t.text.clone(), Style::Dim)],
     };
     let join = |parts: Vec<Vec<Part>>| -> Line {
@@ -496,7 +496,7 @@ pub(crate) fn compact_line(f: &Fact, now_s: f64, cols: usize, tr: &Tr) -> Line {
     let name = || p(f.e.key.clone(), Style::Bold);
     let flag = || -> Line {
         match &f.tok {
-            Some(t) if t.flag => vec![pl(" "), p("▲", Style::Warn), pl(format!(" {}", t.text))],
+            Some(t) if t.flag => vec![pl(" "), p("⏶", Style::Warn), pl(format!(" {}", t.text))],
             _ => vec![],
         }
     };
@@ -813,7 +813,7 @@ fn chip_parts(glyph: &str, style: Style, value: &str) -> Line {
 }
 fn chip_parts_of(c: &BandChip, label: &str, f: ChipForm, alias_only: bool) -> Line {
     if c.token {
-        return chip_parts("▲", Style::Warn, &format!("{label} {}", c.head));
+        return chip_parts("⏶", Style::Warn, &format!("{label} {}", c.head));
     }
     let text = if alias_only { &c.short } else { &c.head };
     let head = if c.inactive {

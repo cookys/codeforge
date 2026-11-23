@@ -421,7 +421,7 @@ fn accounts_text_width_100_every_state() {
     has("5h    ▰▰▰▰▰▰▱▱▱▱  62%  ◷ 2h5m 後重置");
     has("週    ▰▰▰▱▱▱▱▱▱▱  31%  ◷ 3d4h 後重置");
     has("token 到期 214 天");
-    has("▲ token 到期 6 天");
+    has("⏶ token 到期 6 天");
     has("91% 緊");
     has("額度  剩 12.50 credits"); // remaining-only credits: no meter, no %
     has("估 41%");
@@ -532,7 +532,7 @@ fn accounts_text_width_50_is_one_line_per_alias() {
         assert_eq!(body.iter().filter(|l| l.contains(key)).count(), 1, "{key}");
     }
     let l = |k: &str| body.iter().find(|l| l.contains(k)).unwrap().to_string();
-    assert!(l("claude:home").contains("▲") && l("claude:home").contains("週 91% 緊"));
+    assert!(l("claude:home").contains("⏶") && l("claude:home").contains("週 91% 緊"));
     assert!(l("kimi:main").contains("429 冷卻"));
     assert!(l("agy:main").contains("無資料"));
     assert!(l("glm:main").contains("估 41%"));
@@ -569,7 +569,7 @@ fn accounts_color_only_warns_the_flag() {
     multi_state(t.path());
     let (st, e) = state_of(t.path());
     let s = accounts_text(&st, &e, 100, N, &tr(), true);
-    assert!(s.contains("\x1b[33m▲\x1b[0m"));
+    assert!(s.contains("\x1b[33m⏶\x1b[0m"));
     // the tight word carries no colour of its own
     assert!(!s.contains("\x1b[33m緊"));
     assert_eq!(s.matches("\x1b[33m").count(), 2); // claude:home token + gone:tok
@@ -636,13 +636,13 @@ fn band_chips_order_and_words() {
     let forms = band_forms(&b);
     let first = plain(&forms[0]);
     assert!(first.ends_with("無資料 2"), "{first}");
-    assert!(first.contains("▲ gone:tok token 已失效") && first.starts_with("▲ claude:home"));
+    assert!(first.contains("⏶ gone:tok token 已失效") && first.starts_with("⏶ claude:home"));
     assert!(first.contains("claude:work 5h 62% ◷ 2h5m"));
     // widest first, strictly narrowing in the tail
     let widths: Vec<usize> = forms.iter().map(|f| width(f)).collect();
     assert!(widths.windows(2).all(|w| w[0] >= w[1]), "{widths:?}");
     // the last form is the single most severe chip, alias only
-    assert_eq!(plain(forms.last().unwrap()), "▲ home token 到期 6 天");
+    assert_eq!(plain(forms.last().unwrap()), "⏶ home token 到期 6 天");
 }
 
 #[test]
