@@ -631,3 +631,17 @@
 - **Source**: 01M83ZQ3ACJD97H1SXJ6JDV9TG
 - **Pointer**: scripts 用 capture14.py 的流程（尺寸先、鍵最後）
 - **Context**: hangar 在 PM 真 pane 實拍（單 01M825HR45）為主；sandbox 補拍為輔
+
+### codeforge 側的舊符號（寬度 A 類／Emoji）一次換掉
+- **Id**: B71
+- **Status**: open
+- **Since**: 2026-11-23
+- **Origin**: PM 裁定（01M84GEVJ7、01M84H74A6，方案 B）；AP 側已換並加 width lint（AP feat/width-lint）
+- **Problem**: codeforge 側還有舊圖示：plugins/forge-stats 約 10 檔、src/cli、src/tui、src/usage 約 9 檔，以及 mods/tux 重新 vendor（VERSION 3）。對照表：★→✧ ◇→◊ ●→◉ ▲→⏶ ◆→⬥ ⓘ→i ▶→▹ ②→2；操作員 10-13 驗過的 △ ○ ◌ ◐ ◍ 保留。doc/design 的歷史證據不改，現行設計語言文件（pane-design-language）同步。
+- **Impact**: statusline 與 forge-stats 在 tmux／部分 Windows 終端會偏一格；狀態列是全域的，改動要走一行黃金檔測試（tests/statusline_one_line.rs）。
+- **Trigger**: AP feat/width-lint 併入 develop 之後
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 01M84BZMK1810A379D4PYC498G
+- **Pointer**: 掃描法見 AP mods/live/width-lint.test.js；forge-stats 畫面改動要過 UX 閘門
+- **Context**: forge-stats 與 statusline 屬操作員看得到的畫面，換符號前先確認它們是否仍在用
