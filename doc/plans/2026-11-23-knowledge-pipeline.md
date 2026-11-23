@@ -1,105 +1,115 @@
-# 全機隊 transcript 知識管線（計畫初稿，走 plan loop，先不做）
+# 全機隊 transcript 知識管線（計畫第 2 稿：已吸收 plan loop 第 1 代 carbon 評審的 13 條阻擋意見）
 
 > 操作員卡 d-8046739d（2026-11-23，答 A）願景：「從 transcript 提取知識，變成全機隊共用的技能、知識、SOP」。PM 單 01M836C68Y0EC65D15WWNKNMKJ。
-> 狀態：初稿，等 plan loop（hetero 審）。本文件不授權任何讀取別席 transcript；讀取範圍見第 7 節，授權由 PM 另開卡。
-> 盤點依據：`doc/plans/2026-11-23-knowledge-inventory.md`（每個零件的輸入、輸出、觸發、owner、缺口、讀取範圍，附證據路徑）。
+> 狀態：第 2 稿，等 plan loop 第 2 代。本文件不授權任何讀取別席 transcript；讀取範圍見第 7 節，授權由 PM 另開卡。
+> 盤點依據：`doc/plans/2026-11-23-knowledge-inventory.md`。第 1 代評審補出盤點漏列的零件：codeforge 的 `session-digest`（全域 SessionEnd／PreCompact 已在跑）、`ingest-digests`、`absorb`；本稿第 3 節已補。
 
 ## 1. 目標與不做的事
 
 **目標**：某個 lane 踩過的坑，第二天別的 lane 在做同類工作時自動避開，不需要人記得去查。
 
-**不做**：不另建第二套 transcript 掃描器；不把 raw transcript 離開原主機；不自動把內容寫進共用 skill（一律經審查）；不讀別席 transcript（授權前）；不碰 mnemos（任何 lane 都不得讀）。
+**不做**：不另建第二套 transcript 掃描器；raw transcript 不離開原主機；不自動把內容寫進共用 skill（一律經審查）；不讀別席 transcript（授權前）；不碰 mnemos；**不改 `codeforge ship` 的輸入與契約**（第 5 節）。
 
 ## 2. OKR / KRs
 
-量得出來的關鍵結果（KR 與觀察期只量測，不擋上線）：
+KR 與觀察期只量測、不擋上線；但 KR1 的反向探針同時是第 4 節段 3 的**上線閘門**（探針不過，段 3 不開寫入），兩者分開記。
 
-- KR1: 去識別：P1 原型用含雷假資料（夾帶路徑、帳號別名、主機名各 3 種）做反向探針，共用倉寫入前被擋下 9/9；共用倉對 100 筆樣本掃描，原文逐字片段（≥20 字元）為 0 筆。
-- KR2: 去重：同一教訓由兩個來源各記一次，共用倉只留 1 筆並合併證據指標（P1 以 5 組人工重複測試，5/5 合併）。
+- KR1: 去識別：反向探針用含雷假資料（路徑、帳號別名、主機名、組織、金額各 3 種）嘗試寫入共用倉，被擋下 15/15；共用倉對 100 筆樣本做本機逐字比對，原文逐字片段（≥20 字元）為 0 筆。
+- KR2: 去重：同一教訓由兩個來源各記一次，共用倉只留 1 筆並累加證據（P1 以 5 組人工重複測試，5/5 合併、證據筆數正確）。
 - KR3: 避坑示範：P2 示範劇本 1 個真坑：隔天別的 lane 開同類工作時，session 開頭出現該教訓，且該 session 沒有重踩（附召回記錄與 session id）。
-- KR4: 退役：P3 切換後 14 天內舊路徑（codeforge L0→L1 寫入、autopilot learn 直接寫各處 knowledge）寫入次數為 0；回滾指令演練 1 次成功。
-- KR5: 召回噪音：注入的教訓每次最多 3 則；抽 20 次召回，人工判定相關的比例 ≥ 70%。
+- KR4: 退役：P3 切換後 14 天內被退役的舊寫入路徑（第 5 節清單）寫入次數為 0；回滾指令演練 1 次成功。
+- KR5: 召回噪音：自 P2 之後的真實召回日誌，隨機分層抽至少 20 次非空召回事件；以「每則被注入的教訓」為分母，每則獨立判定是否與該 session 的 repo／任務直接相關，相關率 ≥ 70%；判定人不是原提煉席。
 
 ## 2.5 Global Constraints
 
 - 不另建第二套 transcript 掃描器；舊零件並行對照後退役，不長期雙跑。
-- raw transcript 與逐字內容不離開原主機，不送任何雲端模型；跨席只流通去識別的候選教訓。
-- 授權範圍：現有卡 d-dd69ee58、d-60077fea、d-5b8ecf51 不涵蓋本計畫；未取得新授權卡前，只用各席自己的 transcript 做原型。
+- raw transcript 與逐字內容不離開原主機，**不送任何雲端模型，包含本機 CLI 轉送的外部模型**；跨席只流通去識別、無原文的候選教訓。
+- 授權範圍：現有卡 d-dd69ee58、d-60077fea、d-5b8ecf51 不涵蓋本計畫；未取得新授權卡前，只用各席自己的 transcript，結果只寫本機沙箱倉，不進共用倉。
 - 不讀 mnemos repo；公開 repo 不寫真實主機名、組織、金額、帳號別名、本機絕對路徑。
-- 自動產物不直接進共用 skill，一律經機器審查加人審。
+- 自動產物不直接進共用 skill，一律經機器審查加人審；人審發生在獨立的審查入口（PM pane 待決卡），不在 SessionEnd hook 裡（背景 hook 無法互動）。
 
-## 3 現況：零件、重疊、缺口（摘自盤點）
+## 3. 現況：零件、重疊、缺口（摘自盤點，含第 1 代補漏）
 
 | 零件 | 做到哪 | owner |
 |---|---|---|
-| autopilot `learn` | 手動記一筆教訓到 `.claude/knowledge/`（依 knowledge-routing 解析路徑） | autopilot |
-| autopilot `distill` | 手動掃本機 transcript 的**頻率統計**（不輸出原文），產出可執行 SKILL.md，經人審 | autopilot |
-| hippo records | 結構化記錄存放（lesson／decision／handoff 一筆一檔），**不讀 transcript** | hippo |
-| codeforge L0→L1 | 手動 `learn`、SessionEnd 的 `dream` 把當前專案 memory 與 digest 編成 L1；`ship` 把 L1 與 git log 變 L2 日帳送 mnemos | codeforge |
-| autopilot hooks | 沒有任何 hook 自動萃取教訓（`session-handoff`、`past-reference-recall` 只讀當次 transcript 做交接與召回） | autopilot |
+| autopilot `learn` | 手動記一筆教訓到 `.claude/knowledge/` | autopilot |
+| autopilot `distill` | 手動掃本機 transcript 的頻率統計（不輸出原文），產出 SKILL.md，經人審 | autopilot |
+| hippo records | 一筆一檔結構化記錄（lesson／decision／handoff），不讀 transcript；`hippo new --key` 命中既有鍵時不寫入、忽略新參數；provenance 為單值欄位（frozen v1） | hippo |
+| codeforge `session-digest` | 全域 SessionEnd／PreCompact 已在每台主機掃本席 transcript，抽摩擦與修正訊號，寫 L0 | codeforge |
+| codeforge `dream`／`ingest-digests`／`absorb` | L0→L1 編譯本專案記憶；`ship` 把 L1 與 git log 變 L2 日帳送 mnemos（production critical path） | codeforge |
+| autopilot hooks | 沒有 hook 自動萃取教訓；`past-reference-recall` 只在使用者輸入抱怨詞時觸發，只讀固定一個 `.hippo/records`，不留召回日誌，最多 5 筆 | autopilot |
 
-**重疊**：autopilot `learn` 與 codeforge `learn`（都記單筆教訓，落在兩個不同位置）；`distill` 與 `dream`+`ship`（都把零散訊號壓成長期知識，產物形式不同）；兩邊都在 SessionEnd 讀本席 transcript，用途不同。
-**缺口**：(a) 跨 lane／跨機器去重與升級成共用 skill；(b) 自動萃取（全靠手動）；(c) `ship` 尚未讀 session jsonl；(d) 統一的隱私與外洩審查關卡（autopilot 有 identifier-scan 加人審，codeforge L0 只有 mask_secrets，L1／L2 無審查）。
+**重疊**：autopilot `learn` 與 codeforge `learn`（單筆教訓落兩處）；`distill` 與 `dream`（都把訊號壓成長期知識）；`session-digest` 與 autopilot 想新增的擷取 hook（同一種訊號）。
+**缺口**：(a) 跨 lane／跨機器去重與升級；(b) 自動召回與採用回饋；(c) 統一的隱私與外洩審查（identifier-scan 不涵蓋帳號別名與裸主機名）；(d) 無 autopilot 的主機沒有萃取器。
 
+## 4. 單一管線與單一 owner
 
-## 4 單一管線與單一 owner
-
-**建議**：一條管線四段，**owner = autopilot**（機制：hook、腳本、檢查；操作員 d-8046739d 分工：autopilot 管背後的機制，codeforge 管操作員看得到的）。codeforge 只留「操作員看得到」的部分（pane 上看到近期教訓與採用狀態），不再維護自己的萃取。
+**owner = autopilot**（機制：hook、腳本、檢查；d-8046739d 分工）。codeforge 管「操作員看得到的」：pane 上顯示近期教訓與採用狀態。
 
 ```
- 段 1 擷取（每席本機）   段 2 提煉（每席本機）    段 3 彙整審查（共用）       段 4 發佈與採用
- SessionEnd hook   →   候選教訓（去識別、   →   去重、歸類、人審        →   skill→autopilot plugin
- 只讀本席 transcript    不含原文，帶證據指標）    （identifier-scan+人審）     知識/SOP→各 repo knowledge 或 hippo lesson
-                                                                              採用回饋→下次 session 召回
+ 段 1 擷取（每席本機）  段 2 提煉（每席本機）   段 3 彙整審查（共用）          段 4 發佈與召回
+ 沿用 codeforge     →  規則式、去識別、    →  去重、閘門、審查入口      →  skill→autopilot plugin（公開，另掃描）
+ session-digest        無原文的候選教訓       共用倉＝專用私密 git repo      知識/SOP→共用倉或各 repo knowledge
+                                                                           SessionStart 召回＋採用回饋
 ```
 
-- 段 1：沿用 autopilot SessionEnd 位置（`session-handoff` 已在讀當次 transcript；新增一個擷取 hook，不是新增掃描器）。只讀本席、只抽「摩擦與修正」訊號（失敗後換做法、使用者糾正、重複指令），輸出候選，不存原文。
-- 段 2：把 `distill-scan` 的統計 atoms 與 codeforge 的 `dream compile` 合併成一個提煉步驟（保留 `dream` 的 L1 結構，因為 hippo 與 ship 已吃它）；產物統一成「候選教訓」一種格式，欄位：主題、坑、解法、適用範圍（repo／工具）、證據指標（session id 加時間範圍，不含內容）、去識別旗標。
-- 段 3：共用倉（建議 hippo 的 `lesson` 記錄；hippo 本來就是 git 版控、一筆一檔、可重建索引）。去重靠主題加解法的正規化鍵；審查＝identifier-scan 機器關加一次人審（沿用 distill 的 AskUserQuestion 關卡），沒過不進共用。
-- 段 4：升級規則：同一教訓被 ≥2 個不同 lane 各自記到，或被採用 ≥N 次，才升級成 skill 候選；skill 放 autopilot plugin，知識與 SOP 放各 repo 的 `knowledge/` 或 hippo。召回沿用現有 `past-reference-recall` 的 UserPromptSubmit 位置，把相關教訓在 lane 開工時注入。
+**第 1 代評審後定案的三項（原「未決」）**：
+1. **共用倉**：一個專用私密 git repo（internal，不是公開的 autopilot `.claude/knowledge/`）。各席有本機 checkout；只有段 3 審查通過時才在該 checkout 內以 hippo 格式寫一筆 lesson，commit、`pull --rebase`、push；召回端定期 pull，唯讀。
+2. **升級門檻 N = 3**：同一教訓在 ≥3 個不同 session、跨 ≥2 個 lane 被採用或各自重記，才升級成 skill 候選。
+3. **無 autopilot 的主機**：不新增擷取 hook；段 1 就是各機既有的 codeforge `session-digest`（已全域在跑），autopilot 只加「從 session-digest 的 L0 讀取候選」的消費端。這同時解決與既有掃描器重複的問題。
 
+**各段規則**：
+- **段 1**：不新增掃描器。擷取 = `session-digest` 現有產物（摩擦與修正訊號，已有 `mask_secrets`）。補一個本機設定的**禁詞清單**（帳號別名、主機名、組織名，由各主機自己維護，不進任何 repo）。
+- **段 2（規則式、無外送）**：把 `distill-scan` 的統計 atoms 與 `dream` 的 L1 結構合成一個提煉器，**以規則與模板組出**候選：主題、坑、解法、適用範圍（repo／工具）、證據指標（session id 加時間範圍，不含內容）。提煉若要用 LLM，只能是本機引擎、輸入只有 atoms 與模板欄位，**不得放入逐字原文片段**；不得經 `claude -p` 或其他雲端路徑送出。（取消初稿的「保留 160 字元逐字片段」。）
+- **段 3（閘門 + 審查）**：候選先進**本機候選區**（本機 spool 目錄，不在任何 git 追蹤內）。寫入共用倉前依序過：(i) identifier-scan 擴充版（加入本機禁詞清單、帳號別名、裸主機名、非 /home 的本機絕對路徑、組織與金額樣式），命中即拒絕；(ii) **逐字比對閘**：候選與其來源 transcript 做 ≥20 字元共同子串比對，命中即拒絕（比對在本機，來源 transcript 不外送）；(iii) 去重：以主題加解法的正規化鍵查共用倉，命中則**不呼叫 `hippo new`**（它會忽略新參數），改為對該筆的 sidecar 證據檔 `evidence/<key>.jsonl` 追加一行（session id、lane、日期），證據筆數即跨 lane 計數；(iv) 人審：由審查入口（`autopilot` 新增的 `knowledge-review` 指令，PM pane 待決卡）一次審一批，不在 SessionEnd hook 裡問。
+- **段 4（升級、發佈、召回）**：
+  - 升級：達 N=3 才產生 skill 候選；生成的 SKILL.md 另過一道機器審查（格式、禁詞、公開 repo 洩漏掃描，含組織、金額、非 /home 絕對路徑）加人審，才進公開的 autopilot plugin。教訓本體留在私密共用倉，只有經審查的 skill 才公開。
+  - 召回：新增 **SessionStart 召回 hook**（不沿用 `past-reference-recall`：它只在抱怨詞觸發、只讀固定 `.hippo`、不留日誌）。讀本機共用倉 checkout 快取；過濾條件：type=lesson、已審、與當前 repo／工具範圍相符；最多 3 則；每次召回寫本機召回日誌（session id、教訓 id、時間）。
+  - 採用回饋：被召回的教訓，若該 session 沒有在 7 天內對同一正規化鍵產生新候選，記一次「採用」；若 session 內明確以 `learn --useful` 或 `--noisy` 標記，以標記為準。回饋寫 sidecar `feedback/<key>.jsonl`。排序用「已審、近期被採用」的次數。
 
-## 5 舊零件怎麼退役（Migrate, don't run two systems）
+## 5. 舊零件怎麼退役（Migrate, don't run two systems）
 
-1. codeforge `learn`／`dream compile` 的 L0→L1 萃取：段 2 上線並與 L1 輸出對得起來之後，`dream` 改為只讀共用倉，原寫入路徑停用；`ship` 的 L1 輸入改吃共用倉的已審記錄。
-2. autopilot `learn`：保留為「人主動記一筆」的入口，但寫入目標改成共用倉的候選區（不再直接寫各處 `.claude/knowledge/`）。
-3. `distill`：改成段 2 的一個提煉器，手動觸發保留；不再獨立產 skill，改走段 3 審查。
-4. 退役順序：先並行唯讀對照一週（新舊產物比對，不寫舊路徑）→ 切換 → 舊路徑留 14 天唯讀 → 刪。每一步有回滾指令。
+第 1 代評審指出初稿的退役會破壞 `ship` 契約；本稿改成：**`ship`、`dream`／`ingest-digests`／`absorb` 的 L0→L1→L2 本機鏈不動**（它是單 repo 的本機記憶與 mnemos 日帳來源，契約單一來源在 mnemos repo，本計畫不改）。新管線與它的關係是「消費 L0（session-digest）、產共用教訓」，兩者產物不同、不重疊，所以不算雙系統。真正退役的只有重複的**教訓寫入路徑**：
 
+1. autopilot `learn`：保留人主動記一筆的入口；預設寫本機私密筆記（照 knowledge-routing，維持原 memory_dir 行為）；加 `--share` 才進本機候選區走段 3。不再直接寫公開或共用位置。
+2. `distill`：改成段 2 的提煉器之一；不再獨立產 skill，輸出走段 3 審查。
+3. codeforge `learn` 的「教訓類」落點：同 `--share` 規則，進候選區；其餘 L1 記憶用途不變。
+4. 順序：並行唯讀對照一週（新舊產物比對；**舊路徑照常寫，不停**，避免切換前 `ship` 斷糧）→ PM 與 mnemos 契約 owner 確認 → 切換教訓寫入路徑 → 舊教訓寫入路徑留 14 天唯讀 → 刪。每一步有回滾指令；回滾 = 還原 `learn` 的原預設目標，一行設定。
 
 ## 6. Risks + inversion
 
-- **去識別失敗**：候選教訓夾帶路徑或帳號別名。對策：identifier-scan 機器關加人審，不過不進共用；上線前用含雷的假資料做反向探針（故意夾帶，確認被擋）。
-- **owner 邊界**：本計畫把 owner 放 autopilot，codeforge 的 L0→L1 要退役，但 `ship` 是 production critical path（Mnemos 來源契約在 mnemos repo，不在此複製）。切換前需 mnemos 契約 owner 確認 L1 輸入換成共用倉不破契約；這點 codeforge 無法單方決定，要請 PM 轉。
-- **召回噪音**：教訓太多會淹沒 session 開頭。對策：只注入與當前 repo／工具相符且已審、近期被採用的前 3 則。
-- **未決（請 plan loop 挑戰）**：共用倉用 hippo lesson 還是 autopilot `.claude/knowledge/`？本稿選 hippo（git 版控、可重建索引、已有 CLI）；升級門檻 N 的值；段 1 在 codeforge 主機（無 autopilot hook 的主機）怎麼補。
+- **去識別失敗**：候選夾帶路徑、帳號別名、組織、金額。對策：段 3 兩道機器閘加人審；上線前反向探針 15/15 才開寫入。
+- **逐字外洩**：提煉器或 LLM 帶出原文。對策：規則式、不外送、逐字比對閘；KR1 抽樣驗證。
+- **公開洩漏**：skill 進公開 repo 帶出私密資訊。對策：只有升級後的 skill 公開，另掃描加人審；教訓留私密倉。
+- **契約風險**：`ship` 是 production critical path，本計畫不改它的輸入；若日後要改，另案走 mnemos 契約 owner。
+- **召回噪音**：最多 3 則，只放已審且範圍相符；KR5 以每則為分母量測。
+- **共用倉衝突**：多機同時 push 同一檔。對策：每筆教訓一檔、sidecar 證據為追加檔（append-only），push 前 `pull --rebase`，衝突時重試一次，仍失敗留候選區下次再送。
 
-## 7 隱私與授權（PM 拿這段去開授權卡）
+## 7. 隱私與授權（PM 拿這段去開授權卡）
 
 - **現有授權不夠**：d-dd69ee58 只允許「抽操作員決定」；d-60077fea／d-5b8ecf51 只允許 SWE-v2 出題。都不涵蓋本計畫。
 - **需要的讀取範圍**（建議，由 PM 開卡讓操作員決定）：
-  1. 只限 Claude 席的 transcript（不含中國營運的模型席與其雲端）。
-  2. **每席只在自己主機上處理**；raw transcript 與逐字內容不離開原主機，不送任何雲端模型；離開本機的只有「去識別的候選教訓」（無原文、無路徑、無帳號別名、無主機名）。
+  1. 只限 Claude 席的 transcript；**排除中國營運模型席與其雲端**。實作方式：段 1 只處理該機器上 `session-digest` 已產出的 L0（它只針對本機 Claude Code session），且段 2 以席位白名單（本機設定，列出允許的席位位址）過濾；不在白名單的席位 L0 不進候選。共用家目錄下的別席檔案不讀。
+  2. 每席只在自己主機上處理；離開本機的只有通過段 3 閘門的候選教訓（無原文、無路徑、無帳號別名、無主機名）。
   3. 跨席彙整只看候選教訓，不看 transcript。
   4. 不讀 `~/.claude` 的 settings、hooks、plugins、credential 檔。
-- **在授權之前**：只能用各席**自己的** transcript 做原型（本席自讀自寫，無跨席存取）。
-- 提煉若要用 LLM：只用本機或同一台主機上的引擎，prompt 內不放原文（只放統計 atoms 與去識別片段）；這點要在授權卡裡明講。
+- **在授權之前（P1）**：只讀本席自己的 session；產物只寫**本機沙箱倉**（與共用倉分開、不 push），不寫共用倉。授權後才開共用倉寫入。
+- 提煉若要用 LLM：只用本機引擎、prompt 內只放統計 atoms 與模板欄位；授權卡要明講。
 
+## 8. 驗收（要實際示範，不是測試綠）
 
-## 8 驗收（要實際示範，不是測試綠）
-
-**示範劇本**：選一個 lane 近期踩過的真坑（例：本席踩過的「claude 不在 PATH 導致 dispatch precondition_failed」或「committed 但 diff 只有 1–2 行等於沒進度」）。(1) 該坑經管線變成已審的共用教訓；(2) 隔天另一個 lane 開同類工作時，session 開頭自動出現這則教訓；(3) 該 lane 沒踩到同一個坑，附該 session 的召回記錄與沒有出錯的證據。一行證據：召回記錄的 session id 與教訓 id。
+**示範劇本**：選一個 lane 近期踩過的真坑（例：「claude 不在 PATH 導致 dispatch precondition_failed」）。(1) 該坑經管線變成已審的共用教訓；(2) 隔天另一個 lane 開同類工作時，SessionStart 召回注入這則教訓；(3) 該 lane 沒踩到同一個坑，附召回日誌（session id、教訓 id）與沒有出錯的證據。
 
 **不算驗收**：單元測試綠、管線跑通但沒有真實 lane 被避開。
 
-
-## 9 里程碑、上線日、判定日（進 task_evidence）
+## 9. 里程碑、上線日、判定日（進 task_evidence）
 
 | 階段 | 內容 | 上線日 | 判定日 |
 |---|---|---|---|
-| P0 | plan loop 通過（≤2 輪）；PM 開授權卡 | 11-25 | 11-26（卡有答覆） |
-| P1 | 本席自己 transcript 的原型：段 1+2+3 單機跑通，一筆教訓進共用倉 | 授權卡前即可做，11-28 | 11-29（原型產物審查） |
-| P2 | 兩個 lane 並行（授權後）；召回注入；示範劇本 | 授權後 +3 工作日 | 示範日 +1 |
-| P3 | 退役舊路徑（第 5 節順序） | P2 通過後 | 切換後 14 天 |
+| P0 | plan loop 通過（≤2 代）；PM 開授權卡 | 11-25 | 11-26（卡有答覆） |
+| P1 | 本席自己 session 的原型：段 1（session-digest 消費端）+2+3 閘門在本機沙箱倉跑通；反向探針 15/15；一筆教訓進沙箱倉 | 11-28（授權卡前即可做） | 11-29（原型產物審查） |
+| P1.5 | 切換前對照：新舊教訓產物並行比對一週（舊路徑照寫） | P1 通過後 | +7 天 |
+| P2 | 授權後開共用倉；兩個 lane 並行；SessionStart 召回與採用回饋；示範劇本 | 授權後 +3 工作日 | 示範日 +1 |
+| P3 | 退役舊教訓寫入路徑（第 5 節順序，含 mnemos 契約 owner 確認） | P2 通過後 | 切換後 14 天 |
 
-日期是初稿估計，待 plan loop 與授權卡答覆後鎖定。
+日期是估計，待 plan loop 與授權卡答覆後鎖定。
