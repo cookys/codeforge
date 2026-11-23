@@ -1,12 +1,14 @@
 # CLAUDE.md — CodeForge
 
 ## Goal
-- End goal: operator 的 CLI dashboard：Claude Code 的 statusline 和 mod，不用切視窗就看得到用量、配額、fleet、記憶狀態。長期願景用 repo 原話：「把 MUD 搬上來。先打鐵，再上場。」
-- Current milestone: G40 配額顯示：用真的本機鏡像資料顯示正確。這項卡在新帳號註冊 d-2a19fdb5。
-  - 追蹤：backlog B45；fleet 單 01M7VAKYT6KFQQ2001X8Q7HHC5（等卡 d-2a19fdb5 的真實鏡像樣本）；上線日：卡解後 1 天內跑 `scripts/g40-real-data/check.sh` 並 pin 上 live（PM 01M7VAG6 補欄位）。
+- End goal: operator 的 CLI dashboard：Claude Code 的 statusline 和 mod，不用切視窗就看得到用量、配額、fleet、記憶狀態。長期願景用 repo 原話：「把 MUD 搬上來。先打鐵，再上場。」另有操作員補充的願景（d-8046739d，2026-11-23）：從 transcript 提取知識，變成全機隊共用的技能、知識、SOP；一條管線、一個 owner，先寫計畫走 plan loop，不直接做。
+- 分工（d-8046739d）：codeforge 管「操作員看得到的東西」：pane、狀態列、mod 的畫面和操作；程式碼放在 autopilot plugin 裡，合併前由 autopilot 審有沒有弄壞機制。autopilot 管背後的機制：hook、派工、交接、檢查腳本。
+- Current milestone: pane 在操作員實際使用中通過，包含待決頁 C 雙欄、forge 頁每個 agent 的 tok/s、★ 捲軸。驗收是 hangar 開新視窗實拍，加上操作員日常使用沒問題。
+  - 追蹤：fleet 單 01M82HXJHZA2MV3ABFHCG4TQPP（C 雙欄）、01M82V6E0QTFGBFTSNGDJCK6S9（每個 agent 的 tok/s）、hangar 實拍單 01M825HR45ZCBSDQGHSHJF2152。已併 AP develop：C 雙欄 18ee165ff341、tok/s 734750b70f30、v7.5 退役 522f24e0af9f。
+  - G40 配額顯示真資料檢查：已被取代（capacity 額度單一來源計畫 01M82TH9WZ；backlog B45 superseded）。
 - Not goals now: MUD 後段、自己產生配額資料、hosted CI。
 - Feature map: [ARCHITECTURE.md](ARCHITECTURE.md)（功能狀態只記在那裡）
-- Source: operator 已確認。；操作員 d-fb9989dc 定案（2026-11-05）
+- Source: 操作員 d-8046739d（2026-11-23）；先前 d-fb9989dc（2026-11-05）
 
 ## This repo is yours
 
