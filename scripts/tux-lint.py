@@ -36,10 +36,10 @@ def violations(source):
     return bad
 
 if sys.argv[1:] == ['--test']:
-    assert violations("const mark = '●'")
+    assert violations("const mark = '◉'")
     assert violations('<Text color="warning" />')
     assert violations("seg('alert', undefined, 'warning')")
-    assert not violations('// ● example\nconst mark = GLYPHS.state.running')
+    assert not violations('// ◉ example\nconst mark = GLYPHS.state.running')
     assert not violations('<Text color={PALETTE.attention} />')
     print('tux-lint: ok (5 controls)')
 else:

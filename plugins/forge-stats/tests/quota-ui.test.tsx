@@ -143,7 +143,7 @@ const block = (lines: string[], head: string) => {
   return lines.slice(from, to < 0 ? undefined : to)
 }
 
-test('pane at 100: every state, in the §6.2 order (▲, tight, 429, the rest alphabetical, L0 and dropped last)', () => {
+test('pane at 100: every state, in the §6.2 order (⏶, tight, 429, the rest alphabetical, L0 and dropped last)', () => {
   const lines = paneText(stateOf(ALL), 100)
   const heads = lines.filter(l => /^[a-z]/.test(l) && l.includes(' L')).map(l => l.split(' ')[0])
   expect(heads).toEqual(['claude:gone', 'claude:home', 'claude:old', 'kimi:main', 'claude:multi', 'claude:work', 'codex:main', 'glm:main', 'qoder:main', 'agy:main', 'minimax:main'])
@@ -153,15 +153,15 @@ test('pane at 100: every state, in the §6.2 order (▲, tight, 429, the rest al
     '  5h    ▰▰▰▰▰▰▱▱▱▱  62%  ◷ 2h05m 後重置',
     '  週    ▰▰▰▱▱▱▱▱▱▱  31%  ◷ 3d04h 後重置',
   ])
-  // tight: the word, no colour; token urgent: ▲ before the text
+  // tight: the word, no colour; token urgent: ⏶ before the text
   expect(block(lines, 'claude:home')).toEqual([
-    'claude:home  L3 · ▲ token 到期 6 天',
+    'claude:home  L3 · ⏶ token 到期 6 天',
     '  5h    ▰▱▱▱▱▱▱▱▱▱  12%  ◷ 4h40m 後重置',
     '  週    ▰▰▰▰▰▰▰▰▰▱  91% 緊  ◷ 1d02h 後重置',
   ])
-  expect(block(lines, 'claude:gone')[0]).toBe('claude:gone  L3 · ▲ token 已過期')
+  expect(block(lines, 'claude:gone')[0]).toBe('claude:gone  L3 · ⏶ token 已過期')
   // invalid: the header alone, no meter and no percent
-  expect(block(lines, 'claude:old')).toEqual(['claude:old  L0 · ▲ token 已失效'])
+  expect(block(lines, 'claude:old')).toEqual(['claude:old  L0 · ⏶ token 已失效'])
   // credits remaining only: no meter, no %; an aged weekly beside it; both carry the age (> 30 min)
   expect(block(lines, 'codex:main')).toEqual([
     'codex:main  L2',
@@ -187,7 +187,7 @@ test('pane at 100: every state, in the §6.2 order (▲, tight, 429, the rest al
 
 test('pane in English, and the empty / unreadable footers', () => {
   const lines = paneText(stateOf(['claude:home', 'kimi:main']), 100, en)
-  expect(lines).toContain('claude:home  L3 · ▲ token expires in 6 d')
+  expect(lines).toContain('claude:home  L3 · ⏶ token expires in 6 d')
   expect(lines).toContain('  429 cooling  ◷ 1h19m to retry')
   expect(lines).toContain('  week  ▰▰▰▰▰▰▰▰▰▱  91% tight  ◷ 1d02h to reset')
   expect(paneText({ ...NO_QUOTA, present: true }, 100)).toEqual(['  尚未收到配額資料（由 autopilot 的 reporter／wrapper 寫入）'])
@@ -213,18 +213,18 @@ test('pane narrows by dropping the age, then 後重置, then the meter; below 60
   // last, the meter goes; the numbers stay
   expect(credits(displayWidth(noWord) - 1)).toBe('  額度  估 91% 緊  剩 9,000,000,000 credits  ◷ 3d00h')
   // 60 keeps blocks, 59 is one line per alias
-  expect(paneText(stateOf(ALL), 60)[0]).toBe('claude:gone  L3 · ▲ token 已過期')
+  expect(paneText(stateOf(ALL), 60)[0]).toBe('claude:gone  L3 · ⏶ token 已過期')
   const compact = paneText(stateOf(ALL), 59)
   expect(compact.filter(l => /^[a-z]/.test(l))).toHaveLength(11)
-  expect(compact).toContain('claude:gone 5h 20% ◷ 2h05m ▲ token 已過期')
-  expect(compact).toContain('claude:home 週 91% 緊 ◷ 1d02h ▲ token 到期 6 天')
+  expect(compact).toContain('claude:gone 5h 20% ◷ 2h05m ⏶ token 已過期')
+  expect(compact).toContain('claude:home 週 91% 緊 ◷ 1d02h ⏶ token 到期 6 天')
   expect(compact).toContain('kimi:main 429 冷卻 ◷ 1h19m')
   expect(compact).toContain('agy:main 無資料')
-  expect(compact).toContain('claude:old ▲ token 已失效')
+  expect(compact).toContain('claude:old ⏶ token 已失效')
   expect(compact).toContain('codex:main 週 17% ◷ 3d00h · 2h10m 前')
   // narrower: whole fields drop, the name stays
   expect(paneText(stateOf(['codex:main']), 30)[0]).toBe('codex:main 週 17% ◷ 3d00h')
-  expect(paneText(stateOf(['claude:home']), 40)[0]).toBe('claude:home 週 91% 緊 ▲ token 到期 6 天')
+  expect(paneText(stateOf(['claude:home']), 40)[0]).toBe('claude:home 週 91% 緊 ⏶ token 到期 6 天')
   expect(paneText(stateOf(['claude:work']), 40)[0]).toBe('claude:work 5h 62% ◷ 2h05m')
   expect(paneText(stateOf(['claude:home']), 30)[0]).toBe('claude:home 週 91% 緊')
   expect(paneText(stateOf(['claude:home']), 5)[0]).toBe('claude:home')
@@ -238,10 +238,10 @@ test('a peer row counts only past the namespace guard; with no guard the local r
 })
 
 // ---- the band chips ----
-test('band group: order ▲, tight, 429, the rest by utilization, then 無資料 N; the drop order of §6.1', () => {
+test('band group: order ⏶, tight, 429, the rest by utilization, then 無資料 N; the drop order of §6.1', () => {
   const forms = bandText(stateOf(ALL))
   expect(forms[0]).toBe(
-    '▲ claude:gone token 已過期  ▲ claude:home token 到期 6 天  ▲ claude:old token 已失效  claude:home 週 91% 緊 ◷ 1d02h  kimi:main 429 冷卻 ◷ 1h19m  ' +
+    '⏶ claude:gone token 已過期  ⏶ claude:home token 到期 6 天  ⏶ claude:old token 已失效  claude:home 週 91% 緊 ◷ 1d02h  kimi:main 429 冷卻 ◷ 1h19m  ' +
       'claude:work 5h 62% ◷ 2h05m  claude:multi 5h 50% ◷ 2h05m  glm:main 日 估 41%  qoder:main 額度 剩 3,100  claude:gone 5h 20% ◷ 2h05m  codex:main 週 17% ◷ 3d00h · 2h10m 前  無資料 2',
   )
   // 1: no 無資料   2: no ages   3: no countdowns   then whole chips from the tail   last: the alias alone
@@ -251,12 +251,12 @@ test('band group: order ▲, tight, 429, the rest by utilization, then 無資料
   expect(forms[3]).toContain('claude:home 週 91% 緊  kimi:main 429 冷卻  claude:work 5h 62%')
   // 4: the prefixes go where the alias is unique (`main` is kimi's, glm's, qoder's and codex's: those keep theirs); only then whole chips
   expect(forms[4]).toBe(forms[3]!.replaceAll('claude:', ''))
-  expect(forms[4]).toContain('▲ gone token 已過期')
+  expect(forms[4]).toContain('⏶ gone token 已過期')
   expect(forms[4]).toContain('kimi:main 429 冷卻')
   expect(forms[5]).toBe(forms[4]!.replace('  codex:main 週 17%', ''))
-  // the ▲ chips go last; the one left is the most severe, and the alias stays (`gone` is also a chip of another provider? no: one key, so the prefix goes)
-  expect(forms[forms.length - 1]).toBe('▲ gone token 已過期')
-  // no ▲: the tightest chip alone, then `alias 91%`
+  // the ⏶ chips go last; the one left is the most severe, and the alias stays (`gone` is also a chip of another provider? no: one key, so the prefix goes)
+  expect(forms[forms.length - 1]).toBe('⏶ gone token 已過期')
+  // no ⏶: the tightest chip alone, then `alias 91%`
   const calm = bandText(stateOf(['claude:work', 'glm:main']))
   expect(calm[calm.length - 2]).toBe('work 5h 62%')
   expect(calm[calm.length - 1]).toBe('work 62%')
@@ -268,16 +268,16 @@ test('band group: order ▲, tight, 429, the rest by utilization, then 無資料
 })
 
 test('band chips: remaining-only credits, rpm and an invalid token draw no usage chip; 無資料 counts placeholders and dropped aliases only', () => {
-  expect(bandText(stateOf(['claude:old']))).toEqual(['▲ claude:old token 已失效', '▲ old token 已失效'])
+  expect(bandText(stateOf(['claude:old']))).toEqual(['⏶ claude:old token 已失效', '⏶ old token 已失效'])
   const noData = bandText(stateOf(['agy:main', 'minimax:main']))
   expect(noData).toEqual(['無資料 2'])
   // codex has a weekly: its chip; the credits remaining-only line is the pane's
   expect(bandText(stateOf(['codex:main']))[0]).toBe('codex:main 週 17% ◷ 3d00h · 2h10m 前')
 })
 
-test('band chip colours: ▲ warning (the only yellow), 429 and 無資料 inactive, tight and 估 none', () => {
+test('band chip colours: ⏶ warning (the only yellow), 429 and 無資料 inactive, tight and 估 none', () => {
   const colours = (keys: string[]) => quotaBandForms(quotaBand(quotaEntries(stateOf(keys), N), NOW_MS, zh))[0]!.filter(p => p.color).map(p => p.text + ':' + p.color)
-  expect(colours(['claude:home', 'kimi:main', 'agy:main', 'glm:main'])).toEqual(['▲:warning', '429 冷卻:inactive', '無資料:inactive', '1:inactive'])
+  expect(colours(['claude:home', 'kimi:main', 'agy:main', 'glm:main'])).toEqual(['⏶:warning', '429 冷卻:inactive', '無資料:inactive', '1:inactive'])
 })
 
 test('band spacing invariants hold at every width 0..160, with and without the pet (§3.5)', () => {
@@ -290,7 +290,7 @@ test('band spacing invariants hold at every width 0..160, with and without the p
           const t = parts?.map(p => p.text).join('') ?? ''
           if (parts !== null) expect(t.length > 0 && [...t].length <= cols * 2).toBe(true)
           // a glyph is always followed by a space; never three spaces in a row; no meter glyph on the band
-          expect(/[▲✗⊘●⋯◷▰▱][^ ]/.test(t)).toBe(false)
+          expect(/[⏶✗⊘●⋯◷▰▱][^ ]/.test(t)).toBe(false)
           expect(/ {3}/.test(t)).toBe(false)
           expect(/[▰▱]/.test(t)).toBe(false)
           // a label belongs to its chip: provider:alias, one space, the value
@@ -308,7 +308,7 @@ test('band spacing invariants hold at every width 0..160, with and without the p
 test('the quota group leads the pet; the pet goes before the group narrows', () => {
   const forms = quotaBandForms(quotaBand(quotaEntries(stateOf(['claude:work', 'claude:home']), N), NOW_MS, zh))
   const at = (cols: number) => summaryParts('Ferris Lv.3', cols, forms)?.map(p => p.text).join('')
-  const all = '▲ claude:home token 到期 6 天  claude:home 週 91% 緊 ◷ 1d02h  claude:work 5h 62% ◷ 2h05m · Ferris Lv.3'
+  const all = '⏶ claude:home token 到期 6 天  claude:home 週 91% 緊 ◷ 1d02h  claude:work 5h 62% ◷ 2h05m · Ferris Lv.3'
   expect(at(200)).toBe(all)
   expect(at(displayWidth(all))).toBe(all)
   expect(at(displayWidth(all) - 1)).toBe(all.replace(' · Ferris Lv.3', ''))
@@ -352,7 +352,7 @@ test('band credits: amounts show what is left, a bare utilization shows what is 
 // ---- narrow band: prefixes go before chips (§6.1) ----
 test('band: provider prefixes drop before any chip does, but only where the alias is unique; a collision keeps its prefix', () => {
   const uniq = bandText(stateOf(['claude:work', 'claude:home', 'kimi:main']))
-  const BARE = '▲ home token 到期 6 天  home 週 91% 緊  main 429 冷卻  work 5h 62%'
+  const BARE = '⏶ home token 到期 6 天  home 週 91% 緊  main 429 冷卻  work 5h 62%'
   const bareAt = uniq.indexOf(BARE)
   expect(bareAt > 0).toBe(true)
   // no chip is dropped before the bare form
@@ -454,7 +454,7 @@ test('the usage tab draws the mirror blocks and keeps the models; the G36 accoun
   const text = await flat(ui)
   expect(text).toContain('claude:work')
   expect(text).toContain('L3')
-  expect(text).toContain('▲ token 到期 6 天')
+  expect(text).toContain('⏶ token 到期 6 天')
   expect(text).toContain('429 冷卻')
   expect(text).toContain('從未觀察')
   expect(text).not.toContain('smith1')
@@ -546,7 +546,7 @@ test('the band: quota chips before the pet, nothing without the mirror, today\'s
     await ui.unmount()
     return t
   }
-  const chips = '▲ claude:home token 到期 6 天  claude:home 週 91% 緊 ◷ 1d02h  kimi:main 429 冷卻 ◷ 1h19m  claude:work 5h 62% ◷ 2h05m'
+  const chips = '⏶ claude:home token 到期 6 天  claude:home 週 91% 緊 ◷ 1d02h  kimi:main 429 冷卻 ◷ 1h19m  claude:work 5h 62% ◷ 2h05m'
   const full = chips + '  無資料 1 · Ferris Lv.3'
   // the row keeps a 2-cell margin
   expect(await at(displayWidth(full) + 2)).toBe(full)

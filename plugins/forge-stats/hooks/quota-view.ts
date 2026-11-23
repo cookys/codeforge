@@ -156,7 +156,7 @@ export function factsOf(entries: readonly QEntry[], nowS: number, tr: T): Fact[]
     const tw = kind === 'live' ? tightest(m) : null
     const main = tw ?? (kind === 'live' ? (m.windows.find(w => w.kind !== 'rpm' && w.kind !== 'tpm') ?? m.windows[0] ?? null) : null)
     const tight = tw !== null && tw.utilization !== null && isTight(tw.utilization)
-    // §6.2 block order: ▲, tight, 429, the rest; L0 and dropped last
+    // §6.2 block order: ⏶, tight, 429, the rest; L0 and dropped last
     const group = tok?.flag ? 0 : tight ? 1 : m.refusal ? 2 : kind === 'never' || kind === 'nousage' || kind === 'dropped' ? 4 : 3
     return { e, kind, tok, main, tight, group }
   })
@@ -315,7 +315,7 @@ export type QBandChip = {
   token: boolean
   key: string
   alias: string
-  /** `5h 62%`, `週 91% 緊`, `429 冷卻`; for a ▲ chip, the token text. */
+  /** `5h 62%`, `週 91% 緊`, `429 冷卻`; for a ⏶ chip, the token text. */
   head: string
   /** the alias-only form's value: `62%`, `估 41%`, `429 冷卻` */
   short: string
@@ -325,7 +325,7 @@ export type QBandChip = {
 }
 export type QBand = { chips: QBandChip[]; noData: number; noDataWord: string }
 
-/** Chips in §6.1 order: ▲ token, tight, 429, the rest by utilization; plus the count of aliases with nothing to draw. */
+/** Chips in §6.1 order: ⏶ token, tight, 429, the rest by utilization; plus the count of aliases with nothing to draw. */
 export function quotaBand(entries: readonly QEntry[], nowMs: number, tr: T): QBand {
   const nowS = Math.floor(nowMs / 1000)
   const facts = factsOf(entries, nowS, tr)
