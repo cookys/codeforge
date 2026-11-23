@@ -2,7 +2,7 @@
 
 第四輪以 r46 實拍與指定狀態測試覆核；測試通過不等於互動已驗收。依據為[第 4 版計畫](../../../plans/2026-11-23-band-layout.md)（含 2.1 回應與 2.2–2.6）、[UX 閘門](../../../specs/forge-stats-ux-gate.md)、[Carbon R1](carbon.md)、[Codex R1](codex.md)、[Carbon R2](carbon-r2.md)、[Codex R2](codex-r2.md) 與指定唯讀第三輪原文。本輪依使用者明示要求執行，不沿用閘門「最多三輪」拒絕第四輪；亦不代表批准上線或另一家已通過。
 
-證據縮寫：`B=<scratchpad>`；`S/` 指 `$B/scroll-shots/r46-band/`，`R/` 指 `$B/r3reviews/`；`T` 指 `$B/ap-band/mods/live/band-onerow-states.test.js`。`E=/home/team/projects/codeforge/.git/worktrees/hetero-docs-ux-band-codex-r4-vOxL1z` 存外部收據。檔名後 `:行號` 是實體行。第三輪原文為 `R/carbon-r3.md`、`R/codex-r3.md`，沒有改寫它們。
+證據縮寫：`B=<scratchpad>`；`S/` 指 `$B/scroll-shots/r46-band/`，`R/` 指 `$B/r3reviews/`；`T` 指 `$B/ap-band/mods/live/band-onerow-states.test.js`。`E=<worktree git dir>` 存外部收據。檔名後 `:行號` 是實體行。第三輪原文為 `R/carbon-r3.md`、`R/codex-r3.md`，沒有改寫它們。
 
 ## 四尺寸觀感及與計畫對照
 
