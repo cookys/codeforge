@@ -634,7 +634,7 @@
 
 ### codeforge 側的舊符號（寬度 A 類／Emoji）一次換掉
 - **Id**: B71
-- **Status**: partial（statusline、quota view、panel/band 契約已換，11-24；CLI 輸出文字 doctor／pet／adopt／world 的 ● ★ 與 TUI local_map 的 ▶ 未換，非版面字串；statusline 換版要 PM go 走 rollout）
+- **Status**: done（11-24 全數換完：statusline／quota view 589c40a、CLI 與 local map 08bc051、vendor tux 01b559f；歷史證據文件不改；rollout 併下一次 binary 換版）
 - **Since**: 2026-11-23
 - **Origin**: PM 裁定（01M84GEVJ7、01M84H74A6，方案 B）；AP 側已換並加 width lint（AP feat/width-lint）
 - **Problem**: codeforge 側還有舊圖示：plugins/forge-stats 約 10 檔、src/cli、src/tui、src/usage 約 9 檔，以及 mods/tux 重新 vendor（VERSION 3）。對照表：★→✧ ◇→◊ ●→◉ ▲→⏶ ◆→⬥ ⓘ→i ▶→▹ ②→2；操作員 10-13 驗過的 △ ○ ◌ ◐ ◍ 保留。doc/design 的歷史證據不改，現行設計語言文件（pane-design-language）同步。
