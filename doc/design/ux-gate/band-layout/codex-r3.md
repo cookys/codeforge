@@ -2,7 +2,7 @@
 
 依 [第 4 版計畫](../../../plans/2026-11-23-band-layout.md)（含 2.1 回應、2.2–2.6）、[UX 閘門](../../../specs/forge-stats-ux-gate.md) 與兩輪 [Carbon R1](carbon.md)、[Codex R1](codex.md)、[Carbon R2](carbon-r2.md)、[Codex R2](codex-r2.md) 覆核。這輪以真 Claude Code 擷取為準，計畫承諾不等於實作驗收。
 
-證據根目錄 `S=/home/team/.tmp/claude-1001/-home-team-projects-codeforge/be512828-fb6d-4dc0-a527-288c49cc831a/scratchpad/scroll-shots`。下文 `43/檔名:L` 指 `$S/r43-band/檔名` 的實體行號；`40/` 同理。所有擷取唯讀；未重跑產品或變動 sandbox。ANSI 只供查實際 SGR，不能當作淺深主題可讀性已驗證。
+證據根目錄 `S=<scratchpad>/scroll-shots`。下文 `43/檔名:L` 指 `$S/r43-band/檔名` 的實體行號；`40/` 同理。所有擷取唯讀；未重跑產品或變動 sandbox。ANSI 只供查實際 SGR，不能當作淺深主題可讀性已驗證。
 
 ## 四尺寸觀感與計畫差異
 
@@ -81,7 +81,7 @@ QC 與縮短形式須分開看：寬版是 `4 QC ✓`，80 欄 `✗2 ⊘4` 屬�
 
 ## 驗證、變更與範圍
 
-驗證腳本與收據均在 worktree 外：`/home/team/projects/codeforge/.git/worktrees/hetero-docs-ux-band-codex-r3-LTMbFZ/`。`evidence-notes.md` 記錄完整命令、退出碼、初次檢查錯誤與修正；`capture-check.log` 記錄擷取 SHA-256、行寬與分隔位置。寬度計算以 Unicode W/F=2、combining=0、其餘=1，只核對既有文字擷取，不冒稱重跑終端字型測試。
+驗證腳本與收據均在 worktree 外：`<worktree git dir>/`。`evidence-notes.md` 記錄完整命令、退出碼、初次檢查錯誤與修正；`capture-check.log` 記錄擷取 SHA-256、行寬與分隔位置。寬度計算以 Unicode W/F=2、combining=0、其餘=1，只核對既有文字擷取，不冒稱重跑終端字型測試。
 
 步驟1：確認四尺寸、舊意見逐條、剩餘問題、總分及最後一行為驗收條件。步驟2：定位計畫、四份舊評審與實拍，新增本檔而不替換原文。步驟3：先寫四尺寸觀感與問題，`verify-review.py visual` 退出0。步驟4：補逐條判定與分數，執行 `verify-review.py all`。步驟5：重跑 captures、visual、all 與 `git diff --check`，各最終退出碼均為0（完整收據見外部 evidence notes）。任務未指定產品測試命令；`scripts/check-all.sh` 是合併閘門，本輪未合併，未執行。
 
