@@ -61,7 +61,7 @@ KR 與觀察期只量測、不擋上線；但 KR1 的反向探針同時是第 4 
 **各段規則**：
 - **段 1**：只有一個擷取器：codeforge `session-digest`（已全域在跑，已有 `mask_secrets`）。**`distill-scan` 不再當擷取器**：它降為段 2 的離線提煉工具，輸入改為段 1 的候選 JSON，不再自己讀 transcript（解掉兩個掃描器重複讀 transcript 的問題）。補一個本機設定的**禁詞清單**（帳號別名、主機名、組織名，各主機自己維護，不進任何 repo）。**席位與 session 隔離**：段 1 只處理「該 session 檔所在的 uid 與家目錄等於目前執行者」的 L0，且 session id 必須屬於本機 `session-digest` 當次寫入的清單；這是機器可檢查的條件，不是名單文字。
 - **段 2（規則式、無外送）**：以規則與模板組出候選，欄位是**受限詞彙**：主題（從固定分類表選）、坑類型（固定列舉：PATH／權限／相依／競態／格式…）、解法類型（固定列舉）、適用範圍（repo、工具名）、證據指標（session id 加時間範圍）。**不含自由文字欄位**，所以沒有逐字原文可外洩，段 3 的逐字比對閘只需對來源 L0 的「訊號文字」做比對，不會與「受限詞彙」互相卡死。`distill-scan` 的 atoms 要有測試證明不含 ≥20 字元的逐字片段（目前文件稱「不含」但沒有測試，P1 補測試後才可依賴）。LLM 路徑預設**關閉**；開啟需另一次授權，且只能是本機引擎、輸入只有受限詞彙欄位，不得經 `claude -p` 或其他雲端路徑。
-- **段 3（閘門 + 審查）**：候選先進**本機候選區**（本機 spool 目錄，不在任何 git 追蹤內）。寫入共用倉前依序過：(i) identifier-scan 擴充版（本機禁詞清單、帳號別名、裸主機名、非 /home 的本機絕對路徑、組織與金額樣式）。**命中即擋下並進人審，不自動拒絕**（autopilot 板級 ADR 禁止 identifier-scan 自動拒絕）；(ii) 逐字比對閘：候選與其來源 L0 訊號文字做 ≥20 字元共同子串比對，命中即擋下並進人審（比對在本機）；(iii) 去重：**先 `git pull --rebase`，再**以主題加解法類型的正規化鍵查共用倉（避免兩席各自 commit 後才發現重複）；命中則不呼叫 `hippo new`（它會忽略新參數），改對該筆的 sidecar 證據檔 `evidence/<key>.jsonl` 追加一行（session id、lane、日期）；未命中才新增一筆，commit，push；push 被拒就再 pull --rebase 重查鍵一次，仍失敗留在候選區下次再送；(iv) 人審：由審查入口（`autopilot` 新增 `knowledge-review`，PM pane 待決卡）一次審一批，不在 SessionEnd hook 裡問。
+- **段 3（閘門 + 審查）**：候選先進**本機候選區**（本機 spool 目錄，不在任何 git 追蹤內）。順序固定，**人審在 commit／push 之前**：(i) 機器閘（放在 codeforge 側的閘腳本，**不改 autopilot 的 identifier-scan**，因板級 ADR-0001 禁止 deny-list）：本機禁詞清單、帳號別名、裸主機名、非 /home 的本機絕對路徑、組織與金額樣式，**命中的候選不進共用倉流程、留在候選區並標紅，由人決定改寫或丟棄**；(ii) 逐字比對閘：候選的**每一個欄位**（含手動 `learn --share` 帶進來的）與來源對話的可取得文字做 ≥20 字元共同子串比對，命中同樣標紅、不得進共用倉；(iii) **人審**：由審查入口（`autopilot` 新增 `knowledge-review`，PM pane 待決卡）一次審一批；未通過人審的候選永遠不 commit；(iv) 人審通過後才：`git pull --rebase`，以主題加解法類型的正規化鍵查共用倉去重（命中則不呼叫 `hippo new`，改對 sidecar 證據檔 `evidence/<key>.jsonl` 追加一行；未命中才新增一筆），commit，push；push 被拒就再 pull --rebase 重查鍵一次，仍失敗留在候選區下次再送。反向探針（KR1）驗證的是 (i)(ii) 兩道硬擋＋(iii) 未審不得進倉。
 - **段 4（升級、發佈、召回）**：
   - 升級：達 N=3 才產生 skill 候選；生成的 SKILL.md 另過一道機器審查（格式、禁詞、洩漏掃描，含組織、金額、非 /home 絕對路徑）加人審，才進 **autopilot 既有的私有 fleet skill-pack repo**（PM 裁定 2026-11-23；是否公開另案，不在本計畫）。教訓本體留在私密共用倉。
   - 召回：新增 **SessionStart 召回 hook**，**同時取代** codeforge 全域 SessionStart 的兩個召回注入器（`memory context --hook`、`mnemos-cli context --hook`）中屬於教訓類的部分，避免同一 session 開頭注入 8 塊以上；合併後總注入上限 3 則教訓加原有 mnemos 區塊，不另外疊加。（不沿用 `past-reference-recall`：它只在抱怨詞觸發、只讀固定 `.hippo`、不留日誌。）讀本機共用倉 checkout；排程：每台機器一個 systemd user timer，每 30 分鐘 `git pull --rebase`，失敗時用上次快取並在召回日誌記「快取過期」。過濾：type=lesson、已審、與當前 repo／工具範圍相符；每次召回寫本機召回日誌（session id、教訓 id、時間）。
@@ -107,7 +107,7 @@ KR 與觀察期只量測、不擋上線；但 KR1 的反向探針同時是第 4 
 | 階段 | 內容 | 上線日 | 判定日 |
 |---|---|---|---|
 | P0 | plan loop 通過（≤2 代）；PM 開授權卡 | 11-25 | 11-26（卡有答覆） |
-| P1 | 本席自己 session 的原型：段 1（session-digest 消費端）+2+3 閘門在本機沙箱倉跑通；反向探針 15/15；一筆教訓進沙箱倉 | 11-28（授權卡前即可做） | 11-29（原型產物審查） |
+| P1（縮小，PM 裁定 2026-11-23） | 只做兩件事並附修好前後實測數字：(1) `distill-scan` 與 `dream compile` 收斂成摘要、不送逐字原文；(2) L0 補欄位（session id、時間範圍、席位位址、模型來源），digest 改成下游確認收到才刪。只動 codeforge 自己的資料路徑，不讀他席 transcript。第 4 稿等 P1 事實出來才寫，另跑 plan loop。 | 範圍確定後重估，回 PM | 重估後定 |
 | P1.5 | 切換前對照：新舊教訓產物並行比對一週（舊路徑照寫） | P1 通過後 | +7 天 |
 | P2 | 授權後開共用倉；兩個 lane 並行；SessionStart 召回與採用回饋；示範劇本 | 授權後 +3 工作日 | 示範日 +1 |
 | P3 | 退役舊教訓寫入路徑（第 5 節順序，含 mnemos 契約 owner 確認） | P2 通過後 | 切換後 14 天 |
