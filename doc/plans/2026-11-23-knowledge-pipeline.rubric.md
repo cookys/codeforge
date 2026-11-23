@@ -1,6 +1,6 @@
 # Rubric — 2026-11-23-knowledge-pipeline.md
 
-> Source plan: /home/team/projects/codeforge/.claude/worktrees/kp-loop/doc/plans/2026-11-23-knowledge-pipeline.md
+> Source plan: doc/plans/2026-11-23-knowledge-pipeline.md
 
 R1: 去識別：P1 原型用含雷假資料（夾帶路徑、帳號別名、主機名各 3 種）做反向探針，共用倉寫入前被擋下 9/9；共用倉對 100 筆樣本掃描，原文逐字片段（≥20 字元）為 0 筆。
 R2: 去重：同一教訓由兩個來源各記一次，共用倉只留 1 筆並合併證據指標（P1 以 5 組人工重複測試，5/5 合併）。
