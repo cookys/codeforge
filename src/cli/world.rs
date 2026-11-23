@@ -133,7 +133,7 @@ fn paint_cell_line(out: &mut impl Write, cell: &Cell, text: &str) -> Result<()> 
 
 /// Count of visibly-open villages. Mirrors the home-village override
 /// from `Cell::from_stats` so the footer count can't contradict the
-/// grid (a fresh install shows the home village as `★ 本命 · 開放`
+/// grid (a fresh install shows the home village as `✧ 本命 · 開放`
 /// before `--refresh` flips the DB flag; this counts it as unlocked).
 fn unlocked_count(stats: &[ZoneStats], home_village: &str) -> usize {
     stats
@@ -193,7 +193,7 @@ impl Cell {
         let display_unlocked = s.unlocked || is_home;
 
         let status = match (display_unlocked, is_home) {
-            (_, true) => " ★ 本命 · 開放".to_string(),
+            (_, true) => " ✧ 本命 · 開放".to_string(),
             (true, false) => " ─ 開放".to_string(),
             (false, _) => " 🔒 未解鎖".to_string(),
         };
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn unlocked_count_respects_home_override_on_fresh_db() {
         // Regression: render_footer previously used raw `s.unlocked`, so a
-        // fresh DB (home flag still 0) rendered `★ 本命 · 開放` in the grid
+        // fresh DB (home flag still 0) rendered `✧ 本命 · 開放` in the grid
         // next to a contradictory `已解鎖 0/5 村落` footer.
         let stats = vec![
             ZoneStats {

@@ -67,7 +67,7 @@ pub fn run(ctx: &db::Context) -> Result<()> {
         write!(
             stdout,
             "  {}",
-            format!("★ 徽章 ({})：", badges.len()).with(Color::Yellow)
+            format!("✧ 徽章 ({})：", badges.len()).with(Color::Yellow)
         )?;
         println!(
             "{}",

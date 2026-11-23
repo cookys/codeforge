@@ -172,7 +172,7 @@ fn render_pet_intro(village: &Village, pet: &PetState, is_random: bool) -> Resul
     );
 
     if is_random {
-        println!("  ★ Lucky Hatchling 徽章解鎖！");
+        println!("  ✧ Lucky Hatchling 徽章解鎖！");
     }
 
     println!();

@@ -28,7 +28,7 @@ pub struct RoomSummary {
     /// display — shows the user progress without a separate history view.
     pub defeated: u32,
     /// True iff the user's current working directory lives under this group.
-    /// Renderer uses this to prepend `▶`.
+    /// Renderer uses this to prepend `▹`.
     pub is_current: bool,
 }
 

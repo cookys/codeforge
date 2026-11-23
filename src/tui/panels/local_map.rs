@@ -1,7 +1,7 @@
 //! LocalMap panel renderer — Phase 2c P4 + tile-map UX polish.
 //!
 //! Two display modes, selected via [`LocalMapPanel::display_mode`]:
-//! * `List`: original linear `▶ dir    [🧟2]` format ([`render_list`])
+//! * `List`: original linear `▹ dir    [🧟2]` format ([`render_list`])
 //! * `Grid`: tile-grid via `local_map_tile::render_grid`, with automatic
 //!   fallback to `List` when `width < MIN_GRID_WIDTH` (grid math can't
 //!   fit even one tile)
@@ -18,7 +18,7 @@ use super::{pad_to_width, vis_width};
 /// cross-session persistence is out of scope per plan).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum DisplayMode {
-    /// Linear `▶ dir [🧟N]` list. Default — matches Phase 2c behaviour.
+    /// Linear `▹ dir [🧟N]` list. Default — matches Phase 2c behaviour.
     #[default]
     List,
     /// Tile-grid overhead view. Falls back to list when the panel is too
@@ -84,7 +84,7 @@ pub fn render_list(rooms: &[RoomSummary], width: usize, max_rows: usize) -> Vec<
     }
 
     for room in rooms.iter().take(max_rows.saturating_sub(1)) {
-        let marker = if room.is_current { "▶ " } else { "  " };
+        let marker = if room.is_current { "▹ " } else { "  " };
         let badge = badge_for(room);
         // Build "marker dir    badge" where dir takes most of the row and
         // badge sits on the right. Reserve ~8 cols for the badge.
@@ -149,8 +149,8 @@ mod tests {
     fn current_row_marked_with_arrow() {
         let rooms = vec![room("src", 2, 0, true), room("doc", 0, 0, false)];
         let lines = render_list(&rooms, 40, 5);
-        assert!(lines[1].plain_text().contains("▶"));
-        assert!(!lines[2].plain_text().contains("▶"));
+        assert!(lines[1].plain_text().contains("▹"));
+        assert!(!lines[2].plain_text().contains("▹"));
     }
 
     #[test]
@@ -211,7 +211,7 @@ mod tests {
         let rooms = vec![room("原始碼目錄", 2, 0, true)];
         let lines = render_list(&rooms, 30, 3);
         assert_eq!(lines[1].visible_width(), 30);
-        assert!(lines[1].plain_text().contains("▶"));
+        assert!(lines[1].plain_text().contains("▹"));
     }
 
     // ------------------------------------------------------------------
@@ -243,8 +243,8 @@ mod tests {
         let lines = render(&panel, &rooms, 40, 5);
         // List-mode header comes through.
         assert!(lines[0].plain_text().contains("Local Map"));
-        // ▶ marker is a list-mode-only signal.
-        assert!(lines[1].plain_text().contains("▶"));
+        // ▹ marker is a list-mode-only signal.
+        assert!(lines[1].plain_text().contains("▹"));
     }
 
     #[test]
