@@ -1,4 +1,5 @@
 use crate::db;
+use crate::dream::egress::summarize_for_llm;
 use crate::memory::fts::FtsIndex;
 use crate::memory::{l0, l1};
 /// Dream Compile：L0 signals → L1 Markdown（增量、批次 LLM 編譯與去重）
@@ -125,11 +126,15 @@ async fn run_with(
     }
 
     let model = crate::llm::compile_model();
-    let mut compiled_entries: Vec<l1::L1Entry> = Vec::new();
+    let mut compiled_entries: Vec<CompiledItem> = Vec::new();
 
     for signal in &absorbed_items {
-        match compile_rule_based(signal) {
-            Ok(Some(entry)) => compiled_entries.push(entry),
+        let summary = summarize_for_llm(signal);
+        match compile_rule_based(signal, &summary) {
+            Ok(Some(entry)) => compiled_entries.push(CompiledItem {
+                entry,
+                local_only: true,
+            }),
             Ok(None) => {}
             Err(e) => eprintln!(
                 "  警告：compile absorbed signal {} 失敗：{}",
@@ -145,8 +150,8 @@ async fn run_with(
         let (batch_results, engine, usage) = compile_batch(&llm_batch, &model, hook).await;
         compile_engine = Some(engine);
         compile_usage = usage;
-        for entry in batch_results.into_iter().flatten() {
-            compiled_entries.push(entry);
+        for item in batch_results.into_iter().flatten() {
+            compiled_entries.push(item);
         }
         for sig in &llm_sigs {
             record_compiled_signature(conn, sig, &today)?;
@@ -160,10 +165,13 @@ async fn run_with(
         entry: l1::L1Entry,
         candidates: Vec<l1::L1Entry>,
         existed_before_run: bool,
+        local_only: bool,
     }
 
     let mut pending: Vec<PendingItem> = Vec::with_capacity(compiled_entries.len());
-    for mut entry in compiled_entries {
+    for item in compiled_entries {
+        let mut entry = item.entry;
+        let local_only = item.local_only;
         let file_path = l1::L1Entry::path_for(
             &store_dir,
             &entry.frontmatter.kind,
@@ -171,7 +179,7 @@ async fn run_with(
         );
         entry.file_path = file_path.clone();
         let existed_before_run = file_path.exists();
-        let candidates = if existed_before_run {
+        let candidates = if existed_before_run || local_only {
             Vec::new()
         } else {
             fts_candidates(conn, &ctx.project_dir, &entry, &file_path, 3)
@@ -180,6 +188,7 @@ async fn run_with(
             entry,
             candidates,
             existed_before_run,
+            local_only,
         });
     }
 
@@ -187,7 +196,7 @@ async fn run_with(
         .iter()
         .enumerate()
         .filter_map(|(idx, item)| {
-            if !item.existed_before_run && !item.candidates.is_empty() {
+            if !item.existed_before_run && !item.local_only && !item.candidates.is_empty() {
                 Some(idx)
             } else {
                 None
@@ -603,12 +612,14 @@ async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Optio
     // ship 一定排除的來源(origin=="absorbed":AbsorbedMemory + 在途 ClaudeCodeSession backlog)
     // 不值得花 LLM;走 rule-based 快速路徑。用 origin_for 當單一真相,避免漏掉 ClaudeCodeSession。
     if origin_for(&signal.source) == "absorbed" {
-        return compile_rule_based(signal);
+        let summary = summarize_for_llm(signal);
+        return compile_rule_based(signal, &summary);
     }
 
     let prompt = build_compile_prompt(signal);
 
     // backend fallback 鏈:headless 三引擎(claude -p → agy → codex)→ ANTHROPIC_API_KEY(Haiku)→ rule-based。
+    // 五層皆只吃 summarize_for_llm 結構化摘要，絕不將逐字原文送往任何模型。
     // 注意:parse 出 Ok(None)(quality 太低)是有效「跳過此 signal」,直接回,不降級到 rule-based。
     // 每個 fallback transition 都出聲(對齊 ship.rs;否則 compile 靜默降級無法診斷品質下降)。
     match crate::llm::headless_digest(&prompt, &crate::llm::compile_model()) {
@@ -631,14 +642,16 @@ async fn compile_signal(_ctx: &db::Context, signal: &l0::Signal) -> Result<Optio
             }
         }
     }
-    compile_rule_based(signal)
+    let summary = summarize_for_llm(signal);
+    compile_rule_based(signal, &summary)
 }
 
 fn build_compile_prompt(signal: &l0::Signal) -> String {
+    let summary = summarize_for_llm(signal);
     format!(
-        r##"你是一個知識編譯器。將下方的 signal 編譯為結構化的 L1 知識條目。
+        r##"你是一個知識編譯器。將下方的 signal 結構化摘要編譯為結構化的 L1 知識條目。
 
-Signal 內容：
+Signal 結構化摘要（不含逐字原文）：
 {}
 
 輸出 JSON（嚴格遵守格式）：
@@ -657,7 +670,7 @@ type 說明：
 - qa：問答對（問題 + 解答）
 
 若 signal 品質太低（無意義、重複、過短），回傳{{"quality": 0.0}}"##,
-        signal.content
+        summary
     )
 }
 
@@ -827,14 +840,19 @@ fn append_usage_log(
     }
 }
 
+struct CompiledItem {
+    entry: l1::L1Entry,
+    local_only: bool,
+}
+
 fn build_batch_compile_prompt(batch: &[l0::Signal]) -> String {
     let mut blocks = String::new();
     for (i, s) in batch.iter().enumerate() {
-        let content: String = s.content.chars().take(1500).collect();
-        blocks.push_str(&format!("\n=== Signal index {i} ===\n{content}\n"));
+        let summary = summarize_for_llm(s);
+        blocks.push_str(&format!("\n=== Signal index {i} ===\n{summary}\n"));
     }
     format!(
-        r##"你是一個知識編譯器。將下方 {n} 個 signal 各自編譯為結構化的 L1 知識條目。
+        r##"你是一個知識編譯器。將下方 {n} 個 signal 結構化摘要各自編譯為結構化的 L1 知識條目（不含逐字原文）。
 {blocks}
 回傳 JSON 陣列（嚴格格式，每個 signal 一個元素，index 對應上方編號）：
 [{{
@@ -864,7 +882,7 @@ async fn compile_batch(
     model: &str,
     hook: &mut LlmHook<'_>,
 ) -> (
-    Vec<Option<l1::L1Entry>>,
+    Vec<Option<CompiledItem>>,
     &'static str,
     Option<crate::llm::TokenUsage>,
 ) {
@@ -886,11 +904,20 @@ async fn compile_batch(
     let Some((text, engine, usage)) = reply else {
         let rule = batch
             .iter()
-            .map(|s| compile_rule_based(s).ok().flatten())
+            .map(|s| {
+                let summary = summarize_for_llm(s);
+                compile_rule_based(s, &summary)
+                    .ok()
+                    .flatten()
+                    .map(|entry| CompiledItem {
+                        entry,
+                        local_only: true,
+                    })
+            })
             .collect();
         return (rule, "rule", None);
     };
-    let mut out: Vec<Option<l1::L1Entry>> = (0..batch.len()).map(|_| None).collect();
+    let mut out: Vec<Option<CompiledItem>> = (0..batch.len()).map(|_| None).collect();
     // 回覆沒涵蓋到的 signal(整批解析失敗、漏格、壞元素)退回 rule-based,
     // 不讓它被記成已編譯卻沒產出(簽章已記、cursor 已前進 → 永久遺失)。
     let mut covered = vec![false; batch.len()];
@@ -904,14 +931,24 @@ async fn compile_batch(
                 continue;
             }
             if let Ok(opt) = parse_compile_response(&val.to_string(), &batch[slot]) {
-                out[slot] = opt;
+                out[slot] = opt.map(|entry| CompiledItem {
+                    entry,
+                    local_only: false,
+                });
                 covered[slot] = true;
             }
         }
     }
     for (slot, done) in covered.iter().enumerate() {
         if !done {
-            out[slot] = compile_rule_based(&batch[slot]).ok().flatten();
+            let summary = summarize_for_llm(&batch[slot]);
+            out[slot] = compile_rule_based(&batch[slot], &summary)
+                .ok()
+                .flatten()
+                .map(|entry| CompiledItem {
+                    entry,
+                    local_only: true,
+                });
         }
     }
     (out, engine, usage)
@@ -977,19 +1014,20 @@ fn parse_compile_response(text: &str, signal: &l0::Signal) -> Result<Option<l1::
     }))
 }
 
-fn compile_rule_based(signal: &l0::Signal) -> Result<Option<l1::L1Entry>> {
+/// 第 5 層（rule-based）編譯器：完全在本機執行、絕不呼叫任何外部或雲端 LLM。
+/// 仍接受 `summarize_for_llm` 產出的結構化摘要作為分類輸入（對齊 5 層鏈契約），
+/// 本機 L1 產物維持既有格式與內容，且標記為 `local_only` 不再送入遠端對賬 prompt，
+/// 故不會有任何原文外送。
+fn compile_rule_based(signal: &l0::Signal, summary: &str) -> Result<Option<l1::L1Entry>> {
     let content = signal.content.trim();
     if content.len() < 10 {
         return Ok(None);
     }
 
-    // 簡單的 rule-based 分類
-    let kind = if content.contains('?')
-        || content.to_lowercase().contains("如何")
-        || content.to_lowercase().contains("怎麼")
-    {
+    // 依結構化摘要的 category 進行 rule-based 分類
+    let kind = if summary.contains("category: question") {
         l1::L1Type::Qa
-    } else if content.contains(" vs ") || content.contains(" 和 ") || content.contains(" 與 ") {
+    } else if summary.contains("category: comparison") {
         l1::L1Type::Connection
     } else {
         l1::L1Type::Concept
@@ -1544,5 +1582,238 @@ mod tests {
         let c = l0::Signal::new("foo bar 9".into(), l0::SignalSource::SessionDigest);
         assert_eq!(signal_signature(&a), signal_signature(&b));
         assert_ne!(signal_signature(&b), signal_signature(&c));
+    }
+
+    // ---- P1: LLM egress summarization & 20-fixture measurement ----
+
+    #[test]
+    fn compile_prompts_never_send_verbatim_content_across_single_and_batch() {
+        use crate::dream::egress::{longest_common_substring_chars, MAX_EGRESS_OVERLAP_CHARS};
+
+        let raw = "【使用者糾正】correction=請不要再用 sed -i 直接覆寫 /home/user/projects/demo-app/config/crontab.conf 第 42 行，每次這樣操作都會把整個排程檔案清空並造成資料遺失，請改用暫存檔寫入再原子 rename 取代原檔";
+        assert!(raw.chars().count() >= 80);
+        let sig = l0::Signal::new(raw.to_string(), l0::SignalSource::SessionDigest);
+
+        // Single-signal prompt (claude -p / agy / codex / Haiku API)
+        let single_prompt = build_compile_prompt(&sig);
+        let single_lcs = longest_common_substring_chars(&single_prompt, &sig.content);
+        assert!(
+            single_lcs < MAX_EGRESS_OVERLAP_CHARS,
+            "single prompt leaked verbatim substring (LCS={single_lcs}):\n{single_prompt}"
+        );
+        assert!(!single_prompt.contains("/home/user/projects"));
+
+        // Batch prompt captured via fake LLM hook in run_with
+        let tmp = TempDir::new().unwrap();
+        let (ctx, conn) = batch_ctx(&tmp);
+        let writer = l0::SignalWriter::new(&ctx);
+        writer.append(&sig).unwrap();
+
+        let mut captured_prompts: Vec<String> = Vec::new();
+        let mut fake = |prompt: &str, _model: &str| -> Result<crate::llm::LlmOutput> {
+            captured_prompts.push(prompt.to_string());
+            let text = if prompt.contains("對賬器") {
+                "[]".to_string()
+            } else {
+                r#"[{"index":0,"type":"concept","topic":"atomic-config-write","title":"Atomic config update","body":"Use temp file + rename.","links":["config","atomic"],"quality":0.9}]"#.to_string()
+            };
+            Ok(crate::llm::LlmOutput {
+                text,
+                engine: "claude",
+                usage: None,
+            })
+        };
+        let mut hook = LlmHook {
+            fake: Some(&mut fake),
+        };
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap()
+            .block_on(run_with(&ctx, &conn, 10, &mut hook))
+            .unwrap();
+
+        assert!(!captured_prompts.is_empty(), "expected LLM prompt capture");
+        for sent in &captured_prompts {
+            let lcs = longest_common_substring_chars(sent, &sig.content);
+            assert!(
+                lcs < MAX_EGRESS_OVERLAP_CHARS,
+                "batch prompt leaked verbatim substring (LCS={lcs}):\n{sent}"
+            );
+            assert!(!sent.contains("/home/user/projects"));
+        }
+    }
+
+    #[test]
+    fn measure_llm_egress_20_fixtures_report() {
+        use crate::dream::egress::{longest_common_substring_chars, MAX_EGRESS_OVERLAP_CHARS};
+
+        let fixtures: [(&str, l0::SignalSource, &str); 20] = [
+            (
+                "01_cjk_crontab_correction",
+                l0::SignalSource::SessionDigest,
+                "【使用者糾正】correction=請不要再用 sed -i 直接覆寫 /home/user/projects/demo-app/config/crontab.conf 第 42 行，每次這樣操作都會把整個排程檔案清空並造成資料遺失，請改用暫存檔寫入再原子 rename 取代原檔",
+            ),
+            (
+                "02_rust_e0308_compile",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Bash | error=error[E0308]: mismatched types in /workspace/demo/src/dream/compile.rs:612:19 expected Option<L1Entry> found Result | context=修改 compile_signal 簽章後 cargo test 編譯失敗",
+            ),
+            (
+                "03_cjk_byte_slice_panic",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Bash | error=thread 'main' panicked at byte index 20 is not a char boundary in /workspace/demo/src/memory/l0.rs:261:15 | context=中文標題截斷應該用 chars().take(20) 而不是 byte slice",
+            ),
+            (
+                "04_git_pre_push_ref",
+                l0::SignalSource::SessionDigest,
+                "【使用者糾正】correction=不要直接推送功能分支 feat/demo-123 到公開 origin，pre-push hook 會拒絕非 develop 或 main 的 ref，請只在本地 worktree 提交並等待審查合併",
+            ),
+            (
+                "05_sqlite_busy_lock",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Bash | error=database is locked (SQLITE_BUSY) while writing /workspace/demo/.codeforge/state.db pid 88421 | context=在 open_db 設定 PRAGMA busy_timeout=5000 與 WAL 模式解決鎖衝突",
+            ),
+            (
+                "06_node_json_parse_err",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Bash | error=SyntaxError: Unexpected token } in JSON at position 1048 in /home/user/projects/demo/settings.json | context=node 讀取設定檔前需處理尾端逗號與空檔",
+            ),
+            (
+                "07_python_pytest_path",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Bash | error=ModuleNotFoundError: No module named 'demo_pkg' running pytest /workspace/demo/tests/test_api.py line 77 | context=需在虛擬環境設定 PYTHONPATH 再執行測試",
+            ),
+            (
+                "08_windows_path_slash",
+                l0::SignalSource::SessionDigest,
+                "【使用者糾正】correction=在 Windows 環境下絕對不要硬寫反斜線路徑 C:\\Users\\user\\repo\\scripts\\run.sh，請改用 PathBuf::join 跨平台組裝路徑以免在 Linux 失敗",
+            ),
+            (
+                "09_docker_timeout",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Bash | error=docker build timed out after 300 seconds fetching https://registry.example.com/v2/demo/manifests/1.2.3 | context=加上重試與本機快取層避免建置逾時",
+            ),
+            (
+                "10_systemd_perm_denied",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Bash | error=systemctl --user restart demo-worker.service failed: Permission denied on /home/user/.config/systemd/user/demo-worker.service | context=修正檔案權限為 0644 並重載 daemon",
+            ),
+            (
+                "11_shellcheck_quoting",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Edit | file=/workspace/demo/scripts/deploy.sh | error=shellcheck SC2086: Double quote to prevent globbing and word splitting at line 19 | context=所有變數展開改加雙引號通過檢查",
+            ),
+            (
+                "12_clippy_warnings_deny",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Bash | error=cargo clippy --all-targets -- -D warnings failed: redundant clone at src/dream/ingest_digests.rs:223:45 | context=移除多餘 clone 讓 merge gate 全綠",
+            ),
+            (
+                "13_rustfmt_pin_drift",
+                l0::SignalSource::Manual,
+                "格式化一定要跑 ./scripts/fmt.sh 而不是裸跑 cargo fmt，因為不同 toolchain 版本的 rustfmt 會對長行重新換行造成 check-all.sh 的格式檢查失敗",
+            ),
+            (
+                "14_qa_tokio_shutdown",
+                l0::SignalSource::Manual,
+                "如何在 tokio 非同步背景服務中優雅關閉所有 worker task 而不遺失佇列中最後 50 筆待處理事件？應該使用 CancellationToken 搭配 join handle 等待收尾",
+            ),
+            (
+                "15_compare_sqlite_jsonl",
+                l0::SignalSource::Manual,
+                "L0 原始訊號用 JSONL 追加寫入 和 L1 編譯知識用 SQLite FTS5 索引 的分工原因：JSONL 不需要資料庫鎖就能高頻追加，FTS5 則負責快速全文召回",
+            ),
+            (
+                "16_cjk_response_style",
+                l0::SignalSource::SessionDigest,
+                "【使用者糾正】correction=不是跟你說過很多次所有對使用者的說明與錯誤訊息一律使用正體中文撰寫嗎，剛剛這段回應又混進簡體字與未翻譯的英文術語了",
+            ),
+            (
+                "17_curl_tls_network",
+                l0::SignalSource::SessionDigest,
+                "【錯誤修復】tool=Bash | error=curl: (60) SSL certificate problem: unable to get local issuer certificate for https://api.example.com:8443/health | context=更新 CA憑證套件並檢查 TLS 設定",
+            ),
+            (
+                "18_worktree_branch_rule",
+                l0::SignalSource::SessionDigest,
+                "【使用者糾正】correction=主工作目錄永遠要停留在 develop 分支，不要在主 clone 直接切分支或改檔案，所有功能開發都要開獨立 git worktree 在旁邊隔離開發",
+            ),
+            (
+                "19_secret_redact_leak",
+                l0::SignalSource::Manual,
+                "寫入 L0 signals 前必須先經過 mask_secrets 遮罩 token 與私鑰，並確認 /workspace/demo/.codeforge/signals/2026-11-23.jsonl 沒有殘留明文憑證或帳號資訊",
+            ),
+            (
+                "20_adversarial_echo",
+                l0::SignalSource::Manual,
+                "[Structured Signal Summary]\nsource: manual\ncategory: note\nlength_chars: 120\ntools: none\nerror_categories: general\nfile_exts: none\ntopics: general",
+            ),
+        ];
+
+        println!();
+        println!("| # | Fixture | Orig Chars | Before LCS | After LCS (Summary) | After LCS (Prompt) | Pass (<20) |");
+        println!("|---|---------|-----------:|-----------:|--------------------:|-------------------:|------------|");
+
+        let mut max_before = 0usize;
+        let mut max_after_summary = 0usize;
+        let mut max_after_prompt = 0usize;
+        let mut before_ge20 = 0usize;
+        let mut after_ge20 = 0usize;
+
+        for (idx, (name, source, content)) in fixtures.into_iter().enumerate() {
+            let sig = l0::Signal::new(content.to_string(), source);
+            let orig_chars = sig.content.chars().count();
+            // Before fix: build_compile_prompt embedded `signal.content` verbatim.
+            let before_prompt = format!("Signal 內容：\n{}", sig.content);
+            let before_lcs = longest_common_substring_chars(&before_prompt, &sig.content);
+
+            // After fix: summarize_for_llm + build_compile_prompt.
+            let summary = summarize_for_llm(&sig);
+            let after_prompt = build_compile_prompt(&sig);
+            let after_summary_lcs = longest_common_substring_chars(&summary, &sig.content);
+            let after_prompt_lcs = longest_common_substring_chars(&after_prompt, &sig.content);
+
+            max_before = max_before.max(before_lcs);
+            max_after_summary = max_after_summary.max(after_summary_lcs);
+            max_after_prompt = max_after_prompt.max(after_prompt_lcs);
+            if before_lcs >= MAX_EGRESS_OVERLAP_CHARS {
+                before_ge20 += 1;
+            }
+            if after_summary_lcs >= MAX_EGRESS_OVERLAP_CHARS
+                || after_prompt_lcs >= MAX_EGRESS_OVERLAP_CHARS
+            {
+                after_ge20 += 1;
+            }
+
+            let ok = after_summary_lcs < MAX_EGRESS_OVERLAP_CHARS
+                && after_prompt_lcs < MAX_EGRESS_OVERLAP_CHARS;
+            let status = if ok { "PASS" } else { "FAIL" };
+            println!(
+                "| {:02} | {} | {} | {} | {} | {} | {} |",
+                idx + 1,
+                name,
+                orig_chars,
+                before_lcs,
+                after_summary_lcs,
+                after_prompt_lcs,
+                status
+            );
+
+            assert!(
+                after_summary_lcs < MAX_EGRESS_OVERLAP_CHARS,
+                "fixture {name}: summary LCS {after_summary_lcs} >= 20\n{summary}"
+            );
+            assert!(
+                after_prompt_lcs < MAX_EGRESS_OVERLAP_CHARS,
+                "fixture {name}: prompt LCS {after_prompt_lcs} >= 20\n{after_prompt}"
+            );
+        }
+
+        println!();
+        println!(
+            "Summary (20 fixtures): max_before_lcs={max_before}, max_after_summary_lcs={max_after_summary}, max_after_prompt_lcs={max_after_prompt}, fixtures_ge20_before={before_ge20}/20, fixtures_ge20_after={after_ge20}/20"
+        );
+        assert_eq!(before_ge20, 20, "all 20 fixtures leaked >= 20 chars before");
+        assert_eq!(after_ge20, 0, "0 fixtures may leak >= 20 chars after");
     }
 }

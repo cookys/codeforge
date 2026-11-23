@@ -2,7 +2,17 @@ use crate::db;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use uuid::Uuid;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SignalMeta {
+    pub session_id: Option<String>,
+    pub time_start: Option<String>,
+    pub time_end: Option<String>,
+    pub seat: Option<String>,
+    pub model: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SignalSource {
@@ -35,6 +45,16 @@ pub struct Signal {
     pub source_slug: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_start: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_end: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seat: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 impl Signal {
@@ -47,12 +67,26 @@ impl Signal {
             compiled: false,
             source_slug: None,
             source_file: None,
+            session_id: None,
+            time_start: None,
+            time_end: None,
+            seat: None,
+            model: None,
         }
     }
 
     pub fn with_absorb_source(mut self, slug: String, file: String) -> Self {
         self.source_slug = Some(slug);
         self.source_file = Some(file);
+        self
+    }
+
+    pub fn with_session_meta(mut self, meta: SignalMeta) -> Self {
+        self.session_id = meta.session_id;
+        self.time_start = meta.time_start;
+        self.time_end = meta.time_end;
+        self.seat = meta.seat;
+        self.model = meta.model;
         self
     }
 }
@@ -100,11 +134,45 @@ impl<'a> SignalWriter<'a> {
             .open(&jsonl_path)
             .with_context(|| format!("開啟 signal 檔失敗：{}", jsonl_path.display()))?;
         f.write_all(line.as_bytes())?;
+        f.flush()?;
 
         // 更新 log.md（人類可讀摘要）
         self.append_log_md(signal)?;
 
         Ok(signal.id.clone())
+    }
+
+    /// 從磁碟重讀 `signals/*.jsonl`，驗證指定的每個 signal id 皆已落盤且可反序列化。
+    /// 供上游（如 `ingest-digests`）在刪除 digest 檔前做下游確認。
+    pub fn verify_signals_persisted(&self, ids: &[String]) -> Result<bool> {
+        if ids.is_empty() {
+            return Ok(true);
+        }
+        let signal_dir = self.ctx.project_dir.join("signals");
+        if !signal_dir.is_dir() {
+            return Ok(false);
+        }
+        let mut remaining: HashSet<&str> = ids.iter().map(String::as_str).collect();
+        for entry in std::fs::read_dir(&signal_dir)? {
+            let path = entry?.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let content = std::fs::read_to_string(&path)?;
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if let Ok(sig) = serde_json::from_str::<Signal>(trimmed) {
+                    remaining.remove(sig.id.as_str());
+                    if remaining.is_empty() {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(remaining.is_empty())
     }
 
     fn append_log_md(&self, signal: &Signal) -> Result<()> {
@@ -358,5 +426,91 @@ mod tests {
         assert_eq!(rest.len(), 3);
         assert!(rest[0].content.contains("第 2 條"));
         assert!(rest[2].content.contains("第 4 條"));
+    }
+
+    #[test]
+    fn legacy_and_new_signal_jsonl_roundtrip_compat() {
+        // 舊格式 JSONL（無 session_id / time_start / time_end / seat / model）仍須可反序列化
+        let legacy_line = r#"{"id":"11111111-1111-1111-1111-111111111111","content":"舊版 signal 內容","source":"SessionDigest","timestamp":"2026-06-17T08:00:00Z","compiled":false}"#;
+        let legacy: Signal = serde_json::from_str(legacy_line).unwrap();
+        assert_eq!(legacy.id, "11111111-1111-1111-1111-111111111111");
+        assert_eq!(legacy.session_id, None);
+        assert_eq!(legacy.time_start, None);
+        assert_eq!(legacy.time_end, None);
+        assert_eq!(legacy.seat, None);
+        assert_eq!(legacy.model, None);
+
+        // None 欄位序列化時應省略（skip_serializing_if）
+        let serialized_none = serde_json::to_string(&legacy).unwrap();
+        assert!(!serialized_none.contains("session_id"));
+        assert!(!serialized_none.contains("time_start"));
+        assert!(!serialized_none.contains("time_end"));
+        assert!(!serialized_none.contains("seat"));
+        assert!(!serialized_none.contains("model"));
+
+        // 新格式完整欄位 roundtrip
+        let meta = SignalMeta {
+            session_id: Some("sess-demo-0001".to_string()),
+            time_start: Some("2026-11-23T01:00:00Z".to_string()),
+            time_end: Some("2026-11-23T01:45:00Z".to_string()),
+            seat: Some("seat-alpha.local".to_string()),
+            model: Some("claude-sonnet-4-5".to_string()),
+        };
+        let fresh = Signal::new("新版 signal 內容".to_string(), SignalSource::SessionDigest)
+            .with_session_meta(meta);
+        let line = serde_json::to_string(&fresh).unwrap();
+        let parsed: Signal = serde_json::from_str(&line).unwrap();
+        assert_eq!(parsed.session_id.as_deref(), Some("sess-demo-0001"));
+        assert_eq!(parsed.time_start.as_deref(), Some("2026-11-23T01:00:00Z"));
+        assert_eq!(parsed.time_end.as_deref(), Some("2026-11-23T01:45:00Z"));
+        assert_eq!(parsed.seat.as_deref(), Some("seat-alpha.local"));
+        assert_eq!(parsed.model.as_deref(), Some("claude-sonnet-4-5"));
+
+        // 混合舊新兩行在同一 JSONL 檔內皆可讀進
+        let tmp = TempDir::new().unwrap();
+        let ctx = db::Context {
+            project_dir: tmp.path().to_path_buf(),
+            brain_dir: tmp.path().join("brain"),
+            db_path: tmp.path().join("state.db"),
+        };
+        let conn = ctx.open_db().unwrap();
+        crate::db::migrations::run(&conn).unwrap();
+        let sig_dir = tmp.path().join("signals");
+        std::fs::create_dir_all(&sig_dir).unwrap();
+        std::fs::write(
+            sig_dir.join("2026-11-23.jsonl"),
+            format!("{legacy_line}\n{line}\n"),
+        )
+        .unwrap();
+
+        let loaded = read_uncompiled(&ctx, &conn).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].session_id, None);
+        assert_eq!(loaded[1].session_id.as_deref(), Some("sess-demo-0001"));
+        assert_eq!(loaded[1].model.as_deref(), Some("claude-sonnet-4-5"));
+    }
+
+    #[test]
+    fn verify_signals_persisted_confirms_written_and_rejects_missing() {
+        let tmp = TempDir::new().unwrap();
+        let ctx = db::Context {
+            project_dir: tmp.path().to_path_buf(),
+            brain_dir: tmp.path().join("brain"),
+            db_path: tmp.path().join("state.db"),
+        };
+        let writer = SignalWriter::new(&ctx);
+        assert!(writer.verify_signals_persisted(&[]).unwrap());
+        let missing_one = writer
+            .verify_signals_persisted(&["nonexistent-id".to_string()])
+            .unwrap();
+        assert!(!missing_one);
+
+        let s1 = Signal::new("第一筆 signal".to_string(), SignalSource::SessionDigest);
+        let id1 = writer.append(&s1).unwrap();
+        assert!(writer.verify_signals_persisted(&[id1.clone()]).unwrap());
+        let partial = writer
+            .verify_signals_persisted(&[id1, "missing-id".to_string()])
+            .unwrap();
+        assert!(!partial);
     }
 }

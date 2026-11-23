@@ -968,6 +968,87 @@ function generateTranscriptImprovements(cwd, messages) {
 }
 
 // ---------------------------------------------------------------------------
+// Session metadata extraction (P1: session_id, time_start/time_end, seat, model)
+// ---------------------------------------------------------------------------
+
+const SEAT_ENV_KEYS = [
+  'CODEFORGE_SEAT',
+  'FLEET_ADDRESS',
+  'FLEET_SEAT',
+  'AUTOPILOT_SEAT',
+  'AUTOPILOT_FLEET_ADDRESS',
+];
+
+function resolveSeat(env = process.env) {
+  if (!env || typeof env !== 'object') return null;
+  for (const key of SEAT_ENV_KEYS) {
+    const val = env[key];
+    if (typeof val === 'string' && val.trim()) {
+      return val.trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract session-level metadata (session_id, RFC3339 time_start/time_end, model)
+ * from parsed transcript JSONL entries.
+ */
+function extractSessionMetadata(entries, inputSessionId) {
+  let sessionId =
+    typeof inputSessionId === 'string' &&
+    inputSessionId.trim() &&
+    inputSessionId.trim() !== 'unknown'
+      ? inputSessionId.trim()
+      : null;
+  let timeStart = null;
+  let timeStartMs = Infinity;
+  let timeEnd = null;
+  let timeEndMs = -Infinity;
+  let model = null;
+
+  for (const entry of entries || []) {
+    if (!entry || typeof entry !== 'object') continue;
+    if (!sessionId) {
+      const candidate = entry.sessionId || entry.session_id;
+      if (typeof candidate === 'string' && candidate.trim() && candidate.trim() !== 'unknown') {
+        sessionId = candidate.trim();
+      }
+    }
+    if (typeof entry.timestamp === 'string' && entry.timestamp.trim()) {
+      const ts = entry.timestamp.trim();
+      const ms = Date.parse(ts);
+      if (!Number.isNaN(ms)) {
+        if (ms < timeStartMs) {
+          timeStartMs = ms;
+          timeStart = ts;
+        }
+        if (ms > timeEndMs) {
+          timeEndMs = ms;
+          timeEnd = ts;
+        }
+      }
+    }
+    const candidateModel = entry.message?.model || entry.model;
+    if (
+      typeof candidateModel === 'string' &&
+      candidateModel.trim() &&
+      candidateModel.trim() !== '<synthetic>' &&
+      candidateModel.trim() !== 'unknown'
+    ) {
+      model = candidateModel.trim();
+    }
+  }
+
+  return {
+    session_id: sessionId,
+    time_start: timeStart,
+    time_end: timeEnd,
+    model,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -1015,6 +1096,7 @@ async function main() {
 
   // Stream-parse the JSONL transcript
   const messages = [];
+  const metaEntries = [];
   const rl = readline.createInterface({
     input: fs.createReadStream(transcript_path, { encoding: 'utf8' }),
     crlfDelay: Infinity,
@@ -1024,6 +1106,12 @@ async function main() {
     if (!line.trim()) continue;
     try {
       const entry = JSON.parse(line);
+      metaEntries.push({
+        sessionId: entry.sessionId,
+        session_id: entry.session_id,
+        timestamp: entry.timestamp,
+        model: entry.message?.model || entry.model,
+      });
       const role = entry.message?.role;
       if (role === 'assistant' || role === 'user') {
         messages.push({
@@ -1067,12 +1155,19 @@ async function main() {
     return;
   }
 
-  // Build digest
-  const sessionIdShort = (session_id || 'unknown').slice(0, 8);
+  // Build digest (P1: carry session_id, time_start, time_end, seat, model)
+  const meta = extractSessionMetadata(metaEntries, session_id);
+  const resolvedSessionId = meta.session_id || 'unknown';
+  const sessionIdShort = resolvedSessionId.slice(0, 8);
   const dateStr = new Date().toISOString().slice(0, 10);
+  const seat = resolveSeat(process.env);
 
   const digest = {
-    session_id: session_id || 'unknown',
+    session_id: resolvedSessionId,
+    ...(meta.time_start ? { time_start: meta.time_start } : {}),
+    ...(meta.time_end ? { time_end: meta.time_end } : {}),
+    ...(seat ? { seat } : {}),
+    ...(meta.model ? { model: meta.model } : {}),
     date: dateStr,
     cwd: cwd || null,
     assistant_message_count: assistantCount,
@@ -1114,5 +1209,7 @@ if (require.main === module) {
     recoverySignature,
     withRepeatMeta,
     extractErrorRecoveries,
+    resolveSeat,
+    extractSessionMetadata,
   };
 }

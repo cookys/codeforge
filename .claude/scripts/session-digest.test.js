@@ -4,7 +4,9 @@ const {
   isHookDenialError,
   recoverySignature,
   withRepeatMeta,
-  extractErrorRecoveries
+  extractErrorRecoveries,
+  resolveSeat,
+  extractSessionMetadata,
 } = require('./session-digest.js');
 
 // Test suite counter
@@ -372,6 +374,30 @@ test('Case 19: PreToolUse hook denials and zsh nomatch are filtered', () => {
     false,
     'Real compiler error must not be treated as hook denial'
   );
+});
+
+// ---------------------------------------------------------------------------
+// Case 20: extractSessionMetadata & resolveSeat (P1 L0 metadata)
+// ---------------------------------------------------------------------------
+test('Case 20: extractSessionMetadata extracts session_id, time range, and model', () => {
+  const entries = [
+    { sessionId: 'sess-from-transcript', timestamp: '2026-11-23T02:10:00Z' },
+    { timestamp: '2026-11-23T02:00:00Z', message: { role: 'user', content: [] } },
+    { timestamp: '2026-11-23T02:25:30Z', message: { role: 'assistant', model: 'claude-sonnet-4-5', content: [] } },
+    { timestamp: 'not-a-date', message: { role: 'assistant', model: '<synthetic>', content: [] } },
+  ];
+  const meta = extractSessionMetadata(entries, undefined);
+  assert.strictEqual(meta.session_id, 'sess-from-transcript');
+  assert.strictEqual(meta.time_start, '2026-11-23T02:00:00Z');
+  assert.strictEqual(meta.time_end, '2026-11-23T02:25:30Z');
+  assert.strictEqual(meta.model, 'claude-sonnet-4-5');
+
+  const withStdinId = extractSessionMetadata(entries, 'sess-from-stdin');
+  assert.strictEqual(withStdinId.session_id, 'sess-from-stdin');
+
+  assert.strictEqual(resolveSeat({ CODEFORGE_SEAT: 'seat-alpha.local', FLEET_ADDRESS: 'other' }), 'seat-alpha.local');
+  assert.strictEqual(resolveSeat({ FLEET_ADDRESS: 'lane-beta.local' }), 'lane-beta.local');
+  assert.strictEqual(resolveSeat({}), null);
 });
 
 console.log(`\nTests completed: ${passedTests}/${totalTests} passed.`);
