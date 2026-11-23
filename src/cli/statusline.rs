@@ -261,7 +261,7 @@ impl Default for Contract {
             round: RoundMode::Floor,
             bar_on: "▰".to_string(),
             bar_off: "▱".to_string(),
-            alert: "▲".to_string(),
+            alert: "⏶".to_string(),
             age: "◷".to_string(),
         }
     }
@@ -607,7 +607,7 @@ fn mirror_segment(
     String::new()
 }
 
-/// The other accounts on the usage row, only those with a weekly warning: ` · ▲ name 7d 97% 3d1h
+/// The other accounts on the usage row, only those with a weekly warning: ` · ⏶ name 7d 97% 3d1h
 /// 後重置` when the week will run short (or is at 95 %+), ` · name 7d 12% 20h 後重置 會浪費` when
 /// it will be wasted; nothing else. The name comes from `usage::names` (the set name, else the
 /// org short form): the `acct-` key is never drawn, and an account with no name (an identity
@@ -1182,7 +1182,7 @@ fn usage_bare(label: &str, pct: f64, remain: Option<String>, contract: &Contract
 fn band_facts_pieces(facts: &BandFacts) -> Vec<(String, usize)> {
     let mut pieces = Vec::new();
     if facts.live_dispatches > 0 {
-        let s = format!("● {}", facts.live_dispatches);
+        let s = format!("◉ {}", facts.live_dispatches);
         pieces.push((tc(&s, AHEAD_BEHIND), vis(&s)));
     }
     if let Some(pos) = &facts.position {
@@ -1196,7 +1196,7 @@ fn band_facts_pieces(facts: &BandFacts) -> Vec<(String, usize)> {
         pieces.push((tc(&s, BAR_LBL), vis(&s)));
     }
     if facts.decisions_open > 0 {
-        let s = format!("◆ {}", facts.decisions_open);
+        let s = format!("⬥ {}", facts.decisions_open);
         pieces.push((tc_bold(&s, BAR_LBL), vis(&s)));
     }
     if let Some(usd) = facts.usd {
@@ -1646,7 +1646,7 @@ mod tests {
         ));
         assert_eq!(
             full,
-            format!(" · ▲ stranity {wk} 97% {r1} · work {wk} 10% {r2} {waste}")
+            format!(" · ⏶ stranity {wk} 97% {r1} · work {wk} 10% {r2} {waste}")
         );
         assert!(!full.contains("acct-") && !full.contains("calm"), "{full}");
         // every room: never wider than given
@@ -1662,7 +1662,7 @@ mod tests {
             assert!(vis(&got) <= room, "room {room}: {got:?}");
         }
         // no countdown when only the head fits; nothing when not even that
-        let head = format!(" · ▲ stranity {wk} 97%");
+        let head = format!(" · ⏶ stranity {wk} 97%");
         assert_eq!(
             strip_ansi(&others_segment(
                 &others,
@@ -1691,7 +1691,7 @@ mod tests {
             "公司".to_string(),
         )]));
         let got = strip_ansi(&others_segment(&others, &names, Q_NOW, 200, false, &c));
-        assert!(got.starts_with(&format!(" · ▲ 公司 {wk} 97%")), "{got}");
+        assert!(got.starts_with(&format!(" · ⏶ 公司 {wk} 97%")), "{got}");
     }
 
     fn mirror_entries(now: i64) -> Vec<crate::usage::quota_mirror_read::QEntry> {
@@ -2328,13 +2328,13 @@ mod tests {
             render_line(&mut buf, &data, 100).unwrap();
             let text = String::from_utf8(buf).unwrap();
             text.lines()
-                .find(|l| l.contains("▲ b"))
+                .find(|l| l.contains("⏶ b"))
                 .unwrap_or_default()
                 .to_string()
         };
-        // from the separator before the other account (its colour escape precedes the ▲)
+        // from the separator before the other account (its colour escape precedes the ⏶)
         let other_part = |r: &str| {
-            let at = r.find("▲ b").unwrap();
+            let at = r.find("⏶ b").unwrap();
             r[r[..at].rfind('·').unwrap()..].to_string()
         };
         // own 7d in the yellow band (80-100 %): the 85 % account is bold, not a second yellow
@@ -2391,7 +2391,7 @@ mod tests {
                 "round": "floor",
                 "bar_on": "▰",
                 "bar_off": "▱",
-                "alert": "▲",
+                "alert": "⏶",
                 "age": "◷"
             },
             "progress": {
@@ -2531,7 +2531,7 @@ mod tests {
         assert_eq!(f_partial.contract.round, RoundMode::Round);
         assert_eq!(f_partial.contract.bar_on, "▰");
         assert_eq!(f_partial.contract.bar_off, "-");
-        assert_eq!(f_partial.contract.alert, "▲");
+        assert_eq!(f_partial.contract.alert, "⏶");
         assert_eq!(f_partial.contract.age, "◷");
         // Control chars stripped and 20 CJK chars cut to 16 chars without panic
         assert_eq!(
@@ -2591,7 +2591,7 @@ mod tests {
             false,
             &def,
         ));
-        assert!(other_seg.contains("▲ b 7d 85%"), "{other_seg:?}");
+        assert!(other_seg.contains("⏶ b 7d 85%"), "{other_seg:?}");
         assert!(!other_seg.contains('⚠'), "{other_seg:?}");
 
         let _g = ENV_LOCK.lock().unwrap();
@@ -2631,7 +2631,7 @@ mod tests {
         // Wide enough for one line: all progress + spend pieces present
         let one_line = compact_lines(&with_facts, 240);
         assert_eq!(one_line.len(), 1, "{one_line:?}");
-        for expected in ["● 2", "M·finish", "3/3", "↺ R2", "◆ 1", "$271 ▰▰▰▰▱"] {
+        for expected in ["◉ 2", "M·finish", "3/3", "↺ R2", "⬥ 1", "$271 ▰▰▰▰▱"] {
             assert!(
                 one_line[0].contains(expected),
                 "missing {expected} in {:?}",
@@ -2643,7 +2643,7 @@ mod tests {
         let mid = compact_lines(&with_facts, 130);
         assert_eq!(mid.len(), 1, "{mid:?}");
         assert!(vis(&mid[0]) <= 130, "{:?}", mid[0]);
-        assert!(mid[0].contains("● 2"), "{:?}", mid[0]);
+        assert!(mid[0].contains("◉ 2"), "{:?}", mid[0]);
 
         // Narrow width: spend & open decisions drop in reverse order before model/path
         let narrow = compact_lines(&with_facts, 50);
@@ -2655,7 +2655,7 @@ mod tests {
             narrow[0]
         );
         assert!(
-            !narrow[0].contains("◆ 1"),
+            !narrow[0].contains("⬥ 1"),
             "decisions should drop before model/path: {:?}",
             narrow[0]
         );
