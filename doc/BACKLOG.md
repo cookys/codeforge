@@ -508,7 +508,7 @@
 
 ### G40 配額顯示的後續
 - **Id**: B45
-- **Status**: open
+- **Status**: superseded（PM 2026-11-23：卡 d-2a19fdb5 已不在卡片庫；真資料檢查由 capacity 額度單一來源計畫 01M82TH9WZ 取代，11-25 讀取端改讀 pool-eta v2，11-26 退役 quota-mirror）
 - **Since**: 2026-11-04
 - **Origin**: self
 - **Problem**: 配額顯示端已完成，但還等 autopilot 的契約檔與對照向量、真實 mirror 樣本與帳號卡，才能用真資料驗證。
