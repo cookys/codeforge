@@ -58,7 +58,7 @@ pub fn render_doctor(input: &DoctorInput) -> String {
 
     let local = local_light(input.l1_active, input.has_store_history);
     let local_status = match local {
-        LocalLight::Active => format!("● 活躍（{} 筆 active L1 concept）", input.l1_active),
+        LocalLight::Active => format!("◉ 活躍（{} 筆 active L1 concept）", input.l1_active),
         LocalLight::Empty => "◌ 空白（store 目錄存在但無 active L1）".to_string(),
         LocalLight::Hidden => "— 未初始化（從未 dream，無 store 歷史）".to_string(),
     };
@@ -84,7 +84,7 @@ pub fn render_doctor(input: &DoctorInput) -> String {
         );
     } else {
         let central_label = match input.central {
-            CentralLight::Ok => "● OK",
+            CentralLight::Ok => "◉ OK",
             CentralLight::Degraded => "◐ 降級",
             CentralLight::Offline => "○ 離線",
             CentralLight::Pending => "◌ 待定",
@@ -99,7 +99,7 @@ pub fn render_doctor(input: &DoctorInput) -> String {
                 let lat = latency
                     .map(|l| format!("{}ms", l))
                     .unwrap_or_else(|| "—".to_string());
-                format!("● OK  延遲 {}  HTTP {}", lat, http_status.unwrap_or(200))
+                format!("◉ OK  延遲 {}  HTTP {}", lat, http_status.unwrap_or(200))
             }
             ProbeOutcome::Unreachable => "○ 無法連線（連線被拒或逾時）".to_string(),
             ProbeOutcome::HttpError => {
