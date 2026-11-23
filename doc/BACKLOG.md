@@ -603,3 +603,31 @@
 - **Source**: G36 第 1 階段四席審查（g2 SHIP-AS-IS，f6baef59）
 - **Pointer**: doc/specs/codeforge-usage.md
 - **Context**: 範圍 usage/quota.rs 與 cli/statusline.rs；glyph 寬度與 parseFleet 空錯誤兩項為 G33 Suggestion
+
+### 追溯與 band 併後的 Minor（autopilot 審併 7f7b5b95b、65e67bdfb 提出）
+- **Id**: B69
+- **Status**: open
+- **Since**: 2026-11-23
+- **Origin**: autopilot 審併單 01M848TE5GS4PS3AMY5C2TJ62A 與 01M8408BYV4NWMG7CPVK8X92FN
+- **Problem**: (1) pm／decide feed 讀取失敗時資料清成 null，標題卻顯示 last ok 年紀，沒保留上次成功值（v74/feeds.ts 約 98–102、131–135）；(2) model.ts 的 qc_reason、readQcReason 無人寫入或呼叫，qc 另有 QcView.at 與 detail.qc_at 兩條來源只有 updated_at 時不一致；(3) pane.tsx 約 322 行有狀態列時無條件丟 body 最後一列；pages/fleet.ts 讀 errors.pm 但寫入端 key 是 errors.now；(4) band 的提醒與待決計數同為黃色、▸ 兼作提醒與清單游標與收合語彙（codex r6 兩條 Minor）。
+- **Impact**: 邊角顯示與命名不一致，不擋使用；(1) 會讓失敗時的「年紀」誤導。
+- **Trigger**: ready；pin 換到 7f7b5b95b 並完成真 pane 實拍後即可做
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: autopilot 審查；doc/design/ux-gate/band-layout/codex-r6.md
+- **Pointer**: fleet 單 01M83ZQ3ACJD97H1SXJ6JDV9TG
+- **Context**: 範圍 autopilot mods/live；走 AP 分支交 autopilot 審併
+
+### 追溯單的真終端驗收（pin 之後）
+- **Id**: B70
+- **Status**: open
+- **Since**: 2026-11-23
+- **Origin**: self
+- **Problem**: 追溯補齊（s1–s4）只有單元與整合測試，沒有真終端實拍；產線計數頁頂、來源跳殘留、花費頁 tok/s、過舊與讀取失敗各頁第一列都要看實際畫面。
+- **Impact**: 沒實拍就不算完成（Done = used）。
+- **Trigger**: ready；PM 換 pin 到 7f7b5b95b 之後
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 01M83ZQ3ACJD97H1SXJ6JDV9TG
+- **Pointer**: scripts 用 capture14.py 的流程（尺寸先、鍵最後）
+- **Context**: hangar 在 PM 真 pane 實拍（單 01M825HR45）為主；sandbox 補拍為輔
