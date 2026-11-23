@@ -112,20 +112,56 @@ fn known_extension(ext_lower: &str) -> Option<&'static str> {
 
 /// Controlled error-category taxonomy: `(canonical_tag, pipe_separated_keywords)`.
 const ERROR_TAXONOMY: &[(&str, &str)] = &[
-    ("permission", "permission denied|eacces|eperm|unauthorized|forbidden|權限|拒絕"),
-    ("not-found", "not found|enoent|no such file|missing|找不到|不存在"),
-    ("syntax-parse", "syntax error|parse error|invalid json|unexpected token|解析失敗|語法"),
-    ("type-compile", "mismatched types|cannot borrow|lifetime|trait bound|typeerror|編譯|型別"),
+    (
+        "permission",
+        "permission denied|eacces|eperm|unauthorized|forbidden|權限|拒絕",
+    ),
+    (
+        "not-found",
+        "not found|enoent|no such file|missing|找不到|不存在",
+    ),
+    (
+        "syntax-parse",
+        "syntax error|parse error|invalid json|unexpected token|解析失敗|語法",
+    ),
+    (
+        "type-compile",
+        "mismatched types|cannot borrow|lifetime|trait bound|typeerror|編譯|型別",
+    ),
     ("timeout", "timeout|timed out|deadline|逾時|超時"),
-    ("network", "connection refused|econnrefused|dns|tls|ssl|network|連線|網路"),
-    ("encoding-utf8", "utf-8|utf8|char boundary|cjk|unicode|亂碼|截斷"),
-    ("git-vcs", "merge conflict|rebase|detached head|pre-push|worktree|分支|衝突"),
-    ("path-env", "command not found|not in path|environment|環境變數|路徑"),
-    ("test-lint", "assertion failed|test failed|clippy|rustfmt|shellcheck|測試失敗|斷言"),
+    (
+        "network",
+        "connection refused|econnrefused|dns|tls|ssl|network|連線|網路",
+    ),
+    (
+        "encoding-utf8",
+        "utf-8|utf8|char boundary|cjk|unicode|亂碼|截斷",
+    ),
+    (
+        "git-vcs",
+        "merge conflict|rebase|detached head|pre-push|worktree|分支|衝突",
+    ),
+    (
+        "path-env",
+        "command not found|not in path|environment|環境變數|路徑",
+    ),
+    (
+        "test-lint",
+        "assertion failed|test failed|clippy|rustfmt|shellcheck|測試失敗|斷言",
+    ),
     ("lock-race", "busy|locked|race|deadlock|stale|競態|鎖"),
-    ("data-loss", "overwrite|truncate|cleared|清空|覆寫|遺失|誤刪"),
-    ("format-style", "format|indent|convention|繁體中文|正體中文|格式|風格"),
-    ("config-hook", "hook|settings|config|crontab|systemd|設定|排程"),
+    (
+        "data-loss",
+        "overwrite|truncate|cleared|清空|覆寫|遺失|誤刪",
+    ),
+    (
+        "format-style",
+        "format|indent|convention|繁體中文|正體中文|格式|風格",
+    ),
+    (
+        "config-hook",
+        "hook|settings|config|crontab|systemd|設定|排程",
+    ),
 ];
 
 /// Controlled short domain-topic hints (canonical English tokens, <= 12 chars each).
@@ -295,10 +331,8 @@ fn detect_category(raw: &str) -> &'static str {
     if raw.contains("【自我修正】") || lower.contains("self-correction") {
         return "self-correction";
     }
-    let is_question = raw.contains('?')
-        || raw.contains('？')
-        || lower.contains("如何")
-        || lower.contains("怎麼");
+    let is_question =
+        raw.contains('?') || raw.contains('？') || lower.contains("如何") || lower.contains("怎麼");
     if is_question {
         return "question";
     }

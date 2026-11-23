@@ -208,8 +208,8 @@ fn preview_from_dir(dir: &Path, cwd_filter: Option<&CwdFilter>, out: &mut Vec<Si
                 continue;
             }
             if let Some(text) = format_signal(sig) {
-                let signal = Signal::new(text, SignalSource::SessionDigest)
-                    .with_session_meta(meta.clone());
+                let signal =
+                    Signal::new(text, SignalSource::SessionDigest).with_session_meta(meta.clone());
                 out.push(signal);
             }
         }
@@ -302,8 +302,8 @@ fn ingest_from_dir_with_verifier<F>(
                 continue;
             }
             if let Some(text) = format_signal(sig) {
-                let signal = Signal::new(text, SignalSource::SessionDigest)
-                    .with_session_meta(meta.clone());
+                let signal =
+                    Signal::new(text, SignalSource::SessionDigest).with_session_meta(meta.clone());
                 match writer.append(&signal) {
                     Ok(id) => {
                         written_ids.push(id);
@@ -796,7 +796,10 @@ mod tests {
 
         assert_eq!(ingested, 1, "重試後應成功寫入 1 筆 signal");
         assert_eq!(processed, 1, "重試並驗證後應完成 1 份 digest");
-        assert!(!digest.exists(), "寫入成功且 L0 讀回驗證通過後才應刪 digest");
+        assert!(
+            !digest.exists(),
+            "寫入成功且 L0 讀回驗證通過後才應刪 digest"
+        );
 
         let saved = read_all_l0_signals(&ctx);
         assert_eq!(saved.len(), 1);
