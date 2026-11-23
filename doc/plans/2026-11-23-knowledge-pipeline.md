@@ -1,7 +1,7 @@
-# 全機隊 transcript 知識管線（計畫第 2 稿：已吸收 plan loop 第 1 代 carbon 評審的 13 條阻擋意見）
+# 全機隊 transcript 知識管線（計畫第 4 稿：P1 事實已出、P2 展成可驗收的任務表；待 plan loop 第 4 稿輪，≤2 代）
 
 > 操作員卡 d-8046739d（2026-11-23，答 A）願景：「從 transcript 提取知識，變成全機隊共用的技能、知識、SOP」。PM 單 01M836C68Y0EC65D15WWNKNMKJ。
-> 狀態：第 2 稿，等 plan loop 第 2 代。本文件不授權任何讀取別席 transcript；讀取範圍見第 7 節，授權由 PM 另開卡。
+> 狀態：第 4 稿（11-23 起草，PM 裁定先做不依賴 autopilot 的部分；plan loop 11-26，≤2 代，第二席非 Claude）。本文件不授權任何讀取別席 transcript；讀取範圍見第 7 節，授權由 PM 另開卡。
 > 盤點依據：`doc/plans/2026-11-23-knowledge-inventory.md`。第 1 代評審補出盤點漏列的零件：codeforge 的 `session-digest`（全域 SessionEnd／PreCompact 已在跑）、`ingest-digests`、`absorb`；本稿第 3 節已補。
 
 ## 1. 目標與不做的事
@@ -109,7 +109,37 @@ KR 與觀察期只量測、不擋上線；但 KR1 的反向探針同時是第 4 
 | P0 | plan loop 通過（≤2 代）；PM 開授權卡 | 11-25 | 11-26（卡有答覆） |
 | P1（縮小，PM 裁定 2026-11-23） | 只做兩件事並附修好前後實測數字：(1) `distill-scan` 與 `dream compile` 收斂成摘要、不送逐字原文；(2) L0 補欄位（session id、時間範圍、席位位址、模型來源），digest 改成下游確認收到才刪。只動 codeforge 自己的資料路徑，不讀他席 transcript。第 4 稿等 P1 事實出來才寫，另跑 plan loop。 | 範圍確定後重估，回 PM | 重估後定 |
 | P1.5 | 切換前對照：新舊教訓產物並行比對一週（舊路徑照寫） | P1 通過後 | +7 天 |
-| P2 | 授權後開共用倉；兩個 lane 並行；SessionStart 召回與採用回饋；示範劇本 | 授權後 +3 工作日 | 示範日 +1 |
+| P2 | 授權後開共用倉；兩個 lane 並行；SessionStart 召回與採用回饋；示範劇本。任務表見第 10 節 | 授權後 +3 工作日 | 示範日 +1 |
 | P3 | 退役舊教訓寫入路徑（第 5 節順序，含 mnemos 契約 owner 確認） | P2 通過後 | 切換後 14 天 |
 
 日期是估計，待 plan loop 與授權卡答覆後鎖定。
+
+## 10. P1 事實與 P2 任務表（第 4 稿新增）
+
+### 10.1 P1 已出的事實（sandbox canary 與 rollout，只動 codeforge 自己的資料路徑）
+- **範圍**：codeforge develop `ac0d9a6` 合併：`src/dream/egress.rs`、`src/dream/compile.rs`、`src/memory/l0.rs`、`src/dream/ingest_digests.rs`、`.claude/scripts/session-digest.js`。已由 hangar 在 12 台主機驗證（rollout 回報在 fleet 單 01M836C68Y）。
+- **逐字外送（R7）**：canary 中 dream 送給 LLM 的輸入與來源 L0 訊號文字的最長共同子串為 10 字元（門檻 20，修好前最長可到 200–300 字元）。
+- **L0 欄位（R14／R8）**：canary 的 4 筆 L0 訊號都帶 `session_id`、`time_start`、`time_end`、`model`；`seat` 欄位為 0（環境變數未設，來源待 fleet 單 01M83DFC1Q 提供，**不擋 P2 開工**，段 1 的隔離條件先用 uid 與家目錄加 session id 清單，不依賴 `seat`）。
+- **digest 殘留（R14）**：下游確認收到才刪；canary 成功後 digests 目錄殘留 0 筆。
+- **沒做的事**：沒讀任何他席 transcript；P1 不需要授權卡。
+
+### 10.2 P2 任務表（授權卡答覆之後才開工；之前只準備不上線）
+每列各用一個 worktree、一個 fleet 單，能並行的並行。「授權」指 PM 開的卡 d-xxxxxxxx 答覆；未答覆前只做不讀他席 transcript 的列。
+
+| # | 任務 | owner／實作 | 依賴 | 驗收（要實際示範） |
+|---|---|---|---|---|
+| T1 | `codeforge lessons candidates --json`：只讀本席 L0，輸出受限詞彙欄位加證據指標，不輸出原文 | codeforge（便宜席實作，本席審） | P1 | 反向探針：把含帳號別名、≥20 字元逐字片段的假 L0 餵進去，輸出為空或標紅；輸出 schema 有測試 |
+| T2 | 本機禁詞清單與機器閘腳本（codeforge 側，不改 identifier-scan） | codeforge | T1 | 命中禁詞的候選不進共用倉流程，反向探針在 live 上跑一次 |
+| T3 | 候選區（本機 spool，不進 git）與 `knowledge-review` 審查入口（PM pane 待決卡） | autopilot 機制；pane 畫面 codeforge | T1、T2 | 人審前不得 commit：未審候選嘗試 push 被擋的實測 |
+| T4 | 共用倉建立與寫入器（pull --rebase、正規化鍵去重、sidecar 證據檔，push 被拒重試一次） | autopilot | T3、授權 | 兩個 lane 併發寫同一教訓只產生一筆加兩行證據 |
+| T5 | SessionStart 召回 hook：取代 codeforge 兩個全域召回注入器中屬教訓的部分，總量上限 3 則；每 30 分鐘 timer pull | autopilot hook；codeforge 移除舊注入 | T4、mnemos 契約 owner 確認（見 R12，P2 就要問，不等 P3） | session 開頭注入不超過上限的實測，附召回日誌 |
+| T6 | `learn --useful／--noisy <id>` 採用回饋與 sidecar | codeforge | T5 | 無標記的召回只計曝光的測試與日誌 |
+| T7 | 示範劇本（第 8 節）與 KR5 噪音抽樣 | 本席主持，兩個 lane 配合 | T1–T6 | 召回日誌加沒踩坑證據；判定人不是提煉席 |
+
+**起算與日期**：T1、T2 不依賴授權，plan loop 通過（11-26）當天開工；T3 之後等授權卡答覆；P2 上線日＝授權答覆日 +3 工作日（沿第 9 節），判定日＝示範日 +1。fleet 單號：T1–T2 開單時寫回第 9 節表。
+
+### 10.3 第 4 稿相對第 3 稿的變更
+- P2 一行展成 7 列任務表，每列有依賴與驗收（不再是「授權後做完」）。
+- T1、T2 與授權脫鉤，可先做，解掉「全部卡在授權卡」的空等。
+- mnemos 契約 owner 確認從 P3 提前到 T5 之前（R12）。
+- `seat` 欄位缺來源明講並不擋開工。
