@@ -233,6 +233,7 @@ pub fn summarize_for_llm(signal: &Signal) -> String {
 
 /// Compute the length (in Unicode characters) of the longest common contiguous
 /// substring between `a` and `b`. CJK-safe (operates on `char`, never bytes).
+#[cfg(test)]
 pub fn longest_common_substring_chars(a: &str, b: &str) -> usize {
     let ac: Vec<char> = a.chars().collect();
     let bc: Vec<char> = b.chars().collect();

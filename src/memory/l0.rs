@@ -507,7 +507,9 @@ mod tests {
 
         let s1 = Signal::new("第一筆 signal".to_string(), SignalSource::SessionDigest);
         let id1 = writer.append(&s1).unwrap();
-        assert!(writer.verify_signals_persisted(&[id1.clone()]).unwrap());
+        assert!(writer
+            .verify_signals_persisted(std::slice::from_ref(&id1))
+            .unwrap());
         let partial = writer
             .verify_signals_persisted(&[id1, "missing-id".to_string()])
             .unwrap();
