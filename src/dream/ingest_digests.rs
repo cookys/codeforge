@@ -16,9 +16,66 @@
 //! 帶 cwd → 仍套 cwd filter),讀完即刪;舊 digest 30 天自然過期後可移除此段。
 
 use crate::db;
-use crate::memory::l0::{Signal, SignalSource, SignalWriter};
+use crate::memory::l0::{Signal, SignalMeta, SignalSource, SignalWriter};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
+
+const SEAT_ENV_KEYS: &[&str] = &[
+    "CODEFORGE_SEAT",
+    "FLEET_ADDRESS",
+    "FLEET_SEAT",
+    "AUTOPILOT_SEAT",
+    "AUTOPILOT_FLEET_ADDRESS",
+];
+
+fn resolve_seat_with<F>(lookup: F) -> Option<String>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    for key in SEAT_ENV_KEYS {
+        if let Some(val) = lookup(key) {
+            let trimmed = val.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn non_empty_field(v: &serde_json::Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn rfc3339_field(v: &serde_json::Value, key: &str) -> Option<String> {
+    non_empty_field(v, key).filter(|s| chrono::DateTime::parse_from_rfc3339(s).is_ok())
+}
+
+fn extract_digest_meta_with<F>(v: &serde_json::Value, env_lookup: F) -> SignalMeta
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let session_id = non_empty_field(v, "session_id").filter(|s| s != "unknown");
+    let time_start = rfc3339_field(v, "time_start");
+    let time_end = rfc3339_field(v, "time_end");
+    let seat = non_empty_field(v, "seat").or_else(|| resolve_seat_with(env_lookup));
+    let model = non_empty_field(v, "model").filter(|s| s != "unknown" && s != "<synthetic>");
+    SignalMeta {
+        session_id,
+        time_start,
+        time_end,
+        seat,
+        model,
+    }
+}
+
+fn extract_digest_meta(v: &serde_json::Value) -> SignalMeta {
+    extract_digest_meta_with(v, |k| std::env::var(k).ok())
+}
 
 pub struct IngestResult {
     pub ingested: usize,
@@ -140,6 +197,7 @@ fn preview_from_dir(dir: &Path, cwd_filter: Option<&CwdFilter>, out: &mut Vec<Si
                 continue;
             }
         }
+        let meta = extract_digest_meta(&v);
         let empty = Vec::new();
         let signals = v
             .get("signals")
@@ -150,13 +208,15 @@ fn preview_from_dir(dir: &Path, cwd_filter: Option<&CwdFilter>, out: &mut Vec<Si
                 continue;
             }
             if let Some(text) = format_signal(sig) {
-                out.push(Signal::new(text, SignalSource::SessionDigest));
+                let signal =
+                    Signal::new(text, SignalSource::SessionDigest).with_session_meta(meta.clone());
+                out.push(signal);
             }
         }
     }
 }
 
-/// 掃一個 digest 目錄:吸 high-confidence signals → ingest 完刪檔。
+/// 掃一個 digest 目錄:吸 high-confidence signals → L0 讀回驗證通過後才刪檔。
 /// `cwd_filter` = Some 時只收 cwd 對應本 repo 的檔(過渡期舊全域目錄用);None = per-repo
 /// 目錄天然隔離全收。
 fn ingest_from_dir(
@@ -166,6 +226,26 @@ fn ingest_from_dir(
     ingested: &mut usize,
     digests_processed: &mut usize,
 ) {
+    ingest_from_dir_with_verifier(
+        dir,
+        cwd_filter,
+        writer,
+        ingested,
+        digests_processed,
+        |ids| writer.verify_signals_persisted(ids),
+    );
+}
+
+fn ingest_from_dir_with_verifier<F>(
+    dir: &Path,
+    cwd_filter: Option<&CwdFilter>,
+    writer: &SignalWriter,
+    ingested: &mut usize,
+    digests_processed: &mut usize,
+    mut verify: F,
+) where
+    F: FnMut(&[String]) -> Result<bool>,
+{
     if !dir.exists() {
         return;
     }
@@ -207,12 +287,14 @@ fn ingest_from_dir(
             }
         }
 
+        let meta = extract_digest_meta(&v);
         let empty = Vec::new();
         let signals = v
             .get("signals")
             .and_then(|s| s.as_array())
             .unwrap_or(&empty);
         let mut append_failed = false;
+        let mut written_ids: Vec<String> = Vec::new();
         for sig in signals {
             // 只收 high-confidence(對齊海馬 ripple 選擇性 +「high-confidence」承諾;
             // self-correction 等 medium 略過,寧缺勿濫)。
@@ -220,9 +302,13 @@ fn ingest_from_dir(
                 continue;
             }
             if let Some(text) = format_signal(sig) {
-                let signal = Signal::new(text, SignalSource::SessionDigest);
+                let signal =
+                    Signal::new(text, SignalSource::SessionDigest).with_session_meta(meta.clone());
                 match writer.append(&signal) {
-                    Ok(_) => *ingested += 1,
+                    Ok(id) => {
+                        written_ids.push(id);
+                        *ingested += 1;
+                    }
                     // append 失敗(如 signals/ 建不出)→ 記下,稍後保留 digest 待重收。
                     // 絕不可吞掉 + 照刪:那會把寫入失敗變成 high-confidence signal 永久遺失。
                     // 第一次失敗即 break:保留的 digest 下次重收時會從頭再跑,若這次已寫入 1..k,
@@ -241,8 +327,29 @@ fn ingest_from_dir(
 
         // append 曾失敗 → 不刪此 digest(留待修好後重收),避免靜默遺失未寫入的 signal。
         if append_failed {
-            *digests_processed += 1;
             continue;
+        }
+
+        // 下游確認（P1）：寫入 L0 後必須從磁碟讀回驗證每個 signal id 確實存在，才允許刪除 digest；
+        // 讀回失敗或驗證未通過就保留 digest 檔，留待下次重試。
+        if !written_ids.is_empty() {
+            match verify(&written_ids) {
+                Ok(true) => {}
+                Ok(false) => {
+                    eprintln!(
+                        "⚠ ingest-digests: L0 讀回驗證未找到剛寫入的 signal — 保留 {} 待下次重試",
+                        path.display()
+                    );
+                    continue;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "⚠ ingest-digests: L0 讀回驗證失敗（{e}）— 保留 {} 待下次重試",
+                        path.display()
+                    );
+                    continue;
+                }
+            }
         }
 
         // ingest 完刪 digest 檔(A′:明文不長存)。**全 medium(吸 0 顆)也刪**:medium 本
@@ -574,5 +681,333 @@ mod tests {
 
         assert_eq!(ingested, 1, "cwd 對應本 repo 的 legacy digest 應吸入");
         assert!(!f.exists(), "matching legacy digest 吸完應刪");
+    }
+
+    fn read_all_l0_signals(ctx: &db::Context) -> Vec<Signal> {
+        let dir = ctx.project_dir.join("signals");
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for entry in rd.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                for line in text.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if let Ok(sig) = serde_json::from_str::<Signal>(trimmed) {
+                        out.push(sig);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn extract_digest_meta_populates_all_fields_and_seat_env_fallback() {
+        let digest = serde_json::json!({
+            "session_id": "sess-demo-0001",
+            "time_start": "2026-11-23T01:00:00Z",
+            "time_end": "2026-11-23T01:30:00Z",
+            "model": "claude-sonnet-4-5",
+            "signals": []
+        });
+        let meta = extract_digest_meta_with(&digest, |k| {
+            if k == "CODEFORGE_SEAT" {
+                Some("seat-alpha.local".to_string())
+            } else {
+                None
+            }
+        });
+        assert_eq!(meta.session_id.as_deref(), Some("sess-demo-0001"));
+        assert_eq!(meta.time_start.as_deref(), Some("2026-11-23T01:00:00Z"));
+        assert_eq!(meta.time_end.as_deref(), Some("2026-11-23T01:30:00Z"));
+        assert_eq!(meta.seat.as_deref(), Some("seat-alpha.local"));
+        assert_eq!(meta.model.as_deref(), Some("claude-sonnet-4-5"));
+
+        // Fleet env fallback when CODEFORGE_SEAT absent; None when no env set.
+        let fleet_meta = extract_digest_meta_with(&digest, |k| {
+            if k == "FLEET_ADDRESS" {
+                Some("lane-beta.local".to_string())
+            } else {
+                None
+            }
+        });
+        assert_eq!(fleet_meta.seat.as_deref(), Some("lane-beta.local"));
+
+        let no_env_meta = extract_digest_meta_with(&digest, |_| None);
+        assert_eq!(no_env_meta.seat, None);
+    }
+
+    #[test]
+    fn ingest_keeps_digest_on_write_failure_and_deletes_after_retry_succeeds() {
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().join("myrepo").join(".codeforge");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        // Make `signals` a regular file so SignalWriter::append fails deterministically
+        // on every OS (even as root).
+        let signals_blocker = project_dir.join("signals");
+        std::fs::write(&signals_blocker, "blocker").unwrap();
+
+        let ctx = db::Context {
+            project_dir: project_dir.clone(),
+            brain_dir: temp.path().join("brain"),
+            db_path: temp.path().join("state.db"),
+        };
+        let digests = project_dir.join("digests");
+        let digest = write_digest(
+            &digests,
+            "2026-11-23-sess0001.json",
+            serde_json::json!({
+                "session_id": "sess-retry-0001",
+                "time_start": "2026-11-23T02:00:00Z",
+                "time_end": "2026-11-23T02:20:00Z",
+                "seat": "seat-alpha.local",
+                "model": "claude-opus-4-6",
+                "processed": false,
+                "signals": [
+                    {
+                        "type": "error-recovery",
+                        "confidence": "high",
+                        "tool": "Bash",
+                        "error": "write failed before retry demo signal"
+                    }
+                ]
+            }),
+        );
+
+        let writer = SignalWriter::new(&ctx);
+        let (mut ingested, mut processed) = (0, 0);
+        ingest_from_dir(&digests, None, &writer, &mut ingested, &mut processed);
+
+        assert_eq!(ingested, 0, "寫入失敗時不應計入 ingested");
+        assert_eq!(processed, 0, "寫入失敗時不應計入 processed");
+        assert!(digest.exists(), "寫入失敗時 digest 檔必須保留在原處");
+
+        // Remove blocker and retry: L0 write + read-back verification now succeed → digest deleted.
+        std::fs::remove_file(&signals_blocker).unwrap();
+        ingest_from_dir(&digests, None, &writer, &mut ingested, &mut processed);
+
+        assert_eq!(ingested, 1, "重試後應成功寫入 1 筆 signal");
+        assert_eq!(processed, 1, "重試並驗證後應完成 1 份 digest");
+        assert!(
+            !digest.exists(),
+            "寫入成功且 L0 讀回驗證通過後才應刪 digest"
+        );
+
+        let saved = read_all_l0_signals(&ctx);
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].session_id.as_deref(), Some("sess-retry-0001"));
+        assert_eq!(saved[0].time_start.as_deref(), Some("2026-11-23T02:00:00Z"));
+        assert_eq!(saved[0].time_end.as_deref(), Some("2026-11-23T02:20:00Z"));
+        assert_eq!(saved[0].seat.as_deref(), Some("seat-alpha.local"));
+        assert_eq!(saved[0].model.as_deref(), Some("claude-opus-4-6"));
+    }
+
+    #[test]
+    fn ingest_keeps_digest_when_l0_readback_verification_fails() {
+        let temp = TempDir::new().unwrap();
+        let ctx = test_ctx(&temp, "myrepo");
+        let digests = ctx.project_dir.join("digests");
+        let digest = write_digest(
+            &digests,
+            "2026-11-23-sess0002.json",
+            serde_json::json!({
+                "session_id": "sess-verify-0002",
+                "time_start": "2026-11-23T03:00:00Z",
+                "time_end": "2026-11-23T03:15:00Z",
+                "model": "claude-sonnet-4-5",
+                "processed": false,
+                "signals": [
+                    {
+                        "type": "user-correction",
+                        "confidence": "high",
+                        "correction": "請在刪除暫存檔前先從磁碟讀回驗證資料完整"
+                    }
+                ]
+            }),
+        );
+
+        let writer = SignalWriter::new(&ctx);
+        let (mut ingested, mut processed) = (0, 0);
+        // Simulate downstream read-back verification failing.
+        ingest_from_dir_with_verifier(
+            &digests,
+            None,
+            &writer,
+            &mut ingested,
+            &mut processed,
+            |_| Ok(false),
+        );
+        assert!(digest.exists(), "L0 讀回驗證未通過時不得刪除 digest");
+        assert_eq!(processed, 0);
+
+        // With real read-back verification, digest is confirmed and deleted.
+        ingest_from_dir(&digests, None, &writer, &mut ingested, &mut processed);
+        assert!(!digest.exists(), "L0 讀回驗證通過後應刪除 digest");
+        assert_eq!(processed, 1);
+    }
+
+    #[test]
+    fn measure_l0_metadata_and_digest_safety_5_sessions_report() {
+        let fixtures = [
+            (
+                "2026-11-23-sess0001.json",
+                "sess-fixture-0001",
+                "2026-11-23T01:00:00Z",
+                "2026-11-23T01:25:00Z",
+                "seat-alpha.local",
+                "claude-sonnet-4-5",
+                "【錯誤修復】Bash 測試路徑缺失修復流程範例訊號",
+            ),
+            (
+                "2026-11-23-sess0002.json",
+                "sess-fixture-0002",
+                "2026-11-23T02:10:00Z",
+                "2026-11-23T02:45:00Z",
+                "seat-beta.local",
+                "claude-opus-4-6",
+                "【使用者糾正】不要直接覆寫設定檔應改用暫存檔再原子改名",
+            ),
+            (
+                "2026-11-23-sess0003.json",
+                "sess-fixture-0003",
+                "2026-11-23T03:00:00Z",
+                "2026-11-23T03:35:00Z",
+                "seat-gamma.local",
+                "claude-haiku-4-5",
+                "【錯誤修復】SQLite busy_timeout 設定避免多程序鎖衝突",
+            ),
+            (
+                "2026-11-23-sess0004.json",
+                "sess-fixture-0004",
+                "2026-11-23T04:15:00Z",
+                "2026-11-23T04:50:00Z",
+                "seat-delta.local",
+                "claude-sonnet-4-5",
+                "【使用者糾正】中文字串截斷必須用 chars().take(N) 避免切斷 UTF-8",
+            ),
+            (
+                "2026-11-23-sess0005.json",
+                "sess-fixture-0005",
+                "2026-11-23T05:05:00Z",
+                "2026-11-23T05:40:00Z",
+                "seat-epsilon.local",
+                "claude-opus-4-6",
+                "【錯誤修復】pre-push 檢查擋下非 develop 分支推送動作",
+            ),
+        ];
+
+        // 1) Measure BEFORE baseline (pre-P1 behavior: Signal had no session_id/time_start/time_end,
+        //    and digest deletion did not run L0 read-back verification).
+        let before_total = fixtures.len();
+        let before_with_sid = 0usize;
+        let before_with_range = 0usize;
+
+        // 2) Measure AFTER on real ingest_from_dir across all 5 fixture sessions.
+        let temp = TempDir::new().unwrap();
+        let project_dir = temp.path().join("demo-repo").join(".codeforge");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let blocker = project_dir.join("signals");
+        std::fs::write(&blocker, "fail-write").unwrap();
+
+        let ctx = db::Context {
+            project_dir: project_dir.clone(),
+            brain_dir: temp.path().join("brain"),
+            db_path: temp.path().join("state.db"),
+        };
+        let digests_dir = project_dir.join("digests");
+        let mut digest_paths = Vec::new();
+        for (fname, sid, t0, t1, seat, model, correction) in &fixtures {
+            let p = write_digest(
+                &digests_dir,
+                fname,
+                serde_json::json!({
+                    "session_id": sid,
+                    "time_start": t0,
+                    "time_end": t1,
+                    "seat": seat,
+                    "model": model,
+                    "processed": false,
+                    "signals": [
+                        {
+                            "type": "user-correction",
+                            "confidence": "high",
+                            "correction": correction
+                        }
+                    ]
+                }),
+            );
+            digest_paths.push(p);
+        }
+
+        let writer = SignalWriter::new(&ctx);
+        let (mut ingested, mut processed) = (0, 0);
+        // Phase A: ingest under write failure — all 5 digests must survive.
+        ingest_from_dir(&digests_dir, None, &writer, &mut ingested, &mut processed);
+        let survived_after_write_fail = digest_paths.iter().filter(|p| p.exists()).count();
+        assert_eq!(survived_after_write_fail, 5);
+
+        // Phase B: unblock write, simulate read-back verification failure — all 5 digests must survive.
+        std::fs::remove_file(&blocker).unwrap();
+        ingest_from_dir_with_verifier(
+            &digests_dir,
+            None,
+            &writer,
+            &mut ingested,
+            &mut processed,
+            |_| Ok(false),
+        );
+        let survived_after_verify_fail = digest_paths.iter().filter(|p| p.exists()).count();
+        assert_eq!(survived_after_verify_fail, 5);
+
+        // Clean L0 before final clean pass so counts reflect exact 5 fixture signals.
+        std::fs::remove_dir_all(project_dir.join("signals")).unwrap();
+        let (mut final_ingested, mut final_processed) = (0, 0);
+        ingest_from_dir(
+            &digests_dir,
+            None,
+            &writer,
+            &mut final_ingested,
+            &mut final_processed,
+        );
+        assert_eq!(final_ingested, 5);
+        assert_eq!(final_processed, 5);
+        let remaining_after_ok = digest_paths.iter().filter(|p| p.exists()).count();
+        assert_eq!(remaining_after_ok, 0);
+
+        let persisted = read_all_l0_signals(&ctx);
+        assert_eq!(persisted.len(), 5);
+        let after_with_sid = persisted.iter().filter(|s| s.session_id.is_some()).count();
+        let after_with_range = persisted
+            .iter()
+            .filter(|s| s.time_start.is_some() && s.time_end.is_some())
+            .count();
+
+        println!();
+        println!("| Metric (5 fixture sessions) | Before | After |");
+        println!("|-----------------------------|--------|-------|");
+        println!(
+            "| 有 session_id 的 signal 比例 | {before_with_sid}/{before_total} (0.0%) | {after_with_sid}/{} ({:.1}%) |",
+            persisted.len(),
+            (after_with_sid as f64 / persisted.len() as f64) * 100.0
+        );
+        println!(
+            "| 有時間範圍 (time_start/time_end) 的比例 | {before_with_range}/{before_total} (0.0%) | {after_with_range}/{} ({:.1}%) |",
+            persisted.len(),
+            (after_with_range as f64 / persisted.len() as f64) * 100.0
+        );
+        println!(
+            "| digest 在 ingest 失敗後是否還在 (寫入失敗 / 讀回失敗) | 0/5 (無 L0 讀回確認) | {survived_after_write_fail}/5 寫入失敗保留, {survived_after_verify_fail}/5 讀回失敗保留, 成功確認後殘留 {remaining_after_ok}/5 |"
+        );
+
+        assert_eq!(after_with_sid, 5);
+        assert_eq!(after_with_range, 5);
     }
 }
