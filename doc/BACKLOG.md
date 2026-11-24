@@ -645,3 +645,17 @@
 - **Source**: 01M84BZMK1810A379D4PYC498G
 - **Pointer**: 掃描法見 AP mods/live/width-lint.test.js；forge-stats 畫面改動要過 UX 閘門
 - **Context**: forge-stats 與 statusline 屬操作員看得到的畫面，換符號前先確認它們是否仍在用
+
+### 重建 sandbox capture harness（tmux＋真 claude＋--plugin-dir）
+- **Id**: B72
+- **Status**: open
+- **Since**: 2026-11-24
+- **Origin**: self
+- **Problem**: 舊 harness（capture14/15.py）隨 scratchpad 清除消失。重建版 /home/team/.tmp/cf-lane/capture.sh（tmux -L＋claude --plugin-dir AP checkout＋沙箱 CODEFORGE_DATA_DIR/AUTOPILOT_LIVE_DIR/CLAUDE_CONFIG_DIR＋trap kill-server）卡在 first-run onboarding：信任對話送 Enter 會選成 No（claude 退出）、預種 theme 鍵名不對、時間線顯示新沙箱 config 下 claude 完全不渲染（timeline/ 90 秒全空）。
+- **Impact**: 操作員選版後的 UX 評審（兩家 ≥8）需要真終端實拍，沒有 harness 就做不了。
+- **Trigger**: ready；下一次需要實拍前完成即可
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: PM 01M85DPSCR 取消後的重開卡流程
+- **Pointer**: /home/team/.tmp/cf-lane/capture.sh、timeline/ 快照、cfg-template/；線索：信任對話 Enter=選 No、theme 預種鍵名待查、claude.err 在各 mktemp PROJ
+- **Context**: autopilot renderer（ansi-to-html-grid.js）已可把 .ans 轉 HTML 並內建閘；harness 只負責產生 .ans
