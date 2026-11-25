@@ -197,7 +197,7 @@ ASCII 備援也必須只佔 1 格，而且彼此不同（`^ x ~ ! * w v o - / ?`
 
 ## 5. 淺色／深色終端
 
-1. 只用主題鍵，終端換深淺主題時會自動調整（§3.3-4）。statusline 不是 mod，拿不到主題鍵，所以改用 ANSI 基本色（終端依自己的深淺主題調色），不寫死 RGB（§3.4 遷移）。對照：
+1. 只用主題鍵，終端換深淺主題時會自動調整（§3.3-4）。statusline 不是 mod，拿不到主題鍵，所以自己判斷深淺（PM 01M88BD7K5 裁定 A，取代原本改用 ANSI 基本色的遷移方向）：依序看 `CODEFORGE_THEME=light|dark`（操作員在 Claude Code settings.json 的 `env` 設的開關）、`COLORFGBG` 的背景色號、stdin 的主題欄位（Claude Code 目前沒送），都沒有就用深色；深淺兩組 RGB 配色，一般文字對比 ≥4.5、次要文字 ≥3（`statusline.rs` `THEME_ROLES`，測試 `tests/statusline_theme.rs`，反例 `light_check_fails_when_detection_is_off`）。mod 畫面的主題鍵對照 ANSI 色如下，供別的非 mod 畫面參考：
 
    | 主題鍵 | statusline ANSI |
    |---|---|
