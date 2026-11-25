@@ -77,13 +77,13 @@
       "V26",
       "V27",
       "r1-rev5",
-      "ux-v6",
-      "v74-master-detail",
-      "ux-v4",
-      "ux-v7",
-      "ux-v5",
       "tui-v2",
+      "ux-v4",
+      "ux-v5",
+      "ux-v6",
+      "ux-v7",
       "ux-v74",
+      "v74-master-detail",
       "v74-pending-d-neon",
       "v74-pending-two-options"
     ],
@@ -103,7 +103,14 @@
         "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:206"
       }
     ],
-    "versions": [],
+    "versions": [
+      "V22",
+      "V23",
+      "V24",
+      "V25",
+      "V26",
+      "V27"
+    ],
     "in_R": "R3",
     "status": "有原話",
     "sources": [
@@ -184,7 +191,9 @@
         "ref": "doc/design/pane-design-language.md:18"
       }
     ],
-    "versions": [],
+    "versions": [
+      "V26"
+    ],
     "in_R": "R7",
     "status": "缺出處",
     "sources": [
@@ -293,7 +302,9 @@
         "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:122"
       }
     ],
-    "versions": [],
+    "versions": [
+      "V26"
+    ],
     "in_R": null,
     "status": "缺出處",
     "sources": [
