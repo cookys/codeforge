@@ -59,6 +59,33 @@ LANES = [
     ('⋯', 'warning', '308 地圖', '卡住', '等素材'),
 ]
 
+# 「很多」狀態：舊稿清單最後一列是「⋯ 下面還有 N」，要捲才看得到。寬版把這 N 項全部攤開：
+# band 左欄放得下的放左欄，其餘移到 pane 上半「清單（續）」。項數照舊稿那一列寫的數字。
+D = lambda t: (t, 'inactive')
+EXTRA = {
+    '2-M': ['  ·8 lab gate 放行', '  ·9 docs 版本對齊', '  ·10 mnemos 索引重建', '  ·11 308 地圖素材', '  ·12 pinball 選版', '  ·13 revival GPU slot', '  ·14 twgame 音效授權'],
+    '3-M': [f'  {n}線 {lane} · {eng} · {m} 分' for n, lane, eng, m in zip('己庚辛壬癸子丑寅卯辰巳午未申亥', ['lab', 'alfred', 'mnemos', 'docs', 'fleet', 'hangar', 'codeforge', 'autopilot', 'hippo', 'lab', 'alfred', 'pinball', '308', 'revival', 'twgame'], ['codex', 'claude', 'agy', 'codex', 'claude'] * 3, range(7, 52, 3))]
+           + [D('失敗 3 輪'), '  酉線 hangar · codex · 逾時', '  戌線 docs · claude · 建置失敗', '  亥線 lab · agy · private-leaks'],
+    '4-M': [f'  {t} {x}' for t, x in [('08:31', '合併 develop codeforge 05e2'), ('08:22', 'codex PASS autopilot e931'), ('08:15', '換池 team → pool-b'), ('08:02', 'agy PASS hangar 5cab'),
+                                       ('07:55', '合併 develop autopilot 7d1c'), ('07:41', '退件 grok 第 2 版'), ('07:30', 'codex PASS lab 93fa'), ('07:12', '合併 develop fleet 2b6e'),
+                                       ('06:58', '換池 cookys → pool-a'), ('06:40', 'agy PASS docs 44c1'), ('06:21', '合併 develop hippo 81d0'), ('06:05', '退件 codex 第 1 版'),
+                                       ('05:50', 'codex PASS mnemos 0f3a'), ('05:31', '合併 develop alfred c2e9'), ('05:10', '換池 lab → pool-c')]],
+    '5-M': ['  kimi 席 · 31%', '  glm 席 · 12%', '  agy 席 · 54%', '  codex 席 · 47%', '  fable 席 · 6%'],
+    '6-M': ['  worktree tri-fable（5 天沒動）', '  worktree tri-brief（5 天沒動）', '  worktree tri-v2（6 天沒動）', '  分支 fix/shot-lazy（已合併）', '  分支 docs/bl-atat（已合併）',
+            '  分支 design/tri-merge（已合併）', '  過期暫存：handoff 4 個', '  過期暫存：scratch 2.1 GB', '  stash WIP band 對比', '  stash WIP r1 rev4', '  archive tag 3 個沒備份'],
+    '7-M': [f'  {a}--claude · {b} tok/s' for a, b in [('hippo', 33), ('lab', 29), ('alfred', 27), ('mnemos', 24), ('game-lead', 21), ('recovery-lead', 19), ('ops', 17),
+                                                     ('pinball', 15), ('308', 14), ('revival', 12), ('twgame', 11), ('docs', 9)]]
+           + [D('失敗 4'), '  codex 派工 · 測試逾時', '  agy 派工 · 認證失敗', '  grok 審查 · 額度用完', '  hangar 換池 · NAS 逾時',
+              D('完成 9'), '  docs 建置 · lab gate · fleet 重試', '  hippo 安裝 · alfred 部署 · mnemos 索引', '  codex 審查 · agy 審查 · 換池 pool-c'],
+    '8-M': ['  12-07 hippo 第二批', '  12-09 盤點報告', '  12-10 外掛清理', '  12-12 pool 續約檢查', '  12-15 年度備份', '  12-18 r1 重做'],
+}
+# 2-M 清單上方被捲掉的 3 張（舊稿「⋯ 上面還有 3 張」）：寬版也攤開
+ABOVE = {'2-M': ['  ✓1 合併 plan：a', '  ✓2 外掛更新時機：b', '  ✓3 預覽先拍幾欄：a']}
+# 9 說明的按鍵表：寬版不捲，拿掉 ↑↓、PgUp/PgDn，補上寬版新增的鍵
+KEYS_WIDE = {'↑↓ ＊      捲回覆區（待決以外的頁，原本是換筆）': 'Tab ＊      換到下一頁',
+             'PgUp/PgDn ＊ 捲來龍去脈（原本只有待決有）': 'e ＊        展開來龍去脈（待決卡預設收起）'}
+NO_SCROLL = ('↑↓', 'PgUp/PgDn')  # 寬版內容都放得下，不用捲
+
 TALK = [
     [('  > ', 'inactive'), ('把 tux-sync 的測試補上，跑完 check-all 再合併', 'text')],
     [],
@@ -161,11 +188,26 @@ def compose(n, s):
         rows = rows[:1] + [[('步驟在右邊，不用捲', 'inactive', 'text')]] + rows[first_opt:]
     assert len(rows) <= BAND_N, f'{s["id"]}: 回覆區 {len(rows)} 列 > {BAND_N}'
     ix = [segs_of(x) for x in s['ix']]
+    more = []
+    if s['id'] in ABOVE:
+        k = next(i for i, r in enumerate(ix) if r[0][0].startswith('⋯ 上面還有'))
+        ix[k:k + 1] = [segs_of(x) for x in ABOVE[s['id']]]
+    if s['id'] in EXTRA:
+        assert ix[-1][0][0].startswith('⋯ 下面還有'), s['id']
+        ix.pop()
+        extra = [segs_of(x) for x in EXTRA[s['id']]]
+        room = BAND_N - len(ix)
+        if len(extra) > room:  # 放不下的移到 pane；左欄最後一列告訴你在右邊
+            room -= 1
+            ix += extra[:room] + [[(f'另 {len(extra) - room} 列在右邊「清單（續）」', 'inactive')]]
+            more = extra[room:]
+        else:
+            ix += extra
     assert len(ix) <= BAND_N, f'{s["id"]}: 清單 {len(ix)} 列'
 
     # ── 底部 band ──
     bl, br = 0, LEFT - 1
-    hints = list((s['hints'] or g.DEFAULT_HINTS[tab]))
+    hints = [h for h in (s['hints'] or g.DEFAULT_HINTS[tab]) if h[0] not in NO_SCROLL]
     if not any(k == 'Tab' for k, _ in hints):
         hints.append(g.H('Tab', '換頁'))
     foot = [(' ', 'inactive')] + [tuple(x[:2]) for x in g.hint_row(hints)] + [(' ', 'inactive')]
@@ -197,8 +239,10 @@ def compose(n, s):
     G_.box(0, dl, PROMPT_TOP - 1, dr, [(f' {tabname} · 詳情 ', 'text')],
            [(' ', 'inactive'), ('數字鍵', 'merged'), (' 跳到那一頁', 'inactive'), (' · ', 'inactive'), ('e', 'merged'), (' 展開來龍去脈 ', 'inactive')])
     top = [strip_row(r) for r in moved]
+    if more:
+        top += [[('清單（續）', 'inactive')]] + more + [[]]
     top += [segs_of(x) for x in s['pin']]
-    detail = g.render_items(s['detail'], PW)[0]
+    detail = g.render_items([KEYS_WIDE.get(x, x) if isinstance(x, str) else x for x in s['detail']], PW)[0]
     if tab == 2 and s['id'] not in ('2-E', '2-X') and any('來源' in ''.join(t[0] for t in r) or '背景' in ''.join(t[0] for t in r) for r in detail):
         # R7：卡的來源、背景、卡住收起，第一眼只看問題、選項、建議
         top.append([(f'來龍去脈 {len(detail)} 列 · 收起', 'inactive')])
