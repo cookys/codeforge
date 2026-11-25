@@ -27,7 +27,10 @@ ROLES = ('text', 'inactive', 'subtle', 'suggestion', 'success', 'error', 'warnin
 # 尺寸按鈕的寬、中、窄各對到一個。
 R1_OUT = os.path.join(HERE, 'out-r1')
 R1_SIZE = {'209x49': '200x50', '120x40': '120x40', '80x24': '80x24'}
-r1_steps = json.load(open(os.path.join(R1_OUT, 'flow.json')))['steps']
+# PM 01M8A18Z：r1-rev5 已退件（操作員 11-25：基底不是 7.4、有黃色標註框），R1 區先撤下；
+# 以操作員在用的版本為底重做後，把 R1_ON 改回 True 放回去。
+R1_ON = False
+r1_steps = json.load(open(os.path.join(R1_OUT, 'flow.json')))['steps'] if R1_ON else []
 
 flow = json.load(open(os.path.join(OUT, 'flow.json')))
 steps = flow['steps'] if isinstance(flow, dict) else flow
@@ -123,17 +126,17 @@ body[data-size] figure{{display:none}} body[data-size="209x49"] figure[data-size
 </style>
 <body data-size="120x40">
 <h1>Console 設計總覽</h1>
-<div class=mut>畫面內容 sha {SHA}；overview 本身在它之後的下一個 commit（檔案寫不進自己所在 commit 的 sha，交件訊息附那個 sha）· console 9 分頁 × 6 狀態加跨頁步驟，共 {len(steps)} 步；另加 R1 底部控制 {len(r1_steps)} 步；每步 3 尺寸 × 深淺兩色 · 步序與按鍵以 out/flow.json、out-r1/flow.json 為準</div>
-<nav><span>尺寸</span>{''.join(f'<button data-s="{z}">{z}</button>' for z in SIZES)}<span>色系</span><button data-t=dark>深</button><button data-t=light>淺</button><a href="#inv">盤點表</a><a href="#rev">審查</a><a href="#screens">畫面</a><a href="#r1">R1 底部控制</a></nav>
+<div class=mut>畫面內容 sha {SHA}；overview 本身在它之後的下一個 commit（檔案寫不進自己所在 commit 的 sha，交件訊息附那個 sha）· console 9 分頁 × 6 狀態加跨頁步驟，共 {len(steps)} 步{f'；另加 R1 底部控制 {len(r1_steps)} 步' if R1_ON else ''}；每步 3 尺寸 × 深淺兩色 · 步序與按鍵以 out/flow.json、out-r1/flow.json 為準</div>
+<nav><span>尺寸</span>{''.join(f'<button data-s="{z}">{z}</button>' for z in SIZES)}<span>色系</span><button data-t=dark>深</button><button data-t=light>淺</button><a href="#inv">盤點表</a><a href="#rev">審查</a><a href="#screens">畫面</a>{'<a href="#r1">R1 底部控制</a>' if R1_ON else ''}</nav>
 <h2 id=rev>審查紀錄</h2><div class=wrap><table><tr><th>輪次</th><th>審查結果</th><th>處置表</th></tr>{rev}</table></div>
 <p class=mut>檢查：check3 每張畫面（寬度、框線、R1 可按的鍵只在下半部、R6 選項字母順序、R7 band 禁字、R8 預覽和清單勾選一致、網址不斷開、[-] 在框內、兩色對比）全過；R6、R8 各有反向探針（對調 a/b、預覽多列沒選的卡都會被擋）。</p>
 <h2 id=inv>盤點表（{len(steps)} 步）</h2><div class=wrap><table><tr><th>步</th><th>id</th><th>分頁</th><th>狀態</th><th>標題</th><th>按鍵 → 下一步</th><th>缺源／過時</th></tr>{inv}</table></div>
 <h2 id=screens>畫面</h2>{body}
-<h2 id=r1>R1 底部控制（{len(r1_steps)} 步）</h2>
+{'' if not R1_ON else f'''<h2 id=r1>R1 底部控制（{len(r1_steps)} 步）</h2>
 <p class=mut>R1 計畫 rev4 的示意稿 r1-rev5（pane-history/drafts/r1-rev5），疊在現行 live 實拍上畫：pane 的可按鍵只在下半部；放不下時依高度收成較少的列，不擋 band。
 三種尺寸是 rev5 量過的 200×50、120×40、80×24（尺寸按鈕寬、中、窄各對一個）。實拍部分（宿主對話區、現行 band、宿主的 [-]）保留原色，不算設計稿；
 check3 只判設計稿畫的格子，24 張全過；實拍格子的對比照樣量、列在報告裡不算失敗：現行 band 的「21 ▴收合」淺色 4.40、分隔線「│」淺色 2.19 和深色 2.6，是 AP 現行 band 的顏色，不在這份 R1 稿的範圍。和 rev5 原稿唯一的差異：卡片題目列改用 text 色加粗，原本的 claude 色在淺色主題對比只有 3.15（文字要 4.5），rev5 已同步改。</p>
-{r1_body}
+{r1_body}'''}
 <script>
 const D={json.dumps(DATA, ensure_ascii=False, separators=(',', ':'))};
 const RL={json.dumps(list(ROLES))};
