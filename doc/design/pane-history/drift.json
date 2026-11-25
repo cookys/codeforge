@@ -5,15 +5,18 @@
     "sha": "04c30aa2e、85898a8d4、ed99c0d5a（皆 2026-11-25）",
     "relation": "新增功能，v7.4 設計稿沒有此區塊",
     "basis": "commit 訊息；設計稿 S1–S3 無此列",
-    "rules": ["R1", "R7"],
+    "rules": [
+      "R1",
+      "R7"
+    ],
     "reason": "違反 R1（操作區塊移入 body 而非固定在底部操作區）與 R7（增加第一眼非問題／選項／建議的區塊）。",
     "before": {
       "label": "缺圖",
       "reason": "無法證實（repo 內無前圖）"
     },
     "after": {
-      "label": "codeforge 重拍（fleet 附件）",
-      "reason": "無法證實（非 repo 檔）"
+      "label": "後：codeforge 沙箱重拍 209x49（AP 36766380a，含等你動手卡）",
+      "path": "shots/drift-1-after-209x49.png"
     }
   },
   {
@@ -22,7 +25,10 @@
     "sha": "549488b37（2026-11-25）",
     "relation": "偏離 mods/live/docs/v74/S3.txt（稿內有兩行此列）；有操作員裁示（codeforge 裁 B，單 01M8879S），已同步改稿與 locale",
     "basis": "commit 訊息",
-    "rules": ["R2", "R7"],
+    "rules": [
+      "R2",
+      "R7"
+    ],
     "reason": "R2 偏離（已裁 B，保留：依 R7 省略空佔位列以減少無用文字）。",
     "before": {
       "label": "S3.txt 舊版（702c937e6）",
@@ -39,7 +45,9 @@
     "sha": "4ffa5392b（2026-11-25）",
     "relation": "偏離設計稿固定欄寬，來源是 PM／codeforge 驗收意見；稿內欄寬是否另有規定：無法證實",
     "basis": "commit 訊息",
-    "rules": ["R2"],
+    "rules": [
+      "R2"
+    ],
     "reason": "違反 R2（偏離 v7.4 設計稿固定欄寬，且稿內欄寬是否另有規定無法證實）。",
     "before": {
       "label": "缺圖",
@@ -56,7 +64,10 @@
     "sha": "引入於 ada9414e0 一帶（11-25），修於 36766380a",
     "relation": "迴歸（非設計取捨）：與 frame 的 fullWidthDecide 不一致",
     "basis": "本單回歸測試 decide.test.ts（三尺寸，對舊碼紅）",
-    "rules": ["R2", "R5"],
+    "rules": [
+      "R2",
+      "R5"
+    ],
     "reason": "違反 R2（破壞核准的雙欄版面框架）與 R5（迴歸：未經寬度與框線對齊腳本攔截）。",
     "before": {
       "label": "前：codeforge sbs-120x40.png",
@@ -73,7 +84,10 @@
     "sha": "現行 36766380a 仍有，修正在單 01M89A37AM 第二輪",
     "relation": "迴歸，PM 已裁示收成一行摘要",
     "basis": "PM 裁示 01M89BCVGB…",
-    "rules": ["R1", "R7"],
+    "rules": [
+      "R1",
+      "R7"
+    ],
     "reason": "違反 R1（短卡選項被擠到需要捲動）與 R7（迴歸，PM 裁收成一行摘要以保留第一眼可見資訊）。",
     "before": {
       "label": "前：codeforge sbs-80x24.png",
