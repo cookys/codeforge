@@ -803,3 +803,30 @@ fn shape_c_record_says_no_usage_data_while_an_aged_out_record_keeps_dropped() {
     assert_eq!(state_of_provider("tok"), "no_usage");
     assert_eq!(state_of_provider("aged"), "dropped");
 }
+
+#[test]
+fn cjk_account_rows_fit_columns() {
+    let t = tempfile::tempdir().unwrap();
+    put_view(
+        t.path(),
+        "claude",
+        "work",
+        rec(
+            "claude",
+            "中文（測試）mixed",
+            "L3",
+            json!({
+                "windows": [win("rolling_5h", json!(0.62), N - 60, json!({}))]
+            }),
+        ),
+    );
+    for cols in [40, 60, 80, 100] {
+        let output = text_at(t.path(), cols);
+        for line in output.lines() {
+            assert!(
+                unicode_width::UnicodeWidthStr::width(line) <= cols,
+                "{cols}: {line:?}"
+            );
+        }
+    }
+}

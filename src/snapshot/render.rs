@@ -295,6 +295,43 @@ mod tests {
         }
     }
 
+    // Check the border's cell position, including a wide glyph crossing the target.
+    fn aligned_box_row(row: &str, right_col: usize) -> bool {
+        let mut chars = row.chars();
+        if !matches!(chars.next(), Some('║' | '╔' | '╠' | '╚')) {
+            return false;
+        }
+        let mut col = 1;
+        for c in chars {
+            if matches!(c, '║' | '╗' | '╣' | '╝') {
+                return col == right_col;
+            }
+            col += UnicodeWidthStr::width(c.encode_utf8(&mut [0; 4]));
+            if col > right_col {
+                return false;
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn cjk_card_borders_and_negative_controls() {
+        let mut data = sample_data();
+        data.pet.as_mut().unwrap().name = "專案（測試）mixed中文".into();
+        let out = render(&data);
+        for line in out.lines() {
+            assert!(aligned_box_row(line, CARD_WIDTH + 1), "{line:?}");
+        }
+        let content = "中文";
+        let wrong = format!(
+            "║{content}{}║",
+            " ".repeat(CARD_WIDTH - content.chars().count())
+        );
+        assert!(!aligned_box_row(&wrong, CARD_WIDTH + 1));
+        let split = format!("║{}中║", " ".repeat(CARD_WIDTH - 1));
+        assert!(!aligned_box_row(&split, CARD_WIDTH + 1));
+    }
+
     #[test]
     fn render_contains_pet_name_and_date() {
         let out = render(&sample_data());
