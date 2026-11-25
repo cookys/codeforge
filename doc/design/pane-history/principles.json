@@ -1,0 +1,319 @@
+[
+  {
+    "id": "P01",
+    "rule": "操作區（分頁、熱鍵、選項、送出）固定在下方、靠近 prompt，資訊往上長；上半部只放不可點的分類標題。這一條優先於 ux-v7 原本把選單列放在 band 上方的做法。",
+    "quotes": [
+      {
+        "date": "2026-11-05",
+        "quote": "我覺得 codeforge / autopilot 的 mod 長法應該是選單操作區在下，然後資訊往上長，才能固定操作區，不用一直移動視覺跟控制介面？",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:31"
+      }
+    ],
+    "versions": [
+      "V01",
+      "V02",
+      "V03",
+      "V04",
+      "V05",
+      "V06",
+      "V07",
+      "V08",
+      "V09",
+      "V10",
+      "V11",
+      "V12",
+      "V13",
+      "V14",
+      "V15",
+      "V16",
+      "V17",
+      "V18",
+      "V19",
+      "V20",
+      "V21",
+      "V22",
+      "V23",
+      "V24",
+      "V25",
+      "V26",
+      "V27"
+    ],
+    "in_R": "R1",
+    "status": "有原話",
+    "sources": [
+      "doc/design/pane-design-language.md:12"
+    ]
+  },
+  {
+    "id": "P02",
+    "rule": "從核准的 ux-v7 / v7.4 框架改進，不重新設計。偏離要列偏離清單並說明原因。",
+    "quotes": [
+      {
+        "date": "2026-11-20",
+        "quote": "pane must be improved from the approved ux-v7 page, not redesigned",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:172"
+      }
+    ],
+    "versions": [
+      "V08",
+      "V09",
+      "V10",
+      "V11",
+      "V12",
+      "V13",
+      "V14",
+      "V15",
+      "V16",
+      "V17",
+      "V18",
+      "V19",
+      "V20",
+      "V21",
+      "V22",
+      "V23",
+      "V24",
+      "V25",
+      "V26",
+      "V27"
+    ],
+    "in_R": "R2",
+    "status": "有原話",
+    "sources": [
+      "doc/design/pane-design-language.md:13"
+    ]
+  },
+  {
+    "id": "P03",
+    "rule": "底部 band 左右分區、照重要性表排、收起時一行；展開鍵位置固定，不和 Claude Code 的 `[-]` 衝突。",
+    "quotes": [
+      {
+        "date": "未記錄",
+        "quote": "最下面 status band 可以變成左右設計然後把 UI 調好看一點、分析哪些重要放出來(縮起來維持一行) 然後後面展開縮起來固定位置不要跟 claude code [-] 衝突，然後用長一點",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:206"
+      }
+    ],
+    "versions": [],
+    "in_R": "R3",
+    "status": "有原話",
+    "sources": [
+      "doc/design/pane-design-language.md:14"
+    ]
+  },
+  {
+    "id": "P04",
+    "rule": "band 和右側 Pane 一起設計：band 是底部操作熱區，Pane 負責瀏覽和細節，兩者共用狀態；forge-stats 併入，不開第二個 pane。",
+    "quotes": [
+      {
+        "date": "2026-11-05",
+        "quote": "codeforge 那邊不是應該也整合 forge-stat 那欄整合進去再一起就好? 你重做了一個新的?",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:35"
+      }
+    ],
+    "versions": [
+      "V20"
+    ],
+    "in_R": "R4",
+    "status": "有原話",
+    "sources": [
+      "doc/design/pane-design-language.md:15"
+    ]
+  },
+  {
+    "id": "P05",
+    "rule": "CJK 算 2 格、框線對齊、深淺雙主題對比，都用腳本驗，不靠肉眼。",
+    "quotes": [],
+    "versions": [
+      "V08",
+      "V09",
+      "V10",
+      "V11",
+      "V12",
+      "V13",
+      "V14",
+      "V15",
+      "V16",
+      "V17",
+      "V18",
+      "V19",
+      "V20",
+      "V21",
+      "V22",
+      "V23",
+      "V24",
+      "V25",
+      "V26",
+      "V27"
+    ],
+    "in_R": "R5",
+    "status": "缺出處",
+    "sources": [
+      "doc/design/pane-design-language.md:16"
+    ]
+  },
+  {
+    "id": "P06",
+    "rule": "選項鍵照字母對應：按 a 一定選 A。",
+    "quotes": [],
+    "versions": [
+      "V26"
+    ],
+    "in_R": "R6",
+    "status": "缺出處",
+    "sources": [
+      "doc/design/pane-design-language.md:17"
+    ]
+  },
+  {
+    "id": "P07",
+    "rule": "pane 要少字：每張卡第一眼只看得到問題、選項和建議，其他資訊（sha、來源、背景、歷史）收起來，要看再展開。",
+    "quotes": [],
+    "versions": [],
+    "in_R": "R7",
+    "status": "缺出處",
+    "sources": [
+      "doc/design/pane-design-language.md:18"
+    ]
+  },
+  {
+    "id": "P08",
+    "rule": "v7.5 退件",
+    "quotes": [
+      {
+        "date": "未記錄",
+        "quote": "你這板很難看也很難用吧? 叫他退回去給 fable / astra 評論怎樣修改? 照本來的 v7.4 設計方式去擴充? 這完全沒考慮操作跟視覺動線",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:209"
+      }
+    ],
+    "versions": [
+      "V20"
+    ],
+    "in_R": null,
+    "status": "有原話"
+  },
+  {
+    "id": "P09",
+    "rule": "UI/UX 評審維度",
+    "quotes": [
+      {
+        "date": "未記錄",
+        "quote": "不是只有視覺動線根操作動線、包含 UIUX、認知負擔、資訊階層、易記易用易學、 fancy TUI ..etc , 本來那版的框架底不錯為什麼改成這樣?",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:210"
+      }
+    ],
+    "versions": [
+      "V20"
+    ],
+    "in_R": null,
+    "status": "有原話"
+  },
+  {
+    "id": "P10",
+    "rule": "收合鈕左右裝飾",
+    "quotes": [
+      {
+        "date": "未記錄",
+        "quote": "也許 bottom-pane folding 按鈕可以做成左右 deco , 兩邊都可以 fold/unfold ? 記得補晚上跟你說的 scroll and prev/next 在內藍隊畫框得左右邊線?",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:218"
+      }
+    ],
+    "versions": [],
+    "in_R": null,
+    "status": "有原話"
+  },
+  {
+    "id": "P11",
+    "rule": "雙欄退化",
+    "quotes": [
+      {
+        "date": "2026-11-23",
+        "quote": "2026-11-23T04:4xZ task:01M837HGTX00DTG0RGZKT2QRDS OPERATOR asked for A' layout + two-column C with a degrade rule; PM rule: two equal columns when band bodyColumns >= 83 (>= 40 each + 3 gutter, 20 CJK chars per line), else single column, +-2 hysteresis, maxRows < 10 -> one-line card list; replaces current code threshold cols<100 with 28/69 split; at 80x24 the inline pane yields so the band keeps at least one pending row; re-render 200/160/120/80",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:185"
+      }
+    ],
+    "versions": [
+      "V21"
+    ],
+    "in_R": null,
+    "status": "缺出處"
+  },
+  {
+    "id": "P12",
+    "rule": "高度依內容",
+    "quotes": [
+      {
+        "date": "未記錄",
+        "quote": "task:01M7TWJYTYD4ZCZZ1ZXNXZE4QA pane design must follow TUX guidelines v1.4 (the O4 band-shell guideline): compliance table per rule, deviations listed for operator; choice 12 reverted to hot-zone bottom anchoring with content-driven height (cap 0.6 lifted, up to full height). Operator live question 11-20 07:4x.",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:236"
+      }
+    ],
+    "versions": [],
+    "in_R": null,
+    "status": "缺出處"
+  },
+  {
+    "id": "P13",
+    "rule": "焦點不亂跳",
+    "quotes": [
+      {
+        "date": "2026-11-05",
+        "quote": "- 2026-11-05T23:15:12Z OPERATOR asked panel integration status + complaint: answering several cards in a row in the old panel makes focus/visual flow jump. PM ERROR: codeforge sat at 'done, awaiting acceptance' since ~11-05 afternoon, PM never chased (no watch item). Asked codeforge (30 min): panel-state/prompt-tail state + what awaits PM, preview ETA (d-588310dd), diagnose consecutive-answer jumping and whether new panel fixes it. GPU-bench host data-disk cleanup list received: 24->39 GiB, worktrees removed (clean, merged), 99 old review dirs archived to NAS with verify, all within owner 10-23 authority; v3c resealing.",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:45"
+      }
+    ],
+    "versions": [
+      "V21"
+    ],
+    "in_R": null,
+    "status": "缺出處"
+  },
+  {
+    "id": "P14",
+    "rule": "答題區順序",
+    "quotes": [],
+    "versions": [],
+    "in_R": null,
+    "status": "缺出處"
+  },
+  {
+    "id": "P15",
+    "rule": "寬螢幕偵測",
+    "quotes": [],
+    "versions": [],
+    "in_R": null,
+    "status": "缺出處"
+  },
+  {
+    "id": "P16",
+    "rule": "黃框",
+    "quotes": [],
+    "versions": [],
+    "in_R": null,
+    "status": "缺出處"
+  },
+  {
+    "id": "P17",
+    "rule": "太多字",
+    "quotes": [],
+    "versions": [],
+    "in_R": null,
+    "status": "缺出處"
+  },
+  {
+    "id": "P18",
+    "rule": "CJK 行高",
+    "quotes": [],
+    "versions": [],
+    "in_R": null,
+    "status": "缺出處"
+  },
+  {
+    "id": "P19",
+    "rule": "等你動手",
+    "quotes": [],
+    "versions": [
+      "V26"
+    ],
+    "in_R": null,
+    "status": "缺出處"
+  }
+]

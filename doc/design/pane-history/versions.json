@@ -1,0 +1,649 @@
+[
+  {
+    "id": "V01",
+    "name": "v0 live mod 初版（runs-live pane + band）",
+    "plain": "最早的面板",
+    "ap_sha": "187db51a14186c696a1d99236487ae712297a679",
+    "date": "2026-10-04",
+    "kind": "release",
+    "changed": "live mod 首次出現：pane 與 band 讀 runs-live 快照",
+    "principles": [
+      "P01"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:21",
+      "無現成實拍"
+    ],
+    "lineage_sha": "187db51a"
+  },
+  {
+    "id": "V02",
+    "name": "P7 一行 band + 八分頁 panel",
+    "plain": "一行帶與八分頁",
+    "ap_sha": "d15858381ba7a7f49de3060460643a7bda8fde95",
+    "date": "2026-10-09",
+    "kind": "release",
+    "changed": "一行 band（slot 文法、寬度表、ⓘ）與八分頁面板",
+    "principles": [
+      "P01"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:22",
+      "無現成實拍"
+    ],
+    "lineage_sha": "d1585838"
+  },
+  {
+    "id": "V03",
+    "name": "TUI v2 資訊圖 band + 六分頁",
+    "plain": "資訊圖與六分頁",
+    "ap_sha": "4ca4f9e7ae212d0293844e3a1863b051b9a57c18",
+    "date": "2026-10-10",
+    "kind": "release",
+    "changed": "資訊圖 band、六分頁 panel、en/zh-TW 字串表",
+    "principles": [
+      "P01"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:23",
+      "無現成實拍"
+    ],
+    "lineage_sha": "4ca4f9e7"
+  },
+  {
+    "id": "V04",
+    "name": "P0–P5 pane 設計系統（ui.ts 詞彙、字形、dispatch/usage/now/殘留分頁）",
+    "plain": "面板設計系統",
+    "ap_sha": "7d3b63d63a82d47f52c4e067c52ba9b552ddd793",
+    "date": "2026-10-13 ~ 10-14",
+    "kind": "release",
+    "changed": "pane 設計語彙、語意色票、單一顏色單一意義 lint",
+    "principles": [
+      "P01"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:24",
+      "無現成實拍"
+    ],
+    "lineage_sha": "8ee171c9 .. 7d3b63d6"
+  },
+  {
+    "id": "V05",
+    "name": "待決議事項（decision/2、decide 分頁、選了就送）",
+    "plain": "待決分頁與送出",
+    "ap_sha": "07f6956edede75550ff268fbdfb172d431e284a8",
+    "date": "2026-10-14 ~ 10-15",
+    "kind": "release",
+    "changed": "待決卡分頁與 pick-and-submit",
+    "principles": [
+      "P01"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:25",
+      "無現成實拍"
+    ],
+    "lineage_sha": "eb9f702e / 07f6956e"
+  },
+  {
+    "id": "V06",
+    "name": "BL-0352 band 列帶分頁",
+    "plain": "狀態帶含分頁",
+    "ap_sha": "af43a08442ffd3a391ab0b2028053b2782cabd48",
+    "date": "2026-10-31",
+    "kind": "release",
+    "changed": "band 列帶分頁，展開在規線下；forge、待決分頁上 band",
+    "principles": [
+      "P01"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:26",
+      "無現成實拍"
+    ],
+    "lineage_sha": "af43a0844"
+  },
+  {
+    "id": "V07",
+    "name": "C1/G33a 艦隊分頁與 autopilot.fleet",
+    "plain": "艦隊分頁",
+    "ap_sha": "413081833f38aee03aa34f8520186c5c12bc9430",
+    "date": "2026-11-03",
+    "kind": "release",
+    "changed": "Fleet 分頁；band 第二列給 forge-stats",
+    "principles": [
+      "P01"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:27",
+      "無現成實拍"
+    ],
+    "lineage_sha": "6a9d4355 / 413081833"
+  },
+  {
+    "id": "V08",
+    "name": "ux-v7（O4 band shell）",
+    "plain": "左側卡片清單",
+    "ap_sha": "36158d869222698bd3c0028bb078d9a903e74125",
+    "date": "2026-11-06~07",
+    "kind": "release",
+    "changed": "依 codeforge ux-v7 畫 O4 shell：五個寬度檔、左側卡片清單、0/7/8/9 快速列",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:28",
+      "無現成實拍"
+    ],
+    "lineage_sha": "36158d86（merge；實作 ba84918e/236f394a）"
+  },
+  {
+    "id": "V09",
+    "name": "操作員 console 模式（指揮/團隊/額度/主機/本席）",
+    "plain": "指揮台五分頁",
+    "ap_sha": "609ad4764609f5977cc4808a4201b2b895d504a1",
+    "date": "2026-11-09",
+    "kind": "release",
+    "changed": "有 console.json 時 band/pane 五分頁；fleet.console/1",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:29",
+      "無現成實拍"
+    ],
+    "lineage_sha": "609ad476"
+  },
+  {
+    "id": "V10",
+    "name": "band 一行化",
+    "plain": "狀態帶縮成一行",
+    "ap_sha": "575190ad358514c3ae149ac4a47f3f2b4ac366a6",
+    "date": "2026-11-13",
+    "kind": "release",
+    "changed": "band 一行畫艦隊計數與寵物；forge-stats 第二列退場（11-17 後來改為 statusline 一行、不畫寵物，PM 01M7MEY1）",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:30",
+      "無現成實拍"
+    ],
+    "lineage_sha": "575190ad"
+  },
+  {
+    "id": "V11",
+    "name": "live-20261113-1..5 / 1116-1 / 1117-1..3（最後一個 live tag）",
+    "plain": "十一月線上版",
+    "ap_sha": "faa6b4cb6f17f9e5dba44d1181ae1547f05add8f",
+    "date": "2026-11-13 ~ 11-17",
+    "kind": "release",
+    "changed": "週期性 live pin，內容為上面各項加 band 事實檔拆分 bb8ea1b6",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:31",
+      "無現成實拍"
+    ],
+    "lineage_sha": "faa6b4cb（1117-3）"
+  },
+  {
+    "id": "V12",
+    "name": "pane 批 1（S0–S4 固定高度框架、決策/艦隊/現況/額度頁）",
+    "plain": "第一批四個框頁",
+    "ap_sha": "e0acf4e521f2ea57a169ca970938c2abc49b94f7",
+    "date": "2026-11-18",
+    "kind": "release",
+    "changed": "四個有框頁面進 pane；r4 回到 r3 基線 15 失敗；後來上線",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:32",
+      "無現成實拍（packet 內文字截圖在 /home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r1-packet.md，非 .ans）"
+    ],
+    "lineage_sha": "083cf2e9（r4 merge）；整合 e0acf4e5"
+  },
+  {
+    "id": "V13",
+    "name": "pane 批 2 r1（派工/審查/殘留/花費頁）",
+    "plain": "第二批第一輪",
+    "ap_sha": "daedf7fbd824ef6f3e807ebc2cdfe0a2b846cb54",
+    "date": "2026-11-18",
+    "kind": "rejected",
+    "changed": "評審：carbon 4、astra 4，未過",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:33",
+      "/home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r1-packet.md（文字）；原截圖不在 repo"
+    ],
+    "lineage_sha": "daedf7fb（tree=13a61c0d）"
+  },
+  {
+    "id": "V14",
+    "name": "批 2 r2",
+    "plain": "第二批第二輪",
+    "ap_sha": "cc9bde3dbcd35e64215bf0befc572036d4430f42",
+    "date": "2026-11-18",
+    "kind": "rejected",
+    "changed": "carbon 5、astra 5，未過（carbon 第一次逾時，30 分重派）",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:34",
+      "/home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r2-packet.md"
+    ],
+    "lineage_sha": "cc9bde3d"
+  },
+  {
+    "id": "V15",
+    "name": "批 2 r3（最後一輪）",
+    "plain": "第二批第三輪",
+    "ap_sha": "91bd6682d64a5c9b7dc374f0771a85210365bf92",
+    "date": "2026-11-18",
+    "kind": "rejected",
+    "changed": "carbon 7、astra 5，未過，交 PM 裁決",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:35",
+      "/home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r3-packet.md"
+    ],
+    "lineage_sha": "91bd6682"
+  },
+  {
+    "id": "V16",
+    "name": "批 2 r4 = pane b2（PM 裁決 A、點驗後可 pin）",
+    "plain": "第二批定版",
+    "ap_sha": "98cf58d03490ad8556f028c36b0400ca76bc8c79",
+    "date": "2026-11-18",
+    "kind": "release",
+    "changed": "R4-1 修復指令移到 band 第二列；W1 真機量測結案；keyprobe 6/6",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:36",
+      "/home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r4-shots/（S1/S4/S5 的 80x16~160x40 文字檔，約 60 個；拍攝 sha 以 r4-spot.md 為準，推測 98cf58d0）"
+    ],
+    "lineage_sha": "98cf58d0"
+  },
+  {
+    "id": "V17",
+    "name": "v7.4 契約與頁面（ux-v7.4：頁籤列、鍵位、現況/待決/待辦/派工/審查/花費/殘留/艦隊）",
+    "plain": "分頁列與九頁",
+    "ap_sha": "572f45f9d7fc2a943a366734612ab3fe9f1aebdb",
+    "date": "2026-11-20",
+    "kind": "release",
+    "changed": "v7.4 契約、tab strip、help、待決 S3 與待辦 S9 等頁分頭實作後合併",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:37",
+      "/home/team/projects/codeforge/doc/design/ux-gate/v74/design-S2..S10.txt、design-narrow.txt（設計稿，不是實拍；入庫 bc9ff3c）"
+    ],
+    "lineage_sha": "702c937e → ca9206d3/1955ab81/96a9bb8f/49a4787d/572f45f9"
+  },
+  {
+    "id": "V18",
+    "name": "v7.4 band host（全寬框、頁籤列、再一行 band）",
+    "plain": "全寬面板框",
+    "ap_sha": "402ae1d3b2ccdefed678ac9240707027aa858768",
+    "date": "2026-11-20",
+    "kind": "release",
+    "changed": "pane 由 band host 畫成全寬框；頂端錨定、熱鍵 1-9、待決槽、框高上限 27",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:38",
+      "無現成實拍"
+    ],
+    "lineage_sha": "3727e110 / 402ae1d3"
+  },
+  {
+    "id": "V19",
+    "name": "v7.4 r4–r11 gate 修正（grok 實作）",
+    "plain": "按鍵與預覽修正",
+    "ap_sha": "e027209e40848ca97c82085e8ae402718052f1f5",
+    "date": "2026-11-20 ~ 11-21",
+    "kind": "release",
+    "changed": "鍵序、s 預覽/y 確認、border 提示、花費 24h 圖標單位、嚴審 carbon+astra",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:39",
+      "無現成實拍"
+    ],
+    "lineage_sha": "db0da9e7 .. e027209e（r11 merge）"
+  },
+  {
+    "id": "V20",
+    "name": "v7.5 band + host Pane",
+    "plain": "底部帶與右側面板",
+    "ap_sha": "a5888833a95b327c7d6eb3110ad26568d0fe6ad1",
+    "date": "2026-11-21~22",
+    "kind": "rejected",
+    "changed": "待決卡改由底部 band 和右側 host Pane 處理；/reload-plugins 後重開；AUTOPILOT_LIVE_V75=0 退回 v7.4 框",
+    "principles": [
+      "P01",
+      "P02",
+      "P05",
+      "P04",
+      "P08",
+      "P09"
+    ],
+    "operator_feedback": [
+      {
+        "date": "未記錄",
+        "quote": "你這板很難看也很難用吧? 叫他退回去給 fable / astra 評論怎樣修改? 照本來的 v7.4 設計方式去擴充? 這完全沒考慮操作跟視覺動線",
+        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:209"
+      }
+    ],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:40",
+      "/tmp/claude-1001/-home-team-projects-codeforge/fe603ac8-169c-4053-ac1c-e951d9ac9f25/scratchpad/mockup2/live-shots/（fs、normal；拍攝 sha 未記錄）、/tmp/claude-1001/-home-team-projects-codeforge/fe603ac8-169c-4053-ac1c-e951d9ac9f25/scratchpad/mockup2/live-path/"
+    ],
+    "lineage_sha": "a5888833（merge；實作 5e3dfcc6）"
+  },
+  {
+    "id": "V21",
+    "name": "待決頁捲動／C 雙欄／tok-per-agent",
+    "plain": "待決雙欄與個別速度",
+    "ap_sha": "734750b70f304962831f973c66d57bde18e420ac",
+    "date": "2026-11-22~23",
+    "kind": "release",
+    "changed": "pending 卡捲動鍵；C 風格（cstyle）master/detail 雙欄；forge 頁每 agent tok/s",
+    "principles": [
+      "P01",
+      "P02",
+      "P05",
+      "P11",
+      "P13"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:41",
+      "/tmp/claude-1001/-home-team-projects-codeforge/fe603ac8-169c-4053-ac1c-e951d9ac9f25/scratchpad/mockup2/live-path/{80x24,120x40,200x50}/P0..P9（.ans；mockup 路徑，拍攝 sha 未記錄）"
+    ],
+    "lineage_sha": "443278024（codex）..734750b7"
+  },
+  {
+    "id": "V22",
+    "name": "band 單列 v7.6 batch（band-onerow）與 band-layout 評審 r1–r6",
+    "plain": "狀態帶固定單列",
+    "ap_sha": "885450642458da1b200ac54f9c88e87fa40d9832",
+    "date": "2026-11-23",
+    "kind": "release",
+    "changed": "單列 band 排版；carbon r1–r4、codex r1–r6 評審",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:42",
+      "/home/team/projects/codeforge/doc/design/ux-gate/band-layout/*.md（評審文字，非 .ans）；原實拍 r40-r47-band 在別的 scratchpad，已不在"
+    ],
+    "lineage_sha": "885450642、41e59d84 …（fix1–fix10，agy）"
+  },
+  {
+    "id": "V23",
+    "name": "v7.5 殼退役 / 字寬 lint",
+    "plain": "移除舊殼與修字寬",
+    "ap_sha": "c7110397610ea39cd3593d4409cc7a8b670b4e1f",
+    "date": "2026-11-23",
+    "kind": "release",
+    "changed": "移除 v75 殼空檔；歧義寬度與 emoji 字形清出 pane，加寬度 lint",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:43",
+      "無現成實拍"
+    ],
+    "lineage_sha": "965fa3a9 / c7110397"
+  },
+  {
+    "id": "V24",
+    "name": "trace s1–s4（agent 活動軌跡）",
+    "plain": "活動軌跡",
+    "ap_sha": "9b97cca62e6aad61e7ee108a2068ed75c2d53962",
+    "date": "2026-11-23",
+    "kind": "release",
+    "changed": "trace 相關頁；細節未逐項讀",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:44",
+      "無現成實拍"
+    ],
+    "lineage_sha": "f93b9649/a34fec0e/9b97cca6"
+  },
+  {
+    "id": "V25",
+    "name": "問題帶（asks band）+ decide 空狀態",
+    "plain": "問題帶與空狀態",
+    "ap_sha": "7517b7beefe6f63612e474dec67993c2e648fbd0",
+    "date": "2026-11-24",
+    "kind": "release",
+    "changed": "框上方 askRows，顯示 pm-ask 開放問題",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:45",
+      "無現成實拍"
+    ],
+    "lineage_sha": "7d261093 / 7517b7be"
+  },
+  {
+    "id": "V26",
+    "name": "R6 字母鍵 + 等你動手區塊（= live 現行畫面）",
+    "plain": "現行 R6 字母鍵",
+    "ap_sha": "6db7e47eaff100d3281ca5b865d3cef69941e5db",
+    "date": "2026-11-25",
+    "kind": "release",
+    "changed": "選項鍵跟隨選項字母；待決頁顯示等操作員自己動手的卡",
+    "principles": [
+      "P01",
+      "P02",
+      "P05",
+      "P06",
+      "P19"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:46",
+      "無現成實拍"
+    ],
+    "lineage_sha": "6db7e47e"
+  },
+  {
+    "id": "V27",
+    "name": "R1 U1 frame（進行中）",
+    "plain": "R1 新框試做",
+    "ap_sha": "ca0e0827",
+    "date": "2026-11-25",
+    "kind": "release",
+    "changed": "feat/r1-u1-frame，尚未合 develop",
+    "principles": [
+      "P01",
+      "P02",
+      "P05"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:47",
+      "無現成實拍"
+    ],
+    "lineage_sha": "ca0e0827"
+  }
+]
