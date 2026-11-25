@@ -1,8 +1,10 @@
-# 全機隊 transcript 知識管線（計畫第 4 稿，第 1 代評審已併入；plan loop ≤2 代）
+# 全機隊 transcript 知識管線（計畫第 4 稿，已凍結）
 
 > 操作員卡 d-8046739d（2026-11-23，答 A）願景：「從 transcript 提取知識，變成全機隊共用的技能、知識、SOP」。PM 單 01M836C68Y0EC65D15WWNKNMKJ。
 > 狀態：第 4 稿（11-23 起草，PM 裁定先做不依賴 autopilot 的部分；plan loop 11-26，≤2 代，第二席非 Claude）。本文件不授權任何讀取別席 transcript；讀取範圍見第 7 節，授權由 PM 另開卡。
 > 盤點依據：`doc/plans/2026-11-23-knowledge-inventory.md`。第 1 代評審補出盤點漏列的零件：codeforge 的 `session-digest`（全域 SessionEnd／PreCompact 已在跑）、`ingest-digests`、`absorb`；本稿第 3 節已補。
+
+> **凍結**（PM 裁定 A，11-26，msg 01M8AC5B）：兩代 plan loop＋repair-recheck，補修 2 項經 PM 認可。附帶限制：T3 的跨席審查等於授權給別的席位，屬操作員卡範圍；輪到 T3 時先把席位白名單與理由交 PM 開卡，不自己先動；T4 寫入器的白名單也等那張卡答覆後才生效。
 
 ## 1. 目標與不做的事
 
