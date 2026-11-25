@@ -16,12 +16,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # 也就是最後一個改到 out/、gen.py、review/ 的 commit。交件時報這個 sha（PM 01M89XK1）。
 import subprocess
 SHA = sys.argv[3] if len(sys.argv) > 3 else subprocess.run(
-    ['git', 'log', '-1', '--format=%h', '--abbrev=12', '--', 'out', 'gen.py', 'review'],
+    ['git', 'log', '-1', '--format=%h', '--abbrev=12', '--', 'out', 'gen.py', 'review', 'out-r1', 'r1_export.py',
+     '../../pane-history/drafts/r1-rev5'],
     cwd=HERE, capture_output=True, text=True, check=True).stdout.strip()
 SIZES = ('209x49', '120x40', '80x24')
 THEMES = json.load(open(os.path.join(HERE, '..', 'brief', 'tools', 'cc-themes.json')))
 LIGHT, DARK = THEMES[0], THEMES[2]  # cc-themes.json 順序：light、light-daltonized、dark、dark-daltonized
-ROLES = ('text', 'inactive', 'subtle', 'suggestion', 'success', 'error', 'warning', 'merged', 'claude', 'promptBorder')
+ROLES = ('text', 'inactive', 'subtle', 'suggestion', 'success', 'error', 'warning', 'merged', 'claude', 'promptBorder', 'remember')
+# R1 底部控制（PM 01M8A05M）：r1-rev5 的 8 步，由 r1_export.py 轉成 out-r1/。rev5 疊在實拍上，尺寸是 200x50／120x40／80x24，
+# 尺寸按鈕的寬、中、窄各對到一個。
+R1_OUT = os.path.join(HERE, 'out-r1')
+R1_SIZE = {'209x49': '200x50', '120x40': '120x40', '80x24': '80x24'}
+r1_steps = json.load(open(os.path.join(R1_OUT, 'flow.json')))['steps']
 
 flow = json.load(open(os.path.join(OUT, 'flow.json')))
 steps = flow['steps'] if isinstance(flow, dict) else flow
@@ -46,10 +52,10 @@ def cells(text):
 DATA = {}
 
 
-def screen(size, n):
-    rows = json.load(open(os.path.join(OUT, f'{size}-s{n}', 'roles.json')))
-    DATA[f'{n}/{size}'] = [[[t, ROLES.index(fg) if fg in ROLES else 0] for t, fg, _bg in r] for r in rows]
-    return f'<div class=ph data-k="{n}/{size}"></div>'
+def screen(size, n, base=OUT, tag=''):
+    rows = json.load(open(os.path.join(base, f'{size}-s{n}', 'roles.json')))
+    DATA[f'{tag}{n}/{size}'] = [[[t, ROLES.index(fg) if fg in ROLES else 0] for t, fg, _bg in r] for r in rows]
+    return f'<div class=ph data-k="{tag}{n}/{size}"></div>'
 
 
 def role_css(theme):
@@ -89,6 +95,10 @@ body = ''.join(
     f' <span class=mut>按 {html.escape(str(s.get("key_to_next", "")))} → {s.get("next") or "—"}</span></h3>'
     + ''.join(f'<figure data-size="{z}"><figcaption>{z}</figcaption>{screen(z, s["step"])}</figure>' for z in SIZES) + '</section>'
     for s in steps)
+r1_body = ''.join(
+    f'<section id="r{s["step"]}"><h3>R1-{s["step"]} · {html.escape(s["title"])}</h3>'
+    + ''.join(f'<figure data-size="{z}"><figcaption>{R1_SIZE[z]}</figcaption>{screen(R1_SIZE[z], s["step"], R1_OUT, "R")}</figure>' for z in SIZES)
+    + '</section>' for s in r1_steps)
 
 page = f'''<!doctype html><html lang=zh-Hant><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>Console 設計總覽</title>
@@ -112,12 +122,17 @@ body[data-size] figure{{display:none}} body[data-size="209x49"] figure[data-size
 </style>
 <body data-size="120x40">
 <h1>Console 設計總覽</h1>
-<div class=mut>畫面內容 sha {SHA}（overview 本身在之後的 commit）· 9 分頁 × 6 狀態加跨頁步驟，共 {len(steps)} 步 × 3 尺寸 × 深淺兩色 · 步序與按鍵以 out/flow.json 為準</div>
-<nav><span>尺寸</span>{''.join(f'<button data-s="{z}">{z}</button>' for z in SIZES)}<span>色系</span><button data-t=dark>深</button><button data-t=light>淺</button><a href="#inv">盤點表</a><a href="#rev">審查</a><a href="#screens">畫面</a></nav>
+<div class=mut>畫面內容 sha {SHA}；overview 本身在它之後的下一個 commit（檔案寫不進自己所在 commit 的 sha，交件訊息附那個 sha）· console 9 分頁 × 6 狀態加跨頁步驟，共 {len(steps)} 步；另加 R1 底部控制 {len(r1_steps)} 步；每步 3 尺寸 × 深淺兩色 · 步序與按鍵以 out/flow.json、out-r1/flow.json 為準</div>
+<nav><span>尺寸</span>{''.join(f'<button data-s="{z}">{z}</button>' for z in SIZES)}<span>色系</span><button data-t=dark>深</button><button data-t=light>淺</button><a href="#inv">盤點表</a><a href="#rev">審查</a><a href="#screens">畫面</a><a href="#r1">R1 底部控制</a></nav>
 <h2 id=rev>審查紀錄</h2><div class=wrap><table><tr><th>輪次</th><th>審查結果</th><th>處置表</th></tr>{rev}</table></div>
 <p class=mut>檢查：check3 每張畫面（寬度、框線、R1 可按的鍵只在下半部、R6 選項字母順序、R7 band 禁字、R8 預覽和清單勾選一致、網址不斷開、[-] 在框內、兩色對比）全過；R6、R8 各有反向探針（對調 a/b、預覽多列沒選的卡都會被擋）。</p>
 <h2 id=inv>盤點表（{len(steps)} 步）</h2><div class=wrap><table><tr><th>步</th><th>id</th><th>分頁</th><th>狀態</th><th>標題</th><th>按鍵 → 下一步</th><th>缺源／過時</th></tr>{inv}</table></div>
 <h2 id=screens>畫面</h2>{body}
+<h2 id=r1>R1 底部控制（{len(r1_steps)} 步）</h2>
+<p class=mut>R1 計畫 rev4 的示意稿 r1-rev5（pane-history/drafts/r1-rev5），疊在現行 live 實拍上畫：pane 的可按鍵只在下半部；放不下時依高度收成較少的列，不擋 band。
+三種尺寸是 rev5 量過的 200×50、120×40、80×24（尺寸按鈕寬、中、窄各對一個）。實拍部分（宿主對話區、現行 band、宿主的 [-]）保留原色，不算設計稿；
+check3 只判設計稿畫的格子，24 張全過。和 rev5 原稿唯一的差異：卡片題目列改用 text 色加粗，原本的 claude 色在淺色主題對比只有 3.15（文字要 4.5），rev5 已同步改。</p>
+{r1_body}
 <script>
 const D={json.dumps(DATA, ensure_ascii=False, separators=(',', ':'))};
 const RL={json.dumps(list(ROLES))};

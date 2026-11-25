@@ -182,7 +182,7 @@ PATH_STATES = [(0, '', 'closed', 0), (0, '', 'open', 0), (0, '', 'open', 0),
 def glyphs(text, role='text', press=''):
     out = []
     for ch in text:
-        out.append(Cell(ch, role=role, press=press, bold=role in ('warning', 'claude')))
+        out.append(Cell(ch, role=role, press=press, bold=role == 'warning' or text.startswith('▸ ')))  # 題目列用 text 色加粗：claude 色淺色只有 3.15（console check3 文字要 4.5）
         out.extend([None] * (cw(ch) - 1))
     return out
 
@@ -247,7 +247,7 @@ def controls(card, index, count, choice, mode, note, level, dual, width):
             half = 2 if level == 0 else 1
             navs = [[textpart(f'  {j + 1}. 換到這張卡', 'remember', 'n' if j > index else 'p')]
                     for j in range(index-half, index+half+1)]
-            navs[half] = [textpart('▸ ' + title, 'claude', f'card:{index}')]
+            navs[half] = [textpart('▸ ' + title, 'text', f'card:{index}')]
         out = navs + options + [m, s]
     elif level == 2:
         out = [nav] + options + [m + [textpart(' · ')] + s]
@@ -320,7 +320,7 @@ def overlay(base, spec, cur=0, choice='', mode='open', note='', removed=()):
                     paint(rows, y, right, edge-1, [textpart('背景 ' + bg[j])] if j < len(bg) else [])
                 if len(remaining_info) >= 2:
                     paint(rows, remaining_info[-2], right, edge-1, [textpart('建議 ' + opts[rec], 'inactive')])
-                paint(rows, remaining_info[-1], right, edge-1, [textpart('▸ ' + title + '：' + question, 'claude')])
+                paint(rows, remaining_info[-1], right, edge-1, [textpart('▸ ' + title + '：' + question, 'text')])
             else:
                 paint(rows, info[-1], 2, edge-1, [textpart('▸ ' + title + '：' + question)])
         for y, parts in enumerate(ctrl, start):
@@ -420,11 +420,11 @@ def run_checks():
                 assert all(rows[y] == base[y] for y in range(len(base)) if y != band)
     out.append('八步核心路徑 × 三尺寸：原格保留通過；收合實拍的對話內容不清除。')
     for theme in ('dark', 'light'):
-        for role in ('text', 'inactive', 'remember', 'warning', 'claude'):
+        for role in ('text', 'inactive', 'remember', 'warning'):
             ratio = contrast(THEMES[theme][role], THEMES['background'][theme])
-            threshold = 3 if role in ('inactive', 'claude') else 4.5
+            threshold = 3 if role in ('inactive',) else 4.5
             assert not contrast_errors(theme, role, threshold)
-            out.append(f'{theme} {role}：{ratio:.3f} ≥ {threshold}，通過' + ('；粗體' if role == 'claude' else ''))
+            out.append(f'{theme} {role}：{ratio:.3f} ≥ {threshold}，通過')
     out.append('對比範圍：新增角色；實拍原有 SGR 原樣保留，不以改色掩飾現行對比。')
     bad = copy.deepcopy(base); bad[0] += glyphs('中')
     failures = width_errors(bad, w)
@@ -584,7 +584,7 @@ let cur=0,selected={},notes={},removed=[],mode='closed',editing=false,note='',sc
 const blank=()=>[' ',null,null,0,0,0,'',''];
 const width=c=>WIDE.has(c)?2:1;
 function cells(text,role='text',press=''){
- const out=[];for(const ch of text){out.push([ch,null,null,+['warning','claude'].includes(role),0,0,role,press]);if(width(ch)===2)out.push(null)}return out;
+ const out=[];for(const ch of text){out.push([ch,null,null,+(role==='warning'||text.startsWith('▸ ')),0,0,role,press]);if(width(ch)===2)out.push(null)}return out;
 }
 function decode(ids){return ids.map(id=>DATA.bank[id].flatMap(run=>{const out=[];for(const ch of run[0]){out.push([ch,...run.slice(1)]);if(width(ch)===2)out.push(null)}return out}))}
 function plain(row){return row.filter(Boolean).map(c=>c[0]).join('')}
@@ -640,7 +640,7 @@ function newRows(base,spec){
    if(rest.length){const bg=card[4],space=Math.max(0,rest.length-2),offset=Math.min(scroll,Math.max(0,bg.length-space));
     rest.slice(0,-2).forEach((y,j)=>paint(rows,y,right,edge-1,offset+j<bg.length?[part((j===0&&offset?`↑ 上面還有 ${offset} 列 · `:'背景 ')+bg[offset+j])]:[]));
     if(rest.length>=2)paint(rows,rest.at(-2),right,edge-1,[part(card[3]>=0?'建議 '+card[2][card[3]]:'建議：缺少此卡實拍明細','inactive')]);
-    paint(rows,rest.at(-1),right,edge-1,[part('▸ '+card[0]+'：'+card[1],'claude')]);
+    paint(rows,rest.at(-1),right,edge-1,[part('▸ '+card[0]+'：'+card[1],'text')]);
    }else paint(rows,info.at(-1),2,edge-1,[part('▸ '+card[0]+'：'+card[1])]);
   }
   ctrl.forEach((parts,j)=>paint(rows,start+j,2,edge-1,parts));

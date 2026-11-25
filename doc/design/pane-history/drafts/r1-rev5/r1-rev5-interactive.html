@@ -42,7 +42,7 @@ let cur=0,selected={},notes={},removed=[],mode='closed',editing=false,note='',sc
 const blank=()=>[' ',null,null,0,0,0,'',''];
 const width=c=>WIDE.has(c)?2:1;
 function cells(text,role='text',press=''){
- const out=[];for(const ch of text){out.push([ch,null,null,+['warning','claude'].includes(role),0,0,role,press]);if(width(ch)===2)out.push(null)}return out;
+ const out=[];for(const ch of text){out.push([ch,null,null,+(role==='warning'||text.startsWith('▸ ')),0,0,role,press]);if(width(ch)===2)out.push(null)}return out;
 }
 function decode(ids){return ids.map(id=>DATA.bank[id].flatMap(run=>{const out=[];for(const ch of run[0]){out.push([ch,...run.slice(1)]);if(width(ch)===2)out.push(null)}return out}))}
 function plain(row){return row.filter(Boolean).map(c=>c[0]).join('')}
@@ -98,7 +98,7 @@ function newRows(base,spec){
    if(rest.length){const bg=card[4],space=Math.max(0,rest.length-2),offset=Math.min(scroll,Math.max(0,bg.length-space));
     rest.slice(0,-2).forEach((y,j)=>paint(rows,y,right,edge-1,offset+j<bg.length?[part((j===0&&offset?`↑ 上面還有 ${offset} 列 · `:'背景 ')+bg[offset+j])]:[]));
     if(rest.length>=2)paint(rows,rest.at(-2),right,edge-1,[part(card[3]>=0?'建議 '+card[2][card[3]]:'建議：缺少此卡實拍明細','inactive')]);
-    paint(rows,rest.at(-1),right,edge-1,[part('▸ '+card[0]+'：'+card[1],'claude')]);
+    paint(rows,rest.at(-1),right,edge-1,[part('▸ '+card[0]+'：'+card[1],'text')]);
    }else paint(rows,info.at(-1),2,edge-1,[part('▸ '+card[0]+'：'+card[1])]);
   }
   ctrl.forEach((parts,j)=>paint(rows,start+j,2,edge-1,parts));

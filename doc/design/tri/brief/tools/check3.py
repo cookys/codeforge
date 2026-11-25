@@ -64,7 +64,11 @@ for name in sorted(os.listdir(D)):
     frame_bad = len(open_) + sum(len(f.get('misaligned', [])) + (0 if f['ok_bottom'] else 1) for f in frames)
     r['frame_bad'] = frame_bad
     # R1：可按的鍵（merged 角色）只出現在下半部
-    clickable_rows = sorted({i for i, row in enumerate(roles) for s, role, k in row if role == 'merged' and s.strip()})
+    clickable_rows = {i for i, row in enumerate(roles) for s, role, k in row if role == 'merged' and s.strip()}
+    pj = os.path.join(p, 'press.json')  # 不用 merged 色標可按鍵的稿（R1 rev5）另附可按的列號
+    if os.path.isfile(pj):
+        clickable_rows |= set(json.load(open(pj)))
+    clickable_rows = sorted(clickable_rows)
     r['R1_clickable_rows'] = clickable_rows
     r['R1_upper_clickable'] = [i for i in clickable_rows if i < H // 2]
     # R6：選項字母 a/b/c 依序對應第 1/2/3 個選項
@@ -75,11 +79,17 @@ for name in sorted(os.listdir(D)):
     # R7：band（最後一個框）裡不出現 背景／卡住／來源／sha
     band = frames[-1] if frames else None
     band_text = '\n'.join(lines[band['top']:band['bottom'] + 1]) if band else ''
-    r['R7_band_extra'] = [w for w in ('背景', '卡住', '來源', 'sha') if w in band_text]
+    bj = os.path.join(p, 'band.json')  # band 不是框的稿（R1 rev5 的 band 是一列）另附 band 的列號
+    # 疊在實拍上的稿（R1 rev5）另附 drawn.txt：實拍格子換成空白，只留設計稿畫的字；R7、網址、[-] 只判畫的字
+    dj = os.path.join(p, 'drawn.txt')
+    drawn = open(dj).read().rstrip('\n').split('\n') if os.path.isfile(dj) else lines
+    if os.path.isfile(bj):
+        band_text = '\n'.join(drawn[i] for i in json.load(open(bj)))
+    r['R7_band_extra'] = [w for w in ('背景', '卡住', '來源', 'sha') if re.search(rf'(?<![A-Za-z]){w}(?![A-Za-z])', band_text)]  # sha 只算整個詞，shared 不算
     # (PM 01M89CD1-1) 網址不可從中間斷：畫面上每段網址要嘛是完整網址，要嘛是完整網址的開頭加 …
     full = json.load(open(os.path.join(p, 'urls.json'))) if os.path.isfile(os.path.join(p, 'urls.json')) else []
     urlbad = []
-    for i, l in enumerate(lines):
+    for i, l in enumerate(drawn):
         for m in re.finditer(r'[^\s│]*(?:://|[?&=])[^\s│]*', l):
             t = m.group(0).rstrip('，。；：')
             if t in full or (t.endswith('…') and any(u.startswith(t[:-1]) for u in full)):
@@ -88,7 +98,7 @@ for name in sorted(os.listdir(D)):
     r['url_broken'] = urlbad
     # (PM 01M89CD1-2) [-] 收合鍵要在某個框裡（框的上下列之間、左右邊之間）
     outside = []
-    for i, l in enumerate(lines):
+    for i, l in enumerate(drawn):
         for m in re.finditer(r'\[-\]', l):
             x = dw(l[:m.start()])
             if not any(f['top'] <= i <= f['bottom'] and f['left'] < x and x + 3 <= f['right'] for f in frames):
@@ -100,7 +110,7 @@ for name in sorted(os.listdir(D)):
         seen = {}
         for row in roles:
             for s, role, k in row:
-                if not s.strip():
+                if not s.strip() or k == 'live':  # 'live'：實拍原色，不是設計稿上的色（r1_export.py）
                     continue
                 v = round(ratio(rgb(t[role]), bg), 2)
                 key = f'{role}/{k}'

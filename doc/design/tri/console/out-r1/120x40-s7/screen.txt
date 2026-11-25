@@ -1,0 +1,40 @@
+                                                                                                                        
+ ▐▛███▛█   Claude Code v2.1.328                                                                                         
+▝▜██████▀  Haiku 5.5 · Claude Ultra                                                                                     
+ ▝▝   ▝▝   /tmp/v74keys-s42dired/demo                                                                                   
+                                                                                                                        
+                                                                                                                        
+› Prompt from the autopilot plugin                                                                                      
+❯ [待決回覆]                                                                                                            
+  d-a1b2c3e2｜forge-stats 外掛今晚還是明早更新？ → 今晚｜補充：先跑 canary                                              
+  ⎿  UserPromptSubmit says: unverified [待決回覆]: d-a1b2c3e2 (claim_failed (claimed)); the courier did not confirm     
+     these answers, so they are NOT acted on and their cards stay open. Tell the owner.                                 
+                                                                                                                        
+  Ran 1 shell command                                                                                                   
+                                                                                                                        
+●                                                                                                                       
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+✽ Thundering… (8s · ↓ 846 tokens · thinking)                                                                            
+╭─ 待決 · 資料 fleet decisions list --json（schema fleet.decisions v1）· 26 秒 ───────────────────────────────────╮ [-] 
+│ ✗ 額度預測 無來源                                                                                               │     
+│ 待決 20 張 · 第 2 張                                                                                            │     
+│ 等你動手：實拍無此資料                                                                                          │     
+│ 背景 操作員平常用寬螢幕，                                                                                       │     
+│ 背景 外出用筆電只有 80 欄。                                                                                     │     
+│ 建議 120 欄                                                                                                     │     
+│ ▸ 預覽先拍幾欄：預覽先拍 80 欄還是 120 欄？                                                                     │     
+│ ‹ p 2/20 n ›                                                                                                    │     
+│ a 80 欄                                                                                                         │     
+│ b 120 欄 ✧                                                                                                      │     
+│ m 附註：（空） · [s] 送出已選 0 張 · 另 20 張未選                                                               │     
+╰─  PgUp/PgDn · p/n · a/b · m · s · w · Esc                ────────────────────  1  2 待決  3  4  5  6  7  8  9  ─╯     
+‣ 要你決定：預覽先拍 80 欄還是 120 欄？            │ 3 產線 ⊘  4 ◉  3 ✗  2 ⋯  0 │ 2 待決  20 │ 5 ϟ 154 tok/s  ▴收合     
+                                                                                                                        
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                                                                                                       
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                        
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt                                                               
