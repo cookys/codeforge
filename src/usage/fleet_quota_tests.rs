@@ -1553,3 +1553,26 @@ fn used_after_the_5h_reset_with_no_5h_reading_is_no_source_not_the_old_pct() {
         .join("\n");
     assert!(!line.contains("99%"), "{t}");
 }
+
+#[test]
+fn cjk_fleet_names_fit_columns() {
+    let a = summary(
+        "host-aaaaaaaa",
+        vec![acct("work", 60, Some((0.62, NOW_S + H)), None)],
+        vec![],
+    );
+    let d = fixture_dir(&[("host.json", &a)]);
+    let (files, skipped) = load(d.path()).unwrap();
+    let mut names = Names::default();
+    names
+        .0
+        .insert("work".into(), "專案（測試）mixed中文".into());
+    let fleet = merge(&files, skipped, NOW_MS, DEFAULT_USE_TARGET, &names);
+    for cols in [40, 60, 80, 100] {
+        let output = text(&fleet, cols, NOW_MS, &Tr("zh-TW".into()), false);
+        assert!(output.contains("專案"), "{output}");
+        for line in output.lines() {
+            assert!(UnicodeWidthStr::width(line) <= cols, "{cols}: {line:?}");
+        }
+    }
+}
