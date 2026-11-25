@@ -506,27 +506,21 @@ async fn reconcile_batch(
 fn build_batch_reconcile_prompt(items: &[(&l1::L1Entry, &[l1::L1Entry])]) -> String {
     let mut blocks = String::new();
     for (idx, (new, candidates)) in items.iter().enumerate() {
-        let body_preview: String = new.body.chars().take(400).collect();
+        // Summaries only, never L1 excerpts: an L1 body may still echo a source
+        // sentence (PM ruling on 01M836C68Y, 2026-11-25).
+        let new_summary = super::egress::summarize_l1_for_llm(&new.title, &new.body);
         let mut cand_block = String::new();
         for (i, c) in candidates.iter().enumerate() {
-            let snip: String = c
-                .body
-                .lines()
-                .find(|l| !l.trim().is_empty() && !l.starts_with('#'))
-                .unwrap_or("")
-                .chars()
-                .take(160)
-                .collect();
-            cand_block.push_str(&format!("{i}. {}: {snip}\n", c.title));
+            let summary = super::egress::summarize_l1_for_llm(&c.title, &c.body);
+            cand_block.push_str(&format!("--- 既有條目 {i} ---\n{summary}\n"));
         }
         blocks.push_str(&format!(
-            "\n=== 項目 index {idx} ===\n新事實標題：{}\n新事實內容：{body_preview}\n既有條目（編號 0 起）：\n{cand_block}",
-            new.title
+            "\n=== 項目 index {idx} ===\n新事實（結構化摘要）：\n{new_summary}\n既有條目（編號 0 起，結構化摘要）：\n{cand_block}"
         ));
     }
 
     format!(
-        r##"你是知識庫的對賬器。下方有 {n} 個「新事實」待對賬條目，請為每個項目判斷如何併入對應的既有條目。
+        r##"你是知識庫的對賬器。下方有 {n} 個「新事實」待對賬條目，每條只給結構化摘要（標題前段、類別、工具、主題），不含逐字原文。請依摘要判斷如何併入對應的既有條目。
 {blocks}
 回傳 JSON 陣列（嚴格格式，共 {n} 個元素）：
 [{{"index": 0, "op": "add" | "noop" | "update" | "delete", "target": <既有條目編號或 null>}}]
@@ -1585,6 +1579,36 @@ mod tests {
     }
 
     // ---- P1: LLM egress summarization & 20-fixture measurement ----
+
+    #[test]
+    fn reconcile_prompt_sends_only_summaries_of_l1_entries() {
+        use crate::dream::egress::{longest_common_substring_chars, MAX_EGRESS_OVERLAP_CHARS};
+        let dir = tempfile::tempdir().unwrap();
+        let new_body = "請不要再用 sed -i 直接覆寫 /home/user/projects/demo-app/config/crontab.conf 第 42 行，每次這樣操作都會把整個排程檔案清空並造成資料遺失，請改用暫存檔寫入再原子 rename 取代原檔";
+        let cand_body = "cargo build 在 worktree 共用 target 目錄時會互相鎖住，導致第二個 build 等待超過十分鐘才放行，應該每個 worktree 各自設定 CARGO_TARGET_DIR";
+        let new = entry(
+            dir.path(),
+            "排程檔原子寫入：不要用 sed -i 覆寫 crontab 設定檔",
+            new_body,
+        );
+        let cand = entry(
+            dir.path(),
+            "worktree 共用 target 目錄導致 cargo 鎖等待",
+            cand_body,
+        );
+        let cands = [cand.clone()];
+        let items: Vec<(&L1Entry, &[L1Entry])> = vec![(&new, &cands[..])];
+        let prompt = build_batch_reconcile_prompt(&items);
+        for raw in [new_body, cand_body, new.title.as_str(), cand.title.as_str()] {
+            let lcs = longest_common_substring_chars(&prompt, raw);
+            assert!(
+                lcs < MAX_EGRESS_OVERLAP_CHARS,
+                "lcs {lcs} >= 20 against {raw}"
+            );
+        }
+        assert!(!prompt.contains("/home/user/projects"));
+        assert!(prompt.contains("既有條目 0"));
+    }
 
     #[test]
     fn compile_prompts_never_send_verbatim_content_across_single_and_batch() {

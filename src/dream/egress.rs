@@ -202,8 +202,24 @@ const TOPIC_LEXICON: &[(&str, &str)] = &[
 /// topics) with all paths, numbers, and verbatim conversation text stripped.
 /// Guarantees `longest_common_substring_chars(&summary, &signal.content) < 20`.
 pub fn summarize_for_llm(signal: &Signal) -> String {
-    let raw = signal.content.as_str();
-    let source = source_label(&signal.source);
+    summarize_text(source_label(&signal.source), &signal.content)
+}
+
+/// Longest L1 title prefix sent to the LLM: one char under the overlap bar, so a
+/// title can never carry a 20-char run of any source text.
+const L1_TITLE_EGRESS_CHARS: usize = MAX_EGRESS_OVERLAP_CHARS - 1;
+
+/// Summarize an L1 entry for the reconcile prompt. The body is LLM-rewritten but
+/// may still echo a source sentence, so it gets the same structured summary as an
+/// L0 signal; the title is cut below the overlap bar.
+/// Guarantees `longest_common_substring_chars(&summary, body) < 20` and that the
+/// title part is under 20 chars.
+pub fn summarize_l1_for_llm(title: &str, body: &str) -> String {
+    let title_cut: String = title.chars().take(L1_TITLE_EGRESS_CHARS).collect();
+    format!("title: {title_cut}\n{}", summarize_text("l1", body))
+}
+
+fn summarize_text(source: &str, raw: &str) -> String {
     let category = detect_category(raw);
     let length_chars = raw.chars().count();
     let file_exts = extract_file_extensions(raw);
