@@ -37,14 +37,13 @@ def cells(text):
     return ''.join(out)
 
 
+DATA = {}
+
+
 def screen(size, n):
     rows = json.load(open(os.path.join(OUT, f'{size}-s{n}', 'roles.json')))
-    lines = []
-    for r in rows:
-        segs = ''.join(f'<span class="r-{fg if fg in ROLES else "text"}">{cells(t)}</span>' for t, fg, _bg in r)
-        lines.append(f'<div class=l>{segs}</div>')
-    w = int(size.split('x')[0])
-    return f'<div class="term term-grid" style="width:{w}ch">{"".join(lines)}</div>'
+    DATA[f'{n}/{size}'] = [[[t, ROLES.index(fg) if fg in ROLES else 0] for t, fg, _bg in r] for r in rows]
+    return f'<div class=ph data-k="{n}/{size}"></div>'
 
 
 def role_css(theme):
@@ -100,8 +99,8 @@ nav{{position:sticky;top:0;background:var(--bg);padding:6px 0;border-bottom:1px 
 button{{font:inherit;padding:2px 10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:4px;cursor:pointer}}
 button[aria-pressed=true]{{border-color:var(--fg)}}
 figure{{margin:6px 0 14px;overflow-x:auto}} figcaption{{font-size:12px;color:var(--mut)}}
-.term{{background:var(--tbg);font:13px/15px "DejaVu Sans Mono",ui-monospace,monospace;padding:4px;white-space:pre}}
-.l{{height:15px;overflow:hidden}} .term i{{font-style:normal;display:inline-block;width:2ch;height:15px;line-height:15px;text-align:center;overflow:hidden;vertical-align:top}}
+.term-grid{{background:var(--tbg);font:13px/15px "DejaVu Sans Mono","Noto Sans Mono CJK TC",monospace;padding:0;box-shadow:0 0 0 4px var(--tbg);margin:4px;white-space:pre;display:flex;flex-direction:column;box-sizing:content-box;font-kerning:none;font-variant-ligatures:none}}
+.term-grid .ln{{display:flex;flex:none;height:15px}} .term-grid i{{font-style:normal;display:inline-block;height:15px;line-height:15px;text-align:center;overflow:visible}} .term-grid i.n{{width:8px}} .term-grid i.w{{width:16px}}
 {''.join(f'.r-{k}{{color:var(--{k})}}' for k in ROLES)}
 body[data-size] figure{{display:none}} body[data-size="209x49"] figure[data-size="209x49"],body[data-size="120x40"] figure[data-size="120x40"],body[data-size="80x24"] figure[data-size="80x24"]{{display:block}}
 </style>
@@ -114,8 +113,13 @@ body[data-size] figure{{display:none}} body[data-size="209x49"] figure[data-size
 <h2 id=inv>盤點表（{len(steps)} 步）</h2><div class=wrap><table><tr><th>步</th><th>id</th><th>分頁</th><th>狀態</th><th>標題</th><th>按鍵 → 下一步</th><th>缺源／過時</th></tr>{inv}</table></div>
 <h2 id=screens>畫面</h2>{body}
 <script>
+const D={json.dumps(DATA, ensure_ascii=False, separators=(',', ':'))};
+const RL={json.dumps(list(ROLES))};
+const W=c=>{{const p=c.codePointAt(0);return (p>=0x1100&&p<=0x115f)||(p>=0x2e80&&p<=0xa4cf)||(p>=0xac00&&p<=0xd7a3)||(p>=0xf900&&p<=0xfaff)||(p>=0xfe30&&p<=0xfe4f)||(p>=0xff00&&p<=0xff60)||(p>=0xffe0&&p<=0xffe6)}};
+function draw(ph){{if(ph.firstChild)return;const rows=D[ph.dataset.k];const g=document.createElement('div');g.className='term-grid';g.style.width=(+ph.dataset.k.split('/')[1].split('x')[0])*8+'px';
+ for(const r of rows){{const ln=document.createElement('div');ln.className='ln';for(const [t,ro] of r){{for(const ch of t){{const i=document.createElement('i');i.className=(W(ch)?'w':'n')+' r-'+RL[ro];i.textContent=ch;ln.appendChild(i)}}}}g.appendChild(ln)}}ph.appendChild(g)}}
 const b=document.body,r=document.documentElement;
-function sz(s){{b.dataset.size=s;document.querySelectorAll('[data-s]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.s===s))}}
+function sz(s){{b.dataset.size=s;document.querySelectorAll('figure[data-size="'+s+'"] .ph').forEach(draw);document.querySelectorAll('[data-s]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.s===s))}}
 function th(t){{r.dataset.theme=t;document.querySelectorAll('[data-t]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.t===t))}}
 document.querySelectorAll('[data-s]').forEach(x=>x.onclick=()=>sz(x.dataset.s));
 document.querySelectorAll('[data-t]').forEach(x=>x.onclick=()=>th(x.dataset.t));
