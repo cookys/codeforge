@@ -2,7 +2,7 @@
 """ux-review.py <run.py-out-dir> <autopilot-sha> [--packet PATH] [--allow-red]  |  ux-review.py --verdict <reviewer.out>...
 
 Builds the strict UX-director packet for the v7.4 pane (PM 01M7XARR, 01M7XBE2): the real key captures from a
-run.py run, the per-key sequence, and the ux-v7.4 design (doc/design/ux-gate/v74/) to compare against.
+run.py run, the per-key sequence, and the ux-v7.4 design (doc/design/pane-history/drafts/ux-v74/) to compare against.
 Two heterogeneous engines score it (ux-review.sh); each must give overall >= 8/10 with no Critical.
 Refuses a RED run (the order is: gate green -> UX review -> PM press -> operator use) unless --allow-red (dry run only).
 Runs the same private-name check as build-b2.py before writing; a hit writes nothing and exits 1.
@@ -11,7 +11,7 @@ import argparse, hashlib, json, os, re, sys
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..', '..', '..'))
-DESIGN = os.path.join(ROOT, 'doc', 'design', 'ux-gate', 'v74')
+DESIGN = os.path.join(ROOT, 'doc', 'design', 'pane-history', 'drafts', 'ux-v74')
 CAP = 165000  # agy prompt cap is ~170 KB
 PAGES = [('1', '現況', 'S2'), ('2', '待決', 'S3'), ('3', '派工', 'S4'), ('4', '審查', 'S5'), ('5', '花費', 'S6'),
          ('6', '殘留', 'S7'), ('7', '艦隊', 'S8'), ('8', '待辦', 'S9'), ('9', '說明', 'S10')]

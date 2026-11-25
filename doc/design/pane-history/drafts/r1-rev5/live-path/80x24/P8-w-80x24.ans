@@ -1,0 +1,24 @@
+[38;5;246m›[39m [38;5;246mPrompt from the autopilot plugin[39m   
+[38;5;246m[48;5;237m❯ [38;5;231m[待決回覆][39m                                                                    
+  [38;5;231md-a1b2c3e2｜forge-stats 外掛今晚還是明早更新？ → 今晚｜補充：先跑 canary[39m      
+[38;5;246m[49m  ⎿  UserPromptSubmit says: unverified [待決回覆]: d-a1b2c3e2 (claim_failed 
+[39m     [38;5;246m(claimed)); the courier did not confirm these answers, so they are NOT [39m    
+     [38;5;246macted on and their cards stay open. Tell the owner.[39m                        
+
+[38;5;246m●[39m Checking plugin directory and live dir permissions                            
+[38;5;246m  ⎿  1 action not run · permission denied[39m                                       
+     [2m│[0m [38;5;246mReason: PreToolUse:Bash hook error: 這個操作會讀到真正的 Claude 預設設定
+[39m     [2m│[0m [38;5;246m目錄（/home/team/.claude）。依紅線要操作員本人的卡才能讀；自己這席的 
+[39m     [2m│[0m [38;5;246msession 檔案（~/.claude/projects/<本專案>/）不受限。 [claude-home-…[39m      
+[38;5;246m  ⎿  $ ls -la /tmp/v74keys-qxu4wk4m/data/home/.claude/ 2>&1; ls -d [39m        
+     [38;5;246m/tmp/v74keys-qxu4wk4m/data/home/.claude/plugins/* 2>&1 | head; ls -ld [39m     
+     [38;5;246m/tmp/v74keys-qxu4wk4m/data /tmp/v74keys-qxu4wk4m/data/live 2>&1
+
+[38;5;174m·[39m [38;5;174mPouncing… [38;5;246m(10s · ↓[39m [38;5;246m1.4k tokens · thought for 3s)[39m                              
+[38;5;220m‣ 要你決定：預覽先拍 80 欄還是 120 欄？[38;5;239m │ [7m[39m3 產線 [38;5;211m⊘ 4 ✗ 2[0m[38;5;239m │ [39m2 待決 [38;5;147m 20[39m ▾展開 [38;5;246m[-]
+
+[38;5;244m────────────────────────────────────────────────────────────────────────────────
+[38;5;246m❯ 
+[38;5;244m────────────────────────────────────────────────────────────────────────────────
+
+[39m  [38;5;220m⏵⏵ auto mode on[38;5;246m (shift+tab to cycle) · esc to interrupt

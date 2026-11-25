@@ -645,5 +645,205 @@
       "無現成實拍"
     ],
     "lineage_sha": "ca0e0827"
+  },
+  {
+    "id": "r1-rev5",
+    "name": "r1-rev5",
+    "plain": "r1-rev5",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "rejected",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "git:docs/r1-rev5-gen:doc/design/r1-rev5"
+    ]
+  },
+  {
+    "id": "tui-v2",
+    "name": "tui-v2",
+    "plain": "tui-v2",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "draft",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "複製自 autopilot docs/plans/evidence/2026-10-10-tui-v2"
+    ]
+  },
+  {
+    "id": "ux-v4",
+    "name": "ux-v4",
+    "plain": "ux-v4",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "draft",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：ux-v4"
+    ]
+  },
+  {
+    "id": "ux-v5",
+    "name": "ux-v5",
+    "plain": "ux-v5",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "draft",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：ux-v5"
+    ]
+  },
+  {
+    "id": "ux-v6",
+    "name": "ux-v6",
+    "plain": "ux-v6",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "draft",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：ux-v6"
+    ]
+  },
+  {
+    "id": "ux-v7",
+    "name": "ux-v7",
+    "plain": "ux-v7",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "draft",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：ux-v7"
+    ]
+  },
+  {
+    "id": "ux-v74",
+    "name": "ux-v74",
+    "plain": "ux-v74",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "draft",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：ux-v74"
+    ]
+  },
+  {
+    "id": "v74-master-detail",
+    "name": "v74-master-detail",
+    "plain": "v74-master-detail",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "draft",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：v74-master-detail"
+    ]
+  },
+  {
+    "id": "v74-pending-d-neon",
+    "name": "v74-pending-d-neon",
+    "plain": "v74-pending-d-neon",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "draft",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：v74-pending-d-neon"
+    ]
+  },
+  {
+    "id": "v74-pending-two-options",
+    "name": "v74-pending-two-options",
+    "plain": "v74-pending-two-options",
+    "ap_sha": null,
+    "date": "原檔所載",
+    "kind": "draft",
+    "changed": "原設計稿收錄；詳見原檔",
+    "principles": [
+      "P02"
+    ],
+    "operator_feedback": [],
+    "shots": {
+      "dark": null,
+      "light": null
+    },
+    "sources": [
+      "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：v74-pending-two-options"
+    ]
   }
 ]
