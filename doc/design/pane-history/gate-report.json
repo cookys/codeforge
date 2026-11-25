@@ -1,5 +1,5 @@
 {
- "url": "http://192.168.101.5:19103/",
+ "url": "http://<lan-host>:19103/",
  "passed": true,
  "failures": [],
  "runs": [
