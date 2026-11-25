@@ -28,6 +28,7 @@ FALLBACK_FIX_SHA = "6db7e47e"
 
 COLS = 120
 ROWS = 40
+PAGE_KEY: str | None = None
 WAIT_AFTER_CMD_S = 8.0
 ROW_TIMEOUT_S = 240
 
@@ -284,9 +285,13 @@ def try_open_command(g, cmd: str):
     g.tmux("resize-window", "-t", g.sess, "-x", str(COLS), "-y", str(ROWS), check=False)
     time.sleep(0.5)
     sc = g.snap()
-    if screen_opened(before, sc, cmd):
-        return sc
-    return None
+    if not screen_opened(before, sc, cmd):
+        return None
+    if PAGE_KEY:
+        g.keys(PAGE_KEY, literal=True)
+        time.sleep(5)
+        sc = g.snap()
+    return sc
 
 
 def shoot_single(sha_arg: str, out_dir: pathlib.Path, theme: str) -> int:
@@ -419,11 +424,19 @@ def shoot_single(sha_arg: str, out_dir: pathlib.Path, theme: str) -> int:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Capture a historical pane at 120x40 in an isolated HOME (240s limit).")
+    global COLS, ROWS, PAGE_KEY
+    parser = argparse.ArgumentParser(description="Capture a historical pane in an isolated HOME (240s limit).")
     parser.add_argument("sha")
     parser.add_argument("--theme", choices=("dark", "light"), required=True)
     parser.add_argument("--out", type=pathlib.Path, default=HISTORY / "shots")
+    parser.add_argument("--size", default=f"{COLS}x{ROWS}", help="COLSxROWS, default 120x40")
+    parser.add_argument("--page", help="page key pressed after the pane opens, e.g. 2 for 待決")
+    parser.add_argument("--cards", type=pathlib.Path, help="JSON list of extra decision cards for the sandbox store")
     args = parser.parse_args()
+    COLS, ROWS = (int(x) for x in args.size.lower().split("x"))
+    PAGE_KEY = args.page
+    if args.cards:
+        os.environ["AWAIT_CARD"] = str(args.cards.resolve())
     return shoot_single(args.sha, args.out.resolve(), args.theme)
 
 
