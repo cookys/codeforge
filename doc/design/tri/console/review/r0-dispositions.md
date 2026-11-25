@@ -37,3 +37,14 @@
 | codex | 8 | note | 確認，無需處置 | — |
 | agy | 1 | note | 採納：C2 在 80x24 沿用上緣收起規則 | 畫面輪處理 |
 | agy | 2–3 | note | 確認，無需處置 | — |
+
+## 第三代（審的是 sha f1b08a873f5f，本輪上限）：codex FAIL（2 blocking），agy PASS
+| 席 | # | 等級 | 處置 | 改在哪裡 |
+|---|---|---|---|---|
+| codex | 1 | blocking | 修：輸出速度過時納入 5-S（spend.ts:149-166 的過時警告）和 coverage.json | PLAN §3.2.1 |
+| codex | 2 | blocking | 修：加 2-Fl（按 f 填入建議，不覆蓋已選的卡）；2-N 鍵列含 f | PLAN §3.2 |
+| codex | 3 | note | 修：他機卡過時用 fixture 畫在 7-S，標「接線後」 | PLAN §3.2.1 |
+| codex | 4–5 | note | 留到畫面輪驗證 | — |
+| agy | 1–4 | note | 確認，無需處置 | — |
+
+到了三代上限。兩條 blocking 都是補畫面，不動骨架，也和操作員或 PM 的裁定沒有衝突。本席直接修完，交 PM 裁定是否接受，不再審第四代；畫面輪第 1 輪會再驗一次這兩條。
