@@ -17,3 +17,4 @@
 - 待決頁還有 f 鍵：填入建議選項（keys.ts:57）。inv-1-3 漏列。
 - 寫成「可捲動」的段落，依據的 frameRows（frame.ts:264-269）只是照傳入的 scroll 切片，再顯示剩幾列。能不能用鍵捲，要看 pane 有沒有接線；盤點表裡的「可捲動」都只代表有截斷提示。
 - 每個 agent 的 tok/s 來源是 speedview.ts:118 的 agentsColumn，目前畫在鍛頁（pages/forge.ts），不在 9 個分頁裡。
+- 第 0 輪第二代：上面的 a–c、f 已直接改進 inv-1-3 和 inv-7-9 的原列。待辦的「退回原因」沒有資料來源（todo.ts:35-43），原列已更正。

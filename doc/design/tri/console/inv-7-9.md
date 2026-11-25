@@ -19,7 +19,7 @@
 
 | # | 功能（畫面上顯示什麼） | 資料來源（指令／檔案／API，附 file:line） | 操作員在這裡要做什麼決定 | 按鍵（鍵 → 效果，附 file:line） | 狀態：空的／很多筆要捲動／內容很長／出錯讀不到／資料過時，各怎麼顯示（附 file:line；程式沒處理就寫「未處理」） |
 |---|---|---|---|---|---|
-| 8.1 | 待辦卡片列表（`todoCard`）：每張卡顯示序號 `k/n`、到期日（UTC `MM-DD` 或無期限）、選中游標 `‣` + `•` + 標題、退回／到期說明、備註欄 | `ctx.v74.todo`、`ctx.v74.nav.cursor`、`ctx.v74.nav.notes`（`mods/live/pages/todo.ts:35-44, 52-68`）；來源指令為 `fleet todo --json`（`frame.ts:294`；註解指出目前 runtime 尚未接上，`todo.ts:1`） | 瀏覽暫存待辦卡片、確認到期日與備註、選擇要處理的卡片 | `j` / `ArrowDown` → 下一張卡（`keys.ts:41`、`pane.tsx:308-309`）<br>`k` / `ArrowUp` → 上一張卡（`keys.ts:42`、`pane.tsx:308-309`） | **空的**：`cards.length === 0` 顯示 `○` 與 `v74.d.todo_none` / `v74.d.todo_none_hint`（`todo.ts:53`）<br>**很多筆要捲動**：以 `blocks.slice(first)` 依剩餘列數 `room` 向上捲動確保 `cursor` 可見（`todo.ts:64-68`）<br>**內容很長**：`fit()` 依 `ctx.size.cols` 截斷每列（`todo.ts:20-31, 43`）；`frameRows` 亦會以最大 80 欄折行（`frame.ts:236`）<br>**出錯讀不到**：`v === undefined || v.todo === null` 顯示紅字 `✗` `v74.d.todo_no_source · v74.d.todo_recover`（`todo.ts:51`）<br>**資料過時**：`todo.ts` 本身未處理；若在 v7.4 box 內則由 `v74BodyStatusRow` 依 `v74.ages.todo` 顯示過時列（`frame.ts:383, 440-447`） |
+| 8.1 | 待辦卡片列表（`todoCard`）：每張卡顯示序號 `k/n`、到期日（UTC `MM-DD` 或無期限）、選中游標 `‣` + `•` + 標題、到期說明（固定文字，依有無期限；沒有讀退回原因，todo.ts:35-43）、備註欄 | `ctx.v74.todo`、`ctx.v74.nav.cursor`、`ctx.v74.nav.notes`（`mods/live/pages/todo.ts:35-44, 52-68`）；來源指令為 `fleet todo --json`（`frame.ts:294`；註解指出目前 runtime 尚未接上，`todo.ts:1`） | 瀏覽暫存待辦卡片、確認到期日與備註、選擇要處理的卡片 | `j` / `ArrowDown` → 下一張卡（`keys.ts:41`、`pane.tsx:308-309`）<br>`k` / `ArrowUp` → 上一張卡（`keys.ts:42`、`pane.tsx:308-309`） | **空的**：`cards.length === 0` 顯示 `○` 與 `v74.d.todo_none` / `v74.d.todo_none_hint`（`todo.ts:53`）<br>**很多筆要捲動**：以 `blocks.slice(first)` 依剩餘列數 `room` 向上捲動確保 `cursor` 可見（`todo.ts:64-68`）<br>**內容很長**：`fit()` 依 `ctx.size.cols` 截斷每列（`todo.ts:20-31, 43`）；`frameRows` 亦會以最大 80 欄折行（`frame.ts:236`）<br>**出錯讀不到**：`v === undefined || v.todo === null` 顯示紅字 `✗` `v74.d.todo_no_source · v74.d.todo_recover`（`todo.ts:51`）<br>**資料過時**：`todo.ts` 本身未處理；若在 v7.4 box 內則由 `v74BodyStatusRow` 依 `v74.ages.todo` 顯示過時列（`frame.ts:383, 440-447`） |
 | 8.2 | 動作列（`actions`）：顯示目前選中卡片之選項 `[a] <label>`、`[b] <label>`、`[c] <label>`（已選項目套用 `PALETTE.here` 高亮）與移動提示 `v74.d.todo_move` | `cur.options`、`ctx.v74.nav.picks`（`todo.ts:55-63`） | 為目前游標所在的待辦卡片選擇處置選項 | `a` / `b` / `c` → 對應 `pick` 索引 0 / 1 / 2，也可點擊 `[a]`/`[b]`/`[c]` 按鈕（`keys.ts:45-47`、`todo.ts:61`、`pane.tsx:163, 168`） | **空的**：無來源或無卡片時 `actions: []`（`todo.ts:51, 53`）<br>**很多筆要捲動**：最多顯示 `PICK_KEYS.length`（3 個）選項於同一列（`todo.ts:59`）<br>**內容很長**：選項標籤截斷至 `Math.max(4, Math.floor(cols / 3) - 6)`（`todo.ts:61`）<br>**出錯讀不到**：同 8.1<br>**資料過時**：同 8.1 |
 
 ---
@@ -60,7 +60,7 @@
 | `j` / `ArrowDown`、`k` / `ArrowUp` | 全域（`decide` 的方向鍵改為捲動） | 向下／向上移動游標（`move`） | `mods/live/pages/keys.ts:34, 41-42` |
 | `z` | 全域（`fleet` 除外） | 切換折疊（`fold`） | `mods/live/pages/keys.ts:43`、`mods/live/pane.tsx:162, 168` |
 | `o` | 非卡片頁（`decide`、`todo` 除外；實際僅 `quota` 綁定） | 展開／收合焦點列（`open`） | `mods/live/pages/keys.ts:44`、`mods/live/pane.tsx:166-168` |
-| `a` / `b` / `c`（`decide` 含 `d`） | `2 待決`、`8 待辦` | 選擇對應選項（`pick` 0–2 / 0–3） | `mods/live/pages/keys.ts:45-47`、`mods/live/pane.tsx:163-164, 168` |
+| `a` / `b` / `c` | `2 待決`、`8 待辦` | 選擇對應選項（`pick` 0–2） | `mods/live/pages/keys.ts:45-47`、`mods/live/pane.tsx:163-164, 168` |
 | `m` / `s` / `y` / `u` / `x` / `h` / `l` / `f` / `n` / `p` / `v` / `e` / `PageUp` / `PageDown` | 僅 `2 待決` | 備註、送出、確認、復原、取消預覽、上／下頁、填入推薦、上／下卡、切換樣式、展開、翻頁捲動 | `mods/live/pages/keys.ts:30-35, 48-58`、`mods/live/pane.tsx:164` |
 
 ---
