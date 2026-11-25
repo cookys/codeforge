@@ -1,0 +1,13 @@
+---
+id: 01M8AJ7WY5X7HJ8FWY1XKGNGT7
+kind: issue
+created: 2026-11-22T00:00:00.000Z
+---
+- **Status**: blocked
+- **Since**: 2026-11-22
+- **Problem**: mod 的 `Input rows={1}` 在一般畫面（非全螢幕）收到很長的值時，宿主 inline 重畫錯位：上方的送出預覽、頁碼和底框疊在一起或掉到狀態列。宿主文件寫 rows=1 時長文字應在欄內捲動，全螢幕同一步驟正常，所以判定是宿主問題。
+- **Impact**: 一般畫面打長附註時，預覽和確認入口看不清楚（Major）。mod 端已用「一般畫面限長、超過提示改用全螢幕」緩解（v7.6 r10 之後）。
+- **Trigger**: 宿主（Claude Code）修好 inline 重畫後，拿掉一般畫面的附註長度限制並重跑 v7.6 閘門的長附註步驟
+- **Source**: v7.6 UX 雙評 r9（兩家都列 Critical）；PM 01M80RW9 裁定 A：算宿主限制，不對外送任何東西
+- **Pointer**: none
+- **Context**: 宿主是 Claude Code 本身，我們改不了；等宿主版本更新時重驗

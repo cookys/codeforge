@@ -1,0 +1,12 @@
+---
+id: 01M8AJ7X9PN7ESFP62DN2EFVE9
+kind: issue
+created: 2026-11-05T00:00:00.000Z
+---
+- **Since**: 2026-11-05
+- **Problem**: 數個測試仍用 set_var 改行程環境，只有模組內的鎖，與其他讀同一變數的測試平行跑時仍可能互撞。
+- **Impact**: 偶發的測試 flaky，要靠重跑才過。
+- **Trigger**: flaky-tests.log 再出現落在這些模組的 FLAKY 紀錄，或下次動這些測試
+- **Source**: B40 修完 live.rs 後盤點
+- **Pointer**: none
+- **Context**: 改成把環境當參數傳入；涉及 statusline、subagent_statusline、llm、mnemos/health、commentary/budget
