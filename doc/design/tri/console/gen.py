@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import sys
 
 spec = importlib.util.spec_from_file_location('v2', os.path.join(os.path.dirname(__file__), '..', 'v2', 'gen.py'))
@@ -37,15 +38,19 @@ sources = [
 coverage = [dict(zip(('來源','狀態','步號'),(src,status,step))) for src,x,s in sources for status,step in [('缺源',x),('過時',s)] if step]
 
 indexes = [ ['要你處理 3','艦隊產線 12','本席','QC 審查','代理決策 4'], ['待決 3 張','合併 plan','外掛更新時機','預覽先拍幾欄','等你動手 1 張','時冶 PL02 定案'], ['執行中 2 輪','甲線 codex 12分','乙線 claude 8分','失敗 1 輪','丙線 codex 31分','完成 1 輪','丁線 claude 40分'], ['程式碼審查','計畫審查','推送前檢查','我替你決定的事'], ['5h 額度 42%','7d 額度 18%','額度池 A 42%','今日用量 380k','輸出速度 41 tok/s'], ['要你處理 2 項','舊工作樹 console','分支 feature/console','自動清理 1 項','過期暫存','外掛載入 1 項'], ['執行中 2 個','codeforge','autopilot','失敗 1 個','hangar','已完成 1 個','docs','本機待決 3','他機待決 1'], ['11-30 合併計畫','12-02 外掛更新','12-05 核對報表'], ['狀態圖示','符號','按鍵'] ]
-replies = ['待決 3 張，殘留 2 項需要處理。','要不要把共用計畫合進 develop？','甲線執行中，已過 12 分。','程式碼審查通過，QC 欠審需介入。','照目前速度約 2h10m 後撞頂。','請人工檢查舊工作樹後再清理。','codeforge 正在執行測試。','到期前要採用哪個合併方案？','按 1–9 切頁 · Esc 回輸入框']
+replies = ['待決 3 張，殘留 2 項需要處理。','要不要把共用計畫合進 develop？','甲線執行中，已過 12 分。','程式碼審查通過，QC 欠審需介入。','照目前速度約 3h03m 後撞頂。','請人工檢查舊工作樹後再清理。','codeforge 正在執行測試。','到期前要採用哪個合併方案？','按 1–9 切頁 · Esc 回輸入框']
 details = [ ['艦隊 12 條產線，運作中 8，失敗 2，卡住 2。','本席 ctx 42%，session 240k tokens。','QC 欠審 1，代理決策 4 條。'], ['來源 PM，開卡 3 小時前。','前因：計畫已審查兩輪。','背景：兩家審查均通過。','卡住：等操作員決定合併時間。'], ['run_id run-2407，runner codex，model gpt。','role implementer，開始 09:20，尚未結束。','產線摘要：測試 8 項已通過 6 項。'], ['codex verdict pass，第 2 輪。','審查範圍 develop 到目前提交；受保護檔案 0。','QC 欠審，需操作員介入。'], ['5h 42%，重置 2h10m；7d 18%，重置 4d。','A 池 42%，燃燒率每小時 19%。','今日 380k tokens，24h 趨勢上升。','最近速度 41 tok/s。'], ['原因：舊工作樹仍有未合併的變更。','路徑 projects/console，分支 feature/console。','最後提交 74f24a9；外掛旗標 dirty。'], ['模型 opus，最近 run run-2407。','速度 41 tok/s，近 5 分鐘持續執行。','產線摘要：測試進行中，尚無失敗。'], ['到期日 11-30，既有備註：先確認審查結果。','退回原因：新增資料，尚無資料來源。'], ['狀態：執行中、完成、失敗、需要介入。','符號：▸ 焦點，★ 建議，✓ 已選，▲ 動手。','按鍵：數字切頁，Esc 回輸入框。'] ]
 
 def content(f):
     ident, state = f['id'], f['state']; tab = TABS.index(f['tab']); ix = indexes[tab][:]; detail = details[tab][:]; reply = [replies[tab]]
     if tab == 0: reply = ['待決 3 張需要選擇；殘留 2 項需要檢查。', '切到待決或殘留查看焦點項。']
-    if tab == 4: reply = ['5h 額度已用 42%，約 2h10m 後撞頂。', '建議先減少並行工作，並在重置後再排長任務。']
+    if tab == 4: reply = ['5h 額度已用 42%，約 3h03m 後撞頂；2h10m 後重置。', '建議先減少並行工作，並在重置後再排長任務。']
     if tab == 5: reply = ['舊工作樹仍有未合併變更，請判斷是否保留。', '進入 projects/console 執行 git status，確認分支及變更。', '確認已合併後，由人工執行 git worktree remove。']
     if state == 'E': ix = ['目前沒有條目']; reply = ['沒有要你處理的']; detail = ['目前沒有資料。']
+    if ident == '1-E':
+        ix = ['要你處理 0', '艦隊產線 3', '本席正常', 'QC 審查通過', '代理決策 0']
+        reply = ['所有資料正常，沒有要你處理的。']
+        detail = ['艦隊 3 條產線均正常運作。', 'QC 通過，代理決策 0 條。']
     if ident == '2-X': ix = ['待決讀不到']; reply = ['待決清單讀不到，請稍後重試。']; detail = ['decision list：讀不到，無法載入卡片。']
     if state == 'M':
         ix = ([f'第 {i} 張 待決卡' for i in range(1,15)] if tab == 1 else [f'第 {i} 筆 {TABS[tab]}項目' for i in range(1,21 if tab == 3 else 13)])
@@ -65,6 +70,8 @@ def content(f):
             ix = ['審查讀不到','QC 讀不到','決策讀不到']; reply = ['審查與 QC 結果讀不到，無法判斷是否需介入。']; detail = ['live.review、qc、decisions：讀不到。']
         if ident == '7-X2':
             ix = ['產線讀不到','本機待決 3','他機待決 1']; reply = ['產線現況讀不到，無法判斷 agent 狀態。']; detail = ['runs：讀不到。', 'pm／console／fleetFeed：讀不到，摘要降級。', 'agentsColumn 速度 41 tok/s。']
+        if ident == '5-S':
+            detail = ['⏶ quota 指令失敗，快取過時。', '最後一次請求距今 30 分鐘，速度 41 tok/s 過時。'] + detail
         if ident == '5-X':
             ix = ['5h 額度讀不到','7d 額度讀不到','額度池 A 42%','今日用量 380k','輸出速度讀不到']
             reply = ['額度讀不到，無法估計撞頂時間。']
@@ -144,13 +151,20 @@ def compose(W,H,f):
         band.append([G('╰'+'─'*(lw-1))]+v.hline('┴',hint,rw-1)+[G('╯')])
     st = dict(mode='card',pane='ctx',focus=0,ans={})
     status = v.status_line(W,st)
-    if f['id'] == '2-X':
-        status = [(s.replace('待決 3', '待決 —').replace('動手 1', '動手 —').replace('▲ 1', '▲ —'), role, meta) for s,role,meta in status]
+    if f['id'] in ('1-E', '2-E'):
+        status = [((' 0' if i and status[i-1][0] == '▲' and s == ' 1' else s.replace('待決 3', '待決 0').replace('動手 1', '動手 0')), role, meta) for i,(s,role,meta) in enumerate(status)]
+    if f['id'] in ('2-X', '7-X'):
+        status = [((' —' if i and status[i-1][0] == '▲' and s == ' 1' else s.replace('待決 3', '待決 —').replace('動手 1', '動手 —')), role, meta) for i,(s,role,meta) in enumerate(status)]
+        status = v.pad(v.fit(status,W),W)
+    if f['id'] in ('5-S', '7-S', '2-S', '1-S'):
+        status = [(s.replace('待決 3', '待決 3 過時').replace('41 tok/s', '41 tok/s 過時'), role, meta) for s,role,meta in status]
         status = v.pad(v.fit(status,W),W)
     if f['id'] in ('5-X','7-X'):
         status = [(s.replace('41 tok/s', '—').replace('▆▆▄▃▆',''), role, meta) for s,role,meta in status]
         status = v.pad(v.fit(status,W),W)
     prompt = v.prompt(W)
+    if f['id'] == '5-S':
+        prompt[-1] = v.pad([T(' codeforge │ develop │ 5h 42% 過時 │ 7d 18% 過時 │ fleet 3 lane 執行中','inactive')],W)
     if f['id'] == '5-X':
         prompt[-1] = v.pad([T(' codeforge │ develop │ 5h — │ 7d — │ fleet 3 lane 執行中','inactive')],W)
     bottom = band+[status]+prompt
@@ -170,6 +184,8 @@ def compose(W,H,f):
     return rows
 
 def main():
+    if os.path.basename(os.path.normpath(OUT)) == 'out' and os.path.isdir(OUT):
+        shutil.rmtree(OUT)
     os.makedirs(OUT,exist_ok=True)
     for W,H in ((209,49),(120,40),(80,24)):
         for f in flow:
