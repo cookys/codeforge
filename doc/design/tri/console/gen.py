@@ -20,8 +20,9 @@ v = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(v)
 T, G = v.T, v.G
 TABS = v.TABS
-URL = v.URL
+URL = 'https://staging.shiye.test/pl02?v=241115'  # r2 codex 1：完整網址，80 欄放得下
 CARDS = v.CARDS  # 合併 plan、外掛更新時機、預覽先拍幾欄、▲ 時冶 PL02 定案
+CARDS = [{**c, 'steps': [x.replace(v.URL, URL) for x in c['steps']], 'detail': [(k, t.replace(v.URL, URL)) for k, t in c['detail']]} for c in CARDS]  # 網址換成完整版
 SIZES = ((209, 49), (120, 40), (80, 24))
 LW = 37  # 寬螢幕 index 欄寬（含左框線與中間直線）
 BAND_BANNED = ('背景', '卡住', '來源', 'sha')  # check3 R7
@@ -364,12 +365,12 @@ step(id='8-M', tab=8, state='M', title='很多張',
      reply=[('▸ 憑證輪替要排在週末還是平日？', 'text'), opt('a', '週末', True, '影響少；要有人值班'), opt('b', '平日', False, '有人在線上；會中斷 10 分鐘'), opt('c', '再放一週', False, '到期日改到 12-05')],
      detail=['到期 11-28（還有 2 天）'], hints=TD_HINTS, key=NEXT, next='8-L')
 LONG_Q = ('▸ 這次合併牽涉 codeforge、autopilot、hangar 三條產線，審查和部署時程都還沒對齊；要現在合併、等明天的額外審查，還是延到下週？', 'text')
-LONG_OPTS = [opt('a', '現在合併', True, '值班的人看著；出事回滾到 7d1c'), opt('b', '等明天', False, '多一輪 agy 審查，晚一天'), opt('c', '延到下週', False, '保留目前版本，到期日改 12-07')]
-LONG_DETAIL = ['到期 11-30 · 從待決移來 11-24', '退回原因：（新增資料，目前沒有資料來源）', '11-24 PM：hippo 裝完前不要合併', '11-25 PM：hippo 延到 11-29']
+LONG_OPTS = [opt('a', '現在合併', True, '值班的人看著；出事回滾到 7d1c'), opt('b', '等明天', False, '多一輪 agy 審查，晚一天；明早 9 點前審完就合併，審出 blocking 就改到下週，到期日跟著延'), opt('c', '延到下週', False, '保留目前版本，到期日改 12-07')]
+LONG_DETAIL = ['附註（移來時寫的）：先確認審查結果', '到期 11-30 · 從待決移來 11-24', '退回原因：（新增資料，目前沒有資料來源）', '11-24 PM：hippo 裝完前不要合併', '11-25 PM：hippo 延到 11-29']
 step(id='8-L', tab=8, state='L', title='長問題加長選項', ix=TD_IX, compact='▸11-30 合併計畫  ·12-02 外掛更新  ·12-05 核對報表',
-     reply=[LONG_Q] + LONG_OPTS + [dim('附註（移來時寫的）：先確認審查結果')], detail=LONG_DETAIL, hints=TD_HINTS, key='↓', next='8-L2')
+     reply=[LONG_Q] + LONG_OPTS, detail=LONG_DETAIL, hints=TD_HINTS, key='↓', next='8-L2')
 step(id='8-L2', tab=8, state='L2', title='捲到底', ix=TD_IX, compact='▸11-30 合併計畫  ·12-02 外掛更新  ·12-05 核對報表',
-     reply=[LONG_Q] + LONG_OPTS + [dim('附註（移來時寫的）：先確認審查結果')], rscroll=1, detail=LONG_DETAIL, hints=TD_HINTS, key=NEXT, next='8-X')
+     reply=[LONG_Q] + LONG_OPTS, rscroll=1, detail=LONG_DETAIL, hints=TD_HINTS, key=NEXT, next='8-X')
 step(id='8-X', tab=8, state='X', title='缺源（還沒接線）', ix=[dim('待辦'), err('  待辦還沒接線')], compact='待辦還沒接線',
      reply=['待辦的資料還沒接上，這頁目前一定是空的。', '接線後讀不到的樣子同 2-X。'], pin=[err('⊘ fleet todo 還沒接線')], detail=['runtime 現況：沒有資料。'],
      hints=[H('Esc', '關閉')], key=NEXT, next='8-S')
@@ -392,14 +393,18 @@ step(id='9-L', tab=9, state='L', title='按鍵表', ix=[dim('說明'), '  狀態
 ACT = CARDS[3]
 NOTE4 = 'staging 走過一圈，8 個都對；第 5、7 兩個值和 11-24 的對照一致'
 MK = {0: 'a', 1: 'b', 3: 'a'}
+MK0 = {0: 'a', 1: 'b'}  # 第 4 張（▲）還沒選：先走完 staging 才選 a（r2 codex 3）
+URL_PIN = [('網址   ' + URL, 'text')]
 ACT_STEPS = [('▸ ' + ACT['q'], 'text'), '  1. 打開 staging 頁（按 g 複製網址）', '     ' + URL, '  2. 走一圈，核對 8 個推定值：', '     衰減、半徑、上限、下限', '     權重 1、權重 2、權重 3、權重 4',
              '  3. 有不一致的值，按 m 寫是哪一個']
 L2_HINTS = [H('a/b/c', '選'), H('↑↓', '捲'), H('PgUp/PgDn', '捲來龍去脈'), H('g', '複製網址'), H('m', '附註'), H('s', '送出')]
 L2_N = [H('a/b/c', '選'), H('↑↓', '捲'), H('PgUp/PgDn', '捲上方'), H('g', '複製網址'), H('m', '附註')]
-step(id='2-L2', tab=2, state='L2', title='等你動手 · 步驟很長', ix=decide_ix(3, MK), compact=decide_compact(3, MK),
-     reply=ACT_STEPS + card_opts(ACT, 'a'), detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='↓', next='2-L3')
-step(id='2-L3', tab=2, state='L3', title='等你動手 · 捲到底', ix=decide_ix(3, MK), compact=decide_compact(3, MK),
-     reply=ACT_STEPS + card_opts(ACT, 'a'), rscroll=1, detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='m', next='2-I')
+step(id='2-L2', tab=2, state='L2', title='等你動手 · 步驟很長', ix=decide_ix(3, MK0), compact=decide_compact(3, MK0),
+     reply=ACT_STEPS + card_opts(ACT), pin=URL_PIN, detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='↓', next='2-L3')
+step(id='2-L3', tab=2, state='L3', title='等你動手 · 捲到底', ix=decide_ix(3, MK0), compact=decide_compact(3, MK0),
+     reply=ACT_STEPS + card_opts(ACT), rscroll=1, pin=URL_PIN, detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='a', next='2-A')
+step(id='2-A', tab=2, state='A', title='走完 staging · 選 a', ix=decide_ix(3, MK), compact=decide_compact(3, MK),
+     reply=ACT_STEPS + card_opts(ACT, 'a'), rscroll=1, pin=URL_PIN, detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='m', next='2-I')
 step(id='2-I', tab=2, state='I', title='寫附註', ix=decide_ix(3, MK), compact=decide_compact(3, MK),
      reply=[('▸ ' + ACT['q'], 'text'), dim('附註（Enter 存，Esc 取消）：'), '  ' + NOTE4 + '▏', dim('輸入中：a/b/c、s 這些鍵都當成文字')],
      detail=card_detail(ACT), hints=[H('Enter', '存附註'), H('Esc', '取消附註')], key='Enter 存附註，再按 s', next='2-P')
@@ -440,7 +445,7 @@ step(id='C3', tab=2, state='C3', title='回到待決（全部恢復）', ix=deci
      key='1', next='1-N')
 
 IDS = [s['id'] for s in S]
-assert len(IDS) == len(set(IDS)) == 67, len(IDS)
+assert len(IDS) == len(set(IDS)) == 68, len(IDS)
 NUM = {s['id']: n for n, s in enumerate(S, 1)}
 assert all(s['next'] in NUM for s in S)
 
@@ -469,12 +474,14 @@ def render_items(items, w):
             _, l, lab, rec, why, picked = it
             r = [T('    '), T(l + ':', 'merged'), T(' ' + lab + ' ' * (optw - v.dw(lab)), 'success' if picked else 'text')]
             r += [T('  '), G('★', 'warning'), T(' 建議', 'warning')] if rec else [T(' ' * 8)]
-            r += [T('  ' + why, 'inactive')]
-            if picked:
-                r.append(T('  ✓ 已選', 'success'))
+            pre = v.rowlen(r) + 2
+            tag = [T('  ✓ 已選', 'success')] if picked else []
+            lines = v.wrap(why, w - pre - v.rowlen(tag)) if why else ['']
             if first_opt is None:
                 first_opt = len(rows)
-            rows.append(v.fit(r, w))
+            rows.append(v.fit(r + [T('  ' + lines[0], 'inactive')] + (tag if len(lines) == 1 else []), w))
+            for i, ln in enumerate(lines[1:], 1):  # 選項說明太長：換行接在說明欄下面，選項整段固定看得到
+                rows.append(v.fit([T(' ' * pre + ln, 'inactive')] + (tag if i == len(lines) - 1 else []), w))
             continue
         s, role = seg(it)
         lead = len(s) - len(s.lstrip(' '))
@@ -514,7 +521,7 @@ def detail_window(pin, rows, n):
     assert room >= 1, (len(pin), n)
     if len(rows) <= room:
         return pin + rows, False
-    return pin + rows[:room - 1] + [[T(f'⋯ 下面還有 {len(rows) - room + 1} 列 · PgDn 捲', 'inactive')]], True
+    return pin + rows[:room - 1] + [[T(f'⋯ 下面還有 {len(rows) - room + 1} 列', 'inactive')]], True
 
 
 # ---------- 狀態列 ----------
@@ -548,7 +555,7 @@ def status_line(W, tab, st):
     raise AssertionError(W)
 
 
-def prompt(W, quota):
+def prompt(W, quota, st0=None):
     line = [G('─' * W)]
     if quota == 'missing':
         q = [T('5h —', 'inactive'), G(' │ '), T('7d —', 'inactive')]
@@ -556,8 +563,17 @@ def prompt(W, quota):
         q = [T('5h 42% ', 'warning'), G('⏶', 'warning'), T(' 18 分鐘前', 'warning'), G(' │ '), T('7d 18% ', 'warning'), G('⏶', 'warning')]
     else:
         q = [T('5h '), G('▰▰▰▰▱▱▱▱▱▱', 'success'), T(' 42% 重置 2h10m'), G(' │ '), T('7d '), G('▰▰▱▱▱▱▱▱▱▱', 'success'), T(' 18%')]
-    st = [T(' codeforge'), G(' │ '), T('develop'), G(' │ ')] + q + [G(' │ '), T('fleet 3 lane 執行中'), G(' │ '), T('記憶 L1 214 條')]
+    st = [T(' codeforge'), G(' │ '), T('develop'), G(' │ ')] + q + [G(' │ ')] + fleet_seg(st0 or {}) + [G(' │ '), T('記憶 L1 214 條')]
     return [line, v.pad([T('> ')], W), line, v.pad(v.fit(st, W), W)]
+
+
+def fleet_seg(st0):
+    """最底 statusline 的 fleet 段跟 pane 底列同一個來源（r2 codex 2）。"""
+    if st0.get('fleet') == '—':
+        return [T('fleet —', 'inactive')]
+    if 'fleet' in st0.get('stale', ()):
+        return [T('fleet 3 lane ', 'warning'), G('⏶', 'warning'), T(' 11 分鐘前', 'warning')]
+    return [T('fleet 3 lane 執行中')]
 
 
 # ---------- 組一張 ----------
@@ -613,7 +629,7 @@ def compose(W, Hh, s):
     band_text = ''.join(x for r in band for x, _, _ in r)
     bad = [w for w in BAND_BANNED if w in band_text]
     assert not bad, f'{sid}: band 出現 {bad}'
-    bottom = band + [status_line(W, tab, s['status'])] + prompt(W, s['quota'])
+    bottom = band + [status_line(W, tab, s['status'])] + prompt(W, s['quota'], s['status'])
     assert len(bottom) == band_h + 5
     pane = [v.frame_top([T(f'{tabname} · 來龍去脈')], pw, ctrl='')] + [v.frame_row(r, pw) for r in dvis] + [v.frame_bottom([T('只能看 · 跟著下面那一筆換', 'inactive')], pw)]
     conv = [[]] + v.CONV + [[]] * Hh
