@@ -1,16 +1,19 @@
 //! 候選擷取（plan §10.2 T1）：`lessons.toml` 設定＋唯讀 L0 掃描＋分類。
+//! T2 機器閘：每筆候選產生後、去重前跑 `gate::check`（source＝該筆 signal
+//! 的 `content`）；命中就丟棄、累計規則 id 次數（見 [`super::gate`]）。
 //!
 //! 只讀 `<project_dir>/signals/*.jsonl`：不推進 cursor、不 mark_compiled、
 //! 不寫任何檔。輸出只有受限詞彙欄位與證據指標，絕不含 content、路徑、
 //! seat 原文、model 原文或任何 signal 文字。
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::db;
+use crate::lessons::gate::{self, GateCounts};
 use crate::lessons::vocab::{PitfallType, SolutionType, Tool, Topic};
 use crate::memory::l0::{Signal, SignalSource};
 
@@ -29,15 +32,9 @@ pub struct LessonsConfig {
     pub repos: Vec<String>,
 }
 
-/// 由環境變數解析設定檔路徑。
+/// 由環境變數解析設定檔路徑（資料目錄規則與 `gate::data_dir` 相同）。
 pub fn config_path() -> PathBuf {
-    match std::env::var("CODEFORGE_DATA_DIR") {
-        Ok(dir) => PathBuf::from(dir).join("lessons.toml"),
-        Err(_) => dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("~"))
-            .join(".codeforge")
-            .join("lessons.toml"),
-    }
+    gate::data_dir().join("lessons.toml")
 }
 
 /// 讀取並驗證設定。檔案不存在、解析失敗、或任一清單為空 → `None`
@@ -119,7 +116,16 @@ pub fn read_signals(project_dir: &Path) -> Vec<Signal> {
 type DedupKey = (Topic, PitfallType, SolutionType, Tool, String, String);
 
 /// 依設定從當前 store 抽候選（唯讀）。
-pub fn collect(ctx: &db::Context, cfg: &LessonsConfig) -> Vec<Candidate> {
+///
+/// T2 機器閘：每筆候選產生後、去重前跑 [`gate::check`]（source＝該筆
+/// signal 的 `content`）；命中就丟棄並累計該 `RuleId` 次數，絕不存命中
+/// 文字。回傳（存活的候選，命中次數）；呼叫方把次數寫入
+/// [`gate::gate_path`]（無設定檔 → 不會呼叫 collect → 不寫該檔）。
+pub fn collect(
+    ctx: &db::Context,
+    cfg: &LessonsConfig,
+    deny: Option<&gate::DenyList>,
+) -> (Vec<Candidate>, GateCounts) {
     // repo＝store 所屬 repo 目錄名（project_dir 的父目錄名，如 …/codeforge/.codeforge → codeforge）
     let repo = ctx
         .project_dir
@@ -128,24 +134,33 @@ pub fn collect(ctx: &db::Context, cfg: &LessonsConfig) -> Vec<Candidate> {
         .and_then(|n| n.to_str())
         .map(str::to_string);
     let Some(repo) = repo else {
-        return Vec::new();
+        return (Vec::new(), BTreeMap::new());
     };
     // repo 不在清單 → 該 store 不產候選（fail-closed）
     if !cfg.repos.contains(&repo) {
-        return Vec::new();
+        return (Vec::new(), BTreeMap::new());
     }
     let lane_hash = lane_hash_of(&cfg.self_seat);
     let mut out: Vec<Candidate> = Vec::new();
     let mut seen: HashSet<DedupKey> = HashSet::new();
+    let mut counts: GateCounts = BTreeMap::new();
     for sig in read_signals(&ctx.project_dir) {
         let Some((key, cand)) = candidate_from(&sig, &repo, &lane_hash, cfg) else {
             continue;
         };
+        // 機器閘（去重前）：命中 → 丟棄，只累計規則 id 與次數
+        let Ok(json) = serde_json::to_string(&cand) else {
+            continue;
+        };
+        if let Err(rule) = gate::check(&json, Some(&sig.content), deny) {
+            *counts.entry(rule).or_insert(0) += 1;
+            continue;
+        }
         if seen.insert(key) {
             out.push(cand);
         }
     }
-    out
+    (out, counts)
 }
 
 /// 單一 signal 的過濾＋分類；任一條件不成立回 `None`（丟棄）。
