@@ -1,0 +1,52 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "codeforge:r1-bottom-controls-2026-11-25",
+ "generation": 2,
+ "findings": [
+  {
+   "fingerprint": "666f2c979fbd0d2d5b58d4486e7dc3c4af91db415ccf020dbb00cbe6bb516811",
+   "disposition": "accepted_blocker",
+   "rationale": "Repaired 3.1: frame height H = max(2+info+c, 2c+1), the smallest height with ctrlCap(H) >= c; H <= M always since c <= ctrlCap(M); H=5 c=2 gives info 1."
+  },
+  {
+   "fingerprint": "8b7ecf561edf886db0e42b9eccf72bdd5a15762d81c781d7773ce972c77093f4",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as af8306d4: print-only fallback removed."
+  },
+  {
+   "fingerprint": "002cefe3c7f0eb7280caa7b9c7a6d0632450ae6cca42cafb6e24057fdd7158e1",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 4/5/7: one 8-cell matrix used by mocks, screenshots and U5."
+  },
+  {
+   "fingerprint": "303d2b48ae0e0417dbde063d8f51ed67b1b26ac83e903ae3fdbb5499ffb8da87",
+   "disposition": "accepted_blocker",
+   "rationale": "Repaired 3.1: explicit order (ctrlCap(M) to page, page fits info, frame sets H); non-ladder collapse runs before the assertion; info-press check records for decide during U1 and throws from U2 when KNOWN empties."
+  },
+  {
+   "fingerprint": "2843d923374251569a8cd3395f6a423e84264ca8bd911995dbf71d1426429c5c",
+   "disposition": "accepted_blocker",
+   "rationale": "Repaired 3.3: state table for note input, o overflow (L3/L4 only) and submit preview, each within the tier row count and with required press keys; L5 has no inline states."
+  },
+  {
+   "fingerprint": "d4a12dabe05bd932691f231c06e49f27633bb0a4215edeee93d2463de77a8fbb",
+   "disposition": "accepted_blocker",
+   "rationale": "Repaired 3.3/3.4: selector press is key:card only when the selector has >1 row, else p/n (covers C mode); maxRows<10 override removed so L3 is reachable; single L5 definition with every segment pressable."
+  },
+  {
+   "fingerprint": "8311a9ef1fabaed267bc64a2f82bb5900cdbcc54f73a778300c41ffcbe4ea741",
+   "disposition": "accepted_blocker",
+   "rationale": "Repaired 4: rule table with M, ctrlCap, column mode, tier and control rows for all 8 cells is the reference; rules win over mocks; wrong H=13 mock removed; frame no longer truncates (page fits info per 3.2)."
+  },
+  {
+   "fingerprint": "af8306d495ed63f6c721a70e3b087ed71085ae56435e063d89776a9bc59d5473",
+   "disposition": "accepted_blocker",
+   "rationale": "Repaired 3.6: view carries a per-invocation nonce, live pane switches only on a new nonce so manual tab changes stick; no self-chosen fallback, a failed U0 probe stops U4 and goes to PM; D4 unchanged."
+  },
+  {
+   "fingerprint": "19012e3dbb5da93a8016666c7d19e1bf4851bebe2ab068fe4b3a21336c065834",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 5: cursor = min(cursor, count-1); count 0 gives cursor 0 and the empty state."
+  }
+ ]
+}
