@@ -7,7 +7,12 @@ const {
   extractErrorRecoveries,
   resolveSeat,
   extractSessionMetadata,
+  findCodeforgeRoot,
 } = require('./session-digest.js');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFileSync } = require('child_process');
 
 // Test suite counter
 let passedTests = 0;
@@ -398,6 +403,59 @@ test('Case 20: extractSessionMetadata extracts session_id, time range, and model
   assert.strictEqual(resolveSeat({ CODEFORGE_SEAT: 'seat-alpha.local', FLEET_ADDRESS: 'other' }), 'seat-alpha.local');
   assert.strictEqual(resolveSeat({ FLEET_ADDRESS: 'lane-beta.local' }), 'lane-beta.local');
   assert.strictEqual(resolveSeat({}), null);
+});
+
+// Digest root (PM 01M888T3SD / 01M888TFHT): same rule as db::resolve_project_dir.
+function tmpHome() {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cf-root-')));
+  const home = path.join(base, 'home');
+  fs.mkdirSync(path.join(home, '.codeforge', 'brain'), { recursive: true });
+  return home;
+}
+
+function gitIn(dir, args) {
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR']) delete env[k];
+  execFileSync('git', ['-C', dir, ...args], { env, stdio: 'ignore' });
+}
+
+test('digest root: no own .codeforge -> no digest, never the home brain dir', () => {
+  const home = tmpHome();
+  const proj = path.join(home, 'projects', 'plain');
+  fs.mkdirSync(proj, { recursive: true });
+  assert.strictEqual(findCodeforgeRoot(proj, { home }), null);
+});
+
+test('digest root: a sandbox HOME beside the project never reaches a .codeforge above it', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cf-root-')));
+  const home = path.join(base, 'home');
+  const proj = path.join(base, 'proj');
+  fs.mkdirSync(path.join(base, '.codeforge', 'brain'), { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(proj, { recursive: true });
+  assert.strictEqual(findCodeforgeRoot(proj, { home }), null);
+});
+
+test('digest root: own .codeforge found from the root and from a subdir', () => {
+  const home = tmpHome();
+  const proj = path.join(home, 'projects', 'app');
+  fs.mkdirSync(path.join(proj, '.codeforge'), { recursive: true });
+  fs.mkdirSync(path.join(proj, 'src', 'deep'), { recursive: true });
+  assert.strictEqual(findCodeforgeRoot(proj, { home }), proj);
+  assert.strictEqual(findCodeforgeRoot(path.join(proj, 'src', 'deep'), { home }), proj);
+});
+
+test('digest root: a worktree uses its main clone .codeforge', () => {
+  const home = tmpHome();
+  const main = path.join(home, 'projects', 'app');
+  const wt = path.join(home, 'projects', 'app-wt');
+  fs.mkdirSync(main, { recursive: true });
+  gitIn(main, ['init', '-q', '-b', 'develop']);
+  gitIn(main, ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  gitIn(main, ['worktree', 'add', '-q', wt, '-b', 'wt']);
+  assert.strictEqual(findCodeforgeRoot(wt, { home }), null, 'main clone has no .codeforge yet');
+  fs.mkdirSync(path.join(main, '.codeforge'));
+  assert.strictEqual(findCodeforgeRoot(wt, { home }), main);
 });
 
 console.log(`\nTests completed: ${passedTests}/${totalTests} passed.`);

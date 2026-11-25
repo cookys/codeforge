@@ -521,26 +521,74 @@ function extractSelfCorrections(messages) {
  * @param {string} startDir
  * @returns {string|null} canonical repo root, or null
  */
-function findCodeforgeRoot(startDir) {
-  if (!startDir) return null;
-  let dir;
+function canonical(p) {
   try {
-    dir = fs.realpathSync(startDir);
+    return fs.realpathSync(p);
   } catch (_) {
-    dir = path.resolve(startDir);
+    return path.resolve(p);
   }
+}
+
+function hasCodeforgeDir(dir) {
+  try {
+    return fs.statSync(path.join(dir, '.codeforge')).isDirectory();
+  } catch (_) {
+    return false;
+  }
+}
+
+/** True when dir is home or an ancestor of it (home sits inside dir). */
+function isHomeOrAbove(dir, home) {
+  const rel = path.relative(dir, home);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
+ * Main clone root of the git worktree containing dir, via
+ * `git rev-parse --git-common-dir` (the shared `.git`). Null outside git.
+ */
+function mainCloneRoot(dir) {
+  try {
+    const out = require('child_process').execFileSync(
+      'git',
+      ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 }
+    ).trim();
+    if (!out || path.basename(out) !== '.git') return null;
+    return canonical(path.dirname(out));
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * The project memory root for startDir. The Rust side (`db::resolve_project_dir`)
+ * applies the same rule, so the digest writer and the dream reader agree:
+ *   1. walk up to the nearest ancestor with `.codeforge`, stopping at $HOME or
+ *      any ancestor of it, so a sandbox HOME never reaches the real brain dir
+ *      (`~/.codeforge` is the account brain dir, not a project; PM 01M888T3SD);
+ *   2. else, inside a git worktree, the main clone's `.codeforge` (a worktree
+ *      shares its project's memory; PM 01M888TFHT);
+ *   3. else null: not a codeforge project, no digest is written.
+ * @param {string} startDir
+ * @param {{home?: string}} [opts]
+ * @returns {string|null} canonical project root, or null
+ */
+function findCodeforgeRoot(startDir, opts = {}) {
+  if (!startDir) return null;
+  const home = canonical(opts.home || os.homedir());
+  const start = canonical(startDir);
+  let dir = start;
   for (;;) {
-    let isRepo = false;
-    try {
-      isRepo = fs.statSync(path.join(dir, '.codeforge')).isDirectory();
-    } catch (_) {
-      isRepo = false;
-    }
-    if (isRepo) return dir;
+    if (isHomeOrAbove(dir, home)) break; // never $HOME or any ancestor of it
+    if (hasCodeforgeDir(dir)) return dir;
     const parent = path.dirname(dir);
-    if (parent === dir) return null; // reached filesystem root
+    if (parent === dir) break; // reached filesystem root
     dir = parent;
   }
+  const main = mainCloneRoot(start);
+  if (main && !isHomeOrAbove(main, home) && hasCodeforgeDir(main)) return main;
+  return null;
 }
 
 /** Per-repo digest dir for a given cwd, or null if cwd is not in a codeforge repo. */
@@ -1211,5 +1259,6 @@ if (require.main === module) {
     extractErrorRecoveries,
     resolveSeat,
     extractSessionMetadata,
+    findCodeforgeRoot,
   };
 }

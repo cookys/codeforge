@@ -97,6 +97,9 @@ step "tux vocabulary lint"
 python3 scripts/tux-lint.py --test
 python3 scripts/tux-lint.py
 
+step "session-digest hook tests (digest root must match dream's project dir)"
+node .claude/scripts/session-digest.test.js
+
 step "cjk-safe"
 ./scripts/check-cjk-safe.test.sh
 ./scripts/check-cjk-safe.sh
