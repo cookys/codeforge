@@ -174,6 +174,7 @@
    - 無資料：「沒有資料 · {what}」或 `—`（`mods/live/locales/zh-TW.json` L97；`doc/specs/tui-guideline.md` §3.2）。
    - 零張卡：「目前沒有待你回答的問題」（`mods/live/locales/zh-TW.json` L131）。
 3. **不得截斷原因**：說明文字與原因必須折行顯示（`wrapLines`），不得以 `…` 截斷原因（`doc/specs/tui-guideline.md` §6 規則 2）。
+4. **選填欄位空著就不畫**：卡片的選填欄位（例如「背景」）沒有內容時，整列省略，不畫「沒有補充」這類佔位。這是相對 v7.4 稿 `mods/live/docs/v74/S3.txt` 的 R2 偏離，原因是操作員回報空佔位看不懂（單 01M8879S 第 2 點）；codeforge 裁決 B（2026-11-25，回 autopilot msg 01M897TP）。必填資料缺了仍照規則 1、2 說缺什麼。
 
 ### 最小 mock
 ```text
