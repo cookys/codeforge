@@ -32,9 +32,12 @@ res = {'png': png.rsplit('/', 1)[-1], 'blank_share': round(share, 4), 'blank_ok'
 if len(sys.argv) > 2:
     geo = json.load(open(sys.argv[2])); segs = []; worst = 0
     for g in geo['grids']:
+        if not g.get('scale') or not g.get('pitch'): continue  # 隱藏的 grid（收起的區塊）量不到尺寸
         for col, y0, y1 in g['segs']:
             x = int(g['left'] + (col * 8 + 4) * g['scale'])
-            ya = int(g['top'] + (y0 + 0.5) * g['pitch']); yb = int(g['top'] + (y1 + 0.5) * g['pitch'])
+            top = g['top'] - geo.get('scrollY', 0)  # top 是整頁座標；selector 截圖是捲動後的視窗
+            ya = int(top + (y0 + 0.5) * g['pitch']); yb = int(top + (y1 + 0.5) * g['pitch'])
+            if ya < 2 or yb > h or x + 3 > w: continue  # 不在這張圖裡的框線不檢查
             bg = px(int(g['left'] + (col * 8 + 1) * g['scale']), ya - 2)  # 框線左邊的背景
             # 在框線那一格裡（±2px）找有沒有任何一列整段都是背景色
             gap = run = 0
@@ -43,5 +46,6 @@ if len(sys.argv) > 2:
                 run = 0 if hit else run + 1; gap = max(gap, run)
             segs.append({'col': col, 'rows': [y0, y1], 'max_gap_px': gap}); worst = max(worst, gap)
     res.update({'pitch_px': [round(g['pitch'], 2) for g in geo['grids']], 'frame_segments': len(segs), 'max_gap_px': worst, 'gap_ok': worst == 0 and len(segs) > 0})
+res["segs"] = segs if len(sys.argv) > 2 else []
 ok = res['blank_ok'] and res.get('gap_ok', True); res['ok'] = ok
 print(json.dumps(res, ensure_ascii=False)); sys.exit(0 if ok else 1)

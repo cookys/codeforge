@@ -18,16 +18,19 @@ await cmd('Emulation.setDeviceMetricsOverride', { width: +w, height: +h, deviceS
 await cmd('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] });
 await cmd('Page.navigate', { url });
 for (let i = 0; i < 1200 && !evs.has('Page.loadEventFired'); i++) await sleep(100);
-const js = `(async()=>{await document.fonts.ready;${sel !== '-' ? `document.querySelector(${JSON.stringify(sel)}).scrollIntoView({block:'start'});` : ''}
-await Promise.all([...document.images].map(i=>i.decode().catch(()=>0)));
+const js = `(async()=>{await document.fonts.ready;
+for(const i of document.images){i.loading='eager';}
+await Promise.all([...document.images].map(i=>Promise.race([i.decode().catch(()=>0),new Promise(r=>setTimeout(r,8000))])));
+${sel !== '-' ? `document.querySelector(${JSON.stringify(sel)}).scrollIntoView({block:'start'});` : ''}
 await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-const grids=[...document.querySelectorAll('.term-grid')].map(g=>{const r=g.getBoundingClientRect();const ln=[...g.querySelectorAll('.ln')];
+const vis=g=>{if(g.checkVisibility&&!g.checkVisibility({opacityProperty:true,visibilityProperty:true}))return false;${sel !== '-' ? `const r=g.getBoundingClientRect();const x=r.left+r.width/2,y=Math.max(r.top,0)+4;if(y>innerHeight)return true;const e=document.elementFromPoint(x,y);return !!e&&g.contains(e);` : 'return true;'}};
+const grids=[...document.querySelectorAll('.term-grid')].filter(vis).map(g=>{const r=g.getBoundingClientRect();const ln=[...g.querySelectorAll('.ln')];
  const sc=r.width/g.offsetWidth; const pitch=ln.length>1?(ln[1].getBoundingClientRect().top-ln[0].getBoundingClientRect().top):0;
  const rows=ln.map(l=>[...l.children].map(i=>i.textContent));
  const segs=[];const colOf=row=>{let c=0;return row.map(t=>{const x=c;c+=(t.length&&t.codePointAt(0)>0x2e7f?2:1);return [x,t]})};
  const cols=rows.map(colOf);const open={};
  cols.forEach((row,y)=>row.forEach(([x,t])=>{if('╭┌'.includes(t))open[x]=y;else if('╰└'.includes(t)&&open[x]!=null){segs.push([x,open[x],y]);delete open[x];}}));
- return {left:r.left,top:r.top+scrollY,scale:sc,pitch,cellW:8*sc,rows:ln.length,segs};});
+ return {sec:(g.closest('section[id],[id^=drift],[id]')||{}).id||'',left:r.left,top:r.top+scrollY,scale:sc,pitch,cellW:8*sc,rows:ln.length,segs};});
 return {scrollY,images:document.images.length,grids};})()`;
 const r = await cmd('Runtime.evaluate', { expression: js, awaitPromise: true, returnByValue: true });
 const v = r.result.result.value; console.log(JSON.stringify(v ?? r.result));
