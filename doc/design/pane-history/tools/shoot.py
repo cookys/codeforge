@@ -54,7 +54,7 @@ def append_note(out_dir: pathlib.Path, sha_label: str, status: str, detail: str)
     out_dir.mkdir(parents=True, exist_ok=True)
     clean_detail = public_text(" ".join(detail.splitlines()).strip())
     line = f"{sha_label} {status} {clean_detail}\n"
-    with (out_dir / "notes.log").open("a", encoding="utf-8") as f:
+    with (out_dir / "notes.txt").open("a", encoding="utf-8") as f:
         f.write(line)
 
 

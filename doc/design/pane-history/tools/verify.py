@@ -30,7 +30,7 @@ for v in versions:
 rows = [v for v in versions if v['ap_sha']]
 lineage = [v for v in rows if v['id'].startswith('V')]
 assert len(lineage) == 27
-notes = (ROOT/'shots/notes.log').read_text()
+notes = (ROOT/'shots/notes.txt').read_text()
 present = missing = 0
 for v in versions:
     assert {'id','name','plain','ap_sha','date','kind','changed','principles','operator_feedback','shots','sources'} <= v.keys()

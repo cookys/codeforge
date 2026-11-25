@@ -12,7 +12,7 @@ python3 doc/design/pane-history/tools/shoot.py <autopilot_commit> --theme light
 
 `append.sh` 拍深淺、取 commit 的完整訊息、追加未知原則 `?`，再重建；重複 sha 不追加。`--no-shoot` 供離線資料追加及合成 sha 測試，須自行補圖。`PANE_HISTORY_ROOT` 可指向測試資料目錄；`PANE_HISTORY_AP_REPO` 可指定追加工具讀取的 autopilot clone。
 
-拍攝工具唯讀匯出 autopilot 版本，用私有 tmux、假 fleet、獨立 HOME 和設定複本，每張限制 240 秒。既有深色畫面按 sha 收錄；缺圖逐版拍攝，失敗留在 `shots/notes.log`，不冒用其他版。歷史工具不支援開啟指令與缺少 commit 的情況保留缺圖。
+拍攝工具唯讀匯出 autopilot 版本，用私有 tmux、假 fleet、獨立 HOME 和設定複本，每張限制 240 秒。既有深色畫面按 sha 收錄；缺圖逐版拍攝，失敗留在 `shots/notes.txt`，不冒用其他版。歷史工具不支援開啟指令與缺少 commit 的情況保留缺圖。
 
 公開樹中的 sandbox HOME 名稱以等寬代字匿名化；pane 內容、欄位與格數不變，PNG 原樣複製。ANSI 預覽會提升不足的字色對比，下載檔保留原 ANSI 顏色。`drafts/r1-rev5/` 的舊生成器是歷史材料，現行工具在 `tools/`。
 

@@ -7,9 +7,7 @@
     "date": "2026-10-04",
     "kind": "release",
     "changed": "live mod 首次出現：pane 與 band 讀 runs-live 快照",
-    "principles": [
-      "P01"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -29,9 +27,7 @@
     "date": "2026-10-09",
     "kind": "release",
     "changed": "一行 band（slot 文法、寬度表、ⓘ）與八分頁面板",
-    "principles": [
-      "P01"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -51,9 +47,7 @@
     "date": "2026-10-10",
     "kind": "release",
     "changed": "資訊圖 band、六分頁 panel、en/zh-TW 字串表",
-    "principles": [
-      "P01"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -73,9 +67,7 @@
     "date": "2026-10-13 ~ 10-14",
     "kind": "release",
     "changed": "pane 設計語彙、語意色票、單一顏色單一意義 lint",
-    "principles": [
-      "P01"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -95,9 +87,7 @@
     "date": "2026-10-14 ~ 10-15",
     "kind": "release",
     "changed": "待決卡分頁與 pick-and-submit",
-    "principles": [
-      "P01"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -117,9 +107,7 @@
     "date": "2026-10-31",
     "kind": "release",
     "changed": "band 列帶分頁，展開在規線下；forge、待決分頁上 band",
-    "principles": [
-      "P01"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -139,9 +127,7 @@
     "date": "2026-11-03",
     "kind": "release",
     "changed": "Fleet 分頁；band 第二列給 forge-stats",
-    "principles": [
-      "P01"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -162,9 +148,7 @@
     "kind": "release",
     "changed": "依 codeforge ux-v7 畫 O4 shell：五個寬度檔、左側卡片清單、0/7/8/9 快速列",
     "principles": [
-      "P01",
-      "P02",
-      "P05"
+      "P02"
     ],
     "operator_feedback": [],
     "shots": {
@@ -186,11 +170,7 @@
     "date": "2026-11-09",
     "kind": "release",
     "changed": "有 console.json 時 band/pane 五分頁；fleet.console/1",
-    "principles": [
-      "P01",
-      "P02",
-      "P05"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": "shots/609ad4764/dark.ans",
@@ -212,9 +192,7 @@
     "kind": "release",
     "changed": "band 一行畫艦隊計數與寵物；forge-stats 第二列退場（11-17 後來改為 statusline 一行、不畫寵物，PM 01M7MEY1）",
     "principles": [
-      "P01",
-      "P02",
-      "P05"
+      "P03"
     ],
     "operator_feedback": [],
     "shots": {
@@ -236,11 +214,7 @@
     "date": "2026-11-13 ~ 11-17",
     "kind": "release",
     "changed": "週期性 live pin，內容為上面各項加 band 事實檔拆分 bb8ea1b6",
-    "principles": [
-      "P01",
-      "P02",
-      "P05"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": "shots/faa6b4cb6/dark.ans",
@@ -262,8 +236,6 @@
     "kind": "release",
     "changed": "四個有框頁面進 pane；r4 回到 r3 基線 15 失敗；後來上線",
     "principles": [
-      "P01",
-      "P02",
       "P05"
     ],
     "operator_feedback": [],
@@ -287,9 +259,7 @@
     "kind": "rejected",
     "changed": "評審：carbon 4、astra 4，未過",
     "principles": [
-      "P01",
-      "P02",
-      "P05"
+      "P09"
     ],
     "operator_feedback": [],
     "shots": {
@@ -312,9 +282,7 @@
     "kind": "rejected",
     "changed": "carbon 5、astra 5，未過（carbon 第一次逾時，30 分重派）",
     "principles": [
-      "P01",
-      "P02",
-      "P05"
+      "P09"
     ],
     "operator_feedback": [],
     "shots": {
@@ -337,9 +305,7 @@
     "kind": "rejected",
     "changed": "carbon 7、astra 5，未過，交 PM 裁決",
     "principles": [
-      "P01",
-      "P02",
-      "P05"
+      "P09"
     ],
     "operator_feedback": [],
     "shots": {
@@ -362,8 +328,6 @@
     "kind": "release",
     "changed": "R4-1 修復指令移到 band 第二列；W1 真機量測結案；keyprobe 6/6",
     "principles": [
-      "P01",
-      "P02",
       "P05"
     ],
     "operator_feedback": [],
@@ -387,9 +351,7 @@
     "kind": "release",
     "changed": "v7.4 契約、tab strip、help、待決 S3 與待辦 S9 等頁分頭實作後合併",
     "principles": [
-      "P01",
-      "P02",
-      "P05"
+      "P02"
     ],
     "operator_feedback": [],
     "shots": {
@@ -413,8 +375,7 @@
     "changed": "pane 由 band host 畫成全寬框；頂端錨定、熱鍵 1-9、待決槽、框高上限 27",
     "principles": [
       "P01",
-      "P02",
-      "P05"
+      "P21"
     ],
     "operator_feedback": [],
     "shots": {
@@ -437,9 +398,7 @@
     "kind": "release",
     "changed": "鍵序、s 預覽/y 確認、border 提示、花費 24h 圖標單位、嚴審 carbon+astra",
     "principles": [
-      "P01",
-      "P02",
-      "P05"
+      "P14"
     ],
     "operator_feedback": [],
     "shots": {
@@ -462,12 +421,8 @@
     "kind": "rejected",
     "changed": "待決卡改由底部 band 和右側 host Pane 處理；/reload-plugins 後重開；AUTOPILOT_LIVE_V75=0 退回 v7.4 框",
     "principles": [
-      "P01",
-      "P02",
-      "P05",
       "P04",
-      "P08",
-      "P09"
+      "P08"
     ],
     "operator_feedback": [
       {
@@ -496,9 +451,6 @@
     "kind": "release",
     "changed": "pending 卡捲動鍵；C 風格（cstyle）master/detail 雙欄；forge 頁每 agent tok/s",
     "principles": [
-      "P01",
-      "P02",
-      "P05",
       "P11",
       "P13"
     ],
@@ -523,9 +475,6 @@
     "kind": "release",
     "changed": "單列 band 排版；carbon r1–r4、codex r1–r6 評審",
     "principles": [
-      "P01",
-      "P02",
-      "P05",
       "P03"
     ],
     "operator_feedback": [],
@@ -549,10 +498,7 @@
     "kind": "release",
     "changed": "移除 v75 殼空檔；歧義寬度與 emoji 字形清出 pane，加寬度 lint",
     "principles": [
-      "P01",
-      "P02",
-      "P05",
-      "P03"
+      "P05"
     ],
     "operator_feedback": [],
     "shots": {
@@ -574,12 +520,7 @@
     "date": "2026-11-23",
     "kind": "release",
     "changed": "trace 相關頁；細節未逐項讀",
-    "principles": [
-      "P01",
-      "P02",
-      "P05",
-      "P03"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": "shots/9b97cca62/dark.ans",
@@ -601,10 +542,7 @@
     "kind": "release",
     "changed": "框上方 askRows，顯示 pm-ask 開放問題",
     "principles": [
-      "P01",
-      "P02",
-      "P05",
-      "P03"
+      "P07"
     ],
     "operator_feedback": [],
     "shots": {
@@ -627,14 +565,8 @@
     "kind": "release",
     "changed": "選項鍵跟隨選項字母；待決頁顯示等操作員自己動手的卡",
     "principles": [
-      "P01",
-      "P02",
-      "P05",
       "P06",
-      "P19",
-      "P03",
-      "P07",
-      "P14"
+      "P19"
     ],
     "operator_feedback": [],
     "shots": {
@@ -658,9 +590,7 @@
     "changed": "feat/r1-u1-frame，尚未合 develop",
     "principles": [
       "P01",
-      "P02",
-      "P05",
-      "P03"
+      "P16"
     ],
     "operator_feedback": [],
     "shots": {
@@ -682,7 +612,7 @@
     "kind": "rejected",
     "changed": "原設計稿收錄；詳見原檔",
     "principles": [
-      "P02"
+      "P16"
     ],
     "operator_feedback": [],
     "shots": {
@@ -701,9 +631,7 @@
     "date": "2026-10-10",
     "kind": "draft",
     "changed": "原設計稿收錄；詳見原檔",
-    "principles": [
-      "P02"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -722,7 +650,7 @@
     "kind": "draft",
     "changed": "原設計稿收錄；詳見原檔",
     "principles": [
-      "P02"
+      "P03"
     ],
     "operator_feedback": [],
     "shots": {
@@ -741,9 +669,7 @@
     "date": "2026-11-06",
     "kind": "draft",
     "changed": "原設計稿收錄；詳見原檔",
-    "principles": [
-      "P02"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -761,9 +687,7 @@
     "date": "2026-11-06",
     "kind": "draft",
     "changed": "原設計稿收錄；詳見原檔",
-    "principles": [
-      "P02"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -822,7 +746,7 @@
     "kind": "rejected",
     "changed": "原設計稿收錄；詳見原檔",
     "principles": [
-      "P02"
+      "P11"
     ],
     "operator_feedback": [
       {
@@ -848,9 +772,7 @@
     "date": "2026-11-23",
     "kind": "draft",
     "changed": "原設計稿收錄；詳見原檔",
-    "principles": [
-      "P02"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
@@ -868,9 +790,7 @@
     "date": "2026-11-23",
     "kind": "draft",
     "changed": "原設計稿收錄；詳見原檔",
-    "principles": [
-      "P02"
-    ],
+    "principles": [],
     "operator_feedback": [],
     "shots": {
       "dark": null,
