@@ -54,11 +54,13 @@ put(LIVE + '/runs/spend-history.json', dict(schema='autopilot.spend-history/1', 
 def card(i, title, q, bg, opts, rec, why, ago):
     return dict(id=i, title=title, question=q, background=bg, options=[dict(label=a, description=b) for a, b in opts], recommendation=rec, why=why, status='open', opened_at=iso(ago), source='demo', origin='depth0')
 LONGC = [card('d-keys0005', '驗收長卡', '這張卡的背景有八十行，用來驗證 PgDn 的步長', '\n'.join('第 %02d 行：假資料，只在沙盒卡片庫，用來把內文撐得比 Pane 高。' % n for n in range(1, 81)), [('收到', ''), ('不收', '')], '收到', None, 2*60)] if LONGCARD else []
+# AWAIT_CARD: a JSON list of extra cards (pane-history shoot.py --cards), e.g. an awaiting_operator_action card with operator_steps
+EXTRA = json.load(open(os.environ['AWAIT_CARD'])) if os.environ.get('AWAIT_CARD') else []
 put(REPO + '/.git/autopilot/decisions/%s.json' % KEY, dict(schema='autopilot.decision/2', project_key=KEY, repo_identity=IDENT, decisions=[
     card('d-a1b2c3e1', '合併 plan', '要不要把 shared-tui plan 合進 develop？', None, [('合併', ''), ('再審一輪', ''), ('待辦', '')], '合併', None, 30*60),
     card('d-a1b2c3e2', '外掛更新時機', 'forge-stats 外掛今晚還是明早更新？', None, [('今晚', ''), ('明早', ''), ('待辦', '')], '明早', None, 20*60),
     card('d-a1b2c3e3', '預覽先拍幾欄', '預覽先拍 80 欄還是 120 欄？', '操作員平常用寬螢幕，外出用筆電只有 80 欄。', [('80 欄', ''), ('120 欄', ''), ('待辦', '')], '120 欄', None, 10*60),
-    card('d-keys0004', '驗收測試卡', '這是驗收腳本的測試卡，送出後應進到卡片佇列', '假資料，只在沙盒卡片庫。這段背景故意寫得很長，用來檢查閱讀規則：放得下就要顯示全文，不能截成一行加刪節號；長文要自動換行，換行後對齊內文的起點，不回到最左邊；內文欄寬限制在七十到九十欄之間，不能一行拉滿整個終端機。選項之間要空一行，建議的選項要比其他選項明顯。', [('收到', ''), ('不收', '')], '收到', None, 5*60)] + LONGC))
+    card('d-keys0004', '驗收測試卡', '這是驗收腳本的測試卡，送出後應進到卡片佇列', '假資料，只在沙盒卡片庫。這段背景故意寫得很長，用來檢查閱讀規則：放得下就要顯示全文，不能截成一行加刪節號；長文要自動換行，換行後對齊內文的起點，不回到最左邊；內文欄寬限制在七十到九十欄之間，不能一行拉滿整個終端機。選項之間要空一行，建議的選項要比其他選項明顯。', [('收到', ''), ('不收', '')], '收到', None, 5*60)] + LONGC + EXTRA))
 # fleet card mirror (other hosts): 2 cards per fixture
 def iso2(ago): return datetime.datetime.fromtimestamp(now - ago, datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 put(D + '/mirror/fleet-card-mirror.json', dict(schema='autopilot.fleet-card-mirror/1', synced_at=iso2(60), last_error=None, closed={}, cards={
