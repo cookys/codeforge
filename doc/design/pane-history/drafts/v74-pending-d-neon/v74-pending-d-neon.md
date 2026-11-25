@@ -1,7 +1,7 @@
 # 方向 D 設計稿：右側高 dock 常駐「狀態 widget」＋下方 C 雙欄待決
 
 > 目的：提供操作員可直接與方案 A'、方案 C 並排比較與拍板的「方向 D」完整設計稿，只出設計、不寫程式。
-> 設計基準：嚴格沿用 [`doc/design/pane-design-language.md`](./pane-design-language.md) 規範與現行 `209×50` 畫面基準，下半部直接引用 [`doc/design/v74-pending-two-options.md`](./v74-pending-two-options.md) 已定案實作中之方案 C（band 內雙欄），不重設計。
+> 設計基準：嚴格沿用 [`doc/design/pane-design-language.md`](../../../pane-design-language.md) 規範與現行 `209×50` 畫面基準，下半部直接引用 [`doc/design/v74-pending-two-options.md`](../v74-pending-two-options/v74-pending-two-options.md) 已定案實作中之方案 C（band 內雙欄），不重設計。
 > 符號與配色：僅使用共用符號（`▸` `★` `✓` `○` `█` `●` `⊘` `✗` `▲` `↑` `↓` `│` `─` `·` `…` `ϟ`）與 `PALETTE` 語意角色，每列最多一個黃色焦點；所有席位、主機、帳號池名稱皆為假資料。
 
 ---

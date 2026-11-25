@@ -1,7 +1,7 @@
 # 待決頁「左右兩欄 Master / Detail」設計稿（v7.4 框）
 
 > 適用對象：`autopilot mods/live` 待決頁（v7.4 框，操作員環境 `AUTOPILOT_LIVE_V75=0`）
-> 規範依據：[`doc/specs/tui-guideline.md`](../specs/tui-guideline.md)（§3 符號與色盤、§6 截斷與折行、§13 底部錨定、§14 焦點）
+> 規範依據：[`doc/specs/tui-guideline.md`](../../../../specs/tui-guideline.md)（§3 符號與色盤、§6 截斷與折行、§13 底部錨定、§14 焦點）
 > 狀態：設計稿（只出設計，不含實作程式；所有 mock 均使用假資料）
 
 ---

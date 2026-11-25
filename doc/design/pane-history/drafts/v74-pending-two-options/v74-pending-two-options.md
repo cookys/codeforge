@@ -1,8 +1,8 @@
 # 待決頁雙欄設計：兩方案並排比較（A' 右側 dock vs C band 內雙欄）
 
 > 目的：提供操作員可直接並排比較與拍板的兩個完整設計方案，只出設計稿、不寫程式。
-> 設計基準：嚴格沿用 [`doc/design/pane-design-language.md`](./pane-design-language.md) 開頭之「現行畫面基準（209×50，待決頁 A 樣式）」，沿用其框線（`╭╮╰╯─│`）、上框標題與 `[-]`、下框提示列與完整 9 個中文頁籤、符號（`▸` `★` `✓` `○` `█` `↑` `↓`）、詞彙（「`↑ 上面還有 N 行`／`↓ 下面還有 N 行`」）與 `PALETTE` 色彩語意，不自創符號。
-> 素材參考：[`doc/design/v74-master-detail.md`](./v74-master-detail.md)（已退回之初版，僅取其雙欄分級與邊界案例思考）。
+> 設計基準：嚴格沿用 [`doc/design/pane-design-language.md`](../../../pane-design-language.md) 開頭之「現行畫面基準（209×50，待決頁 A 樣式）」，沿用其框線（`╭╮╰╯─│`）、上框標題與 `[-]`、下框提示列與完整 9 個中文頁籤、符號（`▸` `★` `✓` `○` `█` `↑` `↓`）、詞彙（「`↑ 上面還有 N 行`／`↓ 下面還有 N 行`」）與 `PALETTE` 色彩語意，不自創符號。
+> 素材參考：[`doc/design/v74-master-detail.md`](../v74-master-detail/v74-master-detail.md)（已退回之初版，僅取其雙欄分級與邊界案例思考）。
 
 ---
 
