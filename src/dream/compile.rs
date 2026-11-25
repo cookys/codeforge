@@ -645,7 +645,7 @@ fn build_compile_prompt(signal: &l0::Signal) -> String {
     format!(
         r##"你是一個知識編譯器。將下方的 signal 結構化摘要編譯為結構化的 L1 知識條目。
 
-Signal 結構化摘要（不含逐字原文）：
+Signal 結構化摘要（不含逐字原文）。摘要刻意不帶原句，只有類別、主題與關鍵詞；請依關鍵詞推斷要點來編譯，不要只因缺少原文就判為低品質。
 {}
 
 輸出 JSON（嚴格遵守格式）：
@@ -846,7 +846,7 @@ fn build_batch_compile_prompt(batch: &[l0::Signal]) -> String {
         blocks.push_str(&format!("\n=== Signal index {i} ===\n{summary}\n"));
     }
     format!(
-        r##"你是一個知識編譯器。將下方 {n} 個 signal 結構化摘要各自編譯為結構化的 L1 知識條目（不含逐字原文）。
+        r##"你是一個知識編譯器。將下方 {n} 個 signal 結構化摘要各自編譯為結構化的 L1 知識條目（不含逐字原文）。摘要刻意不帶原句，只有類別、主題與關鍵詞；請依關鍵詞推斷要點來編譯，不要只因缺少原文就判為低品質。
 {blocks}
 回傳 JSON 陣列（嚴格格式，每個 signal 一個元素，index 對應上方編號）：
 [{{

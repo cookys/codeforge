@@ -227,11 +227,14 @@ fn summarize_text(source: &str, raw: &str) -> String {
     let tools = extract_tools(raw, &stripped);
     let error_categories = extract_error_categories(raw, &stripped);
     let topics = extract_topics(&stripped);
+    let keywords = extract_keywords(&stripped);
 
     let tools_str = join_or_default(&tools, "none");
     let errors_str = join_or_default(&error_categories, "general");
     let exts_str = join_or_default(&file_exts, "none");
     let topics_str = join_or_default(&topics, "general");
+    let keyword_refs: Vec<&str> = keywords.iter().map(String::as_str).collect();
+    let keywords_str = join_or_default(&keyword_refs, "none");
 
     let summary = format!(
         "[Structured Signal Summary]\n\
@@ -241,7 +244,8 @@ fn summarize_text(source: &str, raw: &str) -> String {
          tools: {tools_str}\n\
          error_categories: {errors_str}\n\
          file_exts: {exts_str}\n\
-         topics: {topics_str}"
+         topics: {topics_str}\n\
+         keywords: {keywords_str}"
     );
 
     break_long_overlaps(summary, raw, MAX_EGRESS_OVERLAP_CHARS - 1)
@@ -563,6 +567,70 @@ fn extract_topics(stripped: &str) -> Vec<&'static str> {
     topics
 }
 
+/// Longest CJK chunk a keyword may carry. Chunks are joined with ", ", so no
+/// run of the summary longer than this can come from the source.
+const KEYWORD_CJK_CHUNK: usize = 4;
+const KEYWORD_MAX: usize = 12;
+/// Function characters that split a CJK run into content chunks.
+const CJK_PARTICLES: &str =
+    "的了是在也和與及要會就把這那我你他她它們請不有都而或被讓給對從到再先還又很";
+const ASCII_STOPWORDS: &[&str] = &[
+    "this", "that", "with", "from", "have", "will", "should", "would", "could", "when", "then",
+    "than", "what", "which", "there", "their", "them", "they", "into", "only", "also", "been",
+    "were", "your", "just", "like", "some", "more", "does", "done", "make", "made",
+];
+
+/// Content keywords in order of first appearance, deduplicated and capped: ASCII
+/// identifiers of 4+ characters (stopwords dropped) and CJK runs split at function
+/// characters into chunks of at most `KEYWORD_CJK_CHUNK`. Gives the compiler enough
+/// to tell what a signal is about without any source sentence (`stripped` has no
+/// paths or digits).
+fn extract_keywords(stripped: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |k: String, out: &mut Vec<String>| {
+        if out.len() < KEYWORD_MAX && !out.contains(&k) {
+            out.push(k);
+        }
+    };
+    let mut ascii = String::new();
+    let mut cjk: Vec<char> = Vec::new();
+    let flush_cjk = |cjk: &mut Vec<char>,
+                     out: &mut Vec<String>,
+                     push: &mut dyn FnMut(String, &mut Vec<String>)| {
+        for chunk in cjk.chunks(KEYWORD_CJK_CHUNK) {
+            if chunk.len() >= 2 {
+                push(chunk.iter().collect(), out);
+            }
+        }
+        cjk.clear();
+    };
+    for c in stripped.chars().chain(std::iter::once(' ')) {
+        if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+            flush_cjk(&mut cjk, &mut out, &mut push);
+            ascii.push(c.to_ascii_lowercase());
+            continue;
+        }
+        if !ascii.is_empty() {
+            let w = ascii.trim_matches('-').to_string();
+            if w.chars().count() >= 4 && !ASCII_STOPWORDS.contains(&w.as_str()) {
+                push(
+                    w.chars().take(MAX_EGRESS_OVERLAP_CHARS - 1).collect(),
+                    &mut out,
+                );
+            }
+            ascii.clear();
+        }
+        let is_han =
+            ('\u{4e00}'..='\u{9fff}').contains(&c) || ('\u{3400}'..='\u{4dbf}').contains(&c);
+        if is_han && !CJK_PARTICLES.contains(c) {
+            cjk.push(c);
+        } else {
+            flush_cjk(&mut cjk, &mut out, &mut push);
+        }
+    }
+    out
+}
+
 fn join_or_default(items: &[&str], default: &str) -> String {
     if items.is_empty() {
         default.to_string()
@@ -574,6 +642,28 @@ fn join_or_default(items: &[&str], default: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn summary_carries_content_keywords_without_source_runs() {
+        let content = "PM 裁定 knowledge-pipeline 縮小範圍，這次只做 P1：distill-scan 會輸出原文、dream compile 會外送摘錄、digest 不能再被刪";
+        let sig = Signal::new(content.to_string(), SignalSource::SessionDigest);
+        let summary = summarize_for_llm(&sig);
+        let line = summary
+            .lines()
+            .find(|l| l.starts_with("keywords: "))
+            .expect("keywords line");
+        for k in [
+            "knowledge-pipeline",
+            "distill-scan",
+            "dream",
+            "compile",
+            "digest",
+            "範圍",
+        ] {
+            assert!(line.contains(k), "missing {k}: {line}");
+        }
+        assert!(longest_common_substring_chars(&summary, content) < MAX_EGRESS_OVERLAP_CHARS);
+    }
 
     #[test]
     fn summarize_cjk_path_and_80char_user_correction_has_overlap_under_20() {
