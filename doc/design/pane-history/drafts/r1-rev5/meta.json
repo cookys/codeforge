@@ -1,12 +1,13 @@
 {
   "id": "r1-rev5",
-  "author": "原檔所載；未記錄者未知",
-  "date": "原檔所載",
+  "author": "cookys (team)",
+  "date": "2026-11-25",
   "status": "rejected",
   "sources": [
-    "git:docs/r1-rev5-gen:doc/design/r1-rev5"
+    ".@docs/r1-rev5-gen:doc/design/r1-rev5"
   ],
   "missing": [
     "退回原話未取得；R2 記錄 A2/B2 不採用，尚無卡片逐字原文"
-  ]
+  ],
+  "adoption": "未採用（退件）"
 }

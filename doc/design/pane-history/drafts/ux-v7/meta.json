@@ -1,10 +1,11 @@
 {
   "id": "ux-v7",
-  "author": "原檔所載；未記錄者未知",
-  "date": "原檔所載",
+  "author": "cookys (team)",
+  "date": "2026-11-06",
   "status": "draft",
   "sources": [
-    "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：ux-v7"
+    ".@8311afc:doc/projects/2026-11-06-integrated-panel/ux-v7"
   ],
-  "missing": []
+  "missing": [],
+  "adoption": "採用（R2 框架基準）"
 }

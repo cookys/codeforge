@@ -1,10 +1,11 @@
 {
   "id": "v74-pending-two-options",
-  "author": "原檔所載；未記錄者未知",
-  "date": "原檔所載",
+  "author": "cookys (team)",
+  "date": "2026-11-23",
   "status": "draft",
   "sources": [
-    "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：v74-pending-two-options"
+    ".@8311afc:doc/design/v74-pending-two-options.md"
   ],
-  "missing": []
+  "missing": [],
+  "adoption": "未記錄；保留歷史提案"
 }

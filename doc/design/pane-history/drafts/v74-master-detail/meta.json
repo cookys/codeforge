@@ -1,10 +1,11 @@
 {
   "id": "v74-master-detail",
-  "author": "原檔所載；未記錄者未知",
-  "date": "原檔所載",
+  "author": "cookys (team)",
+  "date": "2026-11-23",
   "status": "draft",
   "sources": [
-    "搬移自 ux-v4..v7 / ux-gate/v74；方案 md 保留原檔：v74-master-detail"
+    ".@8311afc:doc/design/v74-master-detail.md"
   ],
-  "missing": []
+  "missing": [],
+  "adoption": "未記錄；保留歷史提案"
 }
