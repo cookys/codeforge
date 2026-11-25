@@ -1,12 +1,19 @@
 //! 知識管線段 1——`codeforge lessons candidates --json`
-//!（plan `doc/plans/2026-11-23-knowledge-pipeline.md` 第 4 節段 1–2、第 10.2 節 T1）。
+//!（plan `doc/plans/2026-11-23-knowledge-pipeline.md` 第 4 節段 1–2、第 10.2 節 T1；
+//! T2 機器閘見 [`gate`]）。
 //!
 //! 對當前專案 store 的 L0 唯讀掃描：只保留 `SessionDigest`、本席（seat ==
 //! `self_seat` 且在席位白名單）、白名單 model、metadata 齊全的 signal；用受限
 //! 詞彙表分類 content，輸出候選 JSON——只有受限詞彙欄位與證據指標，絕不輸出
 //! `content`、路徑、seat 原文、model 原文或任何 signal 文字。
+//!
+//! T2：每筆候選在去重前過機器閘（[`gate::check`]，source＝該筆 signal 的
+//! `content`）；命中就當場丟棄、只累計規則 id 次數；次數寫
+//! `$CODEFORGE_DATA_DIR/lessons-gate.json`（只有 `{"<rule-id>": <count>}`，
+//! 無命中為 `{}`，絕無命中文字）。stdout 輸出不變（仍只有候選陣列）。
 
 pub mod candidates;
+pub mod gate;
 pub mod vocab;
 
 use anyhow::Result;
@@ -27,12 +34,16 @@ pub fn run(ctx: &db::Context, json: bool) -> Result<()> {
 }
 
 /// `--json` 的輸出（緊湊 JSON 陣列字串）。設定檔不存在／解析失敗／任一清單
-/// 為空 → fail-closed 輸出 `[]`。
+/// 為空 → fail-closed 輸出 `[]`（T1 行為不變，且不寫 lessons-gate.json）。
+/// T2：每筆候選過機器閘；命中次數寫 `$CODEFORGE_DATA_DIR/lessons-gate.json`
+///（只有 `{"<rule-id>": <count>}`，無命中覆寫 `{}`）。stdout 不變。
 pub(crate) fn render(ctx: &db::Context) -> Result<String> {
-    let cfg = candidates::load_config(&candidates::config_path());
-    let cands = cfg
-        .map(|c| candidates::collect(ctx, &c))
-        .unwrap_or_default();
+    let Some(cfg) = candidates::load_config(&candidates::config_path()) else {
+        return Ok("[]".to_string());
+    };
+    let deny = gate::DenyList::load_default();
+    let (cands, counts) = candidates::collect(ctx, &cfg, deny.as_ref());
+    gate::write_counts(&gate::gate_path(), &counts)?;
     Ok(serde_json::to_string(&cands)?)
 }
 
@@ -42,6 +53,7 @@ mod tests {
     use crate::lessons::candidates::{
         collect, config_path, lane_hash_of, load_config, Candidate, Evidence, LessonsConfig,
     };
+    use crate::lessons::gate::{self, DenyList, RuleId};
     use crate::lessons::vocab::{PitfallType, SolutionType, Tool, Topic};
     use crate::memory::l0::{Signal, SignalSource};
     use serde::Deserialize;
@@ -60,6 +72,12 @@ mod tests {
             models: vec!["claude-sonnet-4-5".to_string()],
             repos: vec!["demo-repo".to_string()],
         }
+    }
+
+    /// T2：機器閘要求 deny 存在；在記憶體用明顯假的詞（不進 repo），
+    /// 不讀環境、不碰真 HOME。詞不會出現在任何測試 content 裡。
+    fn deny() -> DenyList {
+        DenyList::new(vec!["aliasfoo".into(), "hostbar".into()])
     }
 
     fn signal(
@@ -111,7 +129,7 @@ mod tests {
     fn positive_single_candidate_exact_fields() {
         let tmp = TempDir::new().unwrap();
         let ctx = store_with("demo-repo", tmp.path(), &[good_signal("sess-0001")]);
-        let out = collect(&ctx, &good_config());
+        let (out, _counts) = collect(&ctx, &good_config(), Some(&deny()));
         assert_eq!(out.len(), 1, "恰一筆候選");
 
         let expect_lane: String = {
@@ -171,7 +189,7 @@ mod tests {
             Some("sess-0001"),
         );
         let ctx = store_with("demo-repo", tmp.path(), &[sig]);
-        assert!(collect(&ctx, &good_config()).is_empty());
+        assert!(collect(&ctx, &good_config(), Some(&deny())).0.is_empty());
     }
 
     #[test]
@@ -185,7 +203,7 @@ mod tests {
         );
         let tmp = TempDir::new().unwrap();
         let ctx = store_with("demo-repo", tmp.path(), &[sig]);
-        assert!(collect(&ctx, &good_config()).is_empty());
+        assert!(collect(&ctx, &good_config(), Some(&deny())).0.is_empty());
     }
 
     #[test]
@@ -202,7 +220,7 @@ mod tests {
         cfg.self_seat = "charlie.local".to_string();
         let tmp = TempDir::new().unwrap();
         let ctx = store_with("demo-repo", tmp.path(), &[sig]);
-        assert!(collect(&ctx, &cfg).is_empty());
+        assert!(collect(&ctx, &cfg, Some(&deny())).0.is_empty());
     }
 
     #[test]
@@ -216,7 +234,7 @@ mod tests {
         );
         let tmp = TempDir::new().unwrap();
         let ctx = store_with("demo-repo", tmp.path(), &[sig]);
-        assert!(collect(&ctx, &good_config()).is_empty());
+        assert!(collect(&ctx, &good_config(), Some(&deny())).0.is_empty());
         // seat 完全缺席（舊格式 L0）也丟棄
         let sig2 = signal(
             GOOD_CONTENT,
@@ -227,7 +245,7 @@ mod tests {
         );
         let tmp2 = TempDir::new().unwrap();
         let ctx2 = store_with("demo-repo", tmp2.path(), &[sig2]);
-        assert!(collect(&ctx2, &good_config()).is_empty());
+        assert!(collect(&ctx2, &good_config(), Some(&deny())).0.is_empty());
     }
 
     #[test]
@@ -241,7 +259,7 @@ mod tests {
         );
         let tmp = TempDir::new().unwrap();
         let ctx = store_with("demo-repo", tmp.path(), &[sig]);
-        assert!(collect(&ctx, &good_config()).is_empty());
+        assert!(collect(&ctx, &good_config(), Some(&deny())).0.is_empty());
     }
 
     #[test]
@@ -255,7 +273,7 @@ mod tests {
         );
         let tmp = TempDir::new().unwrap();
         let ctx = store_with("demo-repo", tmp.path(), &[sig]);
-        assert!(collect(&ctx, &good_config()).is_empty());
+        assert!(collect(&ctx, &good_config(), Some(&deny())).0.is_empty());
     }
 
     /// (g) lessons.toml 不存在 → 輸出 `[]`（經 render 的完整路徑）
@@ -306,7 +324,7 @@ mod tests {
     fn repo_outside_list_produces_nothing() {
         let tmp = TempDir::new().unwrap();
         let ctx = store_with("other-repo", tmp.path(), &[good_signal("sess-0001")]);
-        assert!(collect(&ctx, &good_config()).is_empty());
+        assert!(collect(&ctx, &good_config(), Some(&deny())).0.is_empty());
     }
 
     /// 去重：同 (topic,pitfall,solution,tool,repo,session_id) 只留一筆；
@@ -323,7 +341,7 @@ mod tests {
                 good_signal("sess-0002"),
             ],
         );
-        let out = collect(&ctx, &good_config());
+        let (out, _counts) = collect(&ctx, &good_config(), Some(&deny()));
         assert_eq!(out.len(), 2);
         // 讀序保留：重複的 sess-0001 留第一筆，sess-0002 是另一筆
         assert_eq!(out[0].evidence.session_id, "sess-0001");
@@ -335,7 +353,7 @@ mod tests {
     fn output_never_carries_ge20_content_substrings() {
         let tmp = TempDir::new().unwrap();
         let ctx = store_with("demo-repo", tmp.path(), &[good_signal("sess-0001")]);
-        let out = collect(&ctx, &good_config());
+        let (out, _counts) = collect(&ctx, &good_config(), Some(&deny()));
         let json = serde_json::to_string(&out).unwrap();
         let chars: Vec<char> = GOOD_CONTENT.chars().collect();
         let mut windows = 0;
@@ -375,7 +393,8 @@ mod tests {
     fn output_matches_deny_unknown_fields_schema() {
         let tmp = TempDir::new().unwrap();
         let ctx = store_with("demo-repo", tmp.path(), &[good_signal("sess-0001")]);
-        let json = serde_json::to_string(&collect(&ctx, &good_config())).unwrap();
+        let (out, _counts) = collect(&ctx, &good_config(), Some(&deny()));
+        let json = serde_json::to_string(&out).unwrap();
         let parsed: Vec<CandidateSchema> = serde_json::from_str(&json).unwrap_or_else(|e| {
             panic!("schema 反序列化失敗（deny_unknown_fields 應通過）：{e}; json={json}")
         });
@@ -496,6 +515,8 @@ mod tests {
             "self_seat = \"alpha.local\"\nseats = [\"alpha.local\", \"bravo.local\"]\nmodels = [\"claude-sonnet-4-5\"]\nrepos = [\"demo-repo\"]\n",
         )
         .unwrap();
+        // T2 機器閘 fail-closed：無 lessons-deny.txt 會把候選全丟（no-deny-list）
+        std::fs::write(data.join("lessons-deny.txt"), "aliasfoo\n").unwrap();
         let _env = EnvGuard::set(&data, &store);
         let ctx = crate::db::Context::load().unwrap();
         assert_eq!(ctx.project_dir, store);
@@ -503,6 +524,117 @@ mod tests {
         let v: Vec<Candidate> = serde_json::from_str(&out).unwrap();
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].repo, "demo-repo");
+    }
+
+    /// T2 collect 整合：一筆合格、一筆 session_id 含 `/home/`（`/home/` 後接空白，
+    /// 不構成三段位址，只命中 abs-path）→ 結果只剩一筆、計數 `{"abs-path":1}`；
+    /// render stdout 仍只有候選陣列；lessons-gate.json 只含規則 id、不含 `/home/`。
+    #[test]
+    fn gate_integration_collect_drops_and_writes_counts() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let store = tmp.path().join("demo-repo").join(".codeforge");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::create_dir_all(store.join("signals")).unwrap();
+        let good = good_signal("sess-0001");
+        let mut bad = good_signal("sess-0002");
+        bad.session_id = Some("sess-0002 /home/ logs".to_string());
+        let body = [
+            serde_json::to_string(&good).unwrap(),
+            serde_json::to_string(&bad).unwrap(),
+        ]
+        .join("\n")
+            + "\n";
+        std::fs::write(store.join("signals").join("2026-11-26.jsonl"), body).unwrap();
+        std::fs::write(
+            data.join("lessons.toml"),
+            "self_seat = \"alpha.local\"\nseats = [\"alpha.local\", \"bravo.local\"]\nmodels = [\"claude-sonnet-4-5\"]\nrepos = [\"demo-repo\"]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            data.join("lessons-deny.txt"),
+            "# sandbox fake terms\naliasfoo\nhostbar\n",
+        )
+        .unwrap();
+        let _env = EnvGuard::set(&data, &store);
+        let ctx = crate::db::Context::load().unwrap();
+        let cfg = candidates::load_config(&candidates::config_path()).unwrap();
+        let deny = gate::DenyList::load_default().unwrap();
+
+        let (cands, counts) = candidates::collect(&ctx, &cfg, Some(&deny));
+        assert_eq!(cands.len(), 1, "一筆合格、一筆被閘掉");
+        assert_eq!(cands[0].evidence.session_id, "sess-0001");
+        assert_eq!(counts.get(&RuleId::AbsPath), Some(&1));
+        assert_eq!(counts.len(), 1, "只累計命中的規則");
+
+        // render：stdout 輸出不變（仍只有候選陣列）
+        let out = render(&ctx).unwrap();
+        let v: Vec<Candidate> = serde_json::from_str(&out).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].evidence.session_id, "sess-0001");
+
+        // 命中次數寫 lessons-gate.json：只有 {"abs-path":1}、絕不含命中文字
+        let gate_file = data.join("lessons-gate.json");
+        let gate_body = std::fs::read_to_string(&gate_file).unwrap();
+        assert_eq!(gate_body, "{\"abs-path\":1}");
+        assert!(!gate_body.contains("/home/"));
+    }
+
+    /// T2：設定檔不存在（T1 fail-closed）→ render `[]`，且不寫 lessons-gate.json。
+    #[test]
+    fn missing_config_writes_no_gate_file() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let store = tmp.path().join("demo-repo").join(".codeforge");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::create_dir_all(store.join("signals")).unwrap();
+        let sig = good_signal("sess-0001");
+        std::fs::write(
+            store.join("signals").join("2026-11-26.jsonl"),
+            serde_json::to_string(&sig).unwrap() + "\n",
+        )
+        .unwrap();
+        let _env = EnvGuard::set(&data, &store);
+        let ctx = crate::db::Context::load().unwrap();
+        assert_eq!(render(&ctx).unwrap(), "[]");
+        assert!(
+            !data.join("lessons-gate.json").exists(),
+            "無設定檔 → 不寫閘檔"
+        );
+    }
+
+    /// T2：全數合格（無命中）→ lessons-gate.json 覆寫成 `{}`。
+    #[test]
+    fn no_hits_overwrites_gate_file_with_empty_object() {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let tmp = TempDir::new().unwrap();
+        let data = tmp.path().join("data");
+        let store = tmp.path().join("demo-repo").join(".codeforge");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::create_dir_all(store.join("signals")).unwrap();
+        let sig = good_signal("sess-0001");
+        std::fs::write(
+            store.join("signals").join("2026-11-26.jsonl"),
+            serde_json::to_string(&sig).unwrap() + "\n",
+        )
+        .unwrap();
+        std::fs::write(
+            data.join("lessons.toml"),
+            "self_seat = \"alpha.local\"\nseats = [\"alpha.local\", \"bravo.local\"]\nmodels = [\"claude-sonnet-4-5\"]\nrepos = [\"demo-repo\"]\n",
+        )
+        .unwrap();
+        std::fs::write(data.join("lessons-deny.txt"), "aliasfoo\n").unwrap();
+        let _env = EnvGuard::set(&data, &store);
+        let ctx = crate::db::Context::load().unwrap();
+        let out = render(&ctx).unwrap();
+        let v: Vec<Candidate> = serde_json::from_str(&out).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(
+            std::fs::read_to_string(data.join("lessons-gate.json")).unwrap(),
+            "{}"
+        );
     }
 
     /// 唯讀保證：跑完 collect 後 store 原封不動（不推進 cursor、不寫檔）。
@@ -519,7 +651,7 @@ mod tests {
             brain_dir: tmp.path().join("brain"),
             db_path: tmp.path().join("state.db"),
         };
-        collect(&ctx, &good_config());
+        collect(&ctx, &good_config(), Some(&deny()));
         assert_eq!(
             std::fs::read_to_string(ctx.project_dir.join("signals").join("2026-11-26.jsonl"))
                 .unwrap(),
