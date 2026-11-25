@@ -3,6 +3,8 @@
 > 規則唯一來源：[pane-design-language「操作員固定準則」](../design/pane-design-language.md#操作員固定準則唯一歸屬檔)（R1–R6）。本計畫只延伸 ux-v7 / v7.4 框架，不重新設計（R2）；任何偏離列在第 6 節偏離清單。
 > 程式碼在 autopilot `mods/live`（pane、band）與 codeforge `plugins/forge-stats`；codeforge 管畫面與操作，autopilot 審有沒有弄壞機制（d-8046739d 分工）。
 > 凍結前不動畫面。
+>
+> **凍結紀錄（2026-11-25）**：rev 4 fa45982 凍結。plan loop 共兩代（g1、g2，chair codex gpt-6.1-sol、deep agy gemini-4-carbon-high），g2 之後的複查判 6 條阻擋修好 4 條。rev 3 的 Mode B 結束碼是 0（處置檔與複查紀錄在 b2dd64c）；rev 4 與 rev 3 差 14 行，修的是複查判沒修好的 2 條（2843d923、8311a9ef），由 PM 在評審上限時裁決（01M88NJE2C）。偏離 D5 經 PM 同意。
 
 ## 1. 目標
 
