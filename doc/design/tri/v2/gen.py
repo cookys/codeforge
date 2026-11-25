@@ -56,6 +56,16 @@ def fit(row, w):
     return out
 
 def wrap(s, w):
+    """斷行；最後一列只剩一兩個字時，把寬度收窄重排，讓字數平均一點（同樣列數）。"""
+    lines = _wrap(s, w)
+    if len(lines) > 1 and dw(lines[-1]) <= 6:
+        for w2 in range(w - 1, w * 2 // 3, -1):
+            l2 = _wrap(s, w2)
+            if len(l2) == len(lines) and dw(l2[-1]) > 6:
+                return l2
+    return lines
+
+def _wrap(s, w):
     """中文逐字、ASCII 整段不拆；全形標點黏前字。"""
     toks, cur = [], ''
     for c in s:

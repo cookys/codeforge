@@ -68,7 +68,8 @@ for name in sorted(os.listdir(D)):
     r['R1_clickable_rows'] = clickable_rows
     r['R1_upper_clickable'] = [i for i in clickable_rows if i < H // 2]
     # R6：選項字母 a/b/c 依序對應第 1/2/3 個選項
-    opt = [l.split(':')[0].strip()[-1] for l in lines if any(l.lstrip('│ ').startswith(k + ':') for k in 'abc')]
+    # 整列搜尋：寬螢幕的選項列左邊是 index，字母不在行首，要找框線（│）後面的「x:」
+    opt = [m.group(1) for l in lines for m in [re.search(r'│\s*([a-e]): ', l)] if m]
     r['R6_letters'] = opt
     r['R6_ok'] = opt == ['a', 'b', 'c', 'd', 'e'][:len(opt)]  # 沒有選項的畫面（平常、艦隊頁）不適用
     # R7：band（最後一個框）裡不出現 背景／卡住／來源／sha
