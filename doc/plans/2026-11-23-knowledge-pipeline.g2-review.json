@@ -1,0 +1,471 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "01M836C68Y0EC65D15WWNKNMKJ",
+  "logical_plan_id": "codeforge:knowledge-pipeline-d4",
+  "session_id": "54e614a3-2ed1-479b-968c-cf966dd737db",
+  "session_key": "bfa774569610623236d46463d4c84d939cf6777af78d6222d934356fd3bf0e8e",
+  "generation": 2,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": true,
+  "policy_reason": "generation_cap_requires_depth_0_adjudication",
+  "rubric_sha256": "d8d21b375ac63f7777e0001f0a616c31e7edbcae53c521b616087ee47593014f",
+  "manifest_sha256": "883a01b922ce9934656bbc46243f9fa45ab006e9ba7d2ac7388253fd9a3a9e48",
+  "context_sha256": null,
+  "plan_sha256": "c01d0c70043bfdfc8dd8a401eff0ba61ea7fa6682b0f2aea4b7b67a5f1ccd224",
+  "plan_path": "doc/plans/2026-11-23-knowledge-pipeline.md",
+  "plan_git_blob_sha": "15ec70748ed1367b930dac3d0403286a57a52ff9",
+  "repo_head_sha": "d34c2ad3783f6164a3eb4a9127a819b69e172cc0",
+  "plan_dirty_vs_head": false,
+  "growth_ratio": {
+    "numerator": 12561,
+    "denominator": 10595
+  },
+  "growth_warning": false,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "agy",
+          "model": "gemini-4-carbon-high",
+          "operation": "plan-review",
+          "request_digest": "dcecb2e717c1d9db2bf6bce43e56a5efe2c638360d89553fedef0b4819cbfde9"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "8bff97e96c761348445fc9c6dd8dde254ffe1528da4994c70178b435dd6c04ed",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "<tmp>/dispatch-author-log-hpkAaw",
+          "digest": "8bff97e96c761348445fc9c6dd8dde254ffe1528da4994c70178b435dd6c04ed"
+        },
+        "receipt_digest": "519cdd3c39591db479df19ac33ae290366f804583ccafd26e849f70488d2ab90"
+      },
+      "transport_status": "success",
+      "usage": null,
+      "duration_ms": 783071,
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "deep",
+      "target_id": "deep",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6.1-sol",
+          "operation": "plan-review",
+          "request_digest": "83daa8e3340a5244f34e64db60722ff8f97769747a6858ee107fd9768ee27681"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "a5259a1dfd8124bdd71562d0e56277161a64acd2207424c1f20282518112240d",
+          "stderr_sha256": "319dd2d24b27671554699b76bb32fb656fb5d5a988f05b22a399a9994940e0cb"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "<tmp>/dispatch-author-codex-1LxtGb/stdout",
+          "digest": "a5259a1dfd8124bdd71562d0e56277161a64acd2207424c1f20282518112240d"
+        },
+        "receipt_digest": "07a18cb51ea4383b33132ad37b4a86f2300a935fe2951494423e64c4b31f60be"
+      },
+      "transport_status": "success",
+      "usage": null,
+      "duration_ms": 61997,
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "family": "google",
+      "runner": "agy",
+      "model": "gemini-4-carbon-high",
+      "verdict": "CONDITIONAL"
+    },
+    {
+      "seat_id": "deep",
+      "target_id": "deep",
+      "family": "openai",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "verdict": "CONDITIONAL"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R2",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 4 節段 3 (iv) 去重鍵與寫入邏輯、段 4 召回過濾、第 10.2 節 T1/T4",
+      "claim": "段 3 (iv) 將適用 repo 排除於去重正規化鍵之外且命中時不更新教訓本體，直接違反同段『不同 repo 的教訓不會被併掉』的承諾，並導致段 4 依當前 repo 範圍召回失靈；此外 T4 驗收漏列 R2 要求的 5/5 人工重複合併測試，且併發 push 被拒時的 git 處置順序有誤。",
+      "evidence": "段 3 (iv) 規定『正規化鍵＝主題＋坑類型＋解法類型＋適用工具（四個都是固定列舉；不同 repo、不同工具、不同坑類型的教訓不會被併掉；適用 repo 不入鍵，記在證據裡）。命中則不呼叫 hippo new，只新增一個證據檔』，而段 4 要求召回過濾『與當前 repo／工具範圍相符』；同時第 10.1 節縮小後的 P1 未執行 5 組重複測試，第 10.2 節 T4 僅驗收 1 組併發寫入，且 push 被拒當下並無進行中的 rebase 可執行 git rebase --abort。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §2 KR2, §3 hippo records, §4 段 3 (iv) & 段 4 召回, §10.1, §10.2 T4",
+      "repair": "明確決策適用 repo 與去重鍵的關係：(1) 將受管制的 repo 代碼列舉（含跨倉萬用值 '*'）納入第 5 個正規化鍵欄位以確保不同 repo 專屬教訓不誤併，或明確改為僅跨倉通用教訓共用鍵且召回端聯集 evidence/<key>/*.json 的 repo 範圍；(2) 教訓檔改用鍵值決定性路徑（如 lessons/<key>.md），且 git push non-fast-forward 被拒時一律執行 git reset --hard @{u}、重新 pull 與重查鍵後自候選區重建 commit（僅在實際發生 rebase 衝突時才呼叫 git rebase --abort，避免 hippo 非鍵值檔名在 rebase 時無衝突而產生重複教訓檔）；(3) 將 R2/KR2 的『5 組人工重複測試 5/5 合併且證據指標正確』補入 T4 驗收條件。",
+      "failure_scenario": "Seat A 先在 autopilot repo 審過一筆專屬該倉的相依坑（主題=build、坑類型=相依、解法類型=lockfile-sync、適用工具=cargo、適用 repo=autopilot）寫入教訓檔；隔天 Seat B 在 codeforge repo 遇到另一個同屬這四個列舉值的專屬相依坑（適用 repo=codeforge），段 3 (iv) 因適用 repo 不入鍵而判定命中既有鍵，不新增教訓檔、只寫 evidence/<key>/...，結果兩筆不同 repo 的專屬教訓被錯誤合併，且後續 codeforge session 在 SessionStart 比對教訓檔 repo 欄位時因仍為 autopilot 而永遠無法召回（若改掃 evidence 則會把 autopilot 專屬坑誤注入 codeforge）。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "206c0d2f57ab9fe550bb4e31cc7f5e0ac11074940c154b9a2cca3174c38f1f36"
+    },
+    {
+      "rubric_id": "R7",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 2.5 節、第 4 節段 1 與段 3 (i)-(iii)、第 7 節、第 10.2 節 T3（本機候選區與 PM pane 待決卡）",
+      "claim": "段 3 將命中禁詞、路徑、別名或 ≥20 字元逐字原文的候選留在候選區標紅，並交由 T3 的『PM pane 待決卡（knowledge-review）』批次人審與改寫，但未隔離共用家目錄主機上的跨席 spool 權限，也未禁止標紅候選跨席或跨主機傳送至 PM pane，導致未去識別與含逐字內容的候選在通過段 3 前離開原席或原主機。",
+      "evidence": "第 4 節段 1 明言『在共用家目錄的主機上分不出同機別席』，第 10.1 節指出機隊橫跨 12 台主機；段 3 (i)(ii) 規定命中禁詞或 ≥20 字元共同子串的候選『留在候選區並標紅，由人決定改寫或丟棄』，段 3 (iii) 與 T3 則交由『knowledge-review，PM pane 待決卡一次審一批』處理，與第 2.5 節及 R7『raw transcript 與逐字內容不離開原主機；跨席只流通去識別的候選教訓』及第 7 節『離開本機的只有通過段 3 閘門的候選教訓』直接衝突。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §2.5, §4 段 1 & 段 3 (i)-(iii), §7, §10.1, §10.2 T3",
+      "repair": "明確規定：(1) 本機候選區 spool 必須依 seat 分目錄隔離並限制存取權限，禁止共用家目錄主機上的同機他席讀取；(2) 凡命中段 3 (i) 或 (ii) 而標紅的候選，其內容絕對不得進入任何跨席或跨主機的 PM pane 待決卡 payload（PM pane 最多僅能顯示不含內容的本機待處理筆數提醒，標紅項目只能在原主機原席位本機 CLI 直接丟棄或改寫並重過 (i)(ii) 綠燈後，才允許跨席送審）。",
+      "failure_scenario": "某台遠端主機（或共用家目錄主機上的工作席 W1）產出的候選夾帶真實帳號別名、本機路徑或 ≥20 字元 L0 逐字片段，被段 3 (i)/(ii) 標紅留在 spool 等待『由人決定改寫或丟棄』；T3 的 PM pane 待決卡在彙整 12 台主機或同機各席待審清單時，將該筆標紅候選內容讀取並傳送到 PM 席位／中控畫面供人改寫，導致逐字原文與未去識別資訊在通過閘門前即離開原席與原主機。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "ce2c63b921dfe5b8041ad9b5dc3362e40500affde36641dd094e5aa56c43c67c"
+    },
+    {
+      "rubric_id": "R8",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 4 節段 1-2、第 7 節第 1 點、第 10.2 節 T1-T4 依賴與起算規則、第 10.2.1 節",
+      "claim": "第 10.2 節允許 T1–T3（含跨席審查入口 PM pane 待決卡）在未取得新授權卡前，只要 01M83DFC1Q 上線即可處理真實 L0，造成未授權前他席（PM 席）即可經 T3 接觸各席真實對話衍生物；同時第 7 節承諾的『段 2 席位白名單（排除中國營運模型席與未授權席）』在 T1–T4 任務表中完全沒有落地檢查。",
+      "evidence": "第 10.2 節寫明『T1–T3 全在本機，01M83DFC1Q 上線前只跑假資料，上線後只讀 seat＝本席的 L0，不需要卡；只有 T4 起要等授權卡答覆』，但 T3 已包含『PM pane 待決卡（pane 畫面 codeforge）』；此外第 7 節第 1 點規定『段 2 以席位白名單（本機設定，列出允許的席位位址）過濾；不在白名單的席位 L0 不進候選』，但第 4 節段 1 與第 10.2 節 T1–T4 只檢查『seat＝本席且 model 在白名單內』，未檢查該執行席本身是否列於授權的席位白名單內。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §2.5, §4 段 1, §7, §10.2 T1-T4, §10.2.1",
+      "repair": "修正兩處授權邊界：(1) 在取得新授權卡答覆前，T3 僅允許在各席本機沙箱針對合成假資料或僅限本席自審運作，禁止將真實 L0 產出的候選掛入跨席／跨主機的 PM pane 待決卡（將跨席 PM pane 串接明確列為依賴『授權』）；(2) 在 T1（或 T1b／段 2）與 T4 明確補入『本機席位白名單（依授權卡核准範圍設定）』檢查，不在席位白名單內的席位即使滿足 seat＝本席亦一律 fail-closed 不產出候選。",
+      "failure_scenario": "fleet 單 01M83DFC1Q 先於操作員新授權卡完成上線：一方面某個未獲授權（或透過包裝層轉接外部未核准端點但回報白名單模型名稱）的席位在本機執行 T1 時，因滿足 seat＝本席而直接讀取真實 L0 產出候選；另一方面各工作席在未獲新授權卡前就透過 T3 將真實 session 提煉的候選送交 PM 席的 PM pane 待決卡批次檢視，違反未獲授權前只限各席自用原型的限制。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "847e443899a883e34b54f59ee3c51f4f18cce0746faf0c33054ebdf09957bb58"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "第 4 節段 2、段 3 (ii)(iii)、第 10.2 節 T1/T4",
+      "claim": "段 3 (ii) 對手動 learn --share 以『每個值必須在固定列舉內』替代 ≥20 字元逐字比對，但段 3 (iv) 顯示『適用 repo』並非四個固定列舉之一，且段 3 (iii) 允許『人審時改寫』卻未明定改寫後仍禁填自由文字；此外段 3 (ii) 與 T4 的 100 筆樣本掃描只提比對來源 L0 訊號文字，未定義來源 L0 若已被 dream/absorb 清理時的 fail-closed 行為及與 R1『原文逐字片段』的一致性。",
+      "evidence": "段 3 (ii) 寫道『手動 learn --share 也只能填受限詞彙欄位（每個值必須在固定列舉內，機器檢查）...由「值都在列舉內」這條代替』，但段 3 (iv) 將適用 repo 排除於四個固定列舉之外；同時 R1 要求『共用倉對 100 筆樣本掃描，原文逐字片段（≥20 字元）為 0 筆』，而段 3 (ii) 僅與來源 L0 訊號文字比對且未規範 L0 保留期限。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §2 KR1, §4 段 2 & 段 3 (ii)-(iv), §10.1, §10.2 T4",
+      "repair": "將『適用 repo』同樣限制為註冊的 repo 代碼白名單（或長度 <20 之嚴格 slug 格式加 '*'），明定段 3 (iii) 人審改寫僅限調整受限列舉／slug 欄位不得新增自由文字；並規定段 3 (ii) 與 T4 的 100 筆抽樣若查無對應來源 L0 或本機原始 transcript 時一律 fail-closed（不得算通過），確保 L0 訊號與原始對話逐字片段（≥20 字元）皆為 0。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "c21f2f27c813273e9a2d31d38b83a366f842fcbb360128f4a18acedb9b4149d6"
+    },
+    {
+      "rubric_id": "R11",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "第 4 節段 4 採用回饋、第 10.2 節 T4/T6",
+      "claim": "段 4 的採用回饋由段 3 寫入器每日自動批次匯入共用倉 feedback/<key>/<lane_hash>-<session_hash>.json，該路徑不經人審，但未規定 T6 與匯入器須驗證指令傳入的 <id> 必須命中既有已審教訓鍵並通過 T2 機器閘，若誤傳路徑或別名作為 <id> 將直接寫入共用倉。",
+      "evidence": "段 4 規定『明確引用該教訓 id（learn --useful <id> 或 --noisy <id>）...由段 3 的寫入器每天批次匯入共用倉 feedback/<key>/<lane_hash>-<session_hash>.json』，T6 與 T4 均未要求對回饋 spool 的 <id> 與欄位執行既有鍵存在性驗證與 T2 機器閘掃描。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §4 段 4 採用回饋, §10.2 T4 & T6",
+      "repair": "在 T6 寫入本機回饋 spool 及 T4 每日批次匯入共用倉前，強制驗證 <id> 為嚴格正規化鍵格式且已存在於共用倉已審教訓中，並對整筆回饋 JSON 與目標路徑跑過 T2 機器閘，不符者留在 spool 標紅不入倉。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "ac694162bef9d8aab82858ee04d9121e983ebd4021bfce06054d20295ba804b2"
+    },
+    {
+      "rubric_id": "R10",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "第 4 節段 4 升級、第 5 節第 2 點、第 9 節 P3、第 10.2 節",
+      "claim": "段 4 升級成 SKILL.md 時，機器審查的路徑條件誤寫為『非 /home 絕對路徑』（字面上漏掉 /home 與 /Users），且未比照段 3 (iii) 要求人審改寫 SKILL.md 後重跑機器審查；此外第 10.2 節與 P3 未列出實作段 4 技能升級與審查的對應任務列。",
+      "evidence": "段 4 升級寫道『生成的 SKILL.md 另過一道機器審查（格式、禁詞、洩漏掃描，含組織、金額、非 /home 絕對路徑）加人審』，缺少『人審改寫後重跑機器閘』，且第 10.2 節 T1–T7 無任何任務負責 N=3 技能升級，但 P3 即退役 distill 獨立產出 skill 的路徑。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §4 段 4 升級, §5.2, §9 P3, §10.2",
+      "repair": "將段 4 SKILL.md 機器審查改為完整重用 T2 機器閘（涵蓋 /home、/Users、/tmp、/run、~/ 及磁碟代號等所有本機絕對路徑與逐字檢查），補上『人審修改 SKILL.md 後必須重跑機器審查通過才可 commit/push』，並在 P2/P3 明確列出技能升級任務列或聲明在該任務上線前暫緩退役 distill 的受審產出。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "a1093457129faf39b9bbb42fc8fcdac9fb546280734fdcce97c1d78945494008"
+    },
+    {
+      "rubric_id": "R12",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "第 1 節、第 2.5 節、第 4 節段 4 召回、第 5 節第 3 點、第 9 節 P3、第 10.2 節 T5",
+      "claim": "計畫關於 mnemos 契約確認與不讀 mnemos repo 的邊界前後不一：T5 要求移除 mnemos-cli context --hook 中屬教訓類的部分並依賴 mnemos 契約 owner 確認，但第 5.3 節稱『不需要 mnemos 契約 owner 確認』、第 9 節 P3 仍重複列出該確認，且 T5 未明文禁止實作者讀取或修改 mnemos repo（R9）。",
+      "evidence": "第 1 節寫『不碰 mnemos』、第 2.5 節寫『不讀 mnemos repo』、第 5.3 節寫『不需要 mnemos 契約 owner 確認』，但段 4 與 T5 寫『取代...mnemos-cli context --hook 中屬於教訓類的部分...依賴 mnemos 契約 owner 確認』，第 9 節 P3 亦保留『含 mnemos 契約 owner 確認』。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §1, §2.5, §4 段 4 召回, §5.3, §9 P3, §10.2 T5",
+      "repair": "統一第 5.3 節、第 9 節 P3 與 T5 的敘述（ship 輸入不變故無需確認，但 T5 調整 SessionStart 對 mnemos-cli context --hook 的呼叫／擷取方式須在 T5 前經 mnemos 契約 owner 確認）；並在 T5 明確規定本計畫實作者嚴禁讀取或修改 mnemos repo，若需調整 mnemos-cli 旗標一律由 mnemos owner 另單提供，或僅在 codeforge hook 包裝層依確認後的契約處理。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "5d6149dba47c294bb31f799bb6119250309246234ac728b2bafc8b08f2f81583"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "第 4 節段 1、第 5 節第 4 點、第 9 節 P1.5 與 P3、第 10.2 節 T1/T1b",
+      "claim": "第 9 節將 P1.5（新舊教訓產物並行比對一週）的起點定在『T1–T3 上線後』，且 P3 僅依賴『P2 通過後』；但 01M83DFC1Q 上線前 T1 對真實 L0 一律丟棄只跑假資料，且 distill-scan 改接在 T1b，若先開跑 P1.5 將無真實新管線產物可對照，或 P2 完成後跳過 P1.5 直接進 P3。",
+      "evidence": "第 9 節表列 P1.5 上線日為『T1–T3 上線後（要有新管線產物才能比）』、P3 上線日為『P2 通過後』；但第 4 節段 1 與第 10.1 節規定『01M83DFC1Q 上線前，T1–T3 只跑含雷假資料與合成 fixture，不讀任何真實 L0』，且 T1b 不在 T1–T3 之列。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §4 段 1, §5.4, §9 P1.5 & P3, §10.1, §10.2 T1b",
+      "repair": "將第 9 節 P1.5 的起算條件改為『T1、T1b、T2、T3 與 01M83DFC1Q 皆上線後（有真實本席 L0 產物可比；跨席彙整比對則須在授權後）』，並將 P3 的前置條件明確改為『P1.5 滿 7 天對照確認且 P2 通過後』。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "5284818ea0a7d5def30c8f999bceb6757a14c1f690971abd2531c09dc13060a1"
+    },
+    {
+      "rubric_id": "R4",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "第 2 節 KR4、第 5 節第 4 點、第 9 節 P3、第 10.2 節 T5",
+      "claim": "第 5.4 節與第 9 節 P3 未排入『回滾指令演練 1 次成功』的執行時點與沙箱隔離方式（若在切換後 14 天唯讀觀察期內直接對正式環境演練寫入，將與唯讀設定衝突或打破舊路徑寫入次數為 0 的要求），亦未說明 P2 T5 移除 codeforge 舊召回注入後若在 P3 回滾的召回配套。",
+      "evidence": "第 2 節聲明『KR 與觀察期只量測、不擋上線』，第 5.4 節寫『切換教訓寫入路徑 → 舊教訓寫入路徑留 14 天唯讀 → 刪...回滾＝改回 legacy』，未安排回滾演練步驟，也未涵蓋 T5 已移除的 codeforge 舊召回注入之回滾開關。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §2 KR4, §5.4, §9 P3, §10.2 T5",
+      "repair": "在 P3 切換流程中明確加入回滾演練步驟（於 14 天零寫入計時開始前或於隔離沙箱環境執行一次 knowledge.learn_target=legacy 寫入與切回 pipeline 的完整演練並留存紀錄），並確認 P3 回滾時 SessionStart 召回維持唯讀或同步具備對應回滾開關。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "0f0716a837ab01b3e7b84b20f46a15bffb3ade3627f5663dad6522376c63a7af"
+    },
+    {
+      "rubric_id": "R13",
+      "class": "decision-now",
+      "severity": "non-blocking",
+      "affected_surface": "第 4 節段 4「召回資格與排序」；T5",
+      "claim": "召回資格沒有要求近期被採用，冷啟動名額還明確允許未被採用的新教訓，與 R13 不符。",
+      "evidence": "資格只要求已審、範圍相符及噪音數不超過採用數加一。因此採用數與噪音數均為零的教訓符合資格；冷啟動名額也沒有採用條件。其餘兩個名額按採用數排序，仍可能選入零採用者。",
+      "evidence_reference": "R13；第 4 節段 4「召回資格與排序」；第 10.2 節 T5",
+      "repair": "在 T5 實作前，把近期被採用列為所有注入名額的必要資格，明定近期的時間窗；沒有合格教訓時允許少於三則，不以零採用者補位。T1–T3 可先進行。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "deep",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "76224292728943ba548aebfe74d954154912b039295f142c168f0fd005d58323"
+    },
+    {
+      "rubric_id": "R2",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "第 4 節段 3 的正規化鍵；T1 候選 schema；T4 去重",
+      "claim": "去重鍵的定義與不同 repo 不會被合併的保證互相矛盾，現有驗收也沒有檢查不同教訓被誤合併。",
+      "evidence": "計畫定義鍵為主題、坑類型、解法類型、適用工具，明確排除 repo，卻同時聲稱不同 repo 的教訓不會被併掉。兩筆候選四欄相同而 repo 不同時，依寫入規則必然命中同一鍵。KR2 與 T4 只驗證應合併的重複案例，未驗證這類碰撞是否確實代表同一教訓。",
+      "evidence_reference": "R2；第 4 節段 3 步驟 (iv)；第 2 節 KR2；第 10.2 節 T4",
+      "repair": "以受限詞彙 fixture 補做同鍵異教訓的碰撞探針，明定跨 repo 合併的語義條件；必要時增加受限的解法或適用條件識別碼。保留五組重複合併驗收，另加入應保持兩筆的反例，據結果修正鍵與文字保證。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "deep",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "efa42d636f85617087917a8b2adbefd3623b7856f8b903451fc30083e9ec576d"
+    }
+  ],
+  "backlog_candidates": [
+    {
+      "fingerprint": "c21f2f27c813273e9a2d31d38b83a366f842fcbb360128f4a18acedb9b4149d6",
+      "rubric_id": "R1",
+      "affected_surface": "第 4 節段 2、段 3 (ii)(iii)、第 10.2 節 T1/T4",
+      "claim": "段 3 (ii) 對手動 learn --share 以『每個值必須在固定列舉內』替代 ≥20 字元逐字比對，但段 3 (iv) 顯示『適用 repo』並非四個固定列舉之一，且段 3 (iii) 允許『人審時改寫』卻未明定改寫後仍禁填自由文字；此外段 3 (ii) 與 T4 的 100 筆樣本掃描只提比對來源 L0 訊號文字，未定義來源 L0 若已被 dream/absorb 清理時的 fail-closed 行為及與 R1『原文逐字片段』的一致性。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §2 KR1, §4 段 2 & 段 3 (ii)-(iv), §10.1, §10.2 T4",
+      "disposition": null
+    },
+    {
+      "fingerprint": "ac694162bef9d8aab82858ee04d9121e983ebd4021bfce06054d20295ba804b2",
+      "rubric_id": "R11",
+      "affected_surface": "第 4 節段 4 採用回饋、第 10.2 節 T4/T6",
+      "claim": "段 4 的採用回饋由段 3 寫入器每日自動批次匯入共用倉 feedback/<key>/<lane_hash>-<session_hash>.json，該路徑不經人審，但未規定 T6 與匯入器須驗證指令傳入的 <id> 必須命中既有已審教訓鍵並通過 T2 機器閘，若誤傳路徑或別名作為 <id> 將直接寫入共用倉。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §4 段 4 採用回饋, §10.2 T4 & T6",
+      "disposition": null
+    },
+    {
+      "fingerprint": "a1093457129faf39b9bbb42fc8fcdac9fb546280734fdcce97c1d78945494008",
+      "rubric_id": "R10",
+      "affected_surface": "第 4 節段 4 升級、第 5 節第 2 點、第 9 節 P3、第 10.2 節",
+      "claim": "段 4 升級成 SKILL.md 時，機器審查的路徑條件誤寫為『非 /home 絕對路徑』（字面上漏掉 /home 與 /Users），且未比照段 3 (iii) 要求人審改寫 SKILL.md 後重跑機器審查；此外第 10.2 節與 P3 未列出實作段 4 技能升級與審查的對應任務列。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §4 段 4 升級, §5.2, §9 P3, §10.2",
+      "disposition": null
+    },
+    {
+      "fingerprint": "5d6149dba47c294bb31f799bb6119250309246234ac728b2bafc8b08f2f81583",
+      "rubric_id": "R12",
+      "affected_surface": "第 1 節、第 2.5 節、第 4 節段 4 召回、第 5 節第 3 點、第 9 節 P3、第 10.2 節 T5",
+      "claim": "計畫關於 mnemos 契約確認與不讀 mnemos repo 的邊界前後不一：T5 要求移除 mnemos-cli context --hook 中屬教訓類的部分並依賴 mnemos 契約 owner 確認，但第 5.3 節稱『不需要 mnemos 契約 owner 確認』、第 9 節 P3 仍重複列出該確認，且 T5 未明文禁止實作者讀取或修改 mnemos repo（R9）。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §1, §2.5, §4 段 4 召回, §5.3, §9 P3, §10.2 T5",
+      "disposition": null
+    },
+    {
+      "fingerprint": "5284818ea0a7d5def30c8f999bceb6757a14c1f690971abd2531c09dc13060a1",
+      "rubric_id": "R6",
+      "affected_surface": "第 4 節段 1、第 5 節第 4 點、第 9 節 P1.5 與 P3、第 10.2 節 T1/T1b",
+      "claim": "第 9 節將 P1.5（新舊教訓產物並行比對一週）的起點定在『T1–T3 上線後』，且 P3 僅依賴『P2 通過後』；但 01M83DFC1Q 上線前 T1 對真實 L0 一律丟棄只跑假資料，且 distill-scan 改接在 T1b，若先開跑 P1.5 將無真實新管線產物可對照，或 P2 完成後跳過 P1.5 直接進 P3。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §4 段 1, §5.4, §9 P1.5 & P3, §10.1, §10.2 T1b",
+      "disposition": null
+    },
+    {
+      "fingerprint": "0f0716a837ab01b3e7b84b20f46a15bffb3ade3627f5663dad6522376c63a7af",
+      "rubric_id": "R4",
+      "affected_surface": "第 2 節 KR4、第 5 節第 4 點、第 9 節 P3、第 10.2 節 T5",
+      "claim": "第 5.4 節與第 9 節 P3 未排入『回滾指令演練 1 次成功』的執行時點與沙箱隔離方式（若在切換後 14 天唯讀觀察期內直接對正式環境演練寫入，將與唯讀設定衝突或打破舊路徑寫入次數為 0 的要求），亦未說明 P2 T5 移除 codeforge 舊召回注入後若在 P3 回滾的召回配套。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §2 KR4, §5.4, §9 P3, §10.2 T5",
+      "disposition": null
+    },
+    {
+      "fingerprint": "76224292728943ba548aebfe74d954154912b039295f142c168f0fd005d58323",
+      "rubric_id": "R13",
+      "affected_surface": "第 4 節段 4「召回資格與排序」；T5",
+      "claim": "召回資格沒有要求近期被採用，冷啟動名額還明確允許未被採用的新教訓，與 R13 不符。",
+      "evidence_reference": "R13；第 4 節段 4「召回資格與排序」；第 10.2 節 T5",
+      "disposition": null
+    },
+    {
+      "fingerprint": "efa42d636f85617087917a8b2adbefd3623b7856f8b903451fc30083e9ec576d",
+      "rubric_id": "R2",
+      "affected_surface": "第 4 節段 3 的正規化鍵；T1 候選 schema；T4 去重",
+      "claim": "去重鍵的定義與不同 repo 不會被合併的保證互相矛盾，現有驗收也沒有檢查不同教訓被誤合併。",
+      "evidence_reference": "R2；第 4 節段 3 步驟 (iv)；第 2 節 KR2；第 10.2 節 T4",
+      "disposition": null
+    }
+  ],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": null,
+  "reviewed_at": "2026-11-25T22:01:51.211Z",
+  "usage": null,
+  "duration_ms": 845166
+}

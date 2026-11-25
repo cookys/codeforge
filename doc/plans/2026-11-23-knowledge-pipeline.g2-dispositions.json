@@ -1,0 +1,62 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "codeforge:knowledge-pipeline-d4",
+ "generation": 2,
+ "findings": [
+  {
+   "fingerprint": "206c0d2f57ab9fe550bb4e31cc7f5e0ac11074940c154b9a2cca3174c38f1f36",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded seg3 (iv): repo joins the key (five enum fields), recall scope reads the key; T4 acceptance adds KR2 5/5 plus 5 near-miss pairs 0/5; reject order: abort rebase, fetch, reset --hard @{u}, re-key, push once."
+  },
+  {
+   "fingerprint": "ce2c63b921dfe5b8041ad9b5dc3362e40500affde36641dd094e5aa56c43c67c",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded seg3 (i)(ii): a gate hit is dropped on the spot, never stored in the spool, never sent to review, never leaves seat or host; only rule id and count are logged."
+  },
+  {
+   "fingerprint": "847e443899a883e34b54f59ee3c51f4f18cce0746faf0c33054ebdf09957bb58",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded seg3 (iii) and T3: before the authorization card the review entry opens only on the producing seat own pane; PM pane cross-seat review opens with T4 after authorization. T1 acceptance adds probes for other-seat, non-whitelisted seat and non-Claude model L0."
+  },
+  {
+   "fingerprint": "c21f2f27c813273e9a2d31d38b83a366f842fcbb360128f4a18acedb9b4149d6",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded: human rewrite may only pick another enum value; repo comes from a local repo list so every field is enum; missing source L0 text drops the candidate (fail-closed)."
+  },
+  {
+   "fingerprint": "ac694162bef9d8aab82858ee04d9121e983ebd4021bfce06054d20295ba804b2",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded seg4 feedback: import checks the id hits an existing reviewed lesson key and passes gate (i), else dropped; T4 acceptance tests it."
+  },
+  {
+   "fingerprint": "a1093457129faf39b9bbb42fc8fcdac9fb546280734fdcce97c1d78945494008",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded seg4 upgrade: SKILL.md gate uses all local absolute paths as seg3 (i), reruns after rewrite; new T8 task."
+  },
+  {
+   "fingerprint": "5d6149dba47c294bb31f799bb6119250309246234ac728b2bafc8b08f2f81583",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded seg4 recall and T5: mnemos-cli context untouched, only local memory context lesson part replaced; no mnemos contract confirmation needed, P3 row no longer lists it; implementer never reads or edits the mnemos repo."
+  },
+  {
+   "fingerprint": "5284818ea0a7d5def30c8f999bceb6757a14c1f690971abd2531c09dc13060a1",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded section 9: P1.5 starts after 01M83DFC1Q and T1/T1b produce from real L0; P3 depends on P2 and P1.5."
+  },
+  {
+   "fingerprint": "0f0716a837ab01b3e7b84b20f46a15bffb3ade3627f5663dad6522376c63a7af",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 5.4 and P1.5: rollback drill in sandbox HOME and sandbox shared repo before the switch; recall rollback is the codeforge install switch plus reinstall."
+  },
+  {
+   "fingerprint": "76224292728943ba548aebfe74d954154912b039295f142c168f0fd005d58323",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded seg4: injection eligibility requires >=1 adoption in 30 days; new lessons are listed in the pane only, not injected (replaces the g1 cold-start slot)."
+  },
+  {
+   "fingerprint": "efa42d636f85617087917a8b2adbefd3623b7856f8b903451fc30083e9ec576d",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Same fold as 206c0d: repo in key, near-miss acceptance added."
+  }
+ ]
+}
