@@ -677,5 +677,5 @@
 - **Needs**: none
 - **ms**: v7.6-followup
 - **Used-by**: user
-- **Queued-By**: cookys/aimax395-team/codeforge--claude 01M81Q2P35B0QBTS5QMWQ45RG1
+- **Queued-By**: cookys/team-console/codeforge--claude 01M81Q2P35B0QBTS5QMWQ45RG1
 - **Context**: 輸入時 a/b/c、s 都當文字的規則不變
