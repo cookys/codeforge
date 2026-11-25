@@ -1,0 +1,480 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "01M836C68Y0EC65D15WWNKNMKJ",
+  "logical_plan_id": "codeforge:knowledge-pipeline-d4",
+  "session_id": "54e614a3-2ed1-479b-968c-cf966dd737db",
+  "session_key": "bfa774569610623236d46463d4c84d939cf6777af78d6222d934356fd3bf0e8e",
+  "generation": 1,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": false,
+  "policy_reason": "depth_0_adjudication_required",
+  "rubric_sha256": "d8d21b375ac63f7777e0001f0a616c31e7edbcae53c521b616087ee47593014f",
+  "manifest_sha256": "883a01b922ce9934656bbc46243f9fa45ab006e9ba7d2ac7388253fd9a3a9e48",
+  "context_sha256": null,
+  "plan_sha256": "c982e50a7aa4772816409c7fda86d1e2e0a7fdc5e6a0da713043e35d858c5d6e",
+  "plan_path": "doc/plans/2026-11-23-knowledge-pipeline.md",
+  "plan_git_blob_sha": "8bcdb1365a53262c602047a7d025941fd0c15cb2",
+  "repo_head_sha": "4d6efcce8870ae3a10b7563d593e0f1d48a4e376",
+  "plan_dirty_vs_head": false,
+  "growth_ratio": {
+    "numerator": 1,
+    "denominator": 1
+  },
+  "growth_warning": false,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "agy",
+          "model": "gemini-4-carbon-high",
+          "operation": "plan-review",
+          "request_digest": "b7092f4f977e0154118bf4bf45449c06b606338b81473dc0fa7cba1838b35a17"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "2ede5218a70e096eef9aad66dc841733840a8824978c122b9d886a7ff25bf68d",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "<tmp>/dispatch-author-log-tZwwN4",
+          "digest": "2ede5218a70e096eef9aad66dc841733840a8824978c122b9d886a7ff25bf68d"
+        },
+        "receipt_digest": "0c0d7bc34691012fdf8756797735112d16c30b2879c112c4ca9228c161dd1ef3"
+      },
+      "transport_status": "success",
+      "usage": null,
+      "duration_ms": 628224,
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "deep",
+      "target_id": "deep",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6.1-sol",
+          "operation": "plan-review",
+          "request_digest": "f55d1237733f0e3195fbc2c9fd4f2b0164f104a40d96a2471b4be8f330abe12d"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "77064d3edb58f632e85ace26e8861a28773448fbcd30a9fb7609c7223abf6501",
+          "stderr_sha256": "55400e7e5da1f00471e83a3bb0c7ab6de84d6ab8097cdb4ccf4e2ef8e291aba0"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "<tmp>/dispatch-author-codex-EafSFH/stdout",
+          "digest": "77064d3edb58f632e85ace26e8861a28773448fbcd30a9fb7609c7223abf6501"
+        },
+        "receipt_digest": "e1b0a91bcc04efea1d0028f231b0f6dfe21cc3bc2ca8d196333f592e20565ec1"
+      },
+      "transport_status": "success",
+      "usage": null,
+      "duration_ms": 64923,
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "family": "google",
+      "runner": "agy",
+      "model": "gemini-4-carbon-high",
+      "verdict": "STOP"
+    },
+    {
+      "seat_id": "deep",
+      "target_id": "deep",
+      "family": "openai",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "verdict": "STOP"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R8",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 4 節段 1、第 7 節 1、第 10.1 節、第 10.2 節（T1–T4 開工與依賴條件）",
+      "claim": "在共用家目錄主機上，L0 的 seat 欄位為 0 時僅靠 uid、家目錄與本機 session-digest 清單無法隔離同主機別席或非 Claude 模型席位，使授權前即日開工的 T1–T3 違反 R8，且 T4 未將 01M83DFC1Q 與 model 白名單列為前置依賴。",
+      "evidence": "第 7 節 1 明載存在「共用家目錄下的別席檔案不讀」並依賴段 2「席位白名單」與「只限 Claude 席的 transcript；排除中國營運模型席」；但第 10.1 節指出目前 L0 的 seat 欄位為 0（待單 01M83DFC1Q），卻裁定「不擋 P2 開工，段 1 的隔離條件先用 uid 與家目錄加 session id 清單，不依賴 seat」，且第 10.2 節讓 T1–T3 在授權卡答覆前開工、T4 依賴僅列「T3、授權」而未納 01M83DFC1Q 或 model 白名單檢查。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節段 1、第 7 節 1、第 10.1 節、第 10.2 節",
+      "repair": "(1) 在新授權卡答覆及 01M83DFC1Q 補齊 seat 前，T1–T3 禁止掃描整個本機 L0 目錄，必須由呼叫席明確傳入本席自有的 session_id 清單，並強制檢查 L0 的 model 欄位符合 Claude 模型白名單（seat 或 model 缺值或不符一律 fail-closed 拒收）；(2) 將 01M83DFC1Q（seat 非空且段 2 席位白名單生效）列為共用家目錄主機執行批次擷取與 T4 共用倉寫入的必要依賴。",
+      "failure_scenario": "同一台共用 Linux uid 與家目錄的主機上，別席（或掛載中國營運模型的席位）結束對話觸發全域 session-digest 寫入 L0（其 uid、家目錄與本席相同、屬本機 session-digest 清單且 seat=0）；本席在未獲新授權卡前於 11-26 開工執行 T1 'codeforge lessons candidates --json' 與 T3 候選區寫入時，會直接讀取並提煉他席 L0 訊號，違反 R8「未取得新授權卡前，只用各席自己的 transcript 做原型」與第 7 節隔離要求。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "09c50a5736de7a0a96758c136ef80c72c9e9634cdd7549794d106c8fc42cf5ec"
+    },
+    {
+      "rubric_id": "R11",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 4 節段 3(i)-(iii)、第 4 節段 4、第 10.2 節 T2",
+      "claim": "段 3(i) 與段 4 的 codeforge 側機器閘將路徑攔截範圍限縮為「非 /home 的本機絕對路徑」（且未掛載 identifier-scan），漏擋 /home 與 /Users 開頭的本機絕對路徑；同時人工「改寫」未規定重跑機器閘，手動 learn --share 亦可能因無可取得來源對話而跳過段 3(ii)。",
+      "evidence": "第 4 節段 3(i) 規定機器閘放在 codeforge 側且不改 autopilot 的 identifier-scan，但攔截項目寫為「非 /home 的本機絕對路徑」（段 4 SKILL.md 機器審查亦同），而私密共用倉與 fleet skill-pack repo 並未內建執行 identifier-scan；此外段 3(i) 寫命中候選「留在候選區並標紅，由人決定改寫或丟棄」卻未要求改寫後重過 (i)(ii)，段 3(ii) 對手動 learn --share 只與「來源對話的可取得文字」比對。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節段 3、第 4 節段 4、第 10.2 節 T2",
+      "repair": "(1) 將段 3(i) 與段 4 機器閘的路徑規則改為攔截「所有本機絕對路徑」（涵蓋 /home/...、/Users/...、/root/...、/srv/...、/opt/...、/var/...、/tmp/...、/etc/... 等）；(2) 規定候選區任何人工「改寫」存檔後必須重新通過 (i)(ii) 兩道機器閘才可進入 (iii) 人審核准；(3) 規定 learn --share 若綁定來源 session 則來源文字不可取得時 fail-closed 標紅，無來源 session 時僅允許受限模板欄位。",
+      "failure_scenario": "反向探針或操作員透過 learn --share 送入夾帶 '/home/<系統服務帳號>/keys.pem'（18 字元，小於 20 字元、該服務帳號不在個人帳號別名清單且無可取得來源對話）的候選教訓；即日開工的 T2 若照段 3(i) 字面只攔「非 /home 的本機絕對路徑」會直接放行，段 3(ii) 亦放行，導致反向探針未達全擋或本機絕對路徑流入共用倉。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "3de4599222115cc8c591bf20119fc187dfd99313a9b06505ad5d0388b06da0a3"
+    },
+    {
+      "rubric_id": "R2",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 4 節段 2、第 4 節段 3(iv)、第 10.2 節 T1 與 T4",
+      "claim": "段 3(iv) 去重鍵僅取「主題＋解法類型」兩個固定列舉，會將不同 repo／工具／坑類型的獨立教訓誤併吞沒；且併發寫入先在本地 commit 才於 push 被拒時執行 git pull --rebase，會觸發 evidence 檔 add/add 衝突或提交重複教訓。",
+      "evidence": "第 4 節段 2 定義候選含主題、坑類型、解法類型、適用範圍（repo、工具名），但段 3(iv) 規定「以主題加解法類型的正規化鍵查共用倉去重（命中則不呼叫 hippo new，改對 sidecar 證據檔 evidence/<key>.jsonl 追加一行；未命中才新增一筆），commit，push；push 被拒就再 pull --rebase 重查鍵一次」，第 10.2 節 T4 驗收要求「兩個 lane 併發寫同一教訓只產生一筆加兩行證據」。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節段 2、第 4 節段 3(iv)、第 10.2 節 T1 與 T4",
+      "repair": "(1) 將正規化去重鍵擴充為至少包含「主題 + 坑類型 + 解法類型 + 適用範圍（repo／工具名）」（手動 learn --share 另含正規化標的詞），並於 T1 JSON schema 固定該組欄位；(2) 修正段 3(iv) 與 T4 併發重試協定：push 被拒時必須先撤銷未推送的本地 commit（例如 reset 回遠端追蹤分支），重新拉取遠端最新狀態後再重跑查鍵與寫入（命中則僅追加 evidence/<key>.jsonl），禁止對已含 hippo new 的本地 commit 直接 rebase；(3) 在 T4 驗收補齊 R2 的 5 組重複合併與相異教訓不誤併測試。",
+      "failure_scenario": "兩個 lane 併發審過同一筆新教訓 K，各自查無 K 後呼叫 hippo new、建立 evidence/K.jsonl 並完成本地 git commit；Lane A 先 push 成功，Lane B push 被拒後依規格跑 'git pull --rebase'，因雙方皆新建 evidence/K.jsonl 而停在 rebase add/add 衝突狀態（連帶破壞同機 30 分鐘召回 pull timer），或若無衝突則把兩筆重複的 hippo 記錄都進歷史，直接令 T4 驗收與 R2 失敗。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "ef536c8c6b2afc669d25546dfc20df8a80ae9bff38e04ef34dcca076b7413ea4"
+    },
+    {
+      "rubric_id": "R12",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 1 節、第 3 節、第 5 節 3–4、第 10.2 節 T5 與 T6",
+      "claim": "第 5 節退役 codeforge learn 教訓落點與第 1 節「不改 ship 輸入」矛盾（第 5 節 4 自承停寫舊路徑會令 ship 斷糧），卻未依 R12 先列出對 ship 輸入的影響並納入 mnemos 契約 owner 確認；且 T6 由 codeforge 寫入共用倉回饋檔跨越 owner 邊界。",
+      "evidence": "第 1 節與第 5 節宣稱「不改 codeforge ship 的輸入與契約」，但第 3 節明載「ship 把 L1 與 git log 變 L2 日帳送 mnemos」，第 5 節 3–4 將 codeforge learn 教訓類落點改進候選區並註記「舊路徑照常寫，不停，避免切換前 ship 斷糧」；同時 R12 裁定「教訓管線（候選→審查→共用倉→召回）歸 autopilot」，第 10.2 節 T6 卻把 'learn --useful／--noisy <id>' 與 sidecar 交給 codeforge。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 1 節、第 3 節、第 5 節、第 10.2 節 T5–T6",
+      "repair": "(1) 明確裁定 codeforge learn 與 L1 關係：若預設仍寫本機 L1（僅加 --share 另送候選區）以確保 ship 輸入不變，須修正 KR4／第 5 節對 codeforge learn「舊落點寫入次數為 0」的定義（明列僅退役非 L1 的重複教訓落點）；若 P3 確實停寫該類 L1 記錄，則必須依 R12 在計畫正面列出對 ship 上游 L1 輸入的變更，並併入 P2 T5 前向 mnemos 契約 owner 確認的清單；(2) 將 T6 回饋寫入器與共用倉 sidecar 歸回 autopilot（codeforge 僅負責 pane 顯示或轉呼叫 autopilot 介面）。",
+      "failure_scenario": "P2 T5 向 mnemos 契約 owner 確認時依第 1 節宣稱「不改 ship 輸入」而未揭露 P3 將停寫 codeforge learn 的 L1 教訓類落點；進入 P3 切換以達成 KR4「舊路徑 14 天寫入 0 次」後，L1 缺少該類記錄導致 codeforge ship 產出的 Mnemos L2 日帳靜默缺糧（或反之為保 ship 不斷糧而持續寫 L1，使 KR4／R4 驗收直接失敗）。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "dae6cd5af76da2ccb335f7eb06f5cfc8f5afbd50ccf1da4121afb179362cc248"
+    },
+    {
+      "rubric_id": "R14",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 4 節定案 1–2、第 4 節段 2 與段 4、第 10.2 節 T4 與 T6",
+      "claim": "第 4 節定案 1 規定共用倉在段 3 審查外「召回端定期 pull，唯讀」，與段 4／T6 寫入 feedback/<key>.jsonl 供跨 lane 召回排序及 N=3 升級計算直接衝突；且 evidence／feedback 缺少去識別 lane_id，無法判定「跨 ≥2 個 lane」。",
+      "evidence": "第 4 節定案 1 寫明「只有段 3 審查通過時才在該 checkout 內以 hippo 格式寫一筆 lesson，commit、pull --rebase、push；召回端定期 pull，唯讀」，但定案 2 規定「同一教訓在 ≥3 個不同 session、跨 ≥2 個 lane 被採用或各自重記，才升級成 skill 候選」，段 4 又規定採用與曝光「寫 sidecar feedback/<key>.jsonl。排序用『已審、近期被採用』的次數」；同時段 2 證據指標僅有「session id 加時間範圍」且 seat=0。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節、第 10.1 節、第 10.2 節 T4 與 T6",
+      "repair": "(1) 明確定義 feedback/<key>.jsonl 的寫入與同步架構：維持召回端 checkout 唯讀，曝光與 --useful／--noisy 先寫本機日誌，再由 autopilot 受控同步器在獨立或加鎖流程中以 append-only 方式同步回共用倉，避免污染唯讀 checkout 與干擾 30 分鐘 pull timer；(2) 在 evidence/<key>.jsonl 與 feedback/<key>.jsonl 加入不含真實主機名與帳號別名的去識別 lane_id（如雜湊代號，符合 R9／R11），使 N=3「跨 ≥2 個 lane」可機器驗證。",
+      "failure_scenario": "P2 T6 在 Lane B 執行 'learn --useful <id>' 將回饋寫入本機共用倉 checkout 的 feedback/<key>.jsonl；因定案 1 規定召回端唯讀不 push，Lane A 永遠收不到採用訊號（跨 lane 排序與 N=3 失效），且若該檔在 checkout 內被修改，30 分鐘 systemd 'git pull --rebase' timer 會因工作樹非乾淨而失敗；同時因證據檔無去識別 lane_id，單一 lane 跑 3 個 session 與跨 2 個 lane 無法區分。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "4a4d0b94472cd3316678a4b06988d9e4e6f2354c3addde038019c61b0595613c"
+    },
+    {
+      "rubric_id": "R1",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "第 2 節 KR1、第 6 節、第 10.2 節 T1–T4 與 T7",
+      "claim": "P2 任務表未將「15/15 反向探針（5 類各 3 種）全擋」列為 T4 開啟共用倉寫入的依賴條件，且漏列 R1／KR1「共用倉 100 筆樣本 ≥20 字元逐字片段為 0」的跨機本機比對任務。",
+      "evidence": "第 2 節與第 6 節明定 KR1 反向探針（路徑、帳號別名、主機名、組織、金額各 3 種，15/15 擋下）是段 3 開寫入的上線閘門，並須掃描 100 筆樣本確認 ≥20 字元逐字片段為 0；但第 10.2 節 T1 僅測帳號別名與逐字片段、T2 未列 5×3 矩陣、T4 依賴僅列「T3、授權」，且 T1–T7 未排入 100 筆樣本逐字比對工作（亦未說明在 R7 原文不離機限制下如何由各原主機分頭比對後彙總筆數）。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 2 節 KR1、第 6 節、第 10.2 節",
+      "repair": "在 T2／T3 驗收補齊 5 類×3 種（15/15）完整反向探針矩陣並將其列為 T4 開啟共用倉寫入的前置依賴；另於任務表新增樣本掃描列，由各原主機針對本機產出的共用倉／候選樣本與本機來源對話做 ≥20 字元比對，彙總達 100 筆且命中 0 筆。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "b1c507b79814eae9b85050bce69ac5619263567a5f553bd5a00898410d919c3b"
+    },
+    {
+      "rubric_id": "R6",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "第 4 節段 1–2、第 5 節 2、第 9 節 P1／P1.5、第 10.1–10.2 節",
+      "claim": "P1 縮小範圍後未處理 autopilot 的 distill-scan，而 P2 任務表亦漏列將 distill-scan 改接段 1 JSON（停讀 transcript）與補齊 ≥20 字元測試的任務；另第 9 節 P1.5 時序早於新管線建置。",
+      "evidence": "第 4 節段 1–2 與第 9 節 P1 原定將 distill-scan 改消費段 1 JSON 並補不含 ≥20 字元逐字片段的測試，但第 10.1 節 P1 實際僅修改 codeforge 內 5 個檔案、未動 autopilot distill-scan，第 10.2 節 T1–T7 亦無對應任務；同時第 9 節把「P1.5 新舊教訓產物並行比對一週」排在「P1 通過後」，早於 P2 T1–T3 產出新教訓的時間點。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節段 1–2、第 9 節、第 10.1 節、第 10.2 節",
+      "repair": "將第 9 節 P1.5（一週並行唯讀對照）移至 P2 本機管線完成後、P3 切換前執行；並在 P3 退役 distill 前新增明確任務，將 distill-scan 改為只讀 'codeforge lessons candidates --json'、補齊 ≥20 字元逐字比對測試並將輸出導向段 3 候選區。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "b5fa943ee550290b34c8ac4a452a816226b8211bcea3716b3d7afa6aa4f6fd8f"
+    },
+    {
+      "rubric_id": "R4",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "第 2 節 KR4、第 5 節 1–4、第 9 節 P3",
+      "claim": "第 5 節僅在 autopilot learn 腳本讀單一設定鍵 knowledge.learn_target，無法一併切換與回滾另外兩條退役路徑（autopilot distill 與 codeforge learn），且 local／share 命名與第 5 節 1 的預設行為描述矛盾。",
+      "evidence": "第 5 節 1 寫新行為預設寫本機私密筆記 memory_dir、加 --share 才進候選區（退役的是直寫各處 .claude/knowledge/），但第 5 節 4 卻將 knowledge.learn_target 定義為「local＝原行為，share＝新行為」且稱決定只寫在 learn 腳本一處，未涵蓋 distill 獨立產 skill 與跨 repo 的 codeforge learn 回滾機制。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 2 節 KR4、第 5 節 1–4、第 9 節 P3",
+      "repair": "將開關值改為語意明確的 'legacy' 與 'pipeline'（或提供統一回滾腳本同時切換 autopilot learn、autopilot distill 與 codeforge 端退役落點），並在 P3 驗收明列三條退役路徑 14 天寫入次數為 0 的稽核方法與 1 次回滾演練步驟。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "ec32efb53bf8b9ee85562e81d00ae6d688aa5805b5b021ecdd8a35a73de27063"
+    },
+    {
+      "rubric_id": "R13",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "第 4 節段 4（召回與採用回饋）、第 8 節、第 10.2 節 T5–T7",
+      "claim": "召回排序單憑「近期被採用次數」並對無標記曝光降權，缺乏新審過教訓的冷啟動名額，當同 repo／工具已有 3 則曾被採用的舊教訓時，0 採用的新教訓永遠排不進前 3 則。",
+      "evidence": "第 4 節段 4 規定合併後總注入上限 3 則教訓，且「明確引用該教訓 id（learn --useful <id> 或 --noisy <id>），才記採用或噪音；沒有標記的召回只計『曝光』，不計採用……排序用『已審、近期被採用』的次數，曝光多但無標記的教訓排序下降」。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節段 4、第 8 節、第 10.2 節 T5–T7",
+      "repair": "在 T5／T6 排序規則中為近期新審過且低曝光（如曝光小於 K 次且無 --noisy）的相符教訓保留 1 個冷啟動召回名額或初始分數加成（維持總數上限 3 則不變），避免新教訓飢餓並確保 R3 隔天避坑示範在既有活躍 repo 上可穩定觸發。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "8361796ceaf0fd90356d29130dad63126e84fa59d1d981ad330be44279150968"
+    },
+    {
+      "rubric_id": "R9",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "第 4 節架構圖與段 4、第 6 節公開洩漏列",
+      "claim": "第 4 節架構圖與第 6 節仍殘留舊稿「skill 進公開 autopilot plugin」及「知識／SOP 進各 repo knowledge」的描述，與 PM 裁定改進私有 fleet skill-pack repo 及退役各處 knowledge 寫入矛盾。",
+      "evidence": "第 4 節架構圖寫「skill→autopilot plugin（公開，另掃描）」與「知識/SOP→共用倉或各 repo knowledge」，第 6 節寫「只有升級後的 skill 公開」；但第 4 節段 4 正文已改為「進 autopilot 既有的私有 fleet skill-pack repo（PM 裁定 2026-11-23；是否公開另案，不在本計畫）」，且第 5 節已退役直寫各處 knowledge。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節、第 5 節、第 6 節",
+      "repair": "修正第 4 節架構圖與第 6 節風險文字，將 skill 發佈目標統一為私有 fleet skill-pack repo（公開另案），並刪除寫入「各 repo knowledge」的文字，避免後續實作誤向公開 repo 寫入衍生內容。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "5a6c8d0d04ffba71215578d08b85912aebc0917e75b3179aa71a34e4dc60a212"
+    },
+    {
+      "rubric_id": "R8",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "段 1 的席位隔離與授權前啟動的 T1–T3",
+      "claim": "現有隔離條件只能證明資料來自本機同一使用者，不能證明屬於目前這一席，因此不足以支持授權前讀取真實 L0。",
+      "evidence": "段 1 以 uid、家目錄及本機 session-digest 當次寫入的 session id 清單作為隔離條件，但沒有要求該清單與目前呼叫席綁定。第 10.1 節明載 seat 欄位缺失，且不擋開工；第 10.2 節允許 T1–T3 在取得新授權前讀取真實資料。",
+      "evidence_reference": "第 4 節「段 1／席位與 session 隔離」；第 10.1 節「L0 欄位」；第 10.2 節「起算與日期」",
+      "repair": "在授權前讀取真實 L0 的條件中，明定呼叫席與允許讀取的 session id 之可信綁定；無法驗證綁定時拒絕讀取。補同 uid、同家目錄兩席的隔離驗收。在此之前，T1–T3 可使用合成資料準備。",
+      "failure_scenario": "席 A 與席 B 共用同一主機、uid 和家目錄，兩席的 session 都由本機 session-digest 產生 L0。席 A 在新授權尚未取得時執行 T1；席 B 的資料符合 uid、家目錄和本機寫入清單條件，卻沒有呼叫席綁定可排除，因此被席 A 讀入並提煉。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "deep",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "40899609e37c13665d6c1a4e5194ccf8fd396873a60881d3cef3b8723126892d"
+    },
+    {
+      "rubric_id": "R13",
+      "class": "implementation-spike",
+      "severity": "non-blocking",
+      "affected_surface": "段 4 與 T5 的召回資格判定",
+      "claim": "計畫把近期採用當排序因素，尚未落實為召回資格條件。",
+      "evidence": "段 4 的過濾條件只有 type=lesson、已審及 repo／工具範圍相符；近期被採用的次數僅用於排序。因此候選不足三則時，從未被採用或僅有過期採用紀錄的教訓仍可能被注入。",
+      "evidence_reference": "第 4 節「段 4／召回」與「採用回饋」；第 10.2 節 T5",
+      "repair": "在 T5 實作時定義近期採用的時間窗，將窗內有有效採用紀錄列為必要資格，再排序取最多三則；無合格教訓時不注入。驗收需覆蓋從未採用及採用已過期的情況。",
+      "failure_scenario": "",
+      "blocks_next_slice_or_immediate_integrity": false,
+      "cannot_defer_to_spike": false,
+      "rubric_mapped": true,
+      "candidate_blocker": false,
+      "provenance": [
+        {
+          "seat_id": "deep",
+          "runner": "codex",
+          "model": "gpt-6.1-sol"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "046bdf73ad2fcc08f55c9ce3c2fbccfaf01950911860a854d3280ddbb9d009bf"
+    }
+  ],
+  "backlog_candidates": [
+    {
+      "fingerprint": "b1c507b79814eae9b85050bce69ac5619263567a5f553bd5a00898410d919c3b",
+      "rubric_id": "R1",
+      "affected_surface": "第 2 節 KR1、第 6 節、第 10.2 節 T1–T4 與 T7",
+      "claim": "P2 任務表未將「15/15 反向探針（5 類各 3 種）全擋」列為 T4 開啟共用倉寫入的依賴條件，且漏列 R1／KR1「共用倉 100 筆樣本 ≥20 字元逐字片段為 0」的跨機本機比對任務。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 2 節 KR1、第 6 節、第 10.2 節",
+      "disposition": null
+    },
+    {
+      "fingerprint": "b5fa943ee550290b34c8ac4a452a816226b8211bcea3716b3d7afa6aa4f6fd8f",
+      "rubric_id": "R6",
+      "affected_surface": "第 4 節段 1–2、第 5 節 2、第 9 節 P1／P1.5、第 10.1–10.2 節",
+      "claim": "P1 縮小範圍後未處理 autopilot 的 distill-scan，而 P2 任務表亦漏列將 distill-scan 改接段 1 JSON（停讀 transcript）與補齊 ≥20 字元測試的任務；另第 9 節 P1.5 時序早於新管線建置。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節段 1–2、第 9 節、第 10.1 節、第 10.2 節",
+      "disposition": null
+    },
+    {
+      "fingerprint": "ec32efb53bf8b9ee85562e81d00ae6d688aa5805b5b021ecdd8a35a73de27063",
+      "rubric_id": "R4",
+      "affected_surface": "第 2 節 KR4、第 5 節 1–4、第 9 節 P3",
+      "claim": "第 5 節僅在 autopilot learn 腳本讀單一設定鍵 knowledge.learn_target，無法一併切換與回滾另外兩條退役路徑（autopilot distill 與 codeforge learn），且 local／share 命名與第 5 節 1 的預設行為描述矛盾。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 2 節 KR4、第 5 節 1–4、第 9 節 P3",
+      "disposition": null
+    },
+    {
+      "fingerprint": "8361796ceaf0fd90356d29130dad63126e84fa59d1d981ad330be44279150968",
+      "rubric_id": "R13",
+      "affected_surface": "第 4 節段 4（召回與採用回饋）、第 8 節、第 10.2 節 T5–T7",
+      "claim": "召回排序單憑「近期被採用次數」並對無標記曝光降權，缺乏新審過教訓的冷啟動名額，當同 repo／工具已有 3 則曾被採用的舊教訓時，0 採用的新教訓永遠排不進前 3 則。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節段 4、第 8 節、第 10.2 節 T5–T7",
+      "disposition": null
+    },
+    {
+      "fingerprint": "5a6c8d0d04ffba71215578d08b85912aebc0917e75b3179aa71a34e4dc60a212",
+      "rubric_id": "R9",
+      "affected_surface": "第 4 節架構圖與段 4、第 6 節公開洩漏列",
+      "claim": "第 4 節架構圖與第 6 節仍殘留舊稿「skill 進公開 autopilot plugin」及「知識／SOP 進各 repo knowledge」的描述，與 PM 裁定改進私有 fleet skill-pack repo 及退役各處 knowledge 寫入矛盾。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md 第 4 節、第 5 節、第 6 節",
+      "disposition": null
+    },
+    {
+      "fingerprint": "046bdf73ad2fcc08f55c9ce3c2fbccfaf01950911860a854d3280ddbb9d009bf",
+      "rubric_id": "R13",
+      "affected_surface": "段 4 與 T5 的召回資格判定",
+      "claim": "計畫把近期採用當排序因素，尚未落實為召回資格條件。",
+      "evidence_reference": "第 4 節「段 4／召回」與「採用回饋」；第 10.2 節 T5",
+      "disposition": null
+    }
+  ],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": 2,
+  "reviewed_at": "2026-11-25T21:45:39.375Z",
+  "usage": null,
+  "duration_ms": 693278
+}

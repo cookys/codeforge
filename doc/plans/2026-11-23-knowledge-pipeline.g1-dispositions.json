@@ -1,0 +1,67 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "codeforge:knowledge-pipeline-d4",
+ "generation": 1,
+ "findings": [
+  {
+   "fingerprint": "09c50a5736de7a0a96758c136ef80c72c9e9634cdd7549794d106c8fc42cf5ec",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded 4 seg1 + 10.1/10.2: isolation is fail-closed on seat==own address and model whitelist; uid/home dropped as isolation; before 01M83DFC1Q T1-T3 run fixtures only; T4 depends on 01M83DFC1Q."
+  },
+  {
+   "fingerprint": "3de4599222115cc8c591bf20119fc187dfd99313a9b06505ad5d0388b06da0a3",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded seg3 (i)(ii)(iii): all local absolute paths blocked incl /home /Users /tmp ~/; rewrite in human review reruns (i)(ii); learn --share accepts only enum values, so (ii) is replaced by an enum check instead of skipped."
+  },
+  {
+   "fingerprint": "ef536c8c6b2afc669d25546dfc20df8a80ae9bff38e04ef34dcca076b7413ea4",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded seg3 (iv): key = topic+pitfall type+solution type+tool; one file per evidence; on push reject or add/add conflict abort rebase, drop the unpushed local commit (candidate stays in spool), re-pull, re-key, push once."
+  },
+  {
+   "fingerprint": "dae6cd5af76da2ccb335f7eb06f5cfc8f5afbd50ccf1da4121afb179362cc248",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded 5.3: codeforge learn local write unchanged so ship input impact is zero (listed); --share only adds a candidate. T6 moved to autopilot; codeforge keeps only the pane."
+  },
+  {
+   "fingerprint": "4a4d0b94472cd3316678a4b06988d9e4e6f2354c3addde038019c61b0595613c",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded 4 item 1/2 and seg4 feedback: seg3 writer is the only writer, feedback goes to a local spool batched in by it; recall stays read-only; lane_hash in every evidence/feedback file makes the >=2-lane test decidable."
+  },
+  {
+   "fingerprint": "b1c507b79814eae9b85050bce69ac5619263567a5f553bd5a00898410d919c3b",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded T2 acceptance 15/15 and T4 depends on it; T4 acceptance adds the 100-sample local verbatim compare."
+  },
+  {
+   "fingerprint": "b5fa943ee550290b34c8ac4a452a816226b8211bcea3716b3d7afa6aa4f6fd8f",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded: new T1b switches distill-scan to T1 JSON plus the >=20 char test; P1.5 moved after T1-T3."
+  },
+  {
+   "fingerprint": "ec32efb53bf8b9ee85562e81d00ae6d688aa5805b5b021ecdd8a35a73de27063",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 5.4: key values legacy/pipeline, read in one function by both autopilot learn and distill; codeforge learn does not read it (unchanged)."
+  },
+  {
+   "fingerprint": "8361796ceaf0fd90356d29130dad63126e84fa59d1d981ad330be44279150968",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded seg4: one of 3 slots reserved for lessons reviewed <14 days with <5 exposures."
+  },
+  {
+   "fingerprint": "5a6c8d0d04ffba71215578d08b85912aebc0917e75b3179aa71a34e4dc60a212",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded: diagram and risk row now say private fleet skill-pack repo, no per-repo knowledge writes."
+  },
+  {
+   "fingerprint": "40899609e37c13665d6c1a4e5194ccf8fd396873a60881d3cef3b8723126892d",
+   "disposition": "accepted_blocker",
+   "rationale": "Same fold as 09c50a: seat field is the isolation key, empty seat L0 dropped, no real L0 before 01M83DFC1Q."
+  },
+  {
+   "fingerprint": "046bdf73ad2fcc08f55c9ce3c2fbccfaf01950911860a854d3280ddbb9d009bf",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded seg4: eligibility = reviewed, scope match, noisy <= useful+1; adoption only ranks."
+  }
+ ]
+}
