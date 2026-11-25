@@ -16,6 +16,7 @@ mod init;
 mod install;
 mod inventory;
 mod learn;
+mod lessons;
 mod mnemos_cli;
 mod pet;
 mod recall;
@@ -132,6 +133,11 @@ pub enum Commands {
         /// 從檔案讀取
         #[arg(long, value_name = "FILE")]
         file: Option<std::path::PathBuf>,
+    },
+    /// 知識管線段 1：本席 L0 的候選教訓（受限詞彙＋證據指標，不輸出原文）
+    Lessons {
+        #[command(subcommand)]
+        cmd: LessonsCmd,
     },
     /// 搜尋記憶知識庫
     Memory {
@@ -482,6 +488,16 @@ pub enum DaemonAction {
 }
 
 #[derive(Subcommand)]
+pub enum LessonsCmd {
+    /// 候選教訓串流（唯讀本席 L0；受限詞彙欄位＋證據指標，無原文）
+    Candidates {
+        /// 輸出 JSON 陣列（唯一輸出形式；供段 2 的 distill-scan 消費）
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum MemoryAction {
     /// 全文搜尋知識庫
     Search {
@@ -570,6 +586,9 @@ pub fn run(cli: Cli) -> Result<()> {
             cleanup_period_days,
         }),
         Commands::Learn { text, paste, file } => learn::run(&ctx, text, paste, file),
+        Commands::Lessons { cmd } => match cmd {
+            LessonsCmd::Candidates { json } => lessons::run(&ctx, json),
+        },
         Commands::Memory { action } => match action {
             MemoryAction::Search { query, limit } => search::run(&ctx, &query, limit),
             MemoryAction::Status => search::status(&ctx),
