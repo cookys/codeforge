@@ -115,7 +115,12 @@ pub fn run(ctx: &db::Context) -> Result<()> {
 
     let (brain, active_l1) = brain_health(ctx);
 
-    render_line(&mut out, &data, width)?;
+    // Colours follow the terminal theme (PM 01M88BD7K5): the line is drawn with the dark palette
+    // and recoloured once; the layout never changes.
+    let theme = detect_theme(|k| std::env::var(k).ok(), &raw);
+    let mut line = Vec::new();
+    render_line(&mut line, &data, width)?;
+    out.write_all(apply_theme(&String::from_utf8_lossy(&line), theme).as_bytes())?;
     match loaded {
         Some(live) => {
             let village = VILLAGES
@@ -843,8 +848,10 @@ fn build_main_record(raw: &serde_json::Value, session_id: &str) -> serde_json::V
 
 type Rgb = (u8, u8, u8);
 
-const DELIM: Rgb = (0x44, 0x44, 0x44); // 238 — ( )
-const DELIM_DIM: Rgb = (0x30, 0x30, 0x30); // 236 — dimmed separator (ctx>80%)
+// Dark palette (on black): normal text >= 4.5:1, dim / secondary >= 3:1 (WCAG). The light
+// palette is LIGHT below; every role and its bar is listed in THEME_ROLES.
+const DELIM: Rgb = (0x6C, 0x6C, 0x6C); // ( ) separators, 4.0:1 (was 0x44, 2.2:1)
+const DELIM_DIM: Rgb = (0x5C, 0x5C, 0x5C); // dimmed separator (ctx>80%), 3.1:1 (was 0x30, 1.6:1)
 const AHEAD_BEHIND: Rgb = (0x87, 0xAF, 0xD7); // 110 — git ⇡⇣ chip (soft blue)
 const MODEL_C: Rgb = (0xFF, 0xD7, 0x87); // 222 — model name
 const CWD_C: Rgb = (0x5F, 0xAF, 0xAF); // 73  — cwd path
@@ -852,12 +859,124 @@ const BRANCH_C: Rgb = (0x87, 0xD7, 0x87); // 114 — git branch
 const BAR_LOW: Rgb = (0x87, 0xD7, 0x87); // 114 — bar <warn (default 80%)
 const BAR_MID: Rgb = (0xD7, 0xAF, 0x5F); // 179 — bar warn..error (default 80-100%)
 const BAR_HIGH: Rgb = (0xD7, 0x5F, 0x5F); // 167 — bar >=error (default 100%)
-const BAR_EMPTY: Rgb = (0x30, 0x30, 0x30); // 236 — bar ▱
+const BAR_EMPTY: Rgb = (0x5C, 0x5C, 0x5C); // bar ▱, 3.1:1 (was 0x30, 1.6:1)
 const BAR_LBL: Rgb = (0x8A, 0x8A, 0x8A); // 245 — "5h" "7d" "ctx"
-const REMAIN: Rgb = (0x58, 0x58, 0x58); // 240 — "4h2m"
+const REMAIN: Rgb = (0x62, 0x62, 0x62); // "4h2m", 3.4:1 (was 0x58, 2.95:1)
 const STAT_VAL: Rgb = (0x94, 0x94, 0x94); // 246 — stat numbers
 const UPDATE_C: Rgb = (0xFF, 0xAF, 0x00); // 214 — amber update banner
-                                          // Brain indicator palette (Task 13)
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Theme {
+    Dark,
+    Light,
+}
+
+/// Contrast a role needs against its background.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Bar {
+    Text, // 4.5:1
+    Dim,  // 3:1
+}
+
+/// Every colour the line draws: (role, dark, light, bar). Same-hue families: model amber, branch
+/// and low bar green, cwd teal, ahead/behind blue, bar green/amber/red, update amber.
+const THEME_ROLES: [(&str, Rgb, Rgb, Bar); 14] = [
+    ("DELIM", DELIM, (0x8A, 0x8A, 0x8A), Bar::Dim),
+    ("DELIM_DIM", DELIM_DIM, (0x94, 0x94, 0x94), Bar::Dim),
+    ("AHEAD_BEHIND", AHEAD_BEHIND, (0x1F, 0x5F, 0xA8), Bar::Text),
+    ("MODEL_C", MODEL_C, (0x8A, 0x5A, 0x00), Bar::Text),
+    ("CWD_C", CWD_C, (0x00, 0x6B, 0x6B), Bar::Text),
+    ("BRANCH_C", BRANCH_C, (0x1E, 0x7A, 0x2E), Bar::Text),
+    ("BAR_LOW", BAR_LOW, (0x1E, 0x7A, 0x2E), Bar::Text),
+    ("BAR_MID", BAR_MID, (0x9A, 0x5B, 0x00), Bar::Text),
+    ("BAR_HIGH", BAR_HIGH, (0xB3, 0x1D, 0x1D), Bar::Text),
+    ("BAR_EMPTY", BAR_EMPTY, (0x94, 0x94, 0x94), Bar::Dim),
+    ("BAR_LBL", BAR_LBL, (0x76, 0x76, 0x76), Bar::Dim),
+    ("REMAIN", REMAIN, (0x80, 0x80, 0x80), Bar::Dim),
+    ("STAT_VAL", STAT_VAL, (0x4A, 0x4A, 0x4A), Bar::Text),
+    ("UPDATE_C", UPDATE_C, (0x9A, 0x5B, 0x00), Bar::Text),
+];
+
+/// Theme, first match wins (PM 01M88BD7K5): `CODEFORGE_THEME` = light|dark (the settings switch,
+/// set in Claude Code settings.json `env`), then `COLORFGBG` (last field = background index:
+/// 7 or 9-15 light, 0-6 or 8 dark), then a theme field in the statusline stdin (`theme`,
+/// `theme_mode`, `output_style.theme`; Claude Code sends none today), then dark.
+fn detect_theme(env: impl Fn(&str) -> Option<String>, stdin: &serde_json::Value) -> Theme {
+    match env("CODEFORGE_THEME")
+        .map(|v| v.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("light") => return Theme::Light,
+        Some("dark") => return Theme::Dark,
+        _ => {}
+    }
+    if let Some(bg) = env("COLORFGBG").and_then(|v| {
+        v.rsplit(';')
+            .next()
+            .and_then(|b| b.trim().parse::<u8>().ok())
+    }) {
+        match bg {
+            7 | 9..=15 => return Theme::Light,
+            0..=6 | 8 => return Theme::Dark,
+            _ => {}
+        }
+    }
+    for v in [
+        &stdin["theme"],
+        &stdin["theme_mode"],
+        &stdin["output_style"]["theme"],
+    ] {
+        if let Some(t) = v.as_str().map(str::to_ascii_lowercase) {
+            if t.contains("light") {
+                return Theme::Light;
+            }
+            if t.contains("dark") {
+                return Theme::Dark;
+            }
+        }
+    }
+    Theme::Dark
+}
+
+fn light_of(c: Rgb) -> Rgb {
+    THEME_ROLES.iter().find(|r| r.1 == c).map_or(c, |r| r.2)
+}
+
+/// Recolour every `38;2;r;g;b` foreground of a dark-palette line for `theme`, in one pass.
+fn apply_theme(line: &str, theme: Theme) -> String {
+    if theme == Theme::Dark {
+        return line.to_string();
+    }
+    const TAG: &str = "38;2;";
+    let mut out = String::with_capacity(line.len());
+    let mut rest = line;
+    while let Some(i) = rest.find(TAG) {
+        out.push_str(&rest[..i + TAG.len()]);
+        rest = &rest[i + TAG.len()..];
+        let end = rest
+            .find(|ch: char| ch != ';' && !ch.is_ascii_digit())
+            .unwrap_or(rest.len());
+        let nums: Vec<&str> = rest[..end].splitn(4, ';').collect();
+        let rgb: Option<Rgb> = match nums.as_slice() {
+            [r, g, b, ..] => r
+                .parse()
+                .ok()
+                .zip(g.parse().ok())
+                .zip(b.parse().ok())
+                .map(|((r, g), b)| (r, g, b)),
+            _ => None,
+        };
+        if let Some(c) = rgb {
+            let (r, g, b) = light_of(c);
+            let used = nums[0].len() + nums[1].len() + nums[2].len() + 2;
+            out.push_str(&format!("{r};{g};{b}"));
+            rest = &rest[used..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+// Brain indicator palette (Task 13)
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 // The statusline's stdout is consumed by Claude Code's renderer (which handles
@@ -2669,5 +2788,206 @@ mod tests {
         assert!(!baseline[0].contains("$271"), "{baseline:?}");
         assert!(!baseline[0].contains("M·finish"), "{baseline:?}");
         assert!(!baseline[0].contains('▮') && !baseline[0].contains('▯'));
+    }
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+
+    fn lum((r, g, b): Rgb) -> f64 {
+        let f = |c: u8| {
+            let x = c as f64 / 255.0;
+            if x <= 0.04045 {
+                x / 12.92
+            } else {
+                ((x + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+    }
+
+    /// WCAG contrast ratio (L1 + 0.05) / (L2 + 0.05).
+    pub(super) fn contrast(a: Rgb, b: Rgb) -> f64 {
+        let (x, y) = (lum(a), lum(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    const BLACK: Rgb = (0, 0, 0);
+    const WHITE: Rgb = (255, 255, 255);
+
+    fn need(bar: Bar) -> f64 {
+        match bar {
+            Bar::Text => 4.5,
+            Bar::Dim => 3.0,
+        }
+    }
+
+    /// Foregrounds of a line that fail `bar` against `bg`.
+    fn failing(line: &str, bg: Rgb, bar: f64) -> Vec<Rgb> {
+        let mut bad = Vec::new();
+        for part in line.split("38;2;").skip(1) {
+            let n: Vec<u8> = part
+                .split([';', 'm'])
+                .take(3)
+                .filter_map(|x| x.parse().ok())
+                .collect();
+            if let [r, g, b] = n[..] {
+                if contrast((r, g, b), bg) < bar {
+                    bad.push((r, g, b));
+                }
+            }
+        }
+        bad
+    }
+
+    #[test]
+    fn contrast_helper_matches_wcag() {
+        assert!((contrast(BLACK, WHITE) - 21.0).abs() < 1e-9);
+        assert!((contrast(WHITE, WHITE) - 1.0).abs() < 1e-9);
+        assert!((contrast((0x77, 0x77, 0x77), WHITE) - 4.48).abs() < 0.01);
+    }
+
+    #[test]
+    fn every_role_passes_its_bar_in_both_palettes() {
+        for (name, dark, light, bar) in THEME_ROLES {
+            let (d, l) = (contrast(dark, BLACK), contrast(light, WHITE));
+            assert!(
+                d >= need(bar),
+                "{name} dark {dark:?} {d:.2} < {}",
+                need(bar)
+            );
+            assert!(
+                l >= need(bar),
+                "{name} light {light:?} {l:.2} < {}",
+                need(bar)
+            );
+        }
+    }
+
+    #[test]
+    fn roles_that_share_a_dark_colour_share_the_light_one() {
+        for a in THEME_ROLES {
+            for b in THEME_ROLES {
+                if a.1 == b.1 {
+                    assert_eq!(a.2, b.2, "{} and {} share dark {:?}", a.0, b.0, a.1);
+                }
+            }
+        }
+    }
+
+    fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |k| pairs.iter().find(|p| p.0 == k).map(|p| p.1.to_string())
+    }
+
+    #[test]
+    fn theme_detection_order_and_bad_values() {
+        let none = serde_json::Value::Null;
+        let light_in = serde_json::json!({"theme": "light-daltonized"});
+        assert_eq!(detect_theme(env(&[]), &none), Theme::Dark);
+        assert_eq!(
+            detect_theme(env(&[("CODEFORGE_THEME", "light")]), &none),
+            Theme::Light
+        );
+        assert_eq!(
+            detect_theme(env(&[("CODEFORGE_THEME", "Dark")]), &light_in),
+            Theme::Dark
+        );
+        // the settings switch beats COLORFGBG, which beats stdin
+        assert_eq!(
+            detect_theme(
+                env(&[("CODEFORGE_THEME", "dark"), ("COLORFGBG", "0;15")]),
+                &none
+            ),
+            Theme::Dark
+        );
+        assert_eq!(
+            detect_theme(env(&[("COLORFGBG", "0;15")]), &none),
+            Theme::Light
+        );
+        assert_eq!(
+            detect_theme(env(&[("COLORFGBG", "15;default;0")]), &light_in),
+            Theme::Dark
+        );
+        assert_eq!(
+            detect_theme(env(&[("COLORFGBG", "0;7")]), &none),
+            Theme::Light
+        );
+        assert_eq!(
+            detect_theme(env(&[("COLORFGBG", "15;8")]), &none),
+            Theme::Dark
+        );
+        assert_eq!(detect_theme(env(&[]), &light_in), Theme::Light);
+        assert_eq!(
+            detect_theme(
+                env(&[]),
+                &serde_json::json!({"output_style": {"theme": "light"}})
+            ),
+            Theme::Light
+        );
+        // ignored: an unknown switch value, an unparseable or out-of-range COLORFGBG
+        assert_eq!(
+            detect_theme(env(&[("CODEFORGE_THEME", "sepia")]), &light_in),
+            Theme::Light
+        );
+        assert_eq!(
+            detect_theme(env(&[("COLORFGBG", "x;y")]), &none),
+            Theme::Dark
+        );
+        assert_eq!(
+            detect_theme(env(&[("COLORFGBG", "0;200")]), &light_in),
+            Theme::Light
+        );
+    }
+
+    #[test]
+    fn apply_theme_recolours_plain_and_bold_codes_and_keeps_text() {
+        let line = format!("{}{}", tc("a", MODEL_C), tc_bold("b", DELIM));
+        let light = apply_theme(&line, Theme::Light);
+        assert!(light.contains("38;2;138;90;0m"), "{light:?}");
+        assert!(light.contains("38;2;138;138;138m"), "{light:?}");
+        assert_eq!(strip(&light), "ab");
+        assert_eq!(apply_theme(&line, Theme::Dark), line);
+    }
+
+    fn strip(s: &str) -> String {
+        let mut out = String::new();
+        let mut esc = false;
+        for c in s.chars() {
+            match (esc, c) {
+                (false, '\x1b') => esc = true,
+                (true, 'm') => esc = false,
+                (true, _) => {}
+                (false, c) => out.push(c),
+            }
+        }
+        out
+    }
+
+    fn sample_line() -> String {
+        THEME_ROLES
+            .iter()
+            .map(|r| tc(r.0, r.1))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn light_line_passes_on_white_and_dark_line_on_black() {
+        assert_eq!(
+            failing(&apply_theme(&sample_line(), Theme::Light), WHITE, 3.0),
+            vec![]
+        );
+        assert_eq!(failing(&sample_line(), BLACK, 3.0), vec![]);
+    }
+
+    /// Reverse control (PM 01M88BD7K5): with theme detection off, a light terminal gets the dark
+    /// palette, and the light contrast check must report failing colours.
+    #[test]
+    fn light_check_fails_when_detection_is_off() {
+        let detection_off = Theme::Dark;
+        let bad = failing(&apply_theme(&sample_line(), detection_off), WHITE, 3.0);
+        assert!(!bad.is_empty(), "the light check found nothing to fail");
+        assert!(bad.contains(&MODEL_C), "{bad:?}");
     }
 }
