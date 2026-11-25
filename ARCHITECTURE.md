@@ -32,7 +32,7 @@ building rows carry a fleet task id and the overview page reads progress from fl
 
  CLI `codeforge` (clap, src/cli/*) 子命令群
    設定: init install uninstall bootstrap self-update hook emit
-   記憶: learn memory dream ingest doctor ship mnemos-cli
+   記憶: learn lessons memory dream ingest doctor ship mnemos-cli
    用量: usage (collect/push/export/accounts/pools/fleet/alias/note/plan/trinity-import)
    寵物/MUD: adopt pet strategy commentary world snapshot inventory craft use daemon tui attach
 
@@ -66,6 +66,7 @@ Six columns, all required for every live, building and planned row from day one 
 | Clone-only dev hooks [aliases: project-hooks, check-improvements.js, check-dev-flow.js] | live | `.claude/scripts/check-improvements.js`; `.claude/scripts/check-dev-flow.js`; `src/cli/install.rs` | doc/specs/codeforge-install-subcommand.md@24bc7d9 | 無 | `node .claude/scripts/session-digest.test.js` |
 | Emit 事件 [aliases: emit, codeforge emit, event_inbox] | live | `src/cli/emit.rs`; `src/daemon/inbox.rs` | doc/plans/2026-04-17-phase2a-daemon.md@8d1ecc1 | CLI | `cargo test daemon::inbox` |
 | Learn 手動知識 [aliases: learn, codeforge learn] | live | `src/cli/learn.rs`; `src/memory/l0.rs` | doc/specs/codeforge-memory-contract.md@75d5f07 | CLI | `cargo test memory::l0` |
+| 候選教訓擷取 [aliases: lessons, codeforge lessons, lessons candidates, codeforge lessons candidates] | building | `src/lessons/`; `src/cli/lessons.rs` | doc/plans/2026-11-23-knowledge-pipeline.md@b3eae59 | CLI | `cargo test lessons` |
 | Memory 搜尋與狀態 [aliases: memory, memory search, memory status, codeforge memory] | live | `src/cli/search.rs`; `src/memory/fts.rs` | doc/specs/codeforge-memory-contract.md@75d5f07 | CLI | `cargo test memory::` |
 | Memory recall 注入 [aliases: memory context, local recall] | live | `src/cli/recall.rs`; `src/memory/recall.rs` | doc/plans/2026-06-16-local-recall-phase-a.md@15e5f3a | CLI | `cargo test memory::recall` |
 | Memory project 投影 [aliases: memory project, AGENTS.md projection] | live | `src/memory/projection.rs` | doc/specs/codeforge-memory-contract.md@75d5f07 | CLI | `cargo test memory::projection` |

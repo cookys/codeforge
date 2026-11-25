@@ -11,6 +11,7 @@ mod daemon;
 mod db;
 mod dream;
 mod import;
+mod lessons;
 mod live;
 mod llm;
 mod memory;
