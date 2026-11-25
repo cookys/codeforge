@@ -6,6 +6,7 @@
 - Current milestone: pane 在操作員實際使用中通過，包含待決頁 C 雙欄、forge 頁每個 agent 的 tok/s、★ 捲軸。驗收是 hangar 開新視窗實拍，加上操作員日常使用沒問題。
   - 追蹤：fleet 單 01M82HXJHZA2MV3ABFHCG4TQPP（C 雙欄）、01M82V6E0QTFGBFTSNGDJCK6S9（每個 agent 的 tok/s）、hangar 實拍單 01M825HR45ZCBSDQGHSHJF2152。已併 AP develop：C 雙欄 18ee165ff341、tok/s 734750b70f30、v7.5 退役 522f24e0af9f。
   - G40 配額顯示真資料檢查：已被取代（capacity 額度單一來源計畫 01M82TH9WZ；backlog B45 superseded）。
+- 畫面改動一律以 ux-v7 / v7.4 為底，先讀 [pane-design-language「操作員固定準則」](doc/design/pane-design-language.md#操作員固定準則唯一歸屬檔)（R1–R6，PM 01M88CCDQD）。
 - Not goals now: MUD 後段、自己產生配額資料、hosted CI。
 - Feature map: [ARCHITECTURE.md](ARCHITECTURE.md)（功能狀態只記在那裡）
 - Source: 操作員 d-8046739d（2026-11-23）；先前 d-fb9989dc（2026-11-05）
