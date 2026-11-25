@@ -317,7 +317,7 @@ step(id='6-L', tab=6, state='L', title='說明很長', ix=RS_IX, compact='▸舊
 step(id='6-X', tab=6, state='X', title='缺源', ix=[dim('要你處理'), err('  殘留讀不到'), dim('外掛載入 1'), '  forge-stats 從主 clone 載入'], compact='殘留讀不到  ·外掛 1',
      reply=['殘留掃描讀不到，不知道有沒有要你處理的。', '外掛載入另有資料，照常。'], pin=[err('⊘ residue 掃描失敗（結束碼 2）')], detail=['上次成功掃描 08:30。'], key=NEXT, next='6-S')
 step(id='6-S', tab=6, state='S', title='過時', ix=[dim('要你處理 2（2 小時前）')] + RS_IX[1:], compact='▸舊 worktree tri-merge（過時）  ·外掛 1',
-     reply=['殘留清單是 2 小時前掃的；tri-merge 可能已經處理掉。', '人工處理前先重新掃描：codeforge hygiene --scan'], pin=[warn('⚠ residue 2 小時前（過時）')], detail=['路徑 .claude/worktrees/tri-merge'],
+     reply=['殘留清單是 2 小時前掃的；tri-merge 可能已經處理掉。', '人工處理前先在主 clone 重新掃描：', '  node <autopilot>/scripts/repo-residue-sweep.js scan --repo .'], pin=[warn('⚠ residue 2 小時前（過時）')], detail=['路徑 .claude/worktrees/tri-merge'],
      key=NEXT, next='6-X2')
 step(id='6-X2', tab=6, state='X2', title='缺源（外掛載入）', ix=RS_IX[:6] + [err('  外掛載入讀不到')], compact='▸舊 worktree tri-merge  ·外掛載入讀不到',
      reply=['load_source 讀不到，不知道 forge-stats 是從哪裡載入的。', '殘留清單照常。'], pin=[err('⊘ load_source 讀不到')], detail=['上次讀到：主 clone（develop）。'], key='7', next='7-N')
@@ -412,8 +412,22 @@ def _pv(n, name, ans):
     return f'{n} {name}' + ' ' * (20 - v.dw(name)) + ans
 
 
-PREVIEW = [warn('送出預覽 · 3 張 · 確認後不能改'), _pv(1, '合併 plan', 'a 合併'), _pv(2, '外掛更新時機', 'b 明早'), _pv(3, '預覽先拍幾欄', '（沒選，不送）'),
-           _pv(4, '時冶 PL02 定案', 'a 照建議定案'), dim('  附註：' + NOTE4)]
+def _preview():
+    """送出預覽：逐張列題目全文、選的選項和說明、附註（r3 codex 3）。"""
+    out = [warn('送出預覽 · 3 張 · 確認後不能改')]
+    for i, c in enumerate(CARDS):
+        out.append(f'{i + 1} {c["name"]}：{c["q"]}')
+        if i not in MK:
+            out.append(dim('   （沒選，不送）'))
+            continue
+        l, lab, rec, why = next(o for o in c['opts'] if o[0] == MK[i])
+        out.append(ok(f'   → {l} {lab}：{why}'))
+        if i == 3:
+            out.append(dim('   附註：' + NOTE4))
+    return out
+
+
+PREVIEW = _preview()
 step(id='2-P', tab=2, state='P', title='送出預覽', ix=decide_ix(3, MK), compact=decide_compact(3, MK), reply=PREVIEW,
      detail=['預覽列出要送的每一張：選的選項和附註全文。', '沒選的卡不會送，留在待決。'], hints=[H('y', '確認送出'), H('x', '取消'), H('Esc', '取消')], key='x', next='2-Pc')
 step(id='2-Pc', tab=2, state='Pc', title='取消預覽', ix=decide_ix(3, MK), compact=decide_compact(3, MK),
@@ -571,9 +585,10 @@ def fleet_seg(st0):
     """最底 statusline 的 fleet 段跟 pane 底列同一個來源（r2 codex 2）。"""
     if st0.get('fleet') == '—':
         return [T('fleet —', 'inactive')]
+    run = st0.get('fleet', (8, 2, 2))[0]  # 和 pane 底列「艦隊 ● N」同一個數字（r3 codex 1）
     if 'fleet' in st0.get('stale', ()):
-        return [T('fleet 3 lane ', 'warning'), G('⏶', 'warning'), T(' 11 分鐘前', 'warning')]
-    return [T('fleet 3 lane 執行中')]
+        return [T(f'fleet {run} lane ', 'warning'), G('⏶', 'warning'), T(' 11 分鐘前', 'warning')]
+    return [T(f'fleet {run} lane 執行中')]
 
 
 # ---------- 組一張 ----------

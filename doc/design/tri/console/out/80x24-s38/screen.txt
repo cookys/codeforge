@@ -12,8 +12,8 @@
 ╭─ 6 殘留 · 過時 ──────────────────────────────────────────────────────── [-] ─╮
 │ ▸舊 worktree tri-merge（過時）  ·外掛 1                                      │
 │ 殘留清單是 2 小時前掃的；tri-merge 可能已經處理掉。                          │
-│ 人工處理前先重新掃描：codeforge hygiene --scan                               │
-│                                                                              │
+│ 人工處理前先在主 clone 重新掃描：                                            │
+│   node <autopilot>/scripts/repo-residue-sweep.js scan --repo .               │
 │                                                                              │
 │                                                                              │
 ╰─ j/k 換筆 · o 展開 · Esc 關閉 ───────────────────────────────────────────────╯
