@@ -390,9 +390,23 @@ def draft(v):
             '<details><summary>設計稿出處</summary><div class="doc">' + esc(json.dumps(meta, ensure_ascii=False, indent=2)) + '</div></details></div></article>')
 
 
+def drift_item(d):
+    def side(s):
+        if s.get('path'):
+            return f'<figure><figcaption>{esc(s["label"])}</figcaption>{picture(s["path"])}</figure>'
+        return f'<p class="noshot">{esc(s["label"])}：{esc(s.get("reason") or "")}</p>'
+    rules = '、'.join(esc(r) for r in d.get('rules', []))
+    return (f'<article class="vrow hero" id="drift-{esc(d["id"])}" data-no="drift-{esc(d["id"])}">'
+            f'<div class="vtext"><h3 class="name">#{esc(d["id"])} {esc(d["title"])}</h3>'
+            f'<p class="what">違反準則：{rules} · {esc(d["reason"])}<br>'
+            f'與設計稿關係：{esc(d["relation"])} · <code>{esc(d["sha"])}</code> · 依據：{esc(d["basis"])}</p></div>'
+            f'<div class="vshot">{side(d["before"])}{side(d["after"])}</div></article>')
+
+
 def main():
     versions = load('versions')
     principles = load('principles')
+    drift = load('drift') if (HERE / 'drift.json').is_file() else []
     by_id = {p['id']:p for p in principles}
     rows = [v for v in versions if v['ap_sha']]
     live = next(v for v in rows if v['ap_sha'].startswith('6db7e47e'))
@@ -411,7 +425,8 @@ def main():
             '<h2 id="principles">1 設計原則</h2><p class="note">唯一歸屬：<a href="../pane-design-language.md">pane-design-language R1–R7</a>；R 表以外的條目待操作員收進。</p><ul class="plist">'+p_html+'</ul>'
             '<h2 id="current">2 現行 R6（操作員選定的基底，d-9e5cacc1）</h2>'+version(live,by_id,True)
             +'<h2 id="drafts">3 設計稿</h2><p class="note">缺稿：carbon 設計畫面、A2／B2 方案、操作員 band-v3-L1/L2/L3 圖、v7.5 設計稿。</p><div class="vlist">'
-            +''.join(draft(v) for v in drafts)+'</div>'
+            +''.join(draft(v) for v in drafts)
+            +''.join(drift_item(d) for d in drift)+'</div>'
             +'<h2 id="versions">4 各版畫面（新到舊）</h2><div class="vlist">'+''.join(version(v,by_id) for v in reversed(rows) if v is not live)+'</div>'
             +'<p class="note"><a href="shots/notes.txt">拍攝紀錄（含失敗）</a> · <a href="versions.json">版本資料</a> · <a href="principles.json">原則資料</a></p>')
     doc = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pane 歷史</title><style>'+CSS+'</style></head><body><main class="wrap">'+body+'</main><div id="zoom" role="dialog" aria-label="原尺寸畫面"></div><script>'+JS+'</script></body></html>'

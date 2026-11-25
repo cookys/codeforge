@@ -1,6 +1,6 @@
 # Pane 歷史
 
-開 `index.html`：原則 → 現行 R6 → 設計稿 → 各版。`versions.json`、`principles.json` 是生成器的資料來源；準則仍以 [R1–R7](../pane-design-language.md) 為準。
+開 `index.html`：原則 → 現行 R6 → 設計稿 → 各版。`versions.json`、`principles.json`、`drift.json`（交接後偏離盤點）是生成器的資料來源；準則仍以 [R1–R7](../pane-design-language.md) 為準。
 
 ```sh
 python3 doc/design/pane-history/tools/build.py
