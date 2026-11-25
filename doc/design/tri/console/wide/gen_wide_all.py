@@ -33,7 +33,8 @@ SPLIT = 38                 # 清單欄右邊的直線
 BAND_N = DIV - BAND_TOP - 1  # 12：兩欄的內容列數
 RW = LEFT - 1 - SPLIT - 3  # 73：回覆區寬
 PX, PW = LEFT + 2, DOCK - 4  # pane 內文起點與寬（90）
-PANE_TOP_N = BAND_TOP - 2  # 23：pane 上半可用列（第 1–23 列；第 24 列留空）
+PANE_TOP_N = 30  # pane 上半（唯讀）第 1–30 列；第 31 列留空
+OTHERS_TOP = PROMPT_TOP - 1 - 9  # 32：下半「其他頁」標題 + 8 列摘要，貼齊 pane 底（R1：可按的在下半）
 
 TABS = g.TABS
 CW = lambda ch: 2 if unicodedata.east_asian_width(ch) in 'WF' else 1
@@ -58,6 +59,52 @@ LANES = [
     ('⋯', 'warning', 'pinball 美術', '卡住', '等操作員選版'),
     ('⋯', 'warning', '308 地圖', '卡住', '等素材'),
 ]
+
+# 每條產線最近一件事和下一步（7 艦隊頁攤開用；PM 01M8A52M）
+LANE_EV = {
+    'codeforge': ('09:38 check-all 綠，合 develop', '補 tux-sync 反例'),
+    'autopilot': ('09:35 band 淺色對比 4.7', '等 codeforge 審查'),
+    'hangar': ('09:40 量到 client 209x51', '交實拍單 01M825HR'),
+    'fleet': ('09:31 重試佇列清到 0', 'courier 逾時改 30 秒'),
+    'hippo': ('09:29 P1.5 裝好 3/5 台', '裝剩下 2 台'),
+    'lab': ('09:26 gate 掃完 41 個 repo', '寫掃描報告'),
+    'alfred': ('09:20 部署前檢查 7/9 過', '修 2 項設定'),
+    'mnemos': ('09:18 索引重建 62%', '跑完驗查詢'),
+    'hangar 換池': ('09:22 NAS stat 逾時 600 秒', '第 4 輪前先查 NAS'),
+    'docs 建置': ('09:05 mdbook 0.5 不認新語法', '釘 mdbook 版本'),
+    'pinball 美術': ('昨天 18:10 交 3 版封面', '等你選版'),
+    '308 地圖': ('昨天 16:40 缺第 3 區素材', '等素材進來'),
+}
+# 各頁自己的歷史清單：放在資料之後填滿 pane 上半，只記已經結束的事，不和這一步的計數衝突
+HIST = {
+    1: ('今天結束的事', ['09:38 codeforge 合進 develop', '09:12 autopilot 審查通過', '08:55 hangar 盤點完成', '08:31 待決 2 張已送出',
+                        '08:15 換池 team → pool-b', '07:58 lab gate 放行 1 個 repo', '07:41 docs 第 2 版退件', '07:12 fleet 合進 develop']),
+    2: ('今天已決的卡', ['08:31 合併 plan → a（照建議）', '08:31 外掛更新時機 → b', '08:02 預覽先拍幾欄 → a（照建議）', '07:40 hippo 安裝批次 → a',
+                        '07:15 mnemos 匯入時段 → c（附註：晚上再跑）', '06:50 alfred 上線日 → a（照建議）']),
+    3: ('今天結束的輪次', ['09:05 codex · codeforge tux-sync · 交件', '08:40 agy · hangar 盤點 · 交件', '08:12 claude · autopilot band · 交件',
+                          '07:55 codex · lab gate · 逾時（已重派）', '07:30 claude · docs 版本 · 交件', '07:02 agy · fleet 重試 · 交件']),
+    4: ('今天的審查紀錄', [f'{t} {x}' for t, x in [('08:31', '合併 develop codeforge 05e2'), ('08:22', 'codex PASS autopilot e931'), ('08:02', 'agy PASS hangar 5cab'),
+                                                ('07:55', '合併 develop autopilot 7d1c'), ('07:41', '退件 grok 第 2 版'), ('07:30', 'codex PASS lab 93fa'), ('07:12', '合併 develop fleet 2b6e')]]),
+    5: ('今天各席用量', ['codeforge · 92k tokens · 5h 的 10%', 'autopilot · 81k tokens · 9%', 'hangar · 64k tokens · 7%', 'fleet · 48k tokens · 5%',
+                        'hippo · 37k tokens · 4%', 'lab · 29k tokens · 3%', 'alfred · 18k tokens · 2%', 'mnemos · 11k tokens · 1%']),
+    6: ('最近自動清理的', ['昨天 23:10 worktree tri-old（已合併）', '昨天 23:10 分支 fix/band-rgb（已合併）', '昨天 03:00 過期暫存 1.4 GB',
+                          '11-24 23:10 worktree pane-b2（已合併）', '11-24 03:00 handoff 6 個（7 天前）']),
+    7: ('今天結束的產線', ['09:05 codeforge · tux-sync 交件', '08:40 hangar · 盤點交件', '08:12 autopilot · band 交件', '07:30 docs · 版本交件',
+                          '07:02 fleet · 重試交件', '06:41 hippo · P1.4 交件']),
+    8: ('最近完成的待辦', ['11-25 盤點 client 尺寸', '11-24 外掛版本對齊', '11-23 r1 rev4 示意', '11-22 v7.6 第 1 批', '11-21 band 對比']),
+    9: ('顏色怎麼讀', ['綠 ● 正常、執行中', '紅 ✗ ⊘ 失敗、讀不到', '黃 ⚠ ⋯ 過時、在等人', '紫 可按的鍵', '灰 說明文字，不能按']),
+}
+# 本機事件紀錄：最後一塊，補滿 pane 上半剩下的列（來源是本機，不受 pm／console 讀不到影響）
+EVENTS = [f'{t} {x}' for t, x in [('09:41', 'pm status 更新'), ('09:40', 'hangar 回報 client 尺寸'), ('09:38', 'codeforge check-all 綠'), ('09:35', 'autopilot 送審'),
+                                  ('09:31', 'fleet 重試佇列清空'), ('09:29', 'hippo 裝好第 3 台'), ('09:26', 'lab gate 掃描完'), ('09:22', 'hangar 換池第 3 輪逾時'),
+                                  ('09:20', 'alfred 檢查 7/9'), ('09:18', 'mnemos 索引 62%'), ('09:12', 'autopilot 審查通過'), ('09:05', 'docs 建置失敗'),
+                                  ('09:01', 'codex 席額度 47%'), ('08:55', 'hangar 盤點完成'), ('08:40', 'agy 交件 hangar'), ('08:31', '待決 2 張送出'),
+                                  ('08:22', 'codex PASS autopilot'), ('08:15', '換池 team → pool-b'), ('08:02', 'agy PASS hangar'), ('07:58', 'lab gate 放行'),
+                                  ('07:41', 'docs 第 2 版退件'), ('07:30', 'codex PASS lab'), ('07:12', 'fleet 合進 develop'), ('07:02', 'agy 交件 fleet'),
+                                  ('06:50', 'alfred 上線日已決'), ('06:41', 'hippo P1.4 交件'), ('06:21', 'hippo 合進 develop'), ('06:05', 'codex 第 1 版退件')]]
+# 7 艦隊頁：band 清單改列 12 條產線（和狀態列的 執行 8 · 失敗 2 · 卡住 2 同一份；舊稿只列 3 條）
+FLEET12 = {'7-N': 'codeforge', '7-L': 'hangar 換池', '7-S': 'codeforge', '7-X': 'codeforge', 'C2': 'codeforge'}
+
 
 # 「很多」狀態：舊稿清單最後一列是「⋯ 下面還有 N」，要捲才看得到。寬版把這 N 項全部攤開：
 # band 左欄放得下的放左欄，其餘移到 pane 上半「清單（續）」。項數照舊稿那一列寫的數字。
@@ -171,6 +218,31 @@ def summaries(s):
     }
 
 
+def lane_row(mark, role, name, a, b, speed=True, wide=False):
+    if not speed and a.startswith('ϟ'):
+        a = 'ϟ —'
+    r = [('  ', 'text'), (mark, role), (' ' + name + ' ' * (13 - dw(name)), 'inactive'), (a + ' ' * (20 - dw(a)), 'inactive')]
+    if wide:  # 90 欄：名稱 14 · 速度 18 · 最近一件事 32 · 下一步
+        ev, nx = LANE_EV[name]
+        r[3] = (a + ' ' * (18 - dw(a)), 'inactive')
+        return r + [(ev + ' ' * (32 - dw(ev)), 'inactive'), ('→ ' + nx, 'text')]
+    return r + [(b, 'inactive')]
+
+
+def fill(top, blocks):
+    """blocks：[(標題, 列, 可截)]，依序放進 pane 上半；可截的塊放到剩下的列為止（至少 3 列才放）。"""
+    for head, rows, cut in blocks:
+        room = PANE_TOP_N - len(top) - (2 if top else 1)
+        if not rows or room < (1 if cut else len(rows)):
+            continue
+        rows = rows[:room]
+        if top:
+            top.append([])
+        top.append([(head(len(rows)) if callable(head) else head, 'text')])
+        top += rows
+    return top
+
+
 def compose(n, s):
     G_ = Grid()
     tab = s['tab']
@@ -188,6 +260,11 @@ def compose(n, s):
         rows = rows[:1] + [[('步驟在右邊，不用捲', 'inactive', 'text')]] + rows[first_opt:]
     assert len(rows) <= BAND_N, f'{s["id"]}: 回覆區 {len(rows)} 列 > {BAND_N}'
     ix = [segs_of(x) for x in s['ix']]
+    speed = s['status'].get('speed') != '—'
+    if s['id'] in FLEET12:
+        ix = [[('▸ ' if name == FLEET12[s['id']] else '  ', 'text'), (mark, role),
+               (f' {name} · ' + (('ϟ —' if not speed else a.split('  ')[0]) if mark == '●' else a.replace('卡住', '等人')), 'text')]
+              for mark, role, name, a, b in LANES]
     more = []
     if s['id'] in ABOVE:
         k = next(i for i, r in enumerate(ix) if r[0][0].startswith('⋯ 上面還有'))
@@ -249,16 +326,26 @@ def compose(n, s):
     else:
         top += [strip_row(r) for r in detail]
     fl = s['status'].get('fleet', (8, 2, 2))
-    if tab != 7 and fl == (8, 2, 2) and len(top) + 2 + len(LANES) <= PANE_TOP_N:
-        top += [[], [('艦隊 · 12 條產線 · 執行 8 · 失敗 2 · 卡住 2', 'text')]]
-        for mark, role, name, a, b in LANES:
-            top.append([('  ', 'text'), (mark, role), (' ' + name + ' ' * (13 - dw(name)), 'inactive'), (a + ' ' * (20 - dw(a)), 'inactive'), (b, 'inactive')])
+    stale = ' · 11 分鐘前的資料' if 'fleet' in s['status'].get('stale', set()) else ''
+    blocks = []
+    if fl == (8, 2, 2):
+        wide = tab == 7
+        head = '12 條產線 · 最近一件事 → 下一步' if wide else '艦隊 · 12 條產線 · 執行 8 · 失敗 2 · 卡住 2'
+        blocks.append((head + stale, [lane_row(*l, speed=speed, wide=wide) for l in LANES], False))
+    # 艦隊沒有失敗、卡住的狀態（1-E、7-E），歷史和事件也不放失敗、逾時、退件，免得和「全部正常」打架
+    calm = isinstance(fl, tuple) and fl[1] == fl[2] == 0
+    ok = (lambda x: not any(w in x for w in ('失敗', '逾時', '退件'))) if calm else (lambda x: True)
+    if s['state'] not in ('X', 'X2'):  # 讀不到時，這一頁自己的歷史也讀不到，不放
+        h, rows = HIST[tab]
+        blocks.append((lambda k, h=h: f'{h} · 最近 {k} 筆', [[('  ' + x, 'inactive')] for x in rows if ok(x)], True))
+    blocks.append((lambda k: f'本機事件 · 最近 {k} 筆', [[('  ' + x, 'inactive')] for x in EVENTS if ok(x)], True))
     assert len(top) <= PANE_TOP_N, f'{s["id"]}: pane 上半 {len(top)} 列 > {PANE_TOP_N}'
+    top = fill(top, blocks)
     for i, r in enumerate(top):
         G_.row(1 + i, PX, r, dr)
-    G_.row(BAND_TOP, PX, [('其他頁', 'inactive')], dr)
+    G_.row(OTHERS_TOP, PX, [('其他頁', 'inactive')], dr)
     summ = summaries(s)
-    y = BAND_TOP + 1
+    y = OTHERS_TOP + 1
     for k, name in enumerate(TABS, 1):
         if k == tab:
             continue
