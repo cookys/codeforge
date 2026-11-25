@@ -397,9 +397,9 @@ ACT_STEPS = [('▸ ' + ACT['q'], 'text'), '  1. 打開 staging 頁（按 g 複�
 L2_HINTS = [H('a/b/c', '選'), H('↑↓', '捲'), H('PgUp/PgDn', '捲來龍去脈'), H('g', '複製網址'), H('m', '附註'), H('s', '送出')]
 L2_N = [H('a/b/c', '選'), H('↑↓', '捲'), H('PgUp/PgDn', '捲上方'), H('g', '複製網址'), H('m', '附註')]
 step(id='2-L2', tab=2, state='L2', title='等你動手 · 步驟很長', ix=decide_ix(3, MK), compact=decide_compact(3, MK),
-     reply=ACT_STEPS + card_opts(ACT, 'a') + [dim('s 送出 · 已選 3 張 · 還有 1 張沒選')], detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='↓', next='2-L3')
+     reply=ACT_STEPS + card_opts(ACT, 'a'), detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='↓', next='2-L3')
 step(id='2-L3', tab=2, state='L3', title='等你動手 · 捲到底', ix=decide_ix(3, MK), compact=decide_compact(3, MK),
-     reply=ACT_STEPS + card_opts(ACT, 'a') + [dim('s 送出 · 已選 3 張 · 還有 1 張沒選')], rscroll=1, detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='m', next='2-I')
+     reply=ACT_STEPS + card_opts(ACT, 'a'), rscroll=1, detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='m', next='2-I')
 step(id='2-I', tab=2, state='I', title='寫附註', ix=decide_ix(3, MK), compact=decide_compact(3, MK),
      reply=[('▸ ' + ACT['q'], 'text'), dim('附註（Enter 存，Esc 取消）：'), '  ' + NOTE4 + '▏', dim('輸入中：a/b/c、s 這些鍵都當成文字')],
      detail=card_detail(ACT), hints=[H('Enter', '存附註'), H('Esc', '取消附註')], key='Enter 存附註，再按 s', next='2-P')
@@ -412,7 +412,7 @@ PREVIEW = [warn('送出預覽 · 3 張 · 確認後不能改'), _pv(1, '合併 p
 step(id='2-P', tab=2, state='P', title='送出預覽', ix=decide_ix(3, MK), compact=decide_compact(3, MK), reply=PREVIEW,
      detail=['預覽列出要送的每一張：選的選項和附註全文。', '沒選的卡不會送，留在待決。'], hints=[H('y', '確認送出'), H('x', '取消'), H('Esc', '取消')], key='x', next='2-Pc')
 step(id='2-Pc', tab=2, state='Pc', title='取消預覽', ix=decide_ix(3, MK), compact=decide_compact(3, MK),
-     reply=[dim('已取消預覽；選擇和附註都留著。')] + card_reply(3, 'a', NOTE4) + [dim('s 送出 · 已選 3 張 · 還有 1 張沒選')], detail=card_detail(ACT),
+     reply=[dim('已取消預覽；選擇和附註都留著，按 s 再預覽。')] + card_reply(3, 'a', NOTE4), detail=card_detail(ACT),
      nhints=D_NSCROLL, key='s 再按 y', next='2-R')
 SENT = (0, 1, 3)
 step(id='2-R', tab=2, state='R', title='送出成功', ix=decide_ix(2, MK, SENT), compact=decide_compact(2, MK, SENT),
@@ -432,11 +432,11 @@ step(id='2-Fl', tab=2, state='Fl', title='按 f 之後', ix=decide_ix(0, FL), co
 C_MARKS = {0: 'a', 1: 'b'}
 C_NOTE = '明早 9 點有人在'
 step(id='C1', tab=2, state='C1', title='開著卡（第 2 張選了 b、寫了附註）', ix=decide_ix(1, C_MARKS), compact=decide_compact(1, C_MARKS),
-     reply=card_reply(1, 'b', C_NOTE) + [dim('s 送出 · 已選 2 張 · 還有 2 張沒選')], detail=card_detail(CARDS[1]), key='7', next='C2')
+     reply=card_reply(1, 'b', C_NOTE), detail=card_detail(CARDS[1]), key='7', next='C2')
 step(id='C2', tab=7, state='C2', title='開著卡時看艦隊', ix=FL_IX, compact='▸codeforge 41  ·autopilot 37  ·hangar 63  ·codex 失敗',
      reply=['看完艦隊按 2 回待決：第 2 張、選的 b 和附註都還在。'], detail=['模型 opus · 41 tok/s ▆▆▄▃▆', '最近 run hetero-1795623455'], key='2', next='C3')
 step(id='C3', tab=2, state='C3', title='回到待決（全部恢復）', ix=decide_ix(1, C_MARKS), compact=decide_compact(1, C_MARKS),
-     reply=[dim('回到第 2 張；選擇、附註、來龍去脈都和離開時一樣。')] + card_reply(1, 'b', C_NOTE) + [dim('s 送出 · 已選 2 張 · 還有 2 張沒選')], detail=card_detail(CARDS[1]),
+     reply=[dim('回到第 2 張；選擇、附註、來龍去脈都和離開時一樣。')] + card_reply(1, 'b', C_NOTE), detail=card_detail(CARDS[1]),
      key='1', next='1-N')
 
 IDS = [s['id'] for s in S]
@@ -461,8 +461,8 @@ def hint_row(items):
 
 # ---------- 內容排版 ----------
 def render_items(items, w):
-    """回覆區、來龍去脈的內容 → 已斷行的列（每列是片段 list）。"""
-    rows = []
+    """回覆區、來龍去脈的內容 → (已斷行的列, 第一個選項列的位置或 None)。"""
+    rows, first_opt = [], None
     optw = max([v.dw(x[2]) for x in items if isinstance(x, tuple) and x[0] == 'opt'] or [0])
     for it in items:
         if isinstance(it, tuple) and it[0] == 'opt':
@@ -472,22 +472,40 @@ def render_items(items, w):
             r += [T('  ' + why, 'inactive')]
             if picked:
                 r.append(T('  ✓ 已選', 'success'))
+            if first_opt is None:
+                first_opt = len(rows)
             rows.append(v.fit(r, w))
             continue
         s, role = seg(it)
         lead = len(s) - len(s.lstrip(' '))
         for line in v.wrap(s.lstrip(' '), w - lead):
             rows.append([T(' ' * lead + line, role)])
-    return rows
+    return rows, first_opt
 
 
-def window(rows, n, at_end):
-    """回覆區取 n 列；放不下時用一列收起提示。"""
+def window(rendered, n, at_end, w):
+    """回覆區取 n 列；放不下時收起前面的題目和步驟，選項以下固定看得到（PM 01M89BCR）。"""
+    rows, first_opt = rendered
     if len(rows) <= n:
         return rows, False
+    tail = rows[first_opt:] if first_opt is not None else []
+    body = rows[:first_opt] if first_opt is not None else rows
+    room = n - len(tail)
+    assert room >= 1, ('選項放不下', n, len(tail))
+    if room == 1:  # 只剩一列：捲到哪就顯示哪一列，旁邊寫還收著幾列
+        k = len(body) - 1
+        if at_end:
+            mark = f'⋯ 上 {k} 列 '
+            text = ''.join(x for x, _, _ in body[-1]).strip()
+            row = [T(mark, 'inactive'), T(v.cut(text, w - v.dw(mark)), body[-1][0][1])]
+        else:
+            mark = f' ⋯ 下 {k} 列'
+            text = ''.join(x for x, _, _ in body[0])
+            row = [T(v.cut(text, w - v.dw(mark)), body[0][0][1]), T(mark, 'inactive')]
+        return [row] + tail, True
     if at_end:
-        return [[T(f'⋯ 上面還有 {len(rows) - (n - 1)} 列 · ↑ 捲回', 'inactive')]] + rows[-(n - 1):], True
-    return rows[:n - 1] + [[T(f'⋯ 下面還有 {len(rows) - (n - 1)} 列 · ↓ 捲', 'inactive')]], True
+        return [[T(f'⋯ 上面還有 {len(body) - (room - 1)} 列 · ↑ 捲回', 'inactive')]] + body[-(room - 1):] + tail, True
+    return body[:room - 1] + [[T(f'⋯ 下面還有 {len(body) - (room - 1)} 列 · ↓ 捲', 'inactive')]] + tail, True
 
 
 def detail_window(pin, rows, n):
@@ -564,14 +582,14 @@ def compose(W, Hh, s):
         rw, n = W - 4, 5
     else:
         rw, n = W - LW - 4, 9 if Hh >= 49 else 7
-    vis, r_over = window(render_items(s['reply'], rw), n, s['rscroll'])
+    vis, r_over = window(render_items(s['reply'], rw), n, s['rscroll'], rw)
     # 上半：來龍去脈的高度（band 高度固定，先算）
     band_h = (2 + n + 1) if narrow else (1 + n + 1)
     top_h = Hh - band_h - 1 - 4
     pw = W if narrow else W - LW
     cap = top_h - 4 - 2 if narrow else min(top_h - 3, 18 if Hh >= 49 else 12)
     pin = [[T(*seg(x))] for x in s['pin']]
-    dvis, d_over = detail_window(pin, render_items(s['detail'], pw - 4), cap)
+    dvis, d_over = detail_window(pin, render_items(s['detail'], pw - 4)[0], cap)
     hrow = hint_row(with_scroll_keys(base, r_over, d_over, narrow))
     tabname = f'{tab} {TABS[tab - 1]}'
     if narrow:

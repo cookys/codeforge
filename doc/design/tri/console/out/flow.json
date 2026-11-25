@@ -13,7 +13,7 @@
     "id": "1-E",
     "tab": "現況",
     "state": "E",
-    "title": "空白",
+    "title": "有資料、全部正常",
     "key_to_next": "設計稿：換狀態",
     "next": 3
   },
@@ -22,7 +22,7 @@
     "id": "1-M",
     "tab": "現況",
     "state": "M",
-    "title": "多筆",
+    "title": "很多事",
     "key_to_next": "設計稿：換狀態",
     "next": 4
   },
@@ -31,7 +31,7 @@
     "id": "1-L",
     "tab": "現況",
     "state": "L",
-    "title": "長內容",
+    "title": "失敗原因很長",
     "key_to_next": "設計稿：換狀態",
     "next": 5
   },
@@ -40,7 +40,7 @@
     "id": "1-X",
     "tab": "現況",
     "state": "X",
-    "title": "缺源",
+    "title": "缺源（pm 讀不到）",
     "key_to_next": "設計稿：換狀態",
     "next": 6
   },
@@ -58,7 +58,7 @@
     "id": "1-X2",
     "tab": "現況",
     "state": "X2",
-    "title": "缺源降級",
+    "title": "缺源（pm 和 console 都讀不到）",
     "key_to_next": "2",
     "next": 8
   },
@@ -67,7 +67,7 @@
     "id": "2-N",
     "tab": "待決",
     "state": "N",
-    "title": "正常",
+    "title": "第 1 張",
     "key_to_next": "設計稿：換狀態",
     "next": 9
   },
@@ -76,7 +76,7 @@
     "id": "2-E",
     "tab": "待決",
     "state": "E",
-    "title": "空白",
+    "title": "沒有卡",
     "key_to_next": "設計稿：換狀態",
     "next": 10
   },
@@ -85,7 +85,7 @@
     "id": "2-M",
     "tab": "待決",
     "state": "M",
-    "title": "多筆",
+    "title": "14 張的第 5 張",
     "key_to_next": "設計稿：換狀態",
     "next": 11
   },
@@ -94,7 +94,7 @@
     "id": "2-L",
     "tab": "待決",
     "state": "L",
-    "title": "長內容",
+    "title": "第 4 張 · 來龍去脈很長",
     "key_to_next": "設計稿：換狀態",
     "next": 12
   },
@@ -112,7 +112,7 @@
     "id": "2-S",
     "tab": "待決",
     "state": "S",
-    "title": "過時",
+    "title": "預覽中卡片變了",
     "key_to_next": "3",
     "next": 14
   },
@@ -130,7 +130,7 @@
     "id": "3-E",
     "tab": "派工",
     "state": "E",
-    "title": "空白",
+    "title": "沒有派工",
     "key_to_next": "設計稿：換狀態",
     "next": 16
   },
@@ -139,7 +139,7 @@
     "id": "3-M",
     "tab": "派工",
     "state": "M",
-    "title": "多筆",
+    "title": "很多輪",
     "key_to_next": "設計稿：換狀態",
     "next": 17
   },
@@ -148,7 +148,7 @@
     "id": "3-L",
     "tab": "派工",
     "state": "L",
-    "title": "長內容",
+    "title": "失敗原因很長",
     "key_to_next": "設計稿：換狀態",
     "next": 18
   },
@@ -184,7 +184,7 @@
     "id": "4-E",
     "tab": "審查",
     "state": "E",
-    "title": "空白",
+    "title": "沒有審查",
     "key_to_next": "設計稿：換狀態",
     "next": 22
   },
@@ -193,7 +193,7 @@
     "id": "4-M",
     "tab": "審查",
     "state": "M",
-    "title": "多筆",
+    "title": "很多條",
     "key_to_next": "設計稿：換狀態",
     "next": 23
   },
@@ -202,7 +202,7 @@
     "id": "4-L",
     "tab": "審查",
     "state": "L",
-    "title": "長內容",
+    "title": "審查意見很長",
     "key_to_next": "設計稿：換狀態",
     "next": 24
   },
@@ -238,7 +238,7 @@
     "id": "5-E",
     "tab": "花費",
     "state": "E",
-    "title": "空白",
+    "title": "還沒有用量",
     "key_to_next": "設計稿：換狀態",
     "next": 28
   },
@@ -247,7 +247,7 @@
     "id": "5-M",
     "tab": "花費",
     "state": "M",
-    "title": "多筆",
+    "title": "10 個額度池",
     "key_to_next": "設計稿：換狀態",
     "next": 29
   },
@@ -256,7 +256,7 @@
     "id": "5-L",
     "tab": "花費",
     "state": "L",
-    "title": "長內容",
+    "title": "說明很長",
     "key_to_next": "設計稿：換狀態",
     "next": 30
   },
@@ -265,7 +265,7 @@
     "id": "5-X",
     "tab": "花費",
     "state": "X",
-    "title": "缺源",
+    "title": "缺源（quota 和速度）",
     "key_to_next": "設計稿：換狀態",
     "next": 31
   },
@@ -274,7 +274,7 @@
     "id": "5-S",
     "tab": "花費",
     "state": "S",
-    "title": "過時",
+    "title": "過時（用快取）",
     "key_to_next": "設計稿：換狀態",
     "next": 32
   },
@@ -283,7 +283,7 @@
     "id": "5-X2",
     "tab": "花費",
     "state": "X2",
-    "title": "缺源降級",
+    "title": "缺源（額度池和今日用量）",
     "key_to_next": "6",
     "next": 33
   },
@@ -301,7 +301,7 @@
     "id": "6-E",
     "tab": "殘留",
     "state": "E",
-    "title": "空白",
+    "title": "沒有殘留",
     "key_to_next": "設計稿：換狀態",
     "next": 35
   },
@@ -310,7 +310,7 @@
     "id": "6-M",
     "tab": "殘留",
     "state": "M",
-    "title": "多筆",
+    "title": "很多項",
     "key_to_next": "設計稿：換狀態",
     "next": 36
   },
@@ -319,7 +319,7 @@
     "id": "6-L",
     "tab": "殘留",
     "state": "L",
-    "title": "長內容",
+    "title": "說明很長",
     "key_to_next": "設計稿：換狀態",
     "next": 37
   },
@@ -346,7 +346,7 @@
     "id": "6-X2",
     "tab": "殘留",
     "state": "X2",
-    "title": "缺源降級",
+    "title": "缺源（外掛載入）",
     "key_to_next": "7",
     "next": 40
   },
@@ -364,7 +364,7 @@
     "id": "7-E",
     "tab": "艦隊",
     "state": "E",
-    "title": "空白",
+    "title": "沒有 agent",
     "key_to_next": "設計稿：換狀態",
     "next": 42
   },
@@ -373,7 +373,7 @@
     "id": "7-M",
     "tab": "艦隊",
     "state": "M",
-    "title": "多筆",
+    "title": "很多 agent",
     "key_to_next": "設計稿：換狀態",
     "next": 43
   },
@@ -382,7 +382,7 @@
     "id": "7-L",
     "tab": "艦隊",
     "state": "L",
-    "title": "長內容",
+    "title": "失敗原因很長",
     "key_to_next": "設計稿：換狀態",
     "next": 44
   },
@@ -391,7 +391,7 @@
     "id": "7-X",
     "tab": "艦隊",
     "state": "X",
-    "title": "缺源",
+    "title": "缺源（本機卡、他機卡、速度）",
     "key_to_next": "設計稿：換狀態",
     "next": 45
   },
@@ -409,7 +409,7 @@
     "id": "7-X2",
     "tab": "艦隊",
     "state": "X2",
-    "title": "缺源降級",
+    "title": "缺源（runs 和摘要）",
     "key_to_next": "8",
     "next": 47
   },
@@ -427,7 +427,7 @@
     "id": "8-E",
     "tab": "待辦",
     "state": "E",
-    "title": "空白",
+    "title": "沒有待辦",
     "key_to_next": "設計稿：換狀態",
     "next": 49
   },
@@ -436,7 +436,7 @@
     "id": "8-M",
     "tab": "待辦",
     "state": "M",
-    "title": "多筆",
+    "title": "很多張",
     "key_to_next": "設計稿：換狀態",
     "next": 50
   },
@@ -445,124 +445,160 @@
     "id": "8-L",
     "tab": "待辦",
     "state": "L",
-    "title": "長內容",
-    "key_to_next": "設計稿：換狀態",
+    "title": "長問題加長選項",
+    "key_to_next": "↓",
     "next": 51
   },
   {
     "step": 51,
-    "id": "8-X",
+    "id": "8-L2",
     "tab": "待辦",
-    "state": "X",
-    "title": "缺源",
+    "state": "L2",
+    "title": "捲到底",
     "key_to_next": "設計稿：換狀態",
     "next": 52
   },
   {
     "step": 52,
+    "id": "8-X",
+    "tab": "待辦",
+    "state": "X",
+    "title": "缺源（還沒接線）",
+    "key_to_next": "設計稿：換狀態",
+    "next": 53
+  },
+  {
+    "step": 53,
     "id": "8-S",
     "tab": "待辦",
     "state": "S",
     "title": "過時",
     "key_to_next": "9",
-    "next": 53
-  },
-  {
-    "step": 53,
-    "id": "9-N",
-    "tab": "說明",
-    "state": "N",
-    "title": "正常",
-    "key_to_next": "設計稿：換狀態",
     "next": 54
   },
   {
     "step": 54,
-    "id": "9-L",
+    "id": "9-N",
     "tab": "說明",
-    "state": "L",
-    "title": "長內容",
-    "key_to_next": "2",
-    "next": 8
+    "state": "N",
+    "title": "狀態圖示",
+    "key_to_next": "設計稿：換狀態",
+    "next": 55
   },
   {
     "step": 55,
-    "id": "2-L2",
-    "tab": "待決",
-    "state": "L2",
-    "title": "長步驟",
-    "key_to_next": "設計稿：換狀態",
+    "id": "9-L",
+    "tab": "說明",
+    "state": "L",
+    "title": "按鍵表",
+    "key_to_next": "2",
     "next": 56
   },
   {
     "step": 56,
-    "id": "2-I",
+    "id": "2-L2",
     "tab": "待決",
-    "state": "I",
-    "title": "輸入附註",
-    "key_to_next": "s",
+    "state": "L2",
+    "title": "等你動手 · 步驟很長",
+    "key_to_next": "↓",
     "next": 57
   },
   {
     "step": 57,
+    "id": "2-L3",
+    "tab": "待決",
+    "state": "L3",
+    "title": "等你動手 · 捲到底",
+    "key_to_next": "m",
+    "next": 58
+  },
+  {
+    "step": 58,
+    "id": "2-I",
+    "tab": "待決",
+    "state": "I",
+    "title": "寫附註",
+    "key_to_next": "Enter 存附註，再按 s",
+    "next": 59
+  },
+  {
+    "step": 59,
     "id": "2-P",
     "tab": "待決",
     "state": "P",
     "title": "送出預覽",
     "key_to_next": "x",
-    "next": 58
+    "next": 60
   },
   {
-    "step": 58,
+    "step": 60,
     "id": "2-Pc",
     "tab": "待決",
     "state": "Pc",
     "title": "取消預覽",
-    "key_to_next": "設計稿：換狀態",
-    "next": 59
+    "key_to_next": "s 再按 y",
+    "next": 61
   },
   {
-    "step": 59,
+    "step": 61,
     "id": "2-R",
     "tab": "待決",
     "state": "R",
     "title": "送出成功",
     "key_to_next": "設計稿：換狀態",
-    "next": 60
+    "next": 62
   },
   {
-    "step": 60,
+    "step": 62,
     "id": "2-F",
     "tab": "待決",
     "state": "F",
     "title": "送出失敗",
     "key_to_next": "設計稿：換狀態",
-    "next": 61
-  },
-  {
-    "step": 61,
-    "id": "2-Fl",
-    "tab": "待決",
-    "state": "Fl",
-    "title": "填入建議",
-    "key_to_next": "設計稿：換狀態",
-    "next": 62
-  },
-  {
-    "step": 62,
-    "id": "C1",
-    "tab": "待決",
-    "state": "C1",
-    "title": "跨頁保留",
-    "key_to_next": "7",
     "next": 63
   },
   {
     "step": 63,
+    "id": "2-Fl0",
+    "tab": "待決",
+    "state": "Fl0",
+    "title": "按 f 之前",
+    "key_to_next": "f",
+    "next": 64
+  },
+  {
+    "step": 64,
+    "id": "2-Fl",
+    "tab": "待決",
+    "state": "Fl",
+    "title": "按 f 之後",
+    "key_to_next": "設計稿：換狀態",
+    "next": 65
+  },
+  {
+    "step": 65,
+    "id": "C1",
+    "tab": "待決",
+    "state": "C1",
+    "title": "開著卡（第 2 張選了 b、寫了附註）",
+    "key_to_next": "7",
+    "next": 66
+  },
+  {
+    "step": 66,
     "id": "C2",
     "tab": "艦隊",
     "state": "C2",
-    "title": "艦隊摘要",
+    "title": "開著卡時看艦隊",
+    "key_to_next": "2",
+    "next": 67
+  },
+  {
+    "step": 67,
+    "id": "C3",
+    "tab": "待決",
+    "state": "C3",
+    "title": "回到待決（全部恢復）",
     "key_to_next": "1",
     "next": 1
   }
