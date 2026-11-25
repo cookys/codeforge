@@ -78,7 +78,14 @@ for name in sorted(os.listdir(D)):
     r['R6_ok'] = opt == ['a', 'b', 'c', 'd', 'e'][:len(opt)]  # 沒有選項的畫面（平常、艦隊頁）不適用
     # R7：band（最後一個框）裡不出現 背景／卡住／來源／sha
     band = frames[-1] if frames else None
-    band_text = '\n'.join(lines[band['top']:band['bottom'] + 1]) if band else ''
+    def clip(l, a, b):  # 第 a 到 b 個顯示欄（含）；寬螢幕 band 和右側 pane 同列，R7 只判 band 的欄
+        out, x = [], 0
+        for c in l:
+            if a <= x <= b:
+                out.append(c)
+            x += cw(c)
+        return ''.join(out)
+    band_text = '\n'.join(clip(l, band['left'], band['right']) for l in lines[band['top']:band['bottom'] + 1]) if band else ''
     bj = os.path.join(p, 'band.json')  # band 不是框的稿（R1 rev5 的 band 是一列）另附 band 的列號
     # 疊在實拍上的稿（R1 rev5）另附 drawn.txt：實拍格子換成空白，只留設計稿畫的字；R7、網址、[-] 只判畫的字
     dj = os.path.join(p, 'drawn.txt')

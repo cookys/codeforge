@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 import subprocess
 SHA = sys.argv[3] if len(sys.argv) > 3 else subprocess.run(
     ['git', 'log', '-1', '--format=%h', '--abbrev=12', '--', 'out', 'gen.py', 'review', 'out-r1', 'r1_export.py',
-     '../../pane-history/drafts/r1-rev5'],
+     '../../pane-history/drafts/r1-rev5', 'out-wide-all', 'wide'],
     cwd=HERE, capture_output=True, text=True, check=True).stdout.strip()
 SIZES = ('209x49', '120x40', '80x24')
 THEMES = json.load(open(os.path.join(HERE, '..', 'brief', 'tools', 'cc-themes.json')))
@@ -26,6 +26,9 @@ ROLES = ('text', 'inactive', 'subtle', 'suggestion', 'success', 'error', 'warnin
 # R1 底部控制（PM 01M8A05M）：r1-rev5 的 8 步，由 r1_export.py 轉成 out-r1/。rev5 疊在實拍上，尺寸是 200x50／120x40／80x24，
 # 尺寸按鈕的寬、中、窄各對到一個。
 R1_OUT = os.path.join(HERE, 'out-r1')
+# PM 01M8A18Z N+2：209x49 是操作員實測的主要尺寸，畫面改用寬版（wide/gen_wide_all.py：band、右側 pane 都展開到宿主上限）；
+# 120x40、80x24 只當退化檢查，沿用已過三輪審查的舊版面（out/）。
+WIDE = os.path.join(HERE, 'out-wide-all')
 R1_SIZE = {'209x49': '200x50', '120x40': '120x40', '80x24': '80x24'}
 # PM 01M8A18Z：r1-rev5 已退件（操作員 11-25：基底不是 7.4、有黃色標註框），R1 區先撤下；
 # 以操作員在用的版本為底重做後，把 R1_ON 改回 True 放回去。
@@ -96,7 +99,7 @@ rev = ''.join(f'<tr><td>{l}</td><td>{html.escape(e)}{"<br><span class=mut>" + NO
 body = ''.join(
     f'<section id="s{s["step"]}"><h3>{s["step"]}. {html.escape(s["id"])} · {html.escape(str(s["tab"]))} · {html.escape(s["title"])}'
     f' <span class=mut>按 {html.escape(str(s.get("key_to_next", "")))} → {s.get("next") or "—"}</span></h3>'
-    + ''.join(f'<figure data-size="{z}"><figcaption>{z}</figcaption>{screen(z, s["step"])}</figure>' for z in SIZES) + '</section>'
+    + ''.join(f'<figure data-size="{z}"><figcaption>{z}</figcaption>{screen(z, s["step"], WIDE if z == "209x49" else OUT)}</figure>' for z in SIZES) + '</section>'
     for s in steps)
 r1_body = ''.join(
     f'<section id="r{s["step"]}"><h3>R1-{s["step"]} · {html.escape(s["title"])}</h3>'
@@ -124,9 +127,9 @@ figure{{margin:6px 0 14px;overflow-x:auto}} figcaption{{font-size:12px;color:var
 {''.join(f'.r-{k}{{color:var(--{k})}}' for k in ROLES)}
 body[data-size] figure{{display:none}} body[data-size="209x49"] figure[data-size="209x49"],body[data-size="120x40"] figure[data-size="120x40"],body[data-size="80x24"] figure[data-size="80x24"]{{display:block}}
 </style>
-<body data-size="120x40">
+<body data-size="209x49">
 <h1>Console 設計總覽</h1>
-<div class=mut>畫面內容 sha {SHA}；overview 本身在它之後的下一個 commit（檔案寫不進自己所在 commit 的 sha，交件訊息附那個 sha）· console 9 分頁 × 6 狀態加跨頁步驟，共 {len(steps)} 步{f'；另加 R1 底部控制 {len(r1_steps)} 步' if R1_ON else ''}；每步 3 尺寸 × 深淺兩色 · 步序與按鍵以 out/flow.json、out-r1/flow.json 為準</div>
+<div class=mut>畫面內容 sha {SHA}；overview 本身在它之後的下一個 commit（檔案寫不進自己所在 commit 的 sha，交件訊息附那個 sha）· console 9 分頁 × 6 狀態加跨頁步驟，共 {len(steps)} 步{f'；另加 R1 底部控制 {len(r1_steps)} 步' if R1_ON else ''}；每步 3 尺寸 × 深淺兩色（209×49 是操作員實測的主要尺寸、band 和右側 pane 展開到宿主上限；120×40、80×24 是退化檢查）· 步序與按鍵以 out/flow.json、out-r1/flow.json 為準</div>
 <nav><span>尺寸</span>{''.join(f'<button data-s="{z}">{z}</button>' for z in SIZES)}<span>色系</span><button data-t=dark>深</button><button data-t=light>淺</button><a href="#inv">盤點表</a><a href="#rev">審查</a><a href="#screens">畫面</a>{'<a href="#r1">R1 底部控制</a>' if R1_ON else ''}</nav>
 <h2 id=rev>審查紀錄</h2><div class=wrap><table><tr><th>輪次</th><th>審查結果</th><th>處置表</th></tr>{rev}</table></div>
 <p class=mut>檢查：check3 每張畫面（寬度、框線、R1 可按的鍵只在下半部、R6 選項字母順序、R7 band 禁字、R8 預覽和清單勾選一致、網址不斷開、[-] 在框內、兩色對比）全過；R6、R8 各有反向探針（對調 a/b、預覽多列沒選的卡都會被擋）。</p>
@@ -148,7 +151,7 @@ function sz(s){{b.dataset.size=s;document.querySelectorAll('figure[data-size="'+
 function th(t){{r.dataset.theme=t;document.querySelectorAll('[data-t]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.t===t))}}
 document.querySelectorAll('[data-s]').forEach(x=>x.onclick=()=>sz(x.dataset.s));
 document.querySelectorAll('[data-t]').forEach(x=>x.onclick=()=>th(x.dataset.t));
-sz('120x40');th(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+sz('209x49');th(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
 </script>
 '''
 open(DEST, 'w').write(page)

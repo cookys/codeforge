@@ -17,4 +17,12 @@ L[i] = ' ├' + L[i][2:]
 open(p, 'w').write('\n'.join(L))
 PY
 if run; then echo "FAIL shifted divider should fail"; fail=1; else echo "ok   shifted divider fails"; fi
+# band 狀態列塞進「卡住」（R7 禁字）：只判 band 的欄位，仍要紅
+fresh; python3 - "$W/$K/screen.txt" <<'PY'
+import sys; p = sys.argv[1]; L = open(p).read().split('\n')
+i = next(k for k, l in enumerate(L) if l.startswith('│ ● 進行中'))
+L[i] = L[i].replace('⋯ 2 ', '卡住', 1)  # 同寬（4 欄），只違反 R7
+open(p, 'w').write('\n'.join(L))
+PY
+if run; then echo "FAIL band 卡住 should fail"; fail=1; else echo "ok   band 卡住 fails"; fi
 exit $fail
