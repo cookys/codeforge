@@ -306,6 +306,8 @@ tmux kill-session -t cap
 
 ## 13. 聊天室式 pane：操作區在底、內容往上長
 
+> 操作員固定準則 R1–R6 的唯一歸屬：[`doc/design/pane-design-language.md` 操作員固定準則](../design/pane-design-language.md#操作員固定準則唯一歸屬檔)。本節只寫底部錨定的實作細節。
+
 操作員回饋，PO 採用（2026-11-05）：操作區固定在底部，資訊從操作區往上長，視線和手都不用跟著移動。live mod、roundtable、forge-stats 三邊的 pane 都照這一節做，autopilot 的文件連結到這裡，不另寫一份。
 
 **適用範圍**：會變長的 pane。forge-stats：pane 的寵物、用量分頁。autopilot：`mods/live` 的待決卡片和 job 頁、`mods/roundtable`。`mods/viewer`（檔案和 diff 檢視器）只把底部的按鍵提示固定住，內容仍然從頂端往下讀。AbovePrompt band 本來就貼在輸入框上面，高度固定，不在此列。
