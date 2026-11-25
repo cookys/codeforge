@@ -117,6 +117,17 @@ for name in sorted(os.listdir(D)):
                 seen[key] = {'ratio': v, 'need': NEED[k], 'ok': v >= NEED[k]}
         con[th] = seen
     r['contrast'] = con
+    # 排除的實拍格子照樣量出來、寫進報告，只是不算失敗：它們是現行宿主（CC、AP band）畫的原色，不是設計稿畫的，
+    # 這份稿改不到；r1-rev5 的規則是不改實拍顏色（PM 01M8A0Y5 要求說明排除原因）。
+    live = {}
+    for th, (t, bg) in TH.items():
+        for row in roles:
+            for s, role, k in row:
+                if k == 'live' and s.strip():
+                    v = round(ratio(rgb(t[role]), bg), 2)
+                    if v < NEED['text']:
+                        live.setdefault(f'{th}:{role}', {'ratio': v, 'sample': s.strip()[:12]})
+    r['contrast_live_excluded'] = live
     r['contrast_bad'] = [f'{th}:{k}' for th, s in con.items() for k, v in s.items() if not v['ok']]
     # R8：送出預覽只列清單上打勾（✓N）的卡，標題的張數和編號也要一致（PM 01M89WW3：預覽列了沒選的第 3 張）
     r['R8_preview'] = None
@@ -150,6 +161,7 @@ for name in sorted(os.listdir(D)):
 json.dump(report, sys.stdout, ensure_ascii=False, indent=1)
 print()
 for n, r in report.items():
+    live_note = ''.join(f" live_excluded(實拍原色，非設計稿) {k} {v['ratio']} {v['sample']!r}" for k, v in r['contrast_live_excluded'].items())
     print(f"{n}: rows {r['rows']} width_bad {len(r['width_bad'])} frames {len(r['frames'])} frame_bad {r['frame_bad']} "
-          f"R1_upper {len(r['R1_upper_clickable'])} R6 {r['R6_ok']} R7_extra {r['R7_band_extra']} contrast_bad {r['contrast_bad']} url_broken {len(r['url_broken'])} ctrl_outside {len(r['ctrl_outside_frame'])} R8 {r['R8_preview']} -> {'OK' if r['ok'] else 'FAIL'}", file=sys.stderr)
+          f"R1_upper {len(r['R1_upper_clickable'])} R6 {r['R6_ok']} R7_extra {r['R7_band_extra']} contrast_bad {r['contrast_bad']} url_broken {len(r['url_broken'])} ctrl_outside {len(r['ctrl_outside_frame'])} R8 {r['R8_preview']}{live_note} -> {'OK' if r['ok'] else 'FAIL'}", file=sys.stderr)
 sys.exit(1 if fail else 0)

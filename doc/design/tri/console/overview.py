@@ -103,12 +103,13 @@ r1_body = ''.join(
 page = f'''<!doctype html><html lang=zh-Hant><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
 <title>Console 設計總覽</title>
 <style>
-:root{{--bg:#fff;--fg:#1f2328;--mut:#57606a;--line:#d0d7de;--tbg:#fff;{role_css(LIGHT)}}}
-:root[data-theme=dark]{{--bg:#0d1117;--fg:#e6edf3;--mut:#9da7b3;--line:#30363d;--tbg:#000;{role_css(DARK)}}}
-@media (prefers-color-scheme:dark){{:root:not([data-theme=light]){{--bg:#0d1117;--fg:#e6edf3;--mut:#9da7b3;--line:#30363d;--tbg:#000;{role_css(DARK)}}}}}
+:root{{--bg:#fff;--fg:#1f2328;--link:#0969da;--mut:#57606a;--line:#d0d7de;--tbg:#fff;{role_css(LIGHT)}}}
+:root[data-theme=dark]{{--bg:#0d1117;--fg:#e6edf3;--link:#58a6ff;--mut:#9da7b3;--line:#30363d;--tbg:#000;{role_css(DARK)}}}
+@media (prefers-color-scheme:dark){{:root:not([data-theme=light]){{--bg:#0d1117;--fg:#e6edf3;--link:#58a6ff;--mut:#9da7b3;--line:#30363d;--tbg:#000;{role_css(DARK)}}}}}
 body{{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Noto Sans TC",sans-serif}}
 h1{{font-size:22px;margin:0 0 4px}} h2{{font-size:18px;margin:28px 0 8px}} h3{{font-size:15px;margin:24px 0 6px}}
 .mut{{color:var(--mut);font-weight:normal}}
+a{{color:var(--link)}}  /* 深色底用淺藍（PM 01M8A0Y5：原本瀏覽器預設藍在深底看不到） */
 table{{border-collapse:collapse;font-size:13px;max-width:100%}} td,th{{border:1px solid var(--line);padding:3px 6px;text-align:left;vertical-align:top}}
 .wrap{{overflow-x:auto}} kbd{{font-family:ui-monospace,monospace}}
 nav{{position:sticky;top:0;background:var(--bg);padding:6px 0;border-bottom:1px solid var(--line);z-index:1;display:flex;gap:8px;flex-wrap:wrap}}
@@ -131,7 +132,7 @@ body[data-size] figure{{display:none}} body[data-size="209x49"] figure[data-size
 <h2 id=r1>R1 底部控制（{len(r1_steps)} 步）</h2>
 <p class=mut>R1 計畫 rev4 的示意稿 r1-rev5（pane-history/drafts/r1-rev5），疊在現行 live 實拍上畫：pane 的可按鍵只在下半部；放不下時依高度收成較少的列，不擋 band。
 三種尺寸是 rev5 量過的 200×50、120×40、80×24（尺寸按鈕寬、中、窄各對一個）。實拍部分（宿主對話區、現行 band、宿主的 [-]）保留原色，不算設計稿；
-check3 只判設計稿畫的格子，24 張全過。和 rev5 原稿唯一的差異：卡片題目列改用 text 色加粗，原本的 claude 色在淺色主題對比只有 3.15（文字要 4.5），rev5 已同步改。</p>
+check3 只判設計稿畫的格子，24 張全過；實拍格子的對比照樣量、列在報告裡不算失敗：現行 band 的「21 ▴收合」淺色 4.40、分隔線「│」淺色 2.19 和深色 2.6，是 AP 現行 band 的顏色，不在這份 R1 稿的範圍。和 rev5 原稿唯一的差異：卡片題目列改用 text 色加粗，原本的 claude 色在淺色主題對比只有 3.15（文字要 4.5），rev5 已同步改。</p>
 {r1_body}
 <script>
 const D={json.dumps(DATA, ensure_ascii=False, separators=(',', ':'))};
