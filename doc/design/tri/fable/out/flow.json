@@ -1,0 +1,68 @@
+[
+ {
+  "step": 1,
+  "title": "平常沒事：band 只有一行",
+  "key_to_next": "（等卡片進來）",
+  "next": 2
+ },
+ {
+  "step": 2,
+  "title": "卡片進來：那一行變提醒，不搶鍵盤",
+  "key_to_next": "ctrl+x tab",
+  "next": 3
+ },
+ {
+  "step": 3,
+  "title": "待決卡：一次一張，只有問題、選項、建議",
+  "key_to_next": "a",
+  "next": 4
+ },
+ {
+  "step": 4,
+  "title": "選了就打勾，自動跳到下一張沒選的",
+  "key_to_next": "b",
+  "next": 5
+ },
+ {
+  "step": 5,
+  "title": "第 3 張：想先看細節",
+  "key_to_next": "v",
+  "next": 6
+ },
+ {
+  "step": 6,
+  "title": "看細節：Pane 打開，選項留在原位",
+  "key_to_next": "b",
+  "next": 7
+ },
+ {
+  "step": 7,
+  "title": "等你動手卡：照 1、2 做完再選",
+  "key_to_next": "a（照 1、2 做完之後）",
+  "next": 8
+ },
+ {
+  "step": 8,
+  "title": "都選好了：送出列亮起來",
+  "key_to_next": "s",
+  "next": 9
+ },
+ {
+  "step": 9,
+  "title": "送出後的回條：送了什麼，10 秒內可收回",
+  "key_to_next": "7",
+  "next": 10
+ },
+ {
+  "step": 10,
+  "title": "艦隊頁：每個 agent 的 tok/s",
+  "key_to_next": "5",
+  "next": 11
+ },
+ {
+  "step": 11,
+  "title": "花費頁：額度和今天用量",
+  "key_to_next": "Esc",
+  "next": 1
+ }
+]
