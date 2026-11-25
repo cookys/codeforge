@@ -1,6 +1,55 @@
 use anyhow::{Context as AnyhowContext, Result};
 use rusqlite::Connection;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+fn canonical(p: &Path) -> PathBuf {
+    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+}
+
+/// Main clone root of the git worktree holding `dir` (`git rev-parse --git-common-dir`).
+fn main_clone_root(dir: &Path) -> Option<PathBuf> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let common = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    if common.file_name()? != ".git" {
+        return None;
+    }
+    Some(canonical(common.parent()?))
+}
+
+/// The project memory dir for `cwd`; the same rule as `findCodeforgeRoot` in
+/// `.claude/scripts/session-digest.js`, so the digest writer and dream agree:
+/// nearest ancestor with `.codeforge`, stopping at `$HOME` or any ancestor of it
+/// (`~/.codeforge` is the account brain dir; PM 01M888T3SD); else a git
+/// worktree's main clone (PM 01M888TFHT); else `cwd/.codeforge`, where
+/// `codeforge init` creates it.
+pub fn resolve_project_dir(cwd: &Path, home: Option<&Path>) -> PathBuf {
+    let home = home.map(canonical);
+    let start = canonical(cwd);
+    // $HOME and its ancestors are never a project, so the walk never reaches
+    // the account `.codeforge`, even when HOME is a sandbox outside the path.
+    let allowed = |d: &Path| home.as_deref().is_none_or(|h| !h.starts_with(d));
+    let is_project = |d: &Path| allowed(d) && d.join(".codeforge").is_dir();
+    if let Some(found) = start
+        .ancestors()
+        .take_while(|d| allowed(d))
+        .find(|d| is_project(d))
+    {
+        return found.join(".codeforge");
+    }
+    if let Some(main) = main_clone_root(&start).filter(|m| is_project(m)) {
+        return main.join(".codeforge");
+    }
+    cwd.join(".codeforge")
+}
 
 pub struct Context {
     /// 專案記憶目錄（.codeforge/）
@@ -16,9 +65,8 @@ impl Context {
         let project_dir = std::env::var("CODEFORGE_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
-                std::env::current_dir()
-                    .unwrap_or_else(|_| PathBuf::from("."))
-                    .join(".codeforge")
+                let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                resolve_project_dir(&cwd, dirs::home_dir().as_deref())
             });
 
         let data_dir = std::env::var("CODEFORGE_DATA_DIR")
@@ -204,6 +252,165 @@ pub mod migrations {
 mod tests {
     use super::*;
     use rusqlite::Connection;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .env_remove("GIT_COMMON_DIR")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .output()
+            .expect("git runs")
+            .status
+            .success();
+        assert!(ok, "git {args:?} failed");
+    }
+
+    #[test]
+    fn project_dir_skips_home_brain_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let proj = home.join("projects").join("plain");
+        std::fs::create_dir_all(home.join(".codeforge").join("brain")).unwrap();
+        std::fs::create_dir_all(&proj).unwrap();
+        let got = resolve_project_dir(&proj, Some(&home));
+        assert_eq!(got, proj.join(".codeforge"), "never the home brain dir");
+    }
+
+    /// HOME is a sandbox beside the project (as in tests): the walk must still not
+    /// reach a `.codeforge` above HOME, such as the real account brain dir.
+    #[test]
+    fn project_dir_never_climbs_above_a_sandbox_home() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = canonical(tmp.path());
+        let home = base.join("home");
+        let proj = base.join("proj");
+        std::fs::create_dir_all(base.join(".codeforge").join("brain")).unwrap();
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(&proj).unwrap();
+        assert_eq!(
+            resolve_project_dir(&proj, Some(&home)),
+            proj.join(".codeforge")
+        );
+    }
+
+    #[test]
+    fn project_dir_walks_up_to_own_codeforge() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let proj = home.join("projects").join("app");
+        let sub = proj.join("src").join("deep");
+        std::fs::create_dir_all(proj.join(".codeforge")).unwrap();
+        std::fs::create_dir_all(&sub).unwrap();
+        let want = canonical(&proj).join(".codeforge");
+        assert_eq!(resolve_project_dir(&proj, Some(&home)), want);
+        assert_eq!(resolve_project_dir(&sub, Some(&home)), want);
+    }
+
+    #[test]
+    fn project_dir_worktree_uses_main_clone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let main = home.join("projects").join("app");
+        let wt = home.join("projects").join("app-wt");
+        std::fs::create_dir_all(&main).unwrap();
+        git(&main, &["init", "-q", "-b", "develop"]);
+        git(
+            &main,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+        );
+        git(
+            &main,
+            &["worktree", "add", "-q", wt.to_str().unwrap(), "-b", "wt"],
+        );
+        // Without a main-clone .codeforge, the worktree is not a project.
+        assert_eq!(resolve_project_dir(&wt, Some(&home)), wt.join(".codeforge"));
+        std::fs::create_dir_all(main.join(".codeforge")).unwrap();
+        assert_eq!(
+            resolve_project_dir(&wt, Some(&home)),
+            canonical(&main).join(".codeforge")
+        );
+    }
+
+    /// The digest writer (session-digest.js) and the dream reader (this fn) pick the same dir.
+    #[test]
+    fn project_dir_matches_digest_writer() {
+        let script =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join(".claude/scripts/session-digest.js");
+        let js_root = |dir: &Path, home: &Path| -> Option<PathBuf> {
+            let out = std::process::Command::new("node")
+                .arg("-e")
+                .arg("const r=require(process.argv[1]).findCodeforgeRoot(process.argv[2],{home:process.argv[3]});process.stdout.write(r||'')")
+                .arg(&script)
+                .arg(dir)
+                .arg(home)
+                .env_remove("GIT_DIR")
+                .env_remove("GIT_WORK_TREE")
+                .output()
+                .expect("node runs");
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            let s = String::from_utf8_lossy(&out.stdout).to_string();
+            (!s.is_empty()).then(|| PathBuf::from(s))
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let home = canonical(tmp.path()).join("home");
+        let main = home.join("projects").join("app");
+        let wt = home.join("projects").join("app-wt");
+        let plain = home.join("projects").join("plain");
+        std::fs::create_dir_all(home.join(".codeforge")).unwrap();
+        std::fs::create_dir_all(main.join("src")).unwrap();
+        std::fs::create_dir_all(&plain).unwrap();
+        git(&main, &["init", "-q", "-b", "develop"]);
+        git(
+            &main,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+        );
+        git(
+            &main,
+            &["worktree", "add", "-q", wt.to_str().unwrap(), "-b", "wt"],
+        );
+        std::fs::create_dir_all(main.join(".codeforge")).unwrap();
+        for dir in [main.clone(), main.join("src"), wt.clone()] {
+            let js = js_root(&dir, &home).expect("writer finds a root");
+            assert_eq!(
+                resolve_project_dir(&dir, Some(&home)),
+                js.join(".codeforge"),
+                "{dir:?}"
+            );
+        }
+        // No project: the writer writes nothing, and the reader's dir holds no digests.
+        assert_eq!(js_root(&plain, &home), None);
+        assert!(!resolve_project_dir(&plain, Some(&home)).exists());
+    }
 
     fn open_migrated_memory_db() -> Connection {
         let conn = Connection::open_in_memory().expect("in-memory DB");
