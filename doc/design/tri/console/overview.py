@@ -1,6 +1,6 @@
 """console 設計稿總覽：盤點表、審查紀錄、68 步 × 3 尺寸的畫面（深淺兩色可切）。
 
-用法：python3 overview.py <out 目錄> <輸出 html> <sha>
+用法：python3 overview.py <out 目錄> <輸出 html> [sha，預設是畫面內容的 sha]
 畫面用 out/<W>x<H>-s<N>/roles.json 直接排成文字格子（不嵌 PNG）；像素級的圖用 tools/render.py 另出。
 """
 import html
@@ -10,8 +10,14 @@ import re
 import sys
 import unicodedata
 
-OUT, DEST, SHA = sys.argv[1], sys.argv[2], sys.argv[3]
+OUT, DEST = sys.argv[1], sys.argv[2]
 HERE = os.path.dirname(os.path.abspath(__file__))
+# 一個檔案寫不進「包含它自己的那個 commit」的 sha。所以標頭寫畫面內容的 sha：
+# 也就是最後一個改到 out/、gen.py、review/ 的 commit。交件時報這個 sha（PM 01M89XK1）。
+import subprocess
+SHA = sys.argv[3] if len(sys.argv) > 3 else subprocess.run(
+    ['git', 'log', '-1', '--format=%h', '--abbrev=12', '--', 'out', 'gen.py', 'review'],
+    cwd=HERE, capture_output=True, text=True, check=True).stdout.strip()
 SIZES = ('209x49', '120x40', '80x24')
 THEMES = json.load(open(os.path.join(HERE, '..', 'brief', 'tools', 'cc-themes.json')))
 LIGHT, DARK = THEMES[0], THEMES[2]  # cc-themes.json 順序：light、light-daltonized、dark、dark-daltonized
@@ -106,7 +112,7 @@ body[data-size] figure{{display:none}} body[data-size="209x49"] figure[data-size
 </style>
 <body data-size="120x40">
 <h1>Console 設計總覽</h1>
-<div class=mut>sha {SHA} · 9 分頁 × 6 狀態加跨頁步驟，共 {len(steps)} 步 × 3 尺寸 × 深淺兩色 · 步序與按鍵以 out/flow.json 為準</div>
+<div class=mut>畫面內容 sha {SHA}（overview 本身在之後的 commit）· 9 分頁 × 6 狀態加跨頁步驟，共 {len(steps)} 步 × 3 尺寸 × 深淺兩色 · 步序與按鍵以 out/flow.json 為準</div>
 <nav><span>尺寸</span>{''.join(f'<button data-s="{z}">{z}</button>' for z in SIZES)}<span>色系</span><button data-t=dark>深</button><button data-t=light>淺</button><a href="#inv">盤點表</a><a href="#rev">審查</a><a href="#screens">畫面</a></nav>
 <h2 id=rev>審查紀錄</h2><div class=wrap><table><tr><th>輪次</th><th>審查結果</th><th>處置表</th></tr>{rev}</table></div>
 <p class=mut>檢查：check3 每張畫面（寬度、框線、R1 可按的鍵只在下半部、R6 選項字母順序、R7 band 禁字、R8 預覽和清單勾選一致、網址不斷開、[-] 在框內、兩色對比）全過；R6、R8 各有反向探針（對調 a/b、預覽多列沒選的卡都會被擋）。</p>
