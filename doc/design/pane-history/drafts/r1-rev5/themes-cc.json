@@ -1,0 +1,32 @@
+{
+ "schema": "autopilot.tux-themes/1",
+ "source": "Claude Code 2.1.331 built-in themes (default dark, default light); terminal default background black / white",
+ "background": {
+  "dark": [0, 0, 0],
+  "light": [255, 255, 255]
+ },
+ "dark": {
+  "claude": [215, 119, 87],
+  "warning": [255, 193, 7],
+  "error": [255, 107, 128],
+  "success": [78, 186, 101],
+  "suggestion": [177, 185, 249],
+  "inactive": [153, 153, 153],
+  "subtle": [80, 80, 80],
+  "merged": [175, 135, 255],
+  "remember": [177, 185, 249],
+  "text": [255, 255, 255]
+ },
+ "light": {
+  "claude": [215, 119, 87],
+  "warning": [150, 108, 30],
+  "error": [171, 43, 63],
+  "success": [44, 122, 57],
+  "suggestion": [87, 105, 247],
+  "inactive": [102, 102, 102],
+  "subtle": [175, 175, 175],
+  "merged": [135, 0, 255],
+  "remember": [0, 0, 255],
+  "text": [0, 0, 0]
+ }
+}

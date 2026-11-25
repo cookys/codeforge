@@ -1,0 +1,24 @@
+
+› Prompt from the autopilot plugin                                              
+❯ [待決回覆]                                                                    
+  d-a1b2c3e2｜forge-stats 外掛今晚還是明早更新？ → 今晚｜補充：先跑 canary      
+  ⎿  UserPromptSubmit says: unverified [待決回覆]: d-a1b2c3e2 (claim_failed     
+     (claimed)); the courier did not confirm these answers, so they are NOT     
+     acted on and their cards stay open. Tell the owner.                        
+
+● Locating forge-stats references in the working directory                      
+  ⎿  $ pwd; ls -la; grep -rl "forge-stats" . 2>/dev/null | head -20
+
+* Pouncing… (8s · ↓ 836 tokens · thinking)                                      
+╭─ 待決 · fleet decisions list --json · 20 秒 ────────────────────────────╮ [-] 
+│ ✗ 額度預測 無來源                                                       │     
+│ s: 預覽並送出已選 0 張 · 另 20 張未選                                   │     
+│ ✓ 已送出 1 張 · 尚有 20 張待決                                          │
+╰─  Enter 展開 · ↑↓ · w · Esc  ────────  1  2 待決  3  4  5  6  7  8  9  ─╯     
+‣ 要你決定：預覽先拍 80 欄還是 120 欄？ │ 3 產線 ⊘ 4 ✗ 2 │ 2 待決  20 ▴收合
+
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt

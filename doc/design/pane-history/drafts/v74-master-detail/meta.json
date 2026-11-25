@@ -1,0 +1,12 @@
+{
+  "id": "v74-master-detail",
+  "author": "cookys (team)",
+  "date": "2026-11-23",
+  "status": "rejected",
+  "sources": [
+    ".@8311afc:doc/design/v74-master-detail.md",
+    "doc/design/pane-history/drafts/v74-pending-two-options/v74-pending-two-options.md:5"
+  ],
+  "missing": [],
+  "adoption": "未採用（後續設計稿註記已退回）"
+}

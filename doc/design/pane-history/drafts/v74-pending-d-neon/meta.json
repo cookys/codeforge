@@ -1,0 +1,11 @@
+{
+  "id": "v74-pending-d-neon",
+  "author": "cookys (team)",
+  "date": "2026-11-23",
+  "status": "draft",
+  "sources": [
+    ".@8311afc:doc/design/v74-pending-d-neon.md"
+  ],
+  "missing": [],
+  "adoption": "未記錄；保留歷史提案"
+}
