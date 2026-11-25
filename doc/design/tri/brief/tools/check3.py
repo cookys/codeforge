@@ -53,7 +53,7 @@ for name in sorted(os.listdir(D)):
             open_.append({'top': i, 'left': x, 'right': rx})
         for f in list(open_):
             if i > f['top']:
-                ls, rs = cols_of(l, '│╰'), cols_of(l, '│╯')
+                ls, rs = cols_of(l, '│╰├'), cols_of(l, '│╯┤')  # ├┤：框內的分隔橫線（寬螢幕 band 把清單與狀態列分開）
                 if f['left'] in cols_of(l, '╰'):
                     f['bottom'] = i
                     f['ok_bottom'] = f['right'] in cols_of(l, '╯')
