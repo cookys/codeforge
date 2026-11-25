@@ -398,7 +398,7 @@ URL_PIN = [('網址   ' + URL, 'text')]
 ACT_STEPS = [('▸ ' + ACT['q'], 'text'), '  1. 打開 staging 頁（按 g 複製網址）', '     ' + URL, '  2. 走一圈，核對 8 個推定值：', '     衰減、半徑、上限、下限', '     權重 1、權重 2、權重 3、權重 4',
              '  3. 有不一致的值，按 m 寫是哪一個']
 L2_HINTS = [H('a/b/c', '選'), H('↑↓', '捲'), H('PgUp/PgDn', '捲來龍去脈'), H('g', '複製網址'), H('m', '附註'), H('s', '送出')]
-L2_N = [H('a/b/c', '選'), H('↑↓', '捲'), H('PgUp/PgDn', '捲上方'), H('g', '複製網址'), H('m', '附註')]
+L2_N = [H('a/b/c', '選'), H('↑↓', '捲'), H('PgUp/PgDn', '捲上方'), H('g', '複製網址'), H('m', '附註'), H('s', '送出')]  # 80 欄也要看得到送出（PM 01M89WRV）
 step(id='2-L2', tab=2, state='L2', title='等你動手 · 步驟很長', ix=decide_ix(3, MK0), compact=decide_compact(3, MK0),
      reply=ACT_STEPS + card_opts(ACT), pin=URL_PIN, detail=card_detail(ACT), hints=L2_HINTS, nhints=L2_N, key='↓', next='2-L3')
 step(id='2-L3', tab=2, state='L3', title='等你動手 · 捲到底', ix=decide_ix(3, MK0), compact=decide_compact(3, MK0),
@@ -414,12 +414,11 @@ def _pv(n, name, ans):
 
 def _preview():
     """送出預覽：逐張列題目全文、選的選項和說明、附註（r3 codex 3）。"""
-    out = [warn('送出預覽 · 3 張 · 確認後不能改')]
-    for i, c in enumerate(CARDS):
+    sel = [i for i in range(len(CARDS)) if i in MK]  # 只列已選的卡；沒選的不送，不進預覽（PM 01M89WW3）
+    out = [warn(f'送出預覽 · {len(sel)} 張（' + '、'.join(str(i + 1) for i in sel) + '）· 確認後不能改')]
+    for i in sel:
+        c = CARDS[i]
         out.append(f'{i + 1} {c["name"]}：{c["q"]}')
-        if i not in MK:
-            out.append(dim('   （沒選，不送）'))
-            continue
         l, lab, rec, why = next(o for o in c['opts'] if o[0] == MK[i])
         out.append(ok(f'   → {l} {lab}：{why}'))
         if i == 3:

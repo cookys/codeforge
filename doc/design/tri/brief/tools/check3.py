@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""第三輪設計稿機械檢查：寬度、框線欄位、R1、R6、R7、深淺對比。輸出 JSON，任何一項失敗結束碼 1。"""
+"""第三輪設計稿機械檢查：寬度、框線欄位、R1、R6、R7、R8 預覽與勾選一致、深淺對比。輸出 JSON，任何一項失敗結束碼 1。"""
 import json, os, re, sys, unicodedata
 
 D = sys.argv[1]
@@ -108,7 +108,32 @@ for name in sorted(os.listdir(D)):
         con[th] = seen
     r['contrast'] = con
     r['contrast_bad'] = [f'{th}:{k}' for th, s in con.items() for k, v in s.items() if not v['ok']]
-    ok = not r['width_bad'] and frame_bad == 0 and not r['R1_upper_clickable'] and r['R6_ok'] and not r['R7_band_extra'] and not r['contrast_bad'] and not urlbad and not outside
+    # R8：送出預覽只列清單上打勾（✓N）的卡，標題的張數和編號也要一致（PM 01M89WW3：預覽列了沒選的第 3 張）
+    r['R8_preview'] = None
+    hi = next((i for i, l in enumerate(lines) if re.search(r'送出預覽 · \d+ 張', l)), None)
+    if hi is not None:
+        def cut(l, col):  # 從第 col 個顯示欄切到行尾
+            c = 0
+            for k, ch in enumerate(l):
+                if c >= col:
+                    return l[k:]
+                c += cw(ch)
+            return ''
+        x0 = dw(lines[hi][:re.search(r'送出預覽 · \d+ 張', lines[hi]).start()])
+        m = re.search(r'送出預覽 · (\d+) 張（([\d、]+)）', lines[hi])
+        head = [int(n) for n in m.group(2).split('、')] if m else []
+        shown = []
+        for l in lines[hi + 1:]:
+            if '╰' in l[:2] or not l.startswith('│') and not l.startswith(' '):
+                break
+            mm = re.match(r'(\d) \S', cut(l, x0))
+            if mm:
+                shown.append(int(mm.group(1)))
+        checked = sorted({int(n) for l in lines for n in re.findall(r'✓(\d)', cut(l, 0)[:x0] if x0 > 4 else l)})
+        r['R8_preview'] = {'checked': checked, 'header': head, 'shown': shown,
+                           'ok': bool(m) and int(m.group(1)) == len(head) and head == checked and set(shown) <= set(checked)}
+    r8_bad = r['R8_preview'] is not None and not r['R8_preview']['ok']
+    ok = not r['width_bad'] and frame_bad == 0 and not r['R1_upper_clickable'] and r['R6_ok'] and not r['R7_band_extra'] and not r['contrast_bad'] and not urlbad and not outside and not r8_bad
     r['ok'] = ok
     fail |= not ok
     report[name] = r
@@ -116,5 +141,5 @@ json.dump(report, sys.stdout, ensure_ascii=False, indent=1)
 print()
 for n, r in report.items():
     print(f"{n}: rows {r['rows']} width_bad {len(r['width_bad'])} frames {len(r['frames'])} frame_bad {r['frame_bad']} "
-          f"R1_upper {len(r['R1_upper_clickable'])} R6 {r['R6_ok']} R7_extra {r['R7_band_extra']} contrast_bad {r['contrast_bad']} url_broken {len(r['url_broken'])} ctrl_outside {len(r['ctrl_outside_frame'])} -> {'OK' if r['ok'] else 'FAIL'}", file=sys.stderr)
+          f"R1_upper {len(r['R1_upper_clickable'])} R6 {r['R6_ok']} R7_extra {r['R7_band_extra']} contrast_bad {r['contrast_bad']} url_broken {len(r['url_broken'])} ctrl_outside {len(r['ctrl_outside_frame'])} R8 {r['R8_preview']} -> {'OK' if r['ok'] else 'FAIL'}", file=sys.stderr)
 sys.exit(1 if fail else 0)

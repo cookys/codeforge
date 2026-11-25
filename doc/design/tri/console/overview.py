@@ -109,7 +109,7 @@ body[data-size] figure{{display:none}} body[data-size="209x49"] figure[data-size
 <div class=mut>sha {SHA} · 9 分頁 × 6 狀態加跨頁步驟，共 {len(steps)} 步 × 3 尺寸 × 深淺兩色 · 步序與按鍵以 out/flow.json 為準</div>
 <nav><span>尺寸</span>{''.join(f'<button data-s="{z}">{z}</button>' for z in SIZES)}<span>色系</span><button data-t=dark>深</button><button data-t=light>淺</button><a href="#inv">盤點表</a><a href="#rev">審查</a><a href="#screens">畫面</a></nav>
 <h2 id=rev>審查紀錄</h2><div class=wrap><table><tr><th>輪次</th><th>審查結果</th><th>處置表</th></tr>{rev}</table></div>
-<p class=mut>檢查：check3 每張畫面（寬度、框線、R1 可按的鍵只在下半部、R6 選項字母順序、R7 band 禁字、網址不斷開、[-] 在框內、兩色對比）全過；R6 另有反向探針（對調 a/b 會被擋）。</p>
+<p class=mut>檢查：check3 每張畫面（寬度、框線、R1 可按的鍵只在下半部、R6 選項字母順序、R7 band 禁字、R8 預覽和清單勾選一致、網址不斷開、[-] 在框內、兩色對比）全過；R6、R8 各有反向探針（對調 a/b、預覽多列沒選的卡都會被擋）。</p>
 <h2 id=inv>盤點表（{len(steps)} 步）</h2><div class=wrap><table><tr><th>步</th><th>id</th><th>分頁</th><th>狀態</th><th>標題</th><th>按鍵 → 下一步</th><th>缺源／過時</th></tr>{inv}</table></div>
 <h2 id=screens>畫面</h2>{body}
 <script>
