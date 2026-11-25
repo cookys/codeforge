@@ -659,3 +659,23 @@
 - **Source**: PM 01M85DPSCR 取消後的重開卡流程
 - **Pointer**: lane scratch 的 capture.sh、timeline/ 快照、cfg-template/；線索：信任對話 Enter=選 No、theme 預種鍵名待查、claude.err 在各 mktemp PROJ
 - **Context**: autopilot renderer（ansi-to-html-grid.js）已可把 .ans 轉 HTML 並內建閘；harness 只負責產生 .ans
+
+### mod 輸入框 @@ 補全席位名稱、p#<project> 選專案負責人
+- **Id**: B73
+- **Status**: open
+- **Since**: 2026-11-26
+- **Origin**: autopilot 01M81Q2P（v7.6 brief 第 (2) 行）
+- **Problem**: 操作員在 mod 輸入框打 @@ 時，不會跳出席位名稱補全；打 p#<project> 也不會帶出該專案的負責人。v7.6 brief 已寫進這項需求，但到 autopilot develop 13af20c04 都還沒有實作（`git grep '@@' mods/` 只有 viewer 的 diff hunk）。同一份 brief 的第 (1) 行 askpm 已經在 develop。
+- **Impact**: 操作員要問特定席位或專案負責人時，只能手打完整位址，容易打錯送錯人。
+- **Trigger**: ready；目前里程碑（pane 實際使用驗收）結束後排入
+- **Trigger-Type**: ready
+- **Effort**: M
+- **Source**: autopilot 01M81Q2P；PM 裁定 01M81MFTV、01M81M4RYT
+- **Pointer**: fleet 的 `:<project>` project-owner registry（不另建清單，BL-0404）；程式碼放 autopilot mods/live，合併前由 autopilot 審
+- **Done-Check**: 在 mod 輸入框打 `@@co`，補全清單出現 codeforge 席位；打 `p#codeforge` 帶出負責人位址
+- **Artifact**: run
+- **Needs**: none
+- **ms**: v7.6-followup
+- **Used-by**: user
+- **Queued-By**: cookys/team-console/codeforge--claude 01M81Q2P35B0QBTS5QMWQ45RG1
+- **Context**: 輸入時 a/b/c、s 都當文字的規則不變
