@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "01M88J46KGPQZFCBRQK1CCXRD5",
+  "logical_plan_id": "codeforge:r1-bottom-controls-2026-11-25",
+  "session_id": "r1-g1",
+  "session_key": "5dc4713b9b9e4ed6b5dc43f527140a04ad1a2aa95b5c1efdb7ef237f5ce44997",
+  "generation": 2,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": true,
+  "policy_reason": "generation_cap_requires_depth_0_adjudication",
+  "rubric_sha256": "02170451c440759ba17f9670b3fb8cd5f391a02498aa09a4be12fe4b709f7691",
+  "manifest_sha256": "21a292e1ab5f9d12950f9776188bfaf322392cf32d817e85435fdc1165b693a0",
+  "context_sha256": null,
+  "plan_sha256": "8155c089b10552b56c35735c8d77a869c5a89bf265455fac6bd6cd1863998dc0",
+  "plan_path": "doc/plans/2026-11-25-r1-bottom-controls.md",
+  "plan_git_blob_sha": "0bd0afae1631648c7b2b9263ea8cbf11a61596e6",
+  "repo_head_sha": "a090f7715dd00933e2ba86aa17b7ea9b85a9f744",
+  "plan_dirty_vs_head": false,
+  "growth_ratio": {
+    "numerator": 27579,
+    "denominator": 19229
+  },
+  "growth_warning": true,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6.1-sol",
+          "operation": "plan-review",
+          "request_digest": "5fe4bda29a7c4eaff014853efb70dc9a4e655ccd0e31b292614b2e5f787bd1e7"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "a212f6ad93d80f264394ba66fc19df158f936710a2b23fbbcd064d1eb239345e",
+          "stderr_sha256": "6ced4ce0e26b4dc8d6b8ed5098ed78e2f0462d5e9129c8e926f4a31c551031e1"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "<tmp>/dispatch-author-codex-J2eMnq/stdout",
+          "digest": "a212f6ad93d80f264394ba66fc19df158f936710a2b23fbbcd064d1eb239345e"
+        },
+        "receipt_digest": "b1a8a2d7384f10e279b2a0867f8fb6dbe687933ba05040143d6fcfbc453f9ffb"
+      },
+      "transport_status": "success",
+      "usage": null,
+      "duration_ms": 78125,
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "carbon",
+      "target_id": "carbon",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "agy",
+          "model": "gemini-4-carbon-high",
+          "operation": "plan-review",
+          "request_digest": "60e238fd460f8c1f6a6f3efd6ecfda77e0c435db0b0510be92412d22a6d4267f"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "bcef6352cf35faa7086b1f53f2e91e5003433f93e0b458c2a9d8f4e106b43eb5",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "<tmp>/dispatch-author-log-HZeUhU",
+          "digest": "bcef6352cf35faa7086b1f53f2e91e5003433f93e0b458c2a9d8f4e106b43eb5"
+        },
+        "receipt_digest": "a8f1cd6483163986f20baebfb261bf30f16756189988e5317cc2f3bffee3eea4"
+      },
+      "transport_status": "success",
+      "usage": null,
+      "duration_ms": 780701,
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "family": "openai",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "verdict": "STOP"
+    },
+    {
+      "seat_id": "carbon",
+      "target_id": "carbon",
+      "family": "google",
+      "runner": "agy",
+      "model": "gemini-4-carbon-high",
+      "verdict": "CONDITIONAL"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R2",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "doc/plans/2026-11-25-r1-bottom-controls.md (Section 1.2, Section 3.3, Section 5); mods/live/pages/decide.ts",
+      "claim": "Section 3.3's interactive states ('附註輸入', 'o 看全部', '送出預覽') and single-row option overflow rules exceed ctrlCap at small heights (L4 H = 5, L3 H = 7) or omit required clickable ('press') specifications asserted by Section 5's R1-lower tests.",
+      "evidence": "In L2/L3/L4 normal state, note and submit share 1 merged row, but Section 3.3 defines '附註輸入' as keeping '選項列' (1 row) plus '輸入列' (1 row) plus 'Enter 確定 · Esc 取消' (1 row) = 3 rows in L4 (ctrlCap = 2 at H = 5) and 4 rows with the switcher in L3 (ctrlCap = 3 at H = 7), exceeding ctrlCap. For 'o 看全部', Section 3.3 says the option list '暫時取代換卡器的位置（仍在控制區內，列數不超過 ctrlCap），Esc 收回', yet L4 has 0 switcher rows ('不顯示') and ctrlCap - 1 = 1 row cannot display overflowed 4-option lists like '[D, C, B, A]'. Section 5 mandates R1-lower assertions across '附註輸入', '送出預覽', and 'o 看全部' plus 'key:a' in every size, but Section 3.3 omits 'o 看全部' and 'key:o' from its press spec, omits whether '附註列' is replaced during '送出預覽' (keeping it yields ctrlCap + 1 rows), and provides no per-option width cap or R1-lower rule when 'key:a' is collapsed inside '… 另 N 項 · o 看全部' (as in Section 5's '[D, C, B, A]' case where only 'key:d' and 'key:c' fit).",
+      "evidence_reference": "doc/plans/2026-11-25-r1-bottom-controls.md#1.2; doc/plans/2026-11-25-r1-bottom-controls.md#3.3; doc/plans/2026-11-25-r1-bottom-controls.md#5",
+      "repair": "Specify ctrlCap-safe layouts and explicit press contracts for all three non-default states: (1) in '附註輸入' when ctrlCap <= 3, temporarily hide the switcher (L3) and merge or replace the options row at ctrlCap == 2 so '輸入列' + 'Enter 確定 · Esc 取消' ('key:enter', 'key:esc') fit within 2 rows; (2) in '送出預覽', explicitly replace switcher, options, and note rows with up to ctrlCap - 1 preview rows plus '[y] 確定送出 · Esc 回去' ('key:y', 'key:esc'); (3) in 'o 看全部', pack multiple options per row or page within ctrlCap - 1 rows plus 'Esc 收回' ('key:esc') and include 'key:o' when collapsed; and (4) cap per-option display width in L3/L4 so at least one option plus 'o 看全部' always fits in 80 cols, updating R1-lower to assert visible option keys ('key:<letter>') plus 'key:o' when 'a' is among collapsed trailing options.",
+      "failure_scenario": "In boxed 80x24 (H = 5, ctrlCap = 2, L4), Section 5's R1-lower input-state test triggers '附註輸入' ('m'). Following Section 3.3 ('附註列變成輸入列，選項列保留；送出列改成 Enter 確定 · Esc 取消'), decide.ts emits 3 control rows against ctrlCap = 2, immediately throwing frame.ts's dev-mode assertion ('控制區列數大於 ctrlCap 也丟錯').",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "carbon",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "2843d923374251569a8cd3395f6a423e84264ca8bd911995dbf71d1426429c5c",
+      "recheck_reason": "L3 附註輸入仍未明定隱藏換卡器，可能需四列而超過容量三列；亦未保證長選項與可點的 o 看全部能同列容納。"
+    },
+    {
+      "rubric_id": "R5",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "doc/plans/2026-11-25-r1-bottom-controls.md (Section 1.5, Section 3.1, Section 3.2, Section 4, Section 5)",
+      "claim": "Section 4 freezes mocks as immutable ('不取代 mock') while omitting 5-9 required side-by-side mocks, embedding wrong row counts, ctrlCap values, and L2 row structure in the mocks/prose it does provide, and exposing a conflict between Section 3.1 top-down frame truncation and Section 3.2 middle truncation.",
+      "evidence": "Section 1.5 and Section 5 require screenshots across 3 sizes x docked/boxed for both decide and forge pages (12 cells); Section 4 lists 8 cells and draws only 3 ASCII mocks (omitting boxed H = 17 despite claiming 'boxed 三種高度各畫一張', docked 80x24/200x50, and all forge mocks). Inside Section 4: (a) the 'boxed H＝13（L2，ctrlCap 5）' mock has 12 total rows (not 13), writes ctrlCap 5 (ceil(13/2) - 1 = 6 in Section 3.3), splits 'm 附註' and '[s] 送出' onto 2 rows (contradicting L2's merged 'm 附註 · [s] 送出 N 張'), omits pinned item 1 ('待決 6 張 · 第 3 張'), and places '建議' above '↑ 背景 2 列'; (b) prose writes ctrlCap 7 for H = 17 (vs 8) and ctrlCap 11/24 for docked 80x24/200x50 (vs 10/23) plus an unlisted '… 另 N 張' row in L0; (c) docked 120x40 draws a 19-row box truncating 12 background rows even though 120x40 has ~38 rows; and (d) Section 3.1 truncates info from the very top ('從資訊區最上面開始截'), which cuts off Section 3.2's pinned item 1 ('分類標題：釘住，永遠不被截'), while Section 3.2's '分類標題和第 6 項不截' (2+ rows) cannot fit in H = 5's 1-row info area.",
+      "evidence_reference": "doc/plans/2026-11-25-r1-bottom-controls.md#1.5; doc/plans/2026-11-25-r1-bottom-controls.md#3.1; doc/plans/2026-11-25-r1-bottom-controls.md#3.2; doc/plans/2026-11-25-r1-bottom-controls.md#4; doc/plans/2026-11-25-r1-bottom-controls.md#5",
+      "repair": "Align the screenshot/mock matrix count across Sections 1.5, 4, and 5 and draw valid baseline mocks for every required cell before freezing (including boxed H = 17 C two-column and forge pages). Fix boxed H = 13 to 13 rows with ctrlCap = 6, merged L2 'm 附註 · [s] 送出', and Section 3.2's exact row order; fix ctrlCap numbers in Section 4 prose (8 for H = 17, 10/23 or exact formula for docked); pass ctx.infoCap = maxRows - 2 - C so decide.ts performs middle-truncation of '背景' instead of frame cutting pinned top rows; and define an explicit truncation order when infoCap < 2 (such as H = 5, specifying whether card title moves to the top border and item 6 or item 5 fills the 1 info row).",
+      "failure_scenario": "In U5, when comparing real terminal screenshots side-by-side against Section 4 without replacing Section 4's mocks ('不取代 mock'), boxed H = 17 and all forge cells have no ASCII mock to pair with, and boxed H = 13's real 13-row L2 output (1 merged m+s row, pinned header at row 1) disagrees on row count, ctrlCap, info ordering, and control-row count with Section 4's 12-row mock.",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "carbon",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "8311a9ef1fabaed267bc64a2f82bb5900cdbcc54f73a778300c41ffcbe4ea741",
+      "recheck_reason": "未提供補齊且修正的 mock 矩陣；資訊區僅一列時，分類標題與第六項仍同時宣稱不可截，缺少明確取捨。"
+    }
+  ],
+  "backlog_candidates": [],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": null,
+  "reviewed_at": "2026-11-25T06:14:04.316Z",
+  "usage": null,
+  "duration_ms": 29571,
+  "recheck": {
+    "status": "failed",
+    "blocker_count": 6,
+    "seat": {
+      "id": "recheck_chair",
+      "family": "openai",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "high"
+    },
+    "excluded_seats": [],
+    "results": [
+      {
+        "id": "666f2c979fbd0d2d5b58d4486e7dc3c4af91db415ccf020dbb00cbe6bb516811",
+        "status": "fixed",
+        "reason": "新框高公式等同補白至資訊區至少 c−1 列，保證 H≤M，並明列 M＝5、c＝2 時 H＝5。"
+      },
+      {
+        "id": "303d2b48ae0e0417dbde063d8f51ed67b1b26ac83e903ae3fdbb5499ffb8da87",
+        "status": "fixed",
+        "reason": "已區分宿主預算 M 與實際框高 H，將控制區斷言移至收合後，並明定 U1 待決頁的 KNOWN 過渡處理。"
+      },
+      {
+        "id": "2843d923374251569a8cd3395f6a423e84264ca8bd911995dbf71d1426429c5c",
+        "status": "not_fixed",
+        "reason": "L3 附註輸入仍未明定隱藏換卡器，可能需四列而超過容量三列；亦未保證長選項與可點的 o 看全部能同列容納。"
+      },
+      {
+        "id": "d4a12dabe05bd932691f231c06e49f27633bb0a4215edeee93d2463de77a8fbb",
+        "status": "fixed",
+        "reason": "已統一依 ctrlCap 與實際列數選階、移除高度強制降階，並明定雙欄單列換卡器的 p/n 契約及 L5 的 key:enter。"
+      },
+      {
+        "id": "8311a9ef1fabaed267bc64a2f82bb5900cdbcc54f73a778300c41ffcbe4ea741",
+        "status": "not_fixed",
+        "reason": "未提供補齊且修正的 mock 矩陣；資訊區僅一列時，分類標題與第六項仍同時宣稱不可截，缺少明確取捨。"
+      },
+      {
+        "id": "af8306d495ed63f6c721a70e3b087ed71085ae56435e063d89776a9bc59d5473",
+        "status": "fixed",
+        "reason": "每次指令使用新 nonce 且僅在 nonce 改變時切頁；跨外掛開啟受阻時停止 U4 並回報 PM，維持 D4。"
+      }
+    ],
+    "not_fixed_ids": [
+      "2843d923374251569a8cd3395f6a423e84264ca8bd911995dbf71d1426429c5c",
+      "8311a9ef1fabaed267bc64a2f82bb5900cdbcc54f73a778300c41ffcbe4ea741"
+    ],
+    "error": null,
+    "attempts": [
+      {
+        "seat_id": "recheck_chair",
+        "attempt": 1,
+        "usage": null,
+        "duration_ms": 29571,
+        "outcome": "answered"
+      }
+    ],
+    "usage": null,
+    "duration_ms": 29571,
+    "source_artifact_sha256": "cbfd2bed613da9f82dc93e00ee6563b94403e45768f5f3a0f772487795d65258"
+  }
+}
