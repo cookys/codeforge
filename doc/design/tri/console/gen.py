@@ -112,7 +112,7 @@ def compose(W,H,f):
         if f['state'] in ('E','X') and tab in (2,8): hints = [('Esc','回輸入框')]
         elif f['id'] == '2-L2': hints = [('a/b/c','選'),('↑↓','捲'),('PgUp/PgDn','捲來龍去脈'),('g','複製網址')]
         elif f['id'] == '2-P': hints = [('y','確認送出'),('x','取消')]
-        elif long: hints = [('↑↓','捲'),('PgUp/PgDn','捲來龍去脈'),('Esc','回輸入框')]
+        elif long: hints = ([('a/b/c','選')] if tab in (2,8) else []) + [('↑↓','捲'),('PgUp/PgDn','捲來龍去脈'),('Esc','回輸入框')]
     hint = []
     for k,d in hints:
         if hint: hint.append(G(' · '))
@@ -121,6 +121,10 @@ def compose(W,H,f):
     count = min(max(len(reply), 6), 7)
     visible = reply[:count]
     if len(reply)>count: visible[-1] = f'⋯ 下面還有 {len(reply)-count+1} 列'
+    if f['id'] == '8-L':
+        # 80x24: c is below the fold; wide sizes show every option and no fold notice.
+        opts = [x for x in reply if x != '還有選項沒看到']
+        visible = opts[:3] + ['⋯ 下面還有 1 列 · 還有選項沒看到'] if W < 110 else opts
     if narrow:
         compact = '  '.join(('▸' if i == 0 else '·') + x for i,x in enumerate(ix))
         if tab == 2 and state_not_missing(f):
@@ -137,7 +141,7 @@ def compose(W,H,f):
             # The option segment begins at the same column as in v2 for the R6 probe.
             rr = [T('    '),T(right[:2],'merged'),T(right[2:])] if right.startswith(('a:','b:','c:')) else [T(right)]
             band.append([G('│ ')]+v.pad(v.fit([T(left)],34),34)+[G(' │ ')]+v.pad(v.fit(rr,W-41),W-41)+[G(' │')])
-        band.append(v.hline('╰',[T('p/n 換張' if tab == 2 else 'j/k 換筆','inactive')],lw)+v.hline('┴',hint,rw-1)+[G('╯')])
+        band.append([G('╰'+'─'*(lw-1))]+v.hline('┴',hint,rw-1)+[G('╯')])
     st = dict(mode='card',pane='ctx',focus=0,ans={})
     status = v.status_line(W,st)
     if f['id'] == '2-X':
