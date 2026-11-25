@@ -676,7 +676,7 @@
   {
     "id": "r1-rev5",
     "name": "r1-rev5",
-    "plain": "r1-rev5",
+    "plain": "R1 第五版退件",
     "ap_sha": null,
     "date": "2026-11-25",
     "kind": "rejected",
@@ -696,7 +696,7 @@
   {
     "id": "tui-v2",
     "name": "tui-v2",
-    "plain": "tui-v2",
+    "plain": "TUI 第二版設計稿",
     "ap_sha": null,
     "date": "2026-10-10",
     "kind": "draft",
@@ -816,7 +816,7 @@
   {
     "id": "v74-master-detail",
     "name": "v74-master-detail",
-    "plain": "v74-master-detail",
+    "plain": "待決頁左右雙欄",
     "ap_sha": null,
     "date": "2026-11-23",
     "kind": "draft",
@@ -836,7 +836,7 @@
   {
     "id": "v74-pending-d-neon",
     "name": "v74-pending-d-neon",
-    "plain": "v74-pending-d-neon",
+    "plain": "待決頁 D 方案",
     "ap_sha": null,
     "date": "2026-11-23",
     "kind": "draft",
@@ -856,7 +856,7 @@
   {
     "id": "v74-pending-two-options",
     "name": "v74-pending-two-options",
-    "plain": "v74-pending-two-options",
+    "plain": "待決頁兩種方案",
     "ap_sha": null,
     "date": "2026-11-23",
     "kind": "draft",
