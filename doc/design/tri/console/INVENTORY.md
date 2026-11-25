@@ -11,3 +11,9 @@
 - [inv-1-3.md](inv-1-3.md)
 - [inv-4-6.md](inv-4-6.md)
 - [inv-7-9.md](inv-7-9.md)
+
+## 第 0 輪審查後的更正
+- 待決和待辦的選項鍵只有 a–c（keys.ts:45-47、v74/contract.ts:72）。inv-1-3 寫成 a–e、inv-7-9 寫「含 d」都是錯的。
+- 待決頁還有 f 鍵：填入建議選項（keys.ts:57）。inv-1-3 漏列。
+- 寫成「可捲動」的段落，依據的 frameRows（frame.ts:264-269）只是照傳入的 scroll 切片，再顯示剩幾列。能不能用鍵捲，要看 pane 有沒有接線；盤點表裡的「可捲動」都只代表有截斷提示。
+- 每個 agent 的 tok/s 來源是 speedview.ts:118 的 agentsColumn，目前畫在鍛頁（pages/forge.ts），不在 9 個分頁裡。
