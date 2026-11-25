@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "artifact_type": "plan_review_artifact",
+  "ticket": "01M836C68Y0EC65D15WWNKNMKJ",
+  "logical_plan_id": "codeforge:knowledge-pipeline-d4",
+  "session_id": "54e614a3-2ed1-479b-968c-cf966dd737db",
+  "session_key": "bfa774569610623236d46463d4c84d939cf6777af78d6222d934356fd3bf0e8e",
+  "generation": 2,
+  "verdict": "CONDITIONAL",
+  "semantic_verdict": "CONDITIONAL",
+  "terminal": true,
+  "policy_reason": "generation_cap_requires_depth_0_adjudication",
+  "rubric_sha256": "d8d21b375ac63f7777e0001f0a616c31e7edbcae53c521b616087ee47593014f",
+  "manifest_sha256": "883a01b922ce9934656bbc46243f9fa45ab006e9ba7d2ac7388253fd9a3a9e48",
+  "context_sha256": null,
+  "plan_sha256": "df0be679b6bd598555c7f3634039b91ae454f0dcf9c5ae20be47cd8fed03bca5",
+  "plan_path": "doc/plans/2026-11-23-knowledge-pipeline.md",
+  "plan_git_blob_sha": "15ec70748ed1367b930dac3d0403286a57a52ff9",
+  "repo_head_sha": "d34c2ad3783f6164a3eb4a9127a819b69e172cc0",
+  "plan_dirty_vs_head": false,
+  "growth_ratio": {
+    "numerator": 12561,
+    "denominator": 10595
+  },
+  "growth_warning": false,
+  "transport_status": "complete",
+  "attempts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "agy",
+          "model": "gemini-4-carbon-high",
+          "operation": "plan-review",
+          "request_digest": "dcecb2e717c1d9db2bf6bce43e56a5efe2c638360d89553fedef0b4819cbfde9"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "8bff97e96c761348445fc9c6dd8dde254ffe1528da4994c70178b435dd6c04ed",
+          "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "<tmp>/dispatch-author-log-hpkAaw",
+          "digest": "8bff97e96c761348445fc9c6dd8dde254ffe1528da4994c70178b435dd6c04ed"
+        },
+        "receipt_digest": "519cdd3c39591db479df19ac33ae290366f804583ccafd26e849f70488d2ab90"
+      },
+      "transport_status": "success",
+      "usage": null,
+      "duration_ms": 783071,
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    },
+    {
+      "seat_id": "deep",
+      "target_id": "deep",
+      "attempt": 1,
+      "transport_envelope": {
+        "schema_version": 1,
+        "artifact_type": "runner_transport_envelope",
+        "request_binding": {
+          "runner": "codex",
+          "model": "gpt-6.1-sol",
+          "operation": "plan-review",
+          "request_digest": "83daa8e3340a5244f34e64db60722ff8f97769747a6858ee107fd9768ee27681"
+        },
+        "outcome": {
+          "classification": "success",
+          "exit_status": 0,
+          "signal": null,
+          "error_code": null
+        },
+        "output_digests": {
+          "stdout_sha256": "a5259a1dfd8124bdd71562d0e56277161a64acd2207424c1f20282518112240d",
+          "stderr_sha256": "319dd2d24b27671554699b76bb32fb656fb5d5a988f05b22a399a9994940e0cb"
+        },
+        "private_raw_reference": {
+          "kind": "private-file",
+          "locator": "<tmp>/dispatch-author-codex-1LxtGb/stdout",
+          "digest": "a5259a1dfd8124bdd71562d0e56277161a64acd2207424c1f20282518112240d"
+        },
+        "receipt_digest": "07a18cb51ea4383b33132ad37b4a86f2300a935fe2951494423e64c4b31f60be"
+      },
+      "transport_status": "success",
+      "usage": null,
+      "duration_ms": 61997,
+      "parser_status": "strict",
+      "semantic_status": "available",
+      "unratified_semantic_status": "unavailable"
+    }
+  ],
+  "substitutions": [],
+  "reviewer_verdicts": [
+    {
+      "seat_id": "chair",
+      "target_id": "chair",
+      "family": "google",
+      "runner": "agy",
+      "model": "gemini-4-carbon-high",
+      "verdict": "CONDITIONAL"
+    },
+    {
+      "seat_id": "deep",
+      "target_id": "deep",
+      "family": "openai",
+      "runner": "codex",
+      "model": "gpt-6.1-sol",
+      "verdict": "CONDITIONAL"
+    }
+  ],
+  "findings": [
+    {
+      "rubric_id": "R7",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 2.5 節、第 4 節段 1 與段 3 (i)-(iii)、第 7 節、第 10.2 節 T3（本機候選區與 PM pane 待決卡）",
+      "claim": "段 3 將命中禁詞、路徑、別名或 ≥20 字元逐字原文的候選留在候選區標紅，並交由 T3 的『PM pane 待決卡（knowledge-review）』批次人審與改寫，但未隔離共用家目錄主機上的跨席 spool 權限，也未禁止標紅候選跨席或跨主機傳送至 PM pane，導致未去識別與含逐字內容的候選在通過段 3 前離開原席或原主機。",
+      "evidence": "第 4 節段 1 明言『在共用家目錄的主機上分不出同機別席』，第 10.1 節指出機隊橫跨 12 台主機；段 3 (i)(ii) 規定命中禁詞或 ≥20 字元共同子串的候選『留在候選區並標紅，由人決定改寫或丟棄』，段 3 (iii) 與 T3 則交由『knowledge-review，PM pane 待決卡一次審一批』處理，與第 2.5 節及 R7『raw transcript 與逐字內容不離開原主機；跨席只流通去識別的候選教訓』及第 7 節『離開本機的只有通過段 3 閘門的候選教訓』直接衝突。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §2.5, §4 段 1 & 段 3 (i)-(iii), §7, §10.1, §10.2 T3",
+      "repair": "明確規定：(1) 本機候選區 spool 必須依 seat 分目錄隔離並限制存取權限，禁止共用家目錄主機上的同機他席讀取；(2) 凡命中段 3 (i) 或 (ii) 而標紅的候選，其內容絕對不得進入任何跨席或跨主機的 PM pane 待決卡 payload（PM pane 最多僅能顯示不含內容的本機待處理筆數提醒，標紅項目只能在原主機原席位本機 CLI 直接丟棄或改寫並重過 (i)(ii) 綠燈後，才允許跨席送審）。",
+      "failure_scenario": "某台遠端主機（或共用家目錄主機上的工作席 W1）產出的候選夾帶真實帳號別名、本機路徑或 ≥20 字元 L0 逐字片段，被段 3 (i)/(ii) 標紅留在 spool 等待『由人決定改寫或丟棄』；T3 的 PM pane 待決卡在彙整 12 台主機或同機各席待審清單時，將該筆標紅候選內容讀取並傳送到 PM 席位／中控畫面供人改寫，導致逐字原文與未去識別資訊在通過閘門前即離開原席與原主機。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "ce2c63b921dfe5b8041ad9b5dc3362e40500affde36641dd094e5aa56c43c67c",
+      "recheck_reason": "T3 雖改為命中機器閘門的候選不進入候選區與審查入口，但仍未規定共用家目錄主機上的本機候選區 spool 依 seat 分目錄隔離與存取權限限制（亦無同機跨席禁讀驗收），無法防止未經人審的候選被同機他席讀取；且 2.5 節仍無條件寫人審發生在 PM pane 待決卡。"
+    },
+    {
+      "rubric_id": "R8",
+      "class": "decision-now",
+      "severity": "blocking",
+      "affected_surface": "第 4 節段 1-2、第 7 節第 1 點、第 10.2 節 T1-T4 依賴與起算規則、第 10.2.1 節",
+      "claim": "第 10.2 節允許 T1–T3（含跨席審查入口 PM pane 待決卡）在未取得新授權卡前，只要 01M83DFC1Q 上線即可處理真實 L0，造成未授權前他席（PM 席）即可經 T3 接觸各席真實對話衍生物；同時第 7 節承諾的『段 2 席位白名單（排除中國營運模型席與未授權席）』在 T1–T4 任務表中完全沒有落地檢查。",
+      "evidence": "第 10.2 節寫明『T1–T3 全在本機，01M83DFC1Q 上線前只跑假資料，上線後只讀 seat＝本席的 L0，不需要卡；只有 T4 起要等授權卡答覆』，但 T3 已包含『PM pane 待決卡（pane 畫面 codeforge）』；此外第 7 節第 1 點規定『段 2 以席位白名單（本機設定，列出允許的席位位址）過濾；不在白名單的席位 L0 不進候選』，但第 4 節段 1 與第 10.2 節 T1–T4 只檢查『seat＝本席且 model 在白名單內』，未檢查該執行席本身是否列於授權的席位白名單內。",
+      "evidence_reference": "doc/plans/2026-11-23-knowledge-pipeline.md §2.5, §4 段 1, §7, §10.2 T1-T4, §10.2.1",
+      "repair": "修正兩處授權邊界：(1) 在取得新授權卡答覆前，T3 僅允許在各席本機沙箱針對合成假資料或僅限本席自審運作，禁止將真實 L0 產出的候選掛入跨席／跨主機的 PM pane 待決卡（將跨席 PM pane 串接明確列為依賴『授權』）；(2) 在 T1（或 T1b／段 2）與 T4 明確補入『本機席位白名單（依授權卡核准範圍設定）』檢查，不在席位白名單內的席位即使滿足 seat＝本席亦一律 fail-closed 不產出候選。",
+      "failure_scenario": "fleet 單 01M83DFC1Q 先於操作員新授權卡完成上線：一方面某個未獲授權（或透過包裝層轉接外部未核准端點但回報白名單模型名稱）的席位在本機執行 T1 時，因滿足 seat＝本席而直接讀取真實 L0 產出候選；另一方面各工作席在未獲新授權卡前就透過 T3 將真實 session 提煉的候選送交 PM 席的 PM pane 待決卡批次檢視，違反未獲授權前只限各席自用原型的限制。",
+      "blocks_next_slice_or_immediate_integrity": true,
+      "cannot_defer_to_spike": true,
+      "rubric_mapped": true,
+      "candidate_blocker": true,
+      "provenance": [
+        {
+          "seat_id": "chair",
+          "runner": "agy",
+          "model": "gemini-4-carbon-high"
+        }
+      ],
+      "duplicate_reports": [],
+      "disposition": null,
+      "fingerprint": "847e443899a883e34b54f59ee3c51f4f18cce0746faf0c33054ebdf09957bb58",
+      "recheck_reason": "T1 雖補入本機席位與模型白名單且 T3 註明授權後才開 PM pane，但 T3 依賴欄與驗收未納入授權閘控，10.2 起算規則與 10.2.1 仍宣稱「只有 T4 起需要授權」（與 T3 跨席審查矛盾且使其落於授權卡範圍外），且 T4 仍缺依授權卡核准範圍檢查席位白名單。"
+    }
+  ],
+  "backlog_candidates": [],
+  "accepted_blocker_count": 0,
+  "repair_authorized": false,
+  "next_generation": null,
+  "reviewed_at": "2026-11-25T22:09:24.190Z",
+  "usage": null,
+  "duration_ms": 366816,
+  "recheck": {
+    "status": "failed",
+    "blocker_count": 3,
+    "seat": {
+      "id": "recheck_chair",
+      "family": "google",
+      "runner": "agy",
+      "model": "gemini-4-carbon-high",
+      "effort": "high"
+    },
+    "excluded_seats": [],
+    "results": [
+      {
+        "id": "206c0d2f57ab9fe550bb4e31cc7f5e0ac11074940c154b9a2cca3174c38f1f36",
+        "status": "fixed",
+        "reason": "T4 已改採五欄正規化鍵去重（含只差一欄近似對 0/5 被併測試）、補入 KR2 的 5/5 人工重複合併驗收，並規定 rebase 衝突時丟棄本機 commit 重做且新增雙 lane 併發僅產單一教訓檔與雙證據檔的實測驗收。"
+      },
+      {
+        "id": "ce2c63b921dfe5b8041ad9b5dc3362e40500affde36641dd094e5aa56c43c67c",
+        "status": "not_fixed",
+        "reason": "T3 雖改為命中機器閘門的候選不進入候選區與審查入口，但仍未規定共用家目錄主機上的本機候選區 spool 依 seat 分目錄隔離與存取權限限制（亦無同機跨席禁讀驗收），無法防止未經人審的候選被同機他席讀取；且 2.5 節仍無條件寫人審發生在 PM pane 待決卡。"
+      },
+      {
+        "id": "847e443899a883e34b54f59ee3c51f4f18cce0746faf0c33054ebdf09957bb58",
+        "status": "not_fixed",
+        "reason": "T1 雖補入本機席位與模型白名單且 T3 註明授權後才開 PM pane，但 T3 依賴欄與驗收未納入授權閘控，10.2 起算規則與 10.2.1 仍宣稱「只有 T4 起需要授權」（與 T3 跨席審查矛盾且使其落於授權卡範圍外），且 T4 仍缺依授權卡核准範圍檢查席位白名單。"
+      }
+    ],
+    "not_fixed_ids": [
+      "ce2c63b921dfe5b8041ad9b5dc3362e40500affde36641dd094e5aa56c43c67c",
+      "847e443899a883e34b54f59ee3c51f4f18cce0746faf0c33054ebdf09957bb58"
+    ],
+    "error": null,
+    "attempts": [
+      {
+        "seat_id": "recheck_chair",
+        "attempt": 1,
+        "usage": null,
+        "duration_ms": 366816,
+        "outcome": "answered"
+      }
+    ],
+    "usage": null,
+    "duration_ms": 366816,
+    "source_artifact_sha256": "c84b5b5a5c0e086251e4625a53b15f06bf8d0f06e6885cbe85e19e2bba8b0eed"
+  }
+}
