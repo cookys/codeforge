@@ -11,3 +11,15 @@
 
 檢查：check3 204/204 通過，R6 反向探針通過，render 204 張 BAD 0。
 這 3 條修正本身還沒有經過異質審查。
+
+## 驗證輪（PM 01M89W3F 裁 A：只驗 r3 的 3 條修正）
+
+- codex（review/r3v-codex.md，對 edea1733b9d4）：
+  - 第 3 條「送出預覽」：已修。
+  - 第 1 條「fleet 數字」：寬畫面已修；80x24 最底列被截成「fleet…」，數字看不到。
+  - 第 2 條「掃描指令」：指令裡的 `<autopilot>` 是佔位符，照抄會被 shell 當成重新導向。
+  - 這兩條已在下一個 commit 修好：
+    - 80 欄的 statusline 拿掉配額長條和重置時間，fleet 段可以完整顯示，例如「fleet 8 lane 執行中」、「fleet 8 lane ⏶ 11 分鐘前」、「fleet —」。
+    - 指令改成實際路徑：`node ~/projects/autopilot/scripts/repo-residue-sweep.js scan --repo .`。
+- opencode：沒有產出。dispatch 回報 question_suspected，agent exit 1，也沒有 commit。第二家改由 claude-native fable 5.2 審，材料直接貼在 brief 裡。
+- 為什麼第 2、3 輪只有一家審：r2 的 agy 認證失敗（auth_failed），r3 的 grok 額度用完（quota_exhausted），驗證輪的 opencode 異常結束。

@@ -317,7 +317,7 @@ step(id='6-L', tab=6, state='L', title='說明很長', ix=RS_IX, compact='▸舊
 step(id='6-X', tab=6, state='X', title='缺源', ix=[dim('要你處理'), err('  殘留讀不到'), dim('外掛載入 1'), '  forge-stats 從主 clone 載入'], compact='殘留讀不到  ·外掛 1',
      reply=['殘留掃描讀不到，不知道有沒有要你處理的。', '外掛載入另有資料，照常。'], pin=[err('⊘ residue 掃描失敗（結束碼 2）')], detail=['上次成功掃描 08:30。'], key=NEXT, next='6-S')
 step(id='6-S', tab=6, state='S', title='過時', ix=[dim('要你處理 2（2 小時前）')] + RS_IX[1:], compact='▸舊 worktree tri-merge（過時）  ·外掛 1',
-     reply=['殘留清單是 2 小時前掃的；tri-merge 可能已經處理掉。', '人工處理前先在主 clone 重新掃描：', '  node <autopilot>/scripts/repo-residue-sweep.js scan --repo .'], pin=[warn('⚠ residue 2 小時前（過時）')], detail=['路徑 .claude/worktrees/tri-merge'],
+     reply=['殘留清單是 2 小時前掃的；tri-merge 可能已經處理掉。', '人工處理前先在主 clone 重新掃描：', '  node ~/projects/autopilot/scripts/repo-residue-sweep.js scan --repo .'], pin=[warn('⚠ residue 2 小時前（過時）')], detail=['路徑 .claude/worktrees/tri-merge'],
      key=NEXT, next='6-X2')
 step(id='6-X2', tab=6, state='X2', title='缺源（外掛載入）', ix=RS_IX[:6] + [err('  外掛載入讀不到')], compact='▸舊 worktree tri-merge  ·外掛載入讀不到',
      reply=['load_source 讀不到，不知道 forge-stats 是從哪裡載入的。', '殘留清單照常。'], pin=[err('⊘ load_source 讀不到')], detail=['上次讀到：主 clone（develop）。'], key='7', next='7-N')
@@ -575,6 +575,8 @@ def prompt(W, quota, st0=None):
         q = [T('5h —', 'inactive'), G(' │ '), T('7d —', 'inactive')]
     elif quota == 'stale':
         q = [T('5h 42% ', 'warning'), G('⏶', 'warning'), T(' 18 分鐘前', 'warning'), G(' │ '), T('7d 18% ', 'warning'), G('⏶', 'warning')]
+    elif W < 100:  # 80 欄：拿掉長條和重置時間，讓 fleet 段放得下（r3v codex 1）
+        q = [T('5h 42%'), G(' │ '), T('7d 18%')]
     else:
         q = [T('5h '), G('▰▰▰▰▱▱▱▱▱▱', 'success'), T(' 42% 重置 2h10m'), G(' │ '), T('7d '), G('▰▰▱▱▱▱▱▱▱▱', 'success'), T(' 18%')]
     st = [T(' codeforge'), G(' │ '), T('develop'), G(' │ ')] + q + [G(' │ ')] + fleet_seg(st0 or {}) + [G(' │ '), T('記憶 L1 214 條')]

@@ -34,7 +34,7 @@
 ╭─ 6 殘留 · 清單 ────────────────────┬─ 過時 ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── [-] ─╮
 │ 要你處理 2（2 小時前）             │ 殘留清單是 2 小時前掃的；tri-merge 可能已經處理掉。                                                                                                                      │
 │ ▸ worktree tri-merge（4 天沒動）   │ 人工處理前先在主 clone 重新掃描：                                                                                                                                        │
-│   分支 fix/verify-old（沒合併）    │   node <autopilot>/scripts/repo-residue-sweep.js scan --repo .                                                                                                           │
+│   分支 fix/verify-old（沒合併）    │   node ~/projects/autopilot/scripts/repo-residue-sweep.js scan --repo .                                                                                                  │
 │ 自動清理 1                         │                                                                                                                                                                          │
 │   過期暫存：3 個 handoff           │                                                                                                                                                                          │
 │ 外掛載入 1                         │                                                                                                                                                                          │
