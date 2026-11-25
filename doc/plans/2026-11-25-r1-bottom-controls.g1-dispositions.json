@@ -1,0 +1,67 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "codeforge:r1-bottom-controls-2026-11-25",
+ "generation": 1,
+ "findings": [
+  {
+   "fingerprint": "56cd9f57f678d3d1c91d7168a43d5edf2e150c58759fb6378ca9306534787b38",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 3.3: L5 Enter opens the docked decide page at the same card."
+  },
+  {
+   "fingerprint": "055d72f7534019400a618e2f85f1aa05da3684c793542c3c02dbf6a94e4797d2",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 4: mocks stay as the independent reference; screenshots sit beside them, never replace them."
+  },
+  {
+   "fingerprint": "4c5736748ac912b96e8494e01803b1a029b2cfb4da1aaa6bb08ef308e7524474",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded 3.1: H from rendered rows with top padding so info rows >= control rows; non-ladder pages keep bottom ctrlCap-1 rows plus an overflow row; dev assertion on controls > ctrlCap; 3.3 tier picked from computed rows, not the fixed table."
+  },
+  {
+   "fingerprint": "d1ce56835c4eb55b1872995c573efdb32093c71a730eef3fae92383035654ba3",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded 3.3: per-tier required press table (L0-L5), note-input, submit-preview and o-overflow states defined inside ctrlCap; long note truncated in-row; 5 adds R1-lower runs for the three states."
+  },
+  {
+   "fingerprint": "54c21db41fb530a9d61a8f4d521337ae66860376bc0518ea6e95f97b1df37633",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded 4: 8-cell comparison matrix stated; boxed H=13 and H=17 (C) mocks and forge page mocks added; docked 80/200 described as deltas of 120x40; docked mock reordered to the 3.2 info order with pinned header and PgUp/PgDn."
+  },
+  {
+   "fingerprint": "edb50e2467ee699d874134fd7ea8bdd22c28b99db602937c92c46be2430a76db",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded 3.6 and 7: cross-plugin contract (host opens live Pane with view.page) plus fallback; new AP units U3b (receiver) and U3c (missing fields); U0 parity table and probe first; U4 waits for U3b/U3c."
+  },
+  {
+   "fingerprint": "f532cf4aae38ae6c2c8a8b1223969795abd540c951a680b8cf7849fb70ad4a28",
+   "disposition": "accepted_blocker",
+   "rationale": "Folded 3.4: dual-column threshold moved to info rows >= 6; card selector 1 row in dual-column so the list is not duplicated; recorded as deviation D5 for PM confirmation."
+  },
+  {
+   "fingerprint": "36bed622c96eb0b2298a87eede1037e20e0d8f087303852879c06c8a661f88b6",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 5: grid-frames adds host heights 5/7/13/17."
+  },
+  {
+   "fingerprint": "296018f1185dfffabb8bd73832de69926d2d433b8ce3b0a48afed401e3f43b18",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 3.3 and 5: letters from pickKeys over all options; hidden options selectable; [D,C,B,A] case."
+  },
+  {
+   "fingerprint": "dd4284978559b9fd456cb993375b834156461e044b012720e09324ea6d1f44b6",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 5: baseline compared by failing-test name subset; cursor clamp test."
+  },
+  {
+   "fingerprint": "7391dddc64b6fd42d937b327f153b50d12d7e998acbfcc111ff829c3e097c303",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 5: width-80 CJK title truncation test for band."
+  },
+  {
+   "fingerprint": "199b7fd7248f3085156c64895a46b6ac72a7e8cb0e4826472e7ee70833698745",
+   "disposition": "accepted_nonblocking",
+   "rationale": "Folded 5: every test command runs under sandbox dirs, not only screenshots."
+  }
+ ]
+}
