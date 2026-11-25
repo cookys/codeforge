@@ -3,7 +3,7 @@
 set -euo pipefail
 R1_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export R1_DIR
-export R1_CHROME="${R1_CHROME:-/home/team/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell}"
+export R1_CHROME="${R1_CHROME:-/home/demo/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell}"
 python3 - <<'PY'
 import html
 import json

@@ -6,7 +6,7 @@
       {
         "date": "2026-11-05",
         "quote": "我覺得 codeforge / autopilot 的 mod 長法應該是選單操作區在下，然後資訊往上長，才能固定操作區，不用一直移動視覺跟控制介面？",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:31"
+        "ref": "../../pane-operator-records.md:31"
       }
     ],
     "versions": [
@@ -52,7 +52,7 @@
       {
         "date": "2026-11-20",
         "quote": "pane must be improved from the approved ux-v7 page, not redesigned",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:172"
+        "ref": "../../pane-operator-records.md:172"
       }
     ],
     "versions": [
@@ -100,7 +100,7 @@
       {
         "date": "未記錄",
         "quote": "最下面 status band 可以變成左右設計然後把 UI 調好看一點、分析哪些重要放出來(縮起來維持一行) 然後後面展開縮起來固定位置不要跟 claude code [-] 衝突，然後用長一點",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:206"
+        "ref": "../../pane-operator-records.md:206"
       }
     ],
     "versions": [
@@ -124,7 +124,7 @@
       {
         "date": "2026-11-05",
         "quote": "codeforge 那邊不是應該也整合 forge-stat 那欄整合進去再一起就好? 你重做了一個新的?",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:35"
+        "ref": "../../pane-operator-records.md:35"
       }
     ],
     "versions": [
@@ -207,7 +207,7 @@
       {
         "date": "未記錄",
         "quote": "你這板很難看也很難用吧? 叫他退回去給 fable / astra 評論怎樣修改? 照本來的 v7.4 設計方式去擴充? 這完全沒考慮操作跟視覺動線",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:209"
+        "ref": "../../pane-operator-records.md:209"
       }
     ],
     "versions": [
@@ -223,7 +223,7 @@
       {
         "date": "未記錄",
         "quote": "不是只有視覺動線根操作動線、包含 UIUX、認知負擔、資訊階層、易記易用易學、 fancy TUI ..etc , 本來那版的框架底不錯為什麼改成這樣?",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:210"
+        "ref": "../../pane-operator-records.md:210"
       }
     ],
     "versions": [
@@ -239,7 +239,7 @@
       {
         "date": "未記錄",
         "quote": "也許 bottom-pane folding 按鈕可以做成左右 deco , 兩邊都可以 fold/unfold ? 記得補晚上跟你說的 scroll and prev/next 在內藍隊畫框得左右邊線?",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:218"
+        "ref": "../../pane-operator-records.md:218"
       }
     ],
     "versions": [],
@@ -253,7 +253,7 @@
       {
         "date": "2026-11-23",
         "quote": "two equal columns when band bodyColumns >= 83 (>= 40 each + 3 gutter, 20 CJK chars per line), else single column, +-2 hysteresis, maxRows < 10 -> one-line card list",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:185"
+        "ref": "../../pane-operator-records.md:185"
       }
     ],
     "versions": [
@@ -269,7 +269,7 @@
       {
         "date": "2026-11-20",
         "quote": "hot-zone bottom anchoring with content-driven height (cap 0.6 lifted, up to full height)",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:236"
+        "ref": "../../pane-operator-records.md:236"
       }
     ],
     "versions": [],
@@ -283,7 +283,7 @@
       {
         "date": "2026-11-05",
         "quote": "answering several cards in a row in the old panel makes focus/visual flow jump",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:45"
+        "ref": "../../pane-operator-records.md:45"
       }
     ],
     "versions": [
@@ -299,7 +299,7 @@
       {
         "date": "2026-11-10",
         "quote": "options fixed (not scrolled), background below options, only live keys, Esc at the right",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:122"
+        "ref": "../../pane-operator-records.md:122"
       }
     ],
     "versions": [
@@ -318,7 +318,7 @@
       {
         "date": "2026-11-06",
         "quote": "你有考慮我平常用螢幕會很寬嗎? 偵測我目前寬度?",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:74"
+        "ref": "../../pane-operator-records.md:74"
       }
     ],
     "versions": [],
@@ -375,7 +375,7 @@
       {
         "date": "未記錄",
         "quote": "也許你以後要再重複做要寫第幾次?",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:219"
+        "ref": "../../pane-operator-records.md:219"
       }
     ],
     "versions": [],
@@ -389,7 +389,7 @@
       {
         "date": "未記錄",
         "quote": "AbovePrompt maxRows is read-only; in fullscreen the bottom slot is capped at half the terminal rows including the prompt, outside fullscreen it is the terminal height",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:211"
+        "ref": "../../pane-operator-records.md:211"
       }
     ],
     "versions": [],

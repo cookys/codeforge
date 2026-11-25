@@ -8,7 +8,7 @@
 [38;5;246m●[39m Checking plugin directory and live dir permissions                            
 [38;5;246m  ⎿  1 action not run · permission denied[39m                                       
      [2m│[0m [38;5;246mReason: PreToolUse:Bash hook error: 這個操作會讀到真正的 Claude 預設設定
-[39m     [2m│[0m [38;5;246m目錄（/home/team/.claude）。依紅線要操作員本人的卡才能讀；自己這席的 
+[39m     [2m│[0m [38;5;246m目錄（/home/demo/.claude）。依紅線要操作員本人的卡才能讀；自己這席的 
 [39m     [2m│[0m [38;5;246msession 檔案（~/.claude/projects/<本專案>/）不受限。 [claude-home-…[39m      
 [38;5;246m  ⎿  $ ls -la /tmp/v74keys-qxu4wk4m/data/home/.claude/ 2>&1; ls -d [39m        
      [38;5;246m/tmp/v74keys-qxu4wk4m/data/home/.claude/plugins/* 2>&1 | head; ls -ld [39m     

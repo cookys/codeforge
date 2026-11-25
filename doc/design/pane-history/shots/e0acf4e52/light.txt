@@ -1,7 +1,7 @@
                                                                       │                                               ✕
  ▐▛███▛█   Claude Code v2.1.328                                       │現況
 ▝▜██████▀  Haiku 5.5 · Claude Ultra                                   │
- ▝▝   ▝▝   /home/team/.tmp/pane-history-home-43sn1y3v/demo            │
+ ▝▝   ▝▝   /home/demo/.tmp/pane-history-home-43sn1y3v/demo            │
                                                                       │
                                                                       │
                                                                       │

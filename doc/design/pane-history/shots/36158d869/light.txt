@@ -1,7 +1,7 @@
                                                                       │                                               ✕
  ▐▛███▛█   Claude Code v2.1.328                                       │›  現況   待決   派工   審查   用量   殘留
 ▝▜██████▀  Haiku 5.5 · Claude Ultra                                   │ 艦隊   ?
- ▝▝   ▝▝   /home/team/.tmp/pane-history-home-iqsq9bkh/demo            │─────────────────────────────────────────────────
+ ▝▝   ▝▝   /home/demo/.tmp/pane-history-home-iqsq9bkh/demo            │─────────────────────────────────────────────────
                                                                       │● 進行中  demo · 已進行 3h26m
                                                                       │工作階段 $— · 本機今日 $— · ctx 11%
                                                                       │

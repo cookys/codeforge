@@ -273,7 +273,7 @@
     },
     "sources": [
       "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:32",
-      "無現成實拍（packet 內文字截圖在 /home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r1-packet.md，非 .ans）",
+      "無現成實拍（packet 內文字截圖在 /home/demo/projects/codeforge/doc/design/ux-gate/pane-batch2/r1-packet.md，非 .ans）",
       "沙盒假資料；120x40，HOME 為獨立設定複本；原有 dark.* 由 docs/r1-lineage/shots 按 sha 原樣收錄，其餘由 tools/shoot.py 重拍"
     ],
     "lineage_sha": "083cf2e9（r4 merge）；整合 e0acf4e5"
@@ -298,7 +298,7 @@
     },
     "sources": [
       "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:33",
-      "/home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r1-packet.md（文字）；原截圖不在 repo",
+      "/home/demo/projects/codeforge/doc/design/ux-gate/pane-batch2/r1-packet.md（文字）；原截圖不在 repo",
       "沙盒假資料；120x40，HOME 為獨立設定複本；原有 dark.* 由 docs/r1-lineage/shots 按 sha 原樣收錄，其餘由 tools/shoot.py 重拍"
     ],
     "lineage_sha": "daedf7fb（tree=13a61c0d）"
@@ -323,7 +323,7 @@
     },
     "sources": [
       "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:34",
-      "/home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r2-packet.md",
+      "/home/demo/projects/codeforge/doc/design/ux-gate/pane-batch2/r2-packet.md",
       "沙盒假資料；120x40，HOME 為獨立設定複本；原有 dark.* 由 docs/r1-lineage/shots 按 sha 原樣收錄，其餘由 tools/shoot.py 重拍"
     ],
     "lineage_sha": "cc9bde3d"
@@ -348,7 +348,7 @@
     },
     "sources": [
       "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:35",
-      "/home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r3-packet.md",
+      "/home/demo/projects/codeforge/doc/design/ux-gate/pane-batch2/r3-packet.md",
       "沙盒假資料；120x40，HOME 為獨立設定複本；原有 dark.* 由 docs/r1-lineage/shots 按 sha 原樣收錄，其餘由 tools/shoot.py 重拍"
     ],
     "lineage_sha": "91bd6682"
@@ -373,7 +373,7 @@
     },
     "sources": [
       "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:36",
-      "/home/team/projects/codeforge/doc/design/ux-gate/pane-batch2/r4-shots/（S1/S4/S5 的 80x16~160x40 文字檔，約 60 個；拍攝 sha 以 r4-spot.md 為準，推測 98cf58d0）",
+      "/home/demo/projects/codeforge/doc/design/ux-gate/pane-batch2/r4-shots/（S1/S4/S5 的 80x16~160x40 文字檔，約 60 個；拍攝 sha 以 r4-spot.md 為準，推測 98cf58d0）",
       "沙盒假資料；120x40，HOME 為獨立設定複本；原有 dark.* 由 docs/r1-lineage/shots 按 sha 原樣收錄，其餘由 tools/shoot.py 重拍"
     ],
     "lineage_sha": "98cf58d0"
@@ -398,7 +398,7 @@
     },
     "sources": [
       "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:37",
-      "/home/team/projects/codeforge/doc/design/ux-gate/v74/design-S2..S10.txt、design-narrow.txt（設計稿，不是實拍；入庫 bc9ff3c）",
+      "/home/demo/projects/codeforge/doc/design/ux-gate/v74/design-S2..S10.txt、design-narrow.txt（設計稿，不是實拍；入庫 bc9ff3c）",
       "沙盒假資料；120x40，HOME 為獨立設定複本；原有 dark.* 由 docs/r1-lineage/shots 按 sha 原樣收錄，其餘由 tools/shoot.py 重拍"
     ],
     "lineage_sha": "702c937e → ca9206d3/1955ab81/96a9bb8f/49a4787d/572f45f9"
@@ -473,7 +473,7 @@
       {
         "date": "未記錄",
         "quote": "你這板很難看也很難用吧? 叫他退回去給 fable / astra 評論怎樣修改? 照本來的 v7.4 設計方式去擴充? 這完全沒考慮操作跟視覺動線",
-        "ref": "/home/team/.tmp/cf-lane/pane-operator-records.md:209"
+        "ref": "../../pane-operator-records.md:209"
       }
     ],
     "shots": {
@@ -482,7 +482,7 @@
     },
     "sources": [
       "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:40",
-      "/tmp/claude-1001/-home-team-projects-codeforge/fe603ac8-169c-4053-ac1c-e951d9ac9f25/scratchpad/mockup2/live-shots/（fs、normal；拍攝 sha 未記錄）、/tmp/claude-1001/-home-team-projects-codeforge/fe603ac8-169c-4053-ac1c-e951d9ac9f25/scratchpad/mockup2/live-path/",
+      "/tmp/claude-1001/-home-demo-projects-codeforge/fe603ac8-169c-4053-ac1c-e951d9ac9f25/scratchpad/mockup2/live-shots/（fs、normal；拍攝 sha 未記錄）、/tmp/claude-1001/-home-demo-projects-codeforge/fe603ac8-169c-4053-ac1c-e951d9ac9f25/scratchpad/mockup2/live-path/",
       "沙盒假資料；120x40，HOME 為獨立設定複本；原有 dark.* 由 docs/r1-lineage/shots 按 sha 原樣收錄，其餘由 tools/shoot.py 重拍"
     ],
     "lineage_sha": "a5888833（merge；實作 5e3dfcc6）"
@@ -509,7 +509,7 @@
     },
     "sources": [
       "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:41",
-      "/tmp/claude-1001/-home-team-projects-codeforge/fe603ac8-169c-4053-ac1c-e951d9ac9f25/scratchpad/mockup2/live-path/{80x24,120x40,200x50}/P0..P9（.ans；mockup 路徑，拍攝 sha 未記錄）",
+      "/tmp/claude-1001/-home-demo-projects-codeforge/fe603ac8-169c-4053-ac1c-e951d9ac9f25/scratchpad/mockup2/live-path/{80x24,120x40,200x50}/P0..P9（.ans；mockup 路徑，拍攝 sha 未記錄）",
       "沙盒假資料；120x40，HOME 為獨立設定複本；原有 dark.* 由 docs/r1-lineage/shots 按 sha 原樣收錄，其餘由 tools/shoot.py 重拍"
     ],
     "lineage_sha": "443278024（codex）..734750b7"
@@ -535,7 +535,7 @@
     },
     "sources": [
       "git:docs/r1-lineage:doc/design/r1-lineage/lineage.md:42",
-      "/home/team/projects/codeforge/doc/design/ux-gate/band-layout/*.md（評審文字，非 .ans）；原實拍 r40-r47-band 在別的 scratchpad，已不在",
+      "/home/demo/projects/codeforge/doc/design/ux-gate/band-layout/*.md（評審文字，非 .ans）；原實拍 r40-r47-band 在別的 scratchpad，已不在",
       "沙盒假資料；120x40，HOME 為獨立設定複本；原有 dark.* 由 docs/r1-lineage/shots 按 sha 原樣收錄，其餘由 tools/shoot.py 重拍"
     ],
     "lineage_sha": "885450642、41e59d84 …（fix1–fix10，agy）"
@@ -710,7 +710,7 @@
       "light": null
     },
     "sources": [
-      "/home/team/projects/autopilot-dev@HEAD:docs/plans/evidence/2026-10-10-tui-v2"
+      "autopilot-dev@1a0132f9aceb72bd9b61d719526047e5461ecfd8:docs/plans/evidence/2026-10-10-tui-v2"
     ]
   },
   {
@@ -819,18 +819,25 @@
     "plain": "待決頁左右雙欄",
     "ap_sha": null,
     "date": "2026-11-23",
-    "kind": "draft",
+    "kind": "rejected",
     "changed": "原設計稿收錄；詳見原檔",
     "principles": [
       "P02"
     ],
-    "operator_feedback": [],
+    "operator_feedback": [
+      {
+        "date": "未記錄",
+        "quote": "已退回之初版，僅取其雙欄分級與邊界案例思考",
+        "ref": "doc/design/pane-history/drafts/v74-pending-two-options/v74-pending-two-options.md:5"
+      }
+    ],
     "shots": {
       "dark": null,
       "light": null
     },
     "sources": [
-      ".@8311afc:doc/design/v74-master-detail.md"
+      ".@8311afc:doc/design/v74-master-detail.md",
+      "doc/design/pane-history/drafts/v74-pending-two-options/v74-pending-two-options.md:5"
     ]
   },
   {

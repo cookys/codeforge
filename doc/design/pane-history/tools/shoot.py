@@ -22,7 +22,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[3]
 HISTORY = HERE.parent
 
-AP_REPO = "/home/team/projects/autopilot-dev"
+AP_REPO = str(pathlib.Path.home() / "projects" / "autopilot-dev")
 HARNESS_DIR = str(REPO_ROOT / 'scripts/pane-gate/v74-keys')
 FALLBACK_FIX_SHA = "6db7e47e"
 
@@ -44,9 +44,15 @@ class RowTimeoutError(Exception):
     """Raised when capturing a single SHA exceeds ROW_TIMEOUT_S."""
 
 
+def public_text(value: str) -> str:
+    """Anonymize only the sandbox HOME header, preserving terminal cell count."""
+    home = str(pathlib.Path.home())
+    return value.replace(home, "/home/" + "x" * len(pathlib.Path.home().name))
+
+
 def append_note(out_dir: pathlib.Path, sha_label: str, status: str, detail: str) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
-    clean_detail = " ".join(detail.splitlines()).strip()
+    clean_detail = public_text(" ".join(detail.splitlines()).strip())
     line = f"{sha_label} {status} {clean_detail}\n"
     with (out_dir / "notes.log").open("a", encoding="utf-8") as f:
         f.write(line)
@@ -379,8 +385,8 @@ def shoot_single(sha_arg: str, out_dir: pathlib.Path, theme: str) -> int:
         dest.mkdir(parents=True, exist_ok=True)
         txt_path = dest / f"{theme}.txt"
         ans_path = dest / f"{theme}.ans"
-        txt_path.write_text(captured.text, encoding="utf-8")
-        ans_path.write_text("\n".join(captured.ansi or []), encoding="utf-8")
+        txt_path.write_text(public_text(captured.text), encoding="utf-8")
+        ans_path.write_text(public_text("\n".join(captured.ansi or [])), encoding="utf-8")
         append_note(out_dir, sha_label, "OK", chosen_cmd)
         return 0
 

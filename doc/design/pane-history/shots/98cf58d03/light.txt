@@ -1,7 +1,7 @@
                                                                       │                                               ✕
  ▐▛███▛█   Claude Code v2.1.328                                       │現況  ✗ 額度預測 無來源
 ▝▜██████▀  Haiku 5.5 · Claude Ultra                                   │
- ▝▝   ▝▝   /home/team/.tmp/pane-history-home-hbeobint/demo            │
+ ▝▝   ▝▝   /home/demo/.tmp/pane-history-home-hbeobint/demo            │
                                                                       │
                                                                       │
                                                                       │

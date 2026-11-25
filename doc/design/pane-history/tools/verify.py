@@ -22,6 +22,11 @@ for p in principles:
         file, line = q['ref'].rsplit(':',1)
         path = Path(file) if Path(file).is_absolute() else REPO/file
         assert q['date'] and q['quote'] in path.read_text().splitlines()[int(line)-1], q
+for v in versions:
+    for q in v['operator_feedback']:
+        file,line=q['ref'].rsplit(':',1)
+        path=Path(file) if Path(file).is_absolute() else REPO/file
+        assert q['quote'] in path.read_text().splitlines()[int(line)-1]
 rows = [v for v in versions if v['ap_sha']]
 lineage = [v for v in rows if v['id'].startswith('V')]
 assert len(lineage) == 27
@@ -54,6 +59,8 @@ for v in versions:
 spec=importlib.util.spec_from_file_location('shoot',ROOT/'tools/shoot.py')
 shoot=importlib.util.module_from_spec(spec);spec.loader.exec_module(shoot)
 real=[Path.home()/'.claude.json',Path.home()/'.claude/.credentials.json']
+assert shoot.public_text(str(Path.home())+"/demo").endswith("/demo")
+assert len(shoot.public_text(str(Path.home()))) == len(str(Path.home()))
 before={p:p.read_bytes() for p in real if p.is_file()}
 work=None
 try:

@@ -18,7 +18,7 @@ parser.add_argument('--no-shoot', action='store_true', help='skip capture (also 
 args = parser.parse_args(sys.argv[2:])
 if not re.fullmatch(r'[0-9a-f]{7,40}', args.ap_sha):
     parser.error('ap_sha must be a hexadecimal commit id')
-ap_repo = os.environ.get('PANE_HISTORY_AP_REPO', '/home/team/projects/autopilot-dev')
+ap_repo = os.environ.get('PANE_HISTORY_AP_REPO', os.path.expanduser('~/projects/autopilot-dev'))
 resolved = subprocess.run(['git','-C',ap_repo,'rev-parse','--verify',args.ap_sha+'^{commit}'], capture_output=True,text=True)
 if resolved.returncode:
     if not args.no_shoot or len(args.ap_sha) != 40:

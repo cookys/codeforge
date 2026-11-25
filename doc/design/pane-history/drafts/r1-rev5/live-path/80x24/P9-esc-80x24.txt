@@ -8,7 +8,7 @@
 ● Checking plugin directory and live dir permissions                            
   ⎿  1 action not run · permission denied                                       
      │ Reason: PreToolUse:Bash hook error: 這個操作會讀到真正的 Claude 預設設定
-     │ 目錄（/home/team/.claude）。依紅線要操作員本人的卡才能讀；自己這席的 
+     │ 目錄（/home/demo/.claude）。依紅線要操作員本人的卡才能讀；自己這席的 
      │ session 檔案（~/.claude/projects/<本專案>/）不受限。 [claude-home-…      
   ⎿  $ ls -la /tmp/v74keys-qxu4wk4m/data/home/.claude/ 2>&1; ls -d         
      /tmp/v74keys-qxu4wk4m/data/home/.claude/plugins/* 2>&1 | head; ls -ld      

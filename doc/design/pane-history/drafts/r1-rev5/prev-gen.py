@@ -153,8 +153,8 @@ CUR = 2          # 第 3 張
 OPTS = [("a", "80 欄", False), ("b", "120 欄", True)]
 BG_ALL = [f"第 {n:02d} 行：背景示意文字，用 PgUp/PgDn 捲動這一區。" for n in range(1, 31)]
 AWAIT = [
-  "等你動手 1 張 · d-1de9a5e9 接回 gentoo 的電源並登入",
-  "  1. 到機房把 gentoo 的電源線插回 UPS（等你插電）",
+  "等你動手 1 張 · d-1de9a5e9 接回 xxxxxx 的電源並登入",
+  "  1. 到機房把 xxxxxx 的電源線插回 UPS（等你插電）",
   "  2. 開機後在 console 登入一次，再回來這裡看結果（等你登入）",
 ]
 CTRL_ROLE_NOTE = {}
