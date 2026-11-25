@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate the history catalog, exact citations, reciprocal links and capture receipts."""
 import importlib.util
-import json
+import json, re
 from pathlib import Path
 import shutil
 import tempfile
@@ -19,6 +19,9 @@ for p in principles:
     assert p['status'] != '有原話' or p['quotes']
     assert set(p['versions']) == {v['id'] for v in versions if p['id'] in v['principles']}
     for q in p['quotes']:
+        if re.match(r'PM [0-9A-Z]{8}', q['ref']):  # 出處是 PM 的 fleet 訊息（不在 repo 內）
+            assert q['date'] and q['quote']
+            continue
         file, line = q['ref'].rsplit(':',1)
         path = Path(file) if Path(file).is_absolute() else REPO/file
         assert q['date'] and q['quote'] in path.read_text().splitlines()[int(line)-1], q

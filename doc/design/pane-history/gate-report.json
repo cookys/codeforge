@@ -1,5 +1,5 @@
 {
- "url": "http://<lan-host>:19103/",
+ "url": "http://<host>:19109/",
  "passed": true,
  "failures": [],
  "runs": [
@@ -12,25 +12,25 @@
    "checked": {
     "rows": 34,
     "terminals": 34,
-    "rows_skipped_wrapped": 23,
-    "cjk_text": 407,
-    "contrast_text": 14371,
+    "rows_skipped_wrapped": 0,
+    "cjk_text": 436,
+    "contrast_text": 14378,
     "contrast_skipped_bg_image": 0
    },
    "measure": {
     "rows": {
      "checked": 34,
-     "skipped_wrapped": 23,
+     "skipped_wrapped": 0,
      "ragged": [],
      "terminals": 34,
      "unequal": []
     },
     "cjk": {
-     "checked": 407,
+     "checked": 436,
      "low": []
     },
     "contrast": {
-     "checked": 14371,
+     "checked": 14378,
      "skipped_bg_image": 0,
      "low": [],
      "low_count": 0
@@ -52,25 +52,25 @@
    "checked": {
     "rows": 34,
     "terminals": 34,
-    "rows_skipped_wrapped": 23,
-    "cjk_text": 407,
-    "contrast_text": 14210,
+    "rows_skipped_wrapped": 0,
+    "cjk_text": 436,
+    "contrast_text": 14217,
     "contrast_skipped_bg_image": 0
    },
    "measure": {
     "rows": {
      "checked": 34,
-     "skipped_wrapped": 23,
+     "skipped_wrapped": 0,
      "ragged": [],
      "terminals": 34,
      "unequal": []
     },
     "cjk": {
-     "checked": 407,
+     "checked": 436,
      "low": []
     },
     "contrast": {
-     "checked": 14210,
+     "checked": 14217,
      "skipped_bg_image": 0,
      "low": [],
      "low_count": 0
@@ -92,25 +92,25 @@
    "checked": {
     "rows": 34,
     "terminals": 34,
-    "rows_skipped_wrapped": 23,
-    "cjk_text": 407,
-    "contrast_text": 14371,
+    "rows_skipped_wrapped": 0,
+    "cjk_text": 436,
+    "contrast_text": 14378,
     "contrast_skipped_bg_image": 0
    },
    "measure": {
     "rows": {
      "checked": 34,
-     "skipped_wrapped": 23,
+     "skipped_wrapped": 0,
      "ragged": [],
      "terminals": 34,
      "unequal": []
     },
     "cjk": {
-     "checked": 407,
+     "checked": 436,
      "low": []
     },
     "contrast": {
-     "checked": 14371,
+     "checked": 14378,
      "skipped_bg_image": 0,
      "low": [],
      "low_count": 0
@@ -132,25 +132,25 @@
    "checked": {
     "rows": 34,
     "terminals": 34,
-    "rows_skipped_wrapped": 23,
-    "cjk_text": 407,
-    "contrast_text": 14210,
+    "rows_skipped_wrapped": 0,
+    "cjk_text": 436,
+    "contrast_text": 14217,
     "contrast_skipped_bg_image": 0
    },
    "measure": {
     "rows": {
      "checked": 34,
-     "skipped_wrapped": 23,
+     "skipped_wrapped": 0,
      "ragged": [],
      "terminals": 34,
      "unequal": []
     },
     "cjk": {
-     "checked": 407,
+     "checked": 436,
      "low": []
     },
     "contrast": {
-     "checked": 14210,
+     "checked": 14217,
      "skipped_bg_image": 0,
      "low": [],
      "low_count": 0
@@ -172,25 +172,25 @@
    "checked": {
     "rows": 34,
     "terminals": 34,
-    "rows_skipped_wrapped": 23,
-    "cjk_text": 407,
-    "contrast_text": 14371,
+    "rows_skipped_wrapped": 0,
+    "cjk_text": 436,
+    "contrast_text": 14378,
     "contrast_skipped_bg_image": 0
    },
    "measure": {
     "rows": {
      "checked": 34,
-     "skipped_wrapped": 23,
+     "skipped_wrapped": 0,
      "ragged": [],
      "terminals": 34,
      "unequal": []
     },
     "cjk": {
-     "checked": 407,
+     "checked": 436,
      "low": []
     },
     "contrast": {
-     "checked": 14371,
+     "checked": 14378,
      "skipped_bg_image": 0,
      "low": [],
      "low_count": 0
@@ -212,25 +212,25 @@
    "checked": {
     "rows": 34,
     "terminals": 34,
-    "rows_skipped_wrapped": 23,
-    "cjk_text": 407,
-    "contrast_text": 14210,
+    "rows_skipped_wrapped": 0,
+    "cjk_text": 436,
+    "contrast_text": 14217,
     "contrast_skipped_bg_image": 0
    },
    "measure": {
     "rows": {
      "checked": 34,
-     "skipped_wrapped": 23,
+     "skipped_wrapped": 0,
      "ragged": [],
      "terminals": 34,
      "unequal": []
     },
     "cjk": {
-     "checked": 407,
+     "checked": 436,
      "low": []
     },
     "contrast": {
-     "checked": 14210,
+     "checked": 14217,
      "skipped_bg_image": 0,
      "low": [],
      "low_count": 0
@@ -252,25 +252,25 @@
    "checked": {
     "rows": 34,
     "terminals": 34,
-    "rows_skipped_wrapped": 23,
-    "cjk_text": 407,
-    "contrast_text": 14371,
+    "rows_skipped_wrapped": 0,
+    "cjk_text": 436,
+    "contrast_text": 14378,
     "contrast_skipped_bg_image": 0
    },
    "measure": {
     "rows": {
      "checked": 34,
-     "skipped_wrapped": 23,
+     "skipped_wrapped": 0,
      "ragged": [],
      "terminals": 34,
      "unequal": []
     },
     "cjk": {
-     "checked": 407,
+     "checked": 436,
      "low": []
     },
     "contrast": {
-     "checked": 14371,
+     "checked": 14378,
      "skipped_bg_image": 0,
      "low": [],
      "low_count": 0
@@ -292,25 +292,25 @@
    "checked": {
     "rows": 34,
     "terminals": 34,
-    "rows_skipped_wrapped": 23,
-    "cjk_text": 407,
-    "contrast_text": 14210,
+    "rows_skipped_wrapped": 0,
+    "cjk_text": 436,
+    "contrast_text": 14217,
     "contrast_skipped_bg_image": 0
    },
    "measure": {
     "rows": {
      "checked": 34,
-     "skipped_wrapped": 23,
+     "skipped_wrapped": 0,
      "ragged": [],
      "terminals": 34,
      "unequal": []
     },
     "cjk": {
-     "checked": 407,
+     "checked": 436,
      "low": []
     },
     "contrast": {
-     "checked": 14210,
+     "checked": 14217,
      "skipped_bg_image": 0,
      "low": [],
      "low_count": 0
@@ -324,8 +324,8 @@
    }
   }
  ],
- "unit": "lab-preview-pane-history-19103",
- "bind": "lan",
- "ttl": "72h",
+ "unit": "lab-preview-pane-history-19109",
+ "bind": "lo",
+ "ttl": "10m",
  "idle": "2h"
 }

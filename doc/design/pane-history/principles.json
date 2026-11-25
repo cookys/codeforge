@@ -85,14 +85,32 @@
   {
     "id": "P05",
     "rule": "CJK 算 2 格、框線對齊、深淺雙主題對比，都用腳本驗，不靠肉眼。",
-    "quotes": [],
+    "quotes": [
+      {
+        "date": "2026-11-25",
+        "quote": "你要我提醒你幾次 console artifact 要處理 CJK / width / color",
+        "ref": "PM 01M896EQ（操作員原話）"
+      },
+      {
+        "date": "2026-11-07",
+        "quote": "codeforge CJK 表頭補寬",
+        "ref": "PM 01M896EQ（PM 轉述）",
+        "relayed": true
+      },
+      {
+        "date": "2026-11-06",
+        "quote": "決策面板 CJK 換行",
+        "ref": "PM 01M896EQ（PM 轉述）",
+        "relayed": true
+      }
+    ],
     "versions": [
       "V12",
       "V16",
       "V23"
     ],
     "in_R": "R5",
-    "status": "缺出處",
+    "status": "有原話",
     "sources": [
       "doc/design/pane-design-language.md:16"
     ]
