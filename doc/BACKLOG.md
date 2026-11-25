@@ -605,6 +605,7 @@
 - **Context**: 範圍 usage/quota.rs 與 cli/statusline.rs；glyph 寬度與 parseFleet 空錯誤兩項為 G33 Suggestion
 
 ### （已併 AP develop 27e9e5d67，11-24）追溯與 band 併後的 Minor（autopilot 審併 7f7b5b95b、65e67bdfb 提出）
+- **Id**: B74
 - **Pointer**: doc/specs/codeforge-usage.md
 - **Status**: done（併 AP develop 27e9e5d67；真終端幾何由測試鎖住，實拍隨下次 pin 後驗收）
 - **Since**: 2026-11-23
