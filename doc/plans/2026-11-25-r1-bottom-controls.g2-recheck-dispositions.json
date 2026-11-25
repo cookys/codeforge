@@ -1,0 +1,17 @@
+{
+ "schema_version": 1,
+ "logical_plan_id": "codeforge:r1-bottom-controls-2026-11-25",
+ "generation": 2,
+ "findings": [
+  {
+   "fingerprint": "2843d923374251569a8cd3395f6a423e84264ca8bd911995dbf71d1426429c5c",
+   "disposition": "accepted_blocker",
+   "rationale": "Depth-0 adjudication after recheck not_fixed: rev 4 (fa45982) maps note input per tier so row count never grows (L2/L3 switcher row -> Enter/Esc, merged row -> input; L4 options row -> input, merged -> Enter/Esc), and reserves the right end of the L3/L4 options row for '… 另 N 項 · o 看全部' with per-option truncation so 80 cols always draws >=1 option plus key:o."
+  },
+  {
+   "fingerprint": "8311a9ef1fabaed267bc64a2f82bb5900cdbcc54f73a778300c41ffcbe4ea741",
+   "disposition": "accepted_blocker",
+   "rationale": "Depth-0 adjudication after recheck not_fixed: rev 4 (fa45982) defines the under-2-row info area (H=5): section title and card title move into the top border, the one info row shows the question, suggestion shown by the option ✧; the H=5 mock is corrected to match. The 8-cell rule table plus the 3.2 info order is the comparison baseline; no ASCII mock is added per cell (mocks are auxiliary, rules win, as the section 4 note already states)."
+  }
+ ]
+}
