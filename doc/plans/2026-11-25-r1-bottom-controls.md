@@ -247,7 +247,8 @@ docked 80x24、200x50 和 120x40 同版面，只差資訊區列數。boxed H＝1
 - D1：v7.4 docked 待決頁 S3 每張卡由上往下排，游標那張卡的 a/b/c、m 跟著卡片 → 本計畫：卡片內容在資訊區，a/b/c、m、送出固定在下半部控制區。原因：R1 優先於 ux-v7（準則表 R1 明寫）。
 - D2：v7.4 C 雙欄左欄清單可點選換卡 → 本計畫：左欄清單不可點，換卡改由下半部換卡器（點選或 p／n、j／k）。原因：R1 規定上半部不能有可點元素；同一份清單一半可點、一半不可點，會讓操作員混淆。
 - D3：ux-v7 把選單列放在 band 上方 → 不變，band 仍是最下面一列。R1 已寫明優先，這裡只記錄 v7 原文和 R1 的關係。
-- D4：forge-stats 可開自己的 Pane → `/forge-stats` 改開 live pane 的對應頁籤。原因：R4。
+- D4：forge-stats 可開自己的 Pane → forge-stats 的 Pane 退役；`/forge-stats [pet|usage|fleet]` 把 `/live-pane <pet|spend|fleet>` 填進輸入框（`$.prompt.fill`），操作員按 Enter 後由 autopilot 自己的 `/live-pane` 打開 live pane 並切到對應頁籤。原因：R4。
+  - **U0 探針結果與 PM 裁決**（01M88NQREZ，選 A）：宿主 API 的 `ui.open` 說明寫「A pane another plugin holds is refused: the open rejects, naming it」，而且 `PaneOpenArgs` 沒有 plugin 或 view 欄位，所以 3.6 節原本那條跨外掛直接開啟的路不存在。autopilot 已經有 `/live-pane` 指令（`mods/live/register.ts:1989`），由操作員自己下指令打開，屬於 asked，任何寬度都會顯示。U3b 改成「`/live-pane` 收頁籤參數」，不再用 `view.page`／nonce。forge-stats Pane 必須和 `/live-pane` 參數同一次推送退役，不並存兩套；AP 的部分由 codeforge 直接跟 autopilot 協調，搭同一班車。驗收：真機在 80 欄和 120 欄各實拍一次 `/forge-stats spend` → Enter → 頁籤正確。
 - D5：PM 01M8384QH4 的 C 雙欄條件「maxRows < 10 收清單」 → 本計畫：拿掉這條，雙欄與否改看控制區用滿時的資訊區列數（≥ 6 列才雙欄），階照 3.3 節公式選。原因：控制區搬到下半部後，宿主實際的 boxed 框高 13／17 只剩 5／7 列資訊區，照舊門檻就永遠不會出現雙欄。**需 PM 確認**，凍結紀錄裡會列出來。
 
 ## 7. 實作單元
