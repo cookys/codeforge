@@ -6,7 +6,8 @@ src=${1:-$here/../../v2/out}
 tmp=$(mktemp -d); trap 'rm -rf -- "$tmp"' EXIT
 export CC_THEMES=$here/cc-themes.json PYTHONDONTWRITEBYTECODE=1
 fail=0
-for shot in 209x49-s3 120x40-s3; do
+step=$(python3 -c 'import json,sys; print(next(x["step"] for x in json.load(open(sys.argv[1])) if x["id"] == "2-N"))' "$src/flow.json")
+for shot in "209x49-s$step" "120x40-s$step"; do
   mkdir -p "$tmp/ok" "$tmp/bad"
   cp -r "$src/$shot" "$tmp/ok/"; cp -r "$src/$shot" "$tmp/bad/"
   for f in screen.txt roles.json; do
