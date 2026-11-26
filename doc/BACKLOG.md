@@ -2,7 +2,7 @@
 
 格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。本檔由 `scripts/backlog-view.sh` 從 hippo 紀錄庫產生，不要手改。
 
-<!-- next-id: B76 -->
+<!-- next-id: B77 -->
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
@@ -693,6 +693,20 @@
 - **Effort**: S
 - **Pointer**: `src/lessons/gate.rs`（source-overlap）；`src/lessons/candidates.rs`（collect 傳 source）；計畫 doc/plans/2026-11-23-knowledge-pipeline.md 第 10.2 節 T2
 - **Done-Check**: `cargo test lessons` 有新測試：source 含候選的 session_id 與 time_start 時候選保留；source 含候選 repo＋tool 拼成的 ≥20 字片段時仍丟棄
+- **Artifact**: test
+- **Needs**: none
+- **Used-by**: e2e
+
+### 被拒且無快取時帳號列消失，auth_state 看不到撤銷
+- **Id**: B76
+- **Status**: open
+- **Since**: 2026-11-26
+- **Origin**: self（01M8BCMT 交件時的已知限制）
+- **Problem**: grok／kimi 的 live 探測被拒（Denied：expired 或 revoked），又沒有 MAX_AGE 內的快取時，snapshots 回空，summary 沒有那個帳號的列，`auth_state` 也就不會出現。`--harness/--alias` 重探同樣回「找不到」rc=1。
+- **Impact**: fleet quota.changed 計畫（22bc5dd4）的 auth_changed 偵測不到「撤銷超過 6 小時」的帳號，只看到列消失；alias 打錯與帳號失效分不出來。
+- **Trigger**: ready
+- **Pointer**: `src/usage/grok.rs`、`src/usage/kimi.rs` 的 snapshots fallback；`src/cli/usage.rs` collect_and_summarize 的 probe 找不到分支；fleet 01M8BCMT 交件附註 2
+- **Done-Check**: `cargo test usage` 新測試：Denied 且無快取時產出 five_hour/seven_day 皆 null、auth_state 為 expired 或 revoked 的列；summary validate 通過；`--harness grok --alias <該 alias>` rc=0
 - **Artifact**: test
 - **Needs**: none
 - **Used-by**: e2e
