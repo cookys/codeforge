@@ -132,7 +132,7 @@
 
 ### should_refresh 的 cache_stale 分支是死路徑
 - **Id**: B21
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-06-23
 - **Origin**: self
 - **Problem**: 健康檢查的重新探測判斷中，快取過期那一支在現有常數下永遠被先判斷的 TTL 條件蓋住，不會被執行。
