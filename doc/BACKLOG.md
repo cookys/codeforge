@@ -699,7 +699,7 @@
 
 ### 被拒且無快取時帳號列消失，auth_state 看不到撤銷
 - **Id**: B76
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-26
 - **Origin**: self（01M8BCMT 交件時的已知限制）
 - **Problem**: grok／kimi 的 live 探測被拒（Denied：expired 或 revoked），又沒有 MAX_AGE 內的快取時，snapshots 回空，summary 沒有那個帳號的列，`auth_state` 也就不會出現。`--harness/--alias` 重探同樣回「找不到」rc=1。
