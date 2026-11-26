@@ -18,6 +18,7 @@
 //! (a session logged in to another account before a switch must not hold the value).
 //! Each window records when and by which session its value was seen (`seen_at_ms`, `seen_by`).
 
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -25,6 +26,38 @@ use std::path::{Path, PathBuf};
 use super::alias::{valid_alias, valid_email, valid_org};
 
 pub const SCHEMA: &str = "codeforge.quota/1";
+
+/// The auth state of the account a snapshot was read from: a closed four-value set, written to
+/// the summary's account row as one of these strings and nothing else (no token, email, org,
+/// name, or error text).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthState {
+    /// A request with the credential succeeded.
+    Ok,
+    /// The credential's expiry has passed.
+    Expired,
+    /// The service rejected the credential (HTTP 401/403), or its revoked tombstone.
+    Revoked,
+    /// The state could not be determined: transport error, unreadable credential, off switch.
+    Unknown,
+}
+
+/// The four `auth_state` strings.
+pub const AUTH_STATES: [&str; 4] = ["ok", "expired", "revoked", "unknown"];
+
+impl AuthState {
+    /// Parse one of [`AUTH_STATES`]; anything else is `None`.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "ok" => Some(AuthState::Ok),
+            "expired" => Some(AuthState::Expired),
+            "revoked" => Some(AuthState::Revoked),
+            "unknown" => Some(AuthState::Unknown),
+            _ => None,
+        }
+    }
+}
 /// Rewrite an unchanged snapshot at most this often.
 pub const WRITE_EVERY_MS: i64 = 30_000;
 /// A snapshot not rewritten for this long is no longer shown.
@@ -70,6 +103,9 @@ pub struct Snapshot {
     /// sha8 of the canonical config dir this account's sessions run in (`None` from a
     /// pre-phase-2 writer). Lets the collector map a transcript root to an alias.
     pub root: Option<String>,
+    /// The auth state at the reading; `None` = the writer does not know (a Claude session,
+    /// Codex, the trinity self-report) — omitted from the JSON and from the summary row.
+    pub auth_state: Option<AuthState>,
     pub written_at_ms: i64,
     pub five_hour: Option<Window>,
     pub seven_day: Option<Window>,
@@ -188,6 +224,9 @@ impl Snapshot {
         if let Some(id) = self.org_id.as_ref().filter(|i| !i.is_empty()) {
             v["org_id"] = json!(id);
         }
+        if let Some(state) = self.auth_state {
+            v["auth_state"] = json!(state);
+        }
         v
     }
 
@@ -218,12 +257,15 @@ impl Snapshot {
             .as_str()
             .filter(|e| valid_email(e))
             .map(str::to_string);
+        // a value off the set is dropped, not a reason to lose the quota numbers
+        let auth_state = v["auth_state"].as_str().and_then(AuthState::parse);
         Some(Snapshot {
             alias: alias.to_string(),
             org,
             org_id,
             email,
             root,
+            auth_state,
             written_at_ms: v["written_at_ms"].as_i64()?,
             five_hour: window_from(&v["five_hour"]),
             seven_day: window_from(&v["seven_day"]),
@@ -331,6 +373,7 @@ pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot,
                 org_id: snap.org_id.clone().or_else(|| old.org_id.clone()),
                 email: snap.email.clone().or_else(|| old.email.clone()),
                 root: snap.root.clone().or_else(|| old.root.clone()),
+                auth_state: snap.auth_state.or(old.auth_state),
                 written_at_ms: if taken {
                     snap.written_at_ms
                 } else {
@@ -441,6 +484,7 @@ mod tests {
             org_id: None,
             email: None,
             root: None,
+            auth_state: None,
             written_at_ms: at_ms,
             five_hour: w(five),
             seven_day: w(seven),
@@ -610,6 +654,47 @@ mod tests {
         let back = Snapshot::from_json(&v).unwrap();
         assert_eq!(back.org_id, None);
         assert_eq!(back, s);
+    }
+
+    #[test]
+    fn auth_state_round_trips_and_an_old_file_reads_without_it() {
+        let mut s = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
+        s.auth_state = Some(AuthState::Revoked);
+        let v = s.to_json();
+        assert_eq!(v["auth_state"], "revoked");
+        assert_eq!(Snapshot::from_json(&v), Some(s.clone()));
+        // a file from before the key has no key at all
+        let mut v = s.to_json();
+        v.as_object_mut().unwrap().remove("auth_state");
+        assert_eq!(Snapshot::from_json(&v).unwrap().auth_state, None);
+        // a value off the set is dropped, not a reason to lose the quota numbers
+        for bad in [json!("bogus"), json!("OK"), json!(5), json!(null)] {
+            let mut v = s.to_json();
+            v["auth_state"] = bad;
+            let got = Snapshot::from_json(&v).expect("the quota numbers survive");
+            assert_eq!(got.auth_state, None);
+        }
+        // an absent state is omitted from the JSON
+        let s = snap("acct-a", NOW_MS, Some((0.32, NOW_S + 60)), None);
+        assert!(s.to_json().get("auth_state").is_none());
+        // the merge keeps the newest writer's state
+        let dir = tempfile::tempdir().unwrap();
+        let with_state = |at: i64, state: AuthState| {
+            let mut s = snap("acct-a", at, Some((0.32, NOW_S + 60)), None);
+            s.auth_state = Some(state);
+            s
+        };
+        merge_snapshot(dir.path(), &with_state(NOW_MS, AuthState::Revoked)).unwrap();
+        let (m, wrote) = merge_snapshot(
+            dir.path(),
+            &snap("acct-a", NOW_MS + 60_000, Some((0.5, NOW_S + 60)), None),
+        )
+        .unwrap();
+        assert!(wrote);
+        assert_eq!(m.auth_state, Some(AuthState::Revoked));
+        let (m, _) =
+            merge_snapshot(dir.path(), &with_state(NOW_MS + 120_000, AuthState::Ok)).unwrap();
+        assert_eq!(m.auth_state, Some(AuthState::Ok));
     }
 
     #[test]

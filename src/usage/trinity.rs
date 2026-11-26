@@ -222,6 +222,8 @@ pub fn snapshots(summary_dir: &Path, now_ms: i64) -> Vec<quota::Snapshot> {
         org_id: None,
         email: None,
         root: None,
+        // the bot self-reports its quota; this writer does not know its login state
+        auth_state: None,
         written_at_ms: q.observed_ms,
         five_hour: None,
         seven_day: Some(quota::Window {

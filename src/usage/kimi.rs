@@ -4,9 +4,11 @@
 //! read from `<kimi_home>/credentials/kimi-code.json` only at the moment of the request, held in
 //! a local [`Token`], and sent only on that request. [`Token`] has no `Debug` and no `Display` —
 //! `format!("{:?}", token)` does not compile — so a log, an error, or a test assertion cannot
-//! print it. The credential file's other fields are never read. An empty token (kimi's revoked
-//! tombstone), an expired token, or HTTP 401/403 is [`Fetch::Denied`]: no refresh, no new
-//! snapshot. Kimi refreshes its own token; this collector must not race it.
+//! print it. The credential file's other fields are never read. An empty token (kimi's
+//! revoked tombstone), an expired token, or HTTP 401/403 is [`Fetch::Denied`] — `revoked` for
+//! the tombstone and a 401/403, `expired` for a past expiry: no refresh, no new snapshot — a
+//! cache supplies the numbers, this attempt's verdict is the row's `auth_state`. Kimi
+//! refreshes its own token; this collector must not race it.
 //!
 //! The response is untrusted. [`parse_usages`] keeps `usages.limit_5h` and `usages.limit_7d`
 //! (`used_ratio` is already the used fraction, a number or a numeric string in 0.0..=1.5;
@@ -71,13 +73,16 @@ struct Cred {
 enum TokenState {
     Ok(Token),
     Expired,
+    /// An empty token: kimi's revoked tombstone.
+    Revoked,
     Unusable,
 }
 
 /// The credential in `bytes` at `now` (unix seconds). Only `access_token` and `expires_at` are
-/// read. An empty token (a revoked tombstone) or `expires_at <= now` is [`TokenState::Expired`].
-/// Not an object, a missing field, or a non-numeric `expires_at` is [`TokenState::Unusable`].
-/// No error string is built: a serde failure is dropped, never formatted.
+/// read. An empty token (a revoked tombstone) is [`TokenState::Revoked`], `expires_at <= now`
+/// is [`TokenState::Expired`]. Not an object, a missing field, or a non-numeric `expires_at`
+/// is [`TokenState::Unusable`]. No error string is built: a serde failure is dropped, never
+/// formatted.
 fn read_token(bytes: &[u8], now: i64) -> TokenState {
     let Ok(cred) = serde_json::from_slice::<Cred>(bytes) else {
         return TokenState::Unusable;
@@ -85,7 +90,11 @@ fn read_token(bytes: &[u8], now: i64) -> TokenState {
     if !cred.expires_at.is_finite() {
         return TokenState::Unusable;
     }
-    if cred.access_token.as_str().is_empty() || cred.expires_at <= now as f64 {
+    // the empty tombstone is checked first, even with a past expiry
+    if cred.access_token.as_str().is_empty() {
+        return TokenState::Revoked;
+    }
+    if cred.expires_at <= now as f64 {
         return TokenState::Expired;
     }
     // A bearer is one header value. Reject it here so the request never builds an error that
@@ -150,6 +159,7 @@ pub fn parse_usages(body: &Value, observed_ms: i64, key_hash: &str) -> Option<qu
         org_id: None,
         email: None,
         root: None,
+        auth_state: Some(quota::AuthState::Ok),
         written_at_ms: observed_ms,
         five_hour,
         seven_day,
@@ -163,7 +173,8 @@ struct WinCache {
     resets_at: i64,
 }
 
-/// The cache file. Absent windows are omitted, never stored as null.
+/// The cache file. Absent windows are omitted, never stored as null. `auth_state` (the state
+/// at the write, `ok`) is absent on an older cache: it reads as `unknown`.
 #[derive(Deserialize)]
 struct Cache {
     observed_ms: i64,
@@ -171,6 +182,9 @@ struct Cache {
     five_hour: Option<WinCache>,
     #[serde(default)]
     seven_day: Option<WinCache>,
+    /// The auth state at the write. Missing on an old cache.
+    #[serde(default)]
+    auth_state: Option<quota::AuthState>,
 }
 
 fn read_cache(path: &Path) -> Option<Cache> {
@@ -209,6 +223,8 @@ fn snapshot_from_cache(c: &Cache, key_hash: &str) -> Option<quota::Snapshot> {
         org_id: None,
         email: None,
         root: None,
+        // an old cache has no state written: the row stands as `unknown`
+        auth_state: Some(c.auth_state.unwrap_or(quota::AuthState::Unknown)),
         written_at_ms: c.observed_ms,
         five_hour,
         seven_day,
@@ -218,6 +234,7 @@ fn snapshot_from_cache(c: &Cache, key_hash: &str) -> Option<quota::Snapshot> {
 fn cache_json(observed_ms: i64, snap: &quota::Snapshot) -> Value {
     let mut m = Map::new();
     m.insert("observed_ms".into(), json!(observed_ms));
+    m.insert("auth_state".into(), json!(quota::AuthState::Ok));
     let mut put = |key: &str, w: &Option<quota::Window>| {
         if let Some(w) = w {
             m.insert(
@@ -232,10 +249,13 @@ fn cache_json(observed_ms: i64, snap: &quota::Snapshot) -> Value {
 }
 
 /// The host's kimi snapshot at `now_ms`. A cache at `cache_dir`/`kimi-usage.json` younger than
-/// [`CACHE_MS`] is used and `fetch` is not called. Otherwise `fetch` runs: a [`Fetch::Body`]
-/// that parses is written back (those fields only) and returned; [`Fetch::Denied`],
-/// [`Fetch::Failed`], and an unparsable body fall back to a cache younger than
-/// [`quota::MAX_AGE_MS`], else nothing. The key is the `path_hash8` of `home`.
+/// [`CACHE_MS`] is used and `fetch` is not called: the row carries the state the cache wrote
+/// (an old cache without one reads as `unknown`). Otherwise `fetch` runs and its verdict is
+/// the row's `auth_state`: a [`Fetch::Body`] that parses is `ok` (written back to the cache)
+/// and returned; [`Fetch::Denied`] carries its state (expired token, 401/403, or the revoked
+/// tombstone), [`Fetch::Failed`] and an unparsable body are `unknown` — in those cases a cache
+/// younger than [`quota::MAX_AGE_MS`] supplies the numbers. The key is the `path_hash8` of
+/// `home`.
 pub fn snapshots(
     cache_dir: &Path,
     home: &Path,
@@ -249,23 +269,30 @@ pub fn snapshots(
     if let Some(c) = cache.as_ref().filter(|c| within(c.observed_ms, CACHE_MS)) {
         return snapshot_from_cache(c, &key_hash).into_iter().collect();
     }
-    let fallback = || {
+    // a cache younger than MAX_AGE_MS supplies the numbers; this attempt's verdict is the
+    // state, because it is newer
+    let fallback = |state: quota::AuthState| {
         cache
             .as_ref()
             .filter(|c| within(c.observed_ms, quota::MAX_AGE_MS))
-            .and_then(|c| snapshot_from_cache(c, &key_hash))
+            .and_then(|c| {
+                let mut snap = snapshot_from_cache(c, &key_hash)?;
+                snap.auth_state = Some(state);
+                Some(snap)
+            })
             .into_iter()
             .collect()
     };
     match fetch() {
         Fetch::Body(body) => {
             let Some(snap) = parse_usages(&body, now_ms, &key_hash) else {
-                return fallback();
+                return fallback(quota::AuthState::Unknown);
             };
             let _ = crate::live::write_live_json(cache_dir, CACHE_FILE, &cache_json(now_ms, &snap));
             vec![snap]
         }
-        Fetch::Denied | Fetch::Failed => fallback(),
+        Fetch::Denied(state) => fallback(state),
+        Fetch::Failed => fallback(quota::AuthState::Unknown),
     }
 }
 
@@ -339,7 +366,8 @@ async fn request_async(token: &Token, base: &str) -> Fetch {
     };
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Fetch::Denied;
+        // the token is not expired but the service does not accept it
+        return Fetch::Denied(quota::AuthState::Revoked);
     }
     if !status.is_success() {
         return Fetch::Failed;
@@ -391,7 +419,8 @@ fn fetch_at(
     };
     match read_token(&bytes, now) {
         TokenState::Ok(token) => request(&token, &usages_base(env_base)),
-        TokenState::Expired => Fetch::Denied,
+        TokenState::Expired => Fetch::Denied(quota::AuthState::Expired),
+        TokenState::Revoked => Fetch::Denied(quota::AuthState::Revoked),
         TokenState::Unusable => Fetch::Failed,
     }
 }
@@ -618,7 +647,9 @@ mod tests {
     fn read_token_accepts_a_future_credential_and_ignores_every_other_field() {
         match read_token(&cred(ACCESS, FUTURE), NOW_S) {
             TokenState::Ok(t) => assert!(t.as_str() == ACCESS),
-            TokenState::Expired | TokenState::Unusable => panic!("expected Ok"),
+            TokenState::Expired | TokenState::Revoked | TokenState::Unusable => {
+                panic!("expected Ok")
+            }
         }
         // exactly now is already due
         assert!(matches!(
@@ -644,7 +675,7 @@ mod tests {
         // an empty token is kimi's revoked tombstone, even with a future expiry
         assert!(matches!(
             read_token(&cred("", FUTURE), NOW_S),
-            TokenState::Expired
+            TokenState::Revoked
         ));
     }
 
@@ -714,7 +745,9 @@ mod tests {
         )
         .unwrap();
         let before = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied);
+        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].written_at_ms, observed);
         assert_eq!(std::fs::read(dir.path().join(CACHE_FILE)).unwrap(), before);
@@ -728,7 +761,97 @@ mod tests {
             }),
         )
         .unwrap();
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(
+            quota::AuthState::Revoked
+        ))
+        .is_empty());
+    }
+
+    #[test]
+    fn fetch_at_maps_its_verdict_to_the_auth_state() {
+        let home = tempfile::tempdir().unwrap();
+        // an expired token: denied as `expired`, the endpoint is not called
+        write_cred(home.path(), &cred(ACCESS, NOW_S - 1));
+        assert!(matches!(
+            fetch_at(home.path(), NOW_S, false, None, Some("http://127.0.0.1:9")),
+            Fetch::Denied(quota::AuthState::Expired)
+        ));
+        // an empty token is the revoked tombstone: denied as `revoked`
+        write_cred(home.path(), &cred("", FUTURE));
+        assert!(matches!(
+            fetch_at(home.path(), NOW_S, false, None, Some("http://127.0.0.1:9")),
+            Fetch::Denied(quota::AuthState::Revoked)
+        ));
+        // an unusable file: a failed attempt, `unknown`
+        let malformed = format!("not json {ACCESS} {REFRESH}");
+        write_cred(home.path(), malformed.as_bytes());
+        assert!(matches!(
+            fetch_at(home.path(), NOW_S, false, None, Some("http://127.0.0.1:9")),
+            Fetch::Failed
+        ));
+    }
+
+    #[test]
+    fn snapshots_carry_the_fetch_verdict_as_auth_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let observed = NOW_MS - 11 * 60_000;
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({
+                "observed_ms": observed,
+                "five_hour": {"pct": 0.42, "resets_at": FIVE_RESET},
+                "auth_state": "ok"
+            }),
+        )
+        .unwrap();
+        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Expired)
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Expired));
+        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
+        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Unknown));
+        // a good body: `ok`, and the cache learns the state
+        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(sample()));
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Ok));
+        let v: Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join(CACHE_FILE)).unwrap()).unwrap();
+        assert_eq!(v["auth_state"], "ok");
+        let summary = crate::usage::summary::build(
+            &[],
+            &got,
+            "host-aaaaaaaa",
+            NOW_MS,
+            &crate::usage::names::Names::default(),
+        );
+        crate::usage::summary::validate(&summary).unwrap();
+        assert_eq!(summary["accounts"][0]["auth_state"], "ok");
+    }
+
+    #[test]
+    fn an_old_cache_without_auth_state_reads_as_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        let observed = NOW_MS - 60_000;
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({
+                "observed_ms": observed,
+                "five_hour": {"pct": 0.42, "resets_at": FIVE_RESET}
+            }),
+        )
+        .unwrap();
+        let got = snapshots(dir.path(), &home(), NOW_MS, || -> Fetch {
+            panic!("fetch must not be called on a fresh cache")
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Unknown));
     }
 
     #[test]
@@ -736,7 +859,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed).is_empty());
         assert!(!dir.path().join(CACHE_FILE).exists());
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(
+            quota::AuthState::Revoked
+        ))
+        .is_empty());
         assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(json!({}))).is_empty());
         assert!(!dir.path().join(CACHE_FILE).exists());
     }
@@ -762,7 +888,10 @@ mod tests {
         let v: Value = serde_json::from_slice(&raw).unwrap();
         let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        assert_eq!(keys, ["five_hour", "observed_ms", "seven_day"]);
+        assert_eq!(
+            keys,
+            ["auth_state", "five_hour", "observed_ms", "seven_day"]
+        );
         for win in ["five_hour", "seven_day"] {
             let mut wk: Vec<_> = v[win].as_object().unwrap().keys().cloned().collect();
             wk.sort();
@@ -870,12 +999,12 @@ mod tests {
         ));
         assert!(matches!(
             fetch_at(home.path(), NOW_S, false, None, Some("http://127.0.0.1:9")),
-            Fetch::Denied
+            Fetch::Denied(quota::AuthState::Expired)
         ));
         write_cred(home.path(), &cred("", FUTURE));
         assert!(matches!(
             fetch_at(home.path(), NOW_S, false, None, None),
-            Fetch::Denied
+            Fetch::Denied(quota::AuthState::Revoked)
         ));
         let malformed = format!("not json {ACCESS} {REFRESH}");
         write_cred(home.path(), malformed.as_bytes());
@@ -899,7 +1028,7 @@ mod tests {
                 Some(env_home.path().to_str().unwrap()),
                 Some("http://127.0.0.1:9"),
             ),
-            Fetch::Denied
+            Fetch::Denied(quota::AuthState::Expired)
         ));
         assert!(matches!(
             fetch_at(other.path(), NOW_S, false, None, None),
@@ -913,21 +1042,27 @@ mod tests {
         // TokenState is not Debug and not Display. These arms produce no error string.
         match read_token(format!("not json {ACCESS} {REFRESH}").as_bytes(), NOW_S) {
             TokenState::Unusable => {}
-            TokenState::Ok(_) | TokenState::Expired => {
+            TokenState::Ok(_) | TokenState::Expired | TokenState::Revoked => {
                 panic!("malformed credential must be Unusable")
             }
         }
         match read_token(&cred(ACCESS, NOW_S - 1), NOW_S) {
             TokenState::Expired => {}
-            TokenState::Ok(_) | TokenState::Unusable => panic!("past expiry must be Expired"),
+            TokenState::Ok(_) | TokenState::Revoked | TokenState::Unusable => {
+                panic!("past expiry must be Expired")
+            }
         }
         match read_token(&cred("", FUTURE), NOW_S) {
-            TokenState::Expired => {}
-            TokenState::Ok(_) | TokenState::Unusable => panic!("empty token must be Expired"),
+            TokenState::Revoked => {}
+            TokenState::Ok(_) | TokenState::Expired | TokenState::Unusable => {
+                panic!("empty token must be Revoked")
+            }
         }
         match read_token(&cred(ACCESS, FUTURE), NOW_S) {
             TokenState::Ok(t) => assert!(t.as_str() == ACCESS),
-            TokenState::Expired | TokenState::Unusable => panic!("expected Ok"),
+            TokenState::Expired | TokenState::Revoked | TokenState::Unusable => {
+                panic!("expected Ok")
+            }
         }
         assert!(
             errors.is_empty(),
@@ -977,7 +1112,9 @@ mod tests {
             .any(|w| w == b"boosterWallet"));
 
         let stale_at = NOW_MS + CACHE_MS + 1;
-        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied);
+        let snaps = snapshots(dir.path(), &home(), stale_at, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(snaps.len(), 1);
         assert_eq!(snaps[0].written_at_ms, NOW_MS);
         no_sentinel(&outputs_of(&snaps, stale_at));
@@ -1018,7 +1155,7 @@ mod tests {
                 None,
                 Some("http://127.0.0.1:9")
             ),
-            Fetch::Denied
+            Fetch::Denied(quota::AuthState::Expired)
         ));
         assert!(matches!(
             fetch_at(

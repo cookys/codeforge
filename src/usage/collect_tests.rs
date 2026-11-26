@@ -228,6 +228,7 @@ fn usage_export_prints_the_validated_email_free_summary() {
         org_id: None,
         email: Some("me@example.com".into()),
         root: None,
+        auth_state: None,
         written_at_ms: now_ms,
         five_hour: Some(Window {
             pct: 0.3,
@@ -281,6 +282,7 @@ fn usage_export_hourly_prints_the_hourly_document_and_plain_export_stays_the_sum
         org_id: None,
         email: Some("me@example.com".into()),
         root: None,
+        auth_state: None,
         written_at_ms: now_ms,
         five_hour: Some(Window {
             pct: 0.3,
@@ -1186,6 +1188,7 @@ fn a_root_takes_the_alias_of_the_snapshot_naming_it() {
         org_id: None,
         email: None,
         root: root.map(String::from),
+        auth_state: None,
         written_at_ms: at,
         five_hour: None,
         seven_day: None,
@@ -1915,6 +1918,7 @@ fn collect_observes_the_login_not_a_fresh_snapshot_of_the_previous_account() {
         org_id: None,
         email: None,
         root: Some(hash.clone()),
+        auth_state: None,
         written_at_ms: NOW - 60_000,
         five_hour: None,
         seven_day: None,

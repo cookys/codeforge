@@ -1,21 +1,25 @@
 //! One attempt to read a live quota, and the bounded file read both callers share.
 //!
 //! [`Fetch`] never carries a bearer: [`Fetch::Body`] is untrusted response JSON, and the other
-//! variants are units. [`read_capped`] drops every I/O and parse error instead of formatting it,
-//! because the file it opens may be a credential.
+//! variants carry at most a closed [`AuthState`] verdict. [`read_capped`] drops every I/O and
+//! parse error instead of formatting it, because the file it opens may be a credential.
 
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::io::Read;
 use std::path::Path;
 
+use super::quota::AuthState;
+
 /// What one attempt to read the live quota produced. Never carries the bearer.
 pub enum Fetch {
     /// A JSON body. Untrusted; only the caller's parser decides what is kept.
     Body(Value),
-    /// HTTP 401/403, or the credential is expired or revoked. Do not refresh.
-    Denied,
-    /// Off switch, transport error, or a credential file that cannot be used.
+    /// The credential is not accepted: `state` is the verdict this attempt reached (an expired
+    /// credential, or a 401/403 from the service). Do not refresh.
+    Denied(AuthState),
+    /// Off switch, transport error, or a credential file that cannot be used: no verdict, the
+    /// state is [`AuthState::Unknown`].
     Failed,
 }
 

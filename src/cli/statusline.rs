@@ -509,6 +509,8 @@ fn record_quota_with(
             crate::usage::quota::is_hash8(root).then(|| root.to_string())
         },
         written_at_ms: now_ms,
+        // the session's own login state is not reported in the row: the writer does not know
+        auth_state: None,
         five_hour: window(data.five_hour_pct, data.five_hour_resets_at),
         seven_day: window(data.seven_day_pct, data.seven_day_resets_at),
     };
@@ -1723,6 +1725,7 @@ mod tests {
             org_id: None,
             email: None,
             root: None,
+            auth_state: None,
             written_at_ms: 0,
             five_hour: None,
             seven_day: Some(crate::usage::quota::Window {
