@@ -878,6 +878,40 @@ mod tests {
     }
 
     #[test]
+    fn a_snapshot_with_no_windows_is_a_valid_auth_state_only_row() {
+        // a denial with no cache leaves a row carrying only the state (B76): both windows
+        // null, the summary still builds and validates
+        for (state, s) in [
+            (AuthState::Expired, "expired"),
+            (AuthState::Revoked, "revoked"),
+        ] {
+            let snap = Snapshot {
+                alias: "grok-1a2b3c4d".into(),
+                org: None,
+                org_id: None,
+                email: None,
+                root: None,
+                auth_state: Some(state),
+                written_at_ms: 5,
+                five_hour: None,
+                seven_day: None,
+            };
+            let v = build(
+                &[],
+                std::slice::from_ref(&snap),
+                &host_alias("h"),
+                7,
+                &Default::default(),
+            );
+            validate(&v).unwrap();
+            let a = &v["accounts"][0];
+            assert_eq!(a["auth_state"], s);
+            assert!(a["five_hour"].is_null());
+            assert!(a["seven_day"].is_null());
+        }
+    }
+
+    #[test]
     fn built_summary_is_exact_and_carries_no_project_root_or_hostname() {
         let v = good();
         validate(&v).unwrap();

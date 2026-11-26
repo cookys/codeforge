@@ -18,7 +18,9 @@
 //! Everything else is dropped. The capture is cached at `<cache_dir>/grok-usage.json` as
 //! `{"observed_ms","pct","resets_at"}` plus optional `"bot_pct"` (0600, atomic), at most
 //! 10 minutes old. A denied, failed, or unparsable fetch falls back to a cache not older than
-//! [`quota::MAX_AGE_MS`]. `CODEFORGE_USAGE_GROK=0` reads nothing and calls nothing.
+//! [`quota::MAX_AGE_MS`]; a denial with no such cache leaves one row carrying only its state
+//! (both windows null), a failure leaves nothing. `CODEFORGE_USAGE_GROK=0` reads nothing and
+//! calls nothing.
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -274,7 +276,10 @@ fn snapshots_from_cache(c: &Cache, key_hash: &str) -> Vec<quota::Snapshot> {
 /// to the cache as `observed_ms`, `pct`, `resets_at`, `auth_state`, and `bot_pct` only when
 /// Grok Bot was kept) and returned; [`Fetch::Denied`] carries its state (expired key, or
 /// 401/403), [`Fetch::Failed`] and an unparsable body are `unknown` -- in those cases a cache
-/// younger than [`quota::MAX_AGE_MS`] supplies the numbers. The key is the `path_hash8` of
+/// younger than [`quota::MAX_AGE_MS`] supplies the numbers. A denial with no such cache leaves
+/// one row carrying only the state: alias `grok-<hash>`, both windows `None`, `written_at_ms`
+/// now (no grokbot row, a denial carries no bot data). A `Failed` attempt leaves no row: the
+/// state is unknown. The key is the `path_hash8` of
 /// `home`.
 pub fn snapshots(
     cache_dir: &Path,
@@ -336,7 +341,27 @@ pub fn snapshots(
             let _ = crate::live::write_live_json(cache_dir, CACHE_FILE, &cached);
             with_bot(parsed.grok, parsed.bot_pct, &key_hash)
         }
-        Fetch::Denied(state) => fallback(state),
+        Fetch::Denied(state) => {
+            // a denial is a known state: when no cache supplies the numbers, the row still
+            // stands, carrying only the state (both windows null; no grokbot row, a denial
+            // carries no bot data)
+            let via_cache = fallback(state);
+            if !via_cache.is_empty() {
+                via_cache
+            } else {
+                vec![quota::Snapshot {
+                    alias: format!("grok-{key_hash}"),
+                    org: None,
+                    org_id: None,
+                    email: None,
+                    root: None,
+                    auth_state: Some(state),
+                    written_at_ms: now_ms,
+                    five_hour: None,
+                    seven_day: None,
+                }]
+            }
+        }
         Fetch::Failed => fallback(quota::AuthState::Unknown),
     }
 }
@@ -1070,7 +1095,7 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].written_at_ms, observed);
         assert_eq!(std::fs::read(dir.path().join(CACHE_FILE)).unwrap(), before);
-        // an over-aged cache is not returned
+        // an over-aged cache supplies no numbers: the denial leaves a state-only row instead
         std::fs::remove_file(dir.path().join(CACHE_FILE)).unwrap();
         crate::live::write_live_json(
             dir.path(),
@@ -1078,12 +1103,81 @@ mod tests {
             &json!({ "observed_ms": NOW_MS - 7 * 3_600_000, "pct": 0.34, "resets_at": RESETS_AT }),
         )
         .unwrap();
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
+        assert!(got[0].five_hour.is_none());
+        assert!(got[0].seven_day.is_none());
+        assert_eq!(
+            got[0].written_at_ms, NOW_MS,
+            "a fresh row, not the aged cache"
+        );
+    }
+
+    #[test]
+    fn denied_with_no_cache_is_a_row_with_only_the_auth_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let hash = hash_of_home();
+        // Revoked (HTTP 401/403): one row, both windows null, the verdict carried, written now
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].alias, format!("grok-{hash}"));
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
+        assert!(got[0].five_hour.is_none());
+        assert!(got[0].seven_day.is_none());
+        assert_eq!(got[0].written_at_ms, NOW_MS);
+        assert!(
+            !dir.path().join(CACHE_FILE).exists(),
+            "a denial writes no cache"
+        );
+        // the row stands in the summary: auth_state written, both windows null, validates
+        let summary = crate::usage::summary::build(
+            &[],
+            &got,
+            "host-aaaaaaaa",
+            NOW_MS,
+            &crate::usage::names::Names::default(),
+        );
+        crate::usage::summary::validate(&summary).unwrap();
+        assert_eq!(summary["accounts"][0]["auth_state"], "revoked");
+        assert!(summary["accounts"][0]["five_hour"].is_null());
+        assert!(summary["accounts"][0]["seven_day"].is_null());
+        // Expired (a past login expiry)
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Denied(quota::AuthState::Expired)
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Expired));
+        assert!(got[0].five_hour.is_none() && got[0].seven_day.is_none());
+        // no grokbot row: a denial carries no bot data
+        assert!(
+            !got.iter().any(|s| s.alias.starts_with("grokbot-")),
+            "a denial must not invent a grokbot row"
+        );
+        // a Failed attempt is not a known state: still no row, and so is an unparsable body
         assert!(
             snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
-                Fetch::Denied(quota::AuthState::Revoked)
+                Fetch::Failed
             })
             .is_empty()
         );
+        assert!(
+            snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+                Fetch::Body(json!({}))
+            })
+            .is_empty()
+        );
+        // the same holds for a forced re-probe (`usage collect --harness/--alias`)
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Force, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
+        assert!(got[0].five_hour.is_none() && got[0].seven_day.is_none());
     }
 
     #[test]
@@ -1096,12 +1190,8 @@ mod tests {
             .is_empty()
         );
         assert!(!dir.path().join(CACHE_FILE).exists());
-        assert!(
-            snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
-                Fetch::Denied(quota::AuthState::Revoked)
-            })
-            .is_empty()
-        );
+        // a denial is not a Failed attempt: its state-only row is covered by
+        // `denied_with_no_cache_is_a_row_with_only_the_auth_state`
         assert!(
             snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
                 Fetch::Body(json!({}))

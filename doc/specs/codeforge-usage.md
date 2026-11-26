@@ -295,7 +295,9 @@ compact、session 標題、web_search／web_fetch。codeforge 只讀 transcript�
 `accounts[].auth_state`（選用）：讀取該配額時帳號的登入狀態，只能四個值之一：`ok`（請求成功）、`expired`
 （憑證過期）、`revoked`（服務回 401/403，或 kimi 的空 token 撤銷記號）、`unknown`（狀態無法判定：傳輸錯誤、
 憑證檔不可讀、關閉開關、舊快取沒有此欄）。只有 grok／kimi／agy 的列會寫（含 `grokbot-<sha8>` 列；同一
-fetcher 的所有列同一狀態）；claude／codex／trinity 列寫不進去就**省略**（不知道，不猜）。欄位只有狀態字串，
+fetcher 的所有列同一狀態）；claude／codex／trinity 列寫不進去就**省略**（不知道，不猜）。
+grok／kimi 被拒（`expired`／`revoked`）且沒有 `MAX_AGE_MS` 內的快取時，該列只有 `auth_state`，
+`five_hour` 與 `seven_day` 皆為 `null`（`Failed` 的 `unknown` 等未知狀態不產生列）。欄位只有狀態字串，
 絕不含 token、email、org、姓名或錯誤原文；出現但不在四值內的值，`validate` 拒絕整份寫入與上傳。
 新增選用欄位，schema 維持 `codeforge.usage-summary/1`。帳號列的鍵是白名單（forge-stats `keysWith`、`summary::validate`），舊版讀取端會把含此欄的整份當不合規格，所以和 `null` 一樣讀的一方要先升級。
 所有整數（計數、時間、`resets_at`）都必須在 0..=2^53−1（`UINT_MAX`，JS number 能精確表示的

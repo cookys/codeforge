@@ -15,8 +15,10 @@
 //! `reset_time` is RFC3339) and drops everything else, including the month limits and
 //! `boosterWallet`. The capture is cached at `<cache_dir>/kimi-usage.json` as `observed_ms` plus
 //! each window's `pct` and `resets_at` only (0600, atomic), at most 10 minutes old. A denied,
-//! failed, or unparsable fetch falls back to a cache not older than [`quota::MAX_AGE_MS`].
-//! `CODEFORGE_USAGE_KIMI=0` reads nothing and calls nothing. The `kimi` binary is not required.
+//! failed, or unparsable fetch falls back to a cache not older than [`quota::MAX_AGE_MS`]; a
+//! denial with no such cache leaves one row carrying only its state (both windows null), a
+//! failure leaves nothing. `CODEFORGE_USAGE_KIMI=0` reads nothing and calls nothing. The
+//! `kimi` binary is not required.
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -258,7 +260,9 @@ fn cache_json(observed_ms: i64, snap: &quota::Snapshot) -> Value {
 /// parses is `ok` (written back to the cache) and returned; [`Fetch::Denied`] carries its
 /// state (expired token, 401/403, or the revoked tombstone), [`Fetch::Failed`] and an
 /// unparsable body are `unknown` -- in those cases a cache younger than [`quota::MAX_AGE_MS`]
-/// supplies the numbers. The key is the `path_hash8` of `home`.
+/// supplies the numbers. A denial with no such cache leaves one row carrying only the state:
+/// alias `kimi-<hash>`, both windows `None`, `written_at_ms` now. A `Failed` attempt leaves
+/// no row: the state is unknown. The key is the `path_hash8` of `home`.
 pub fn snapshots(
     cache_dir: &Path,
     home: &Path,
@@ -305,7 +309,26 @@ pub fn snapshots(
             let _ = crate::live::write_live_json(cache_dir, CACHE_FILE, &cache_json(now_ms, &snap));
             vec![snap]
         }
-        Fetch::Denied(state) => fallback(state),
+        Fetch::Denied(state) => {
+            // a denial is a known state: when no cache supplies the numbers, the row still
+            // stands, carrying only the state (both windows null)
+            let via_cache = fallback(state);
+            if !via_cache.is_empty() {
+                via_cache
+            } else {
+                vec![quota::Snapshot {
+                    alias: format!("kimi-{key_hash}"),
+                    org: None,
+                    org_id: None,
+                    email: None,
+                    root: None,
+                    auth_state: Some(state),
+                    written_at_ms: now_ms,
+                    five_hour: None,
+                    seven_day: None,
+                }]
+            }
+        }
         Fetch::Failed => fallback(quota::AuthState::Unknown),
     }
 }
@@ -779,12 +802,78 @@ mod tests {
             }),
         )
         .unwrap();
+        // an over-aged cache supplies no numbers: the denial leaves a state-only row instead
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
+        assert!(got[0].five_hour.is_none());
+        assert!(got[0].seven_day.is_none());
+        assert_eq!(
+            got[0].written_at_ms, NOW_MS,
+            "a fresh row, not the aged cache"
+        );
+    }
+
+    #[test]
+    fn denied_with_no_cache_is_a_row_with_only_the_auth_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let hash = alias::path_hash8(&home());
+        // Expired (a past token expiry): one row, both windows null, the verdict carried
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Denied(quota::AuthState::Expired)
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].alias, format!("kimi-{hash}"));
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Expired));
+        assert!(got[0].five_hour.is_none());
+        assert!(got[0].seven_day.is_none());
+        assert_eq!(got[0].written_at_ms, NOW_MS);
+        assert!(
+            !dir.path().join(CACHE_FILE).exists(),
+            "a denial writes no cache"
+        );
+        // Revoked (401/403, or the empty-token tombstone)
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
+        assert!(got[0].five_hour.is_none());
+        assert!(got[0].seven_day.is_none());
+        // a Failed attempt is not a known state: still no row, and so is an unparsable body
         assert!(
             snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
-                Fetch::Denied(quota::AuthState::Revoked)
+                Fetch::Failed
             })
             .is_empty()
         );
+        assert!(
+            snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+                Fetch::Body(json!({}))
+            })
+            .is_empty()
+        );
+        // the row stands in the summary: auth_state written, both windows null, validates
+        let summary = crate::usage::summary::build(
+            &[],
+            &got,
+            "host-aaaaaaaa",
+            NOW_MS,
+            &crate::usage::names::Names::default(),
+        );
+        crate::usage::summary::validate(&summary).unwrap();
+        assert_eq!(summary["accounts"][0]["auth_state"], "revoked");
+        assert!(summary["accounts"][0]["five_hour"].is_null());
+        assert!(summary["accounts"][0]["seven_day"].is_null());
+        // the same holds for a forced re-probe (`usage collect --harness/--alias`)
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Force, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
+        assert!(got[0].five_hour.is_none() && got[0].seven_day.is_none());
     }
 
     #[test]
@@ -892,12 +981,8 @@ mod tests {
             .is_empty()
         );
         assert!(!dir.path().join(CACHE_FILE).exists());
-        assert!(
-            snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
-                Fetch::Denied(quota::AuthState::Revoked)
-            })
-            .is_empty()
-        );
+        // a denial is not a Failed attempt: its state-only row is covered by
+        // `denied_with_no_cache_is_a_row_with_only_the_auth_state`
         assert!(
             snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
                 Fetch::Body(json!({}))
