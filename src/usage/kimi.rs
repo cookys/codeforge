@@ -231,23 +231,37 @@ fn cache_json(observed_ms: i64, snap: &quota::Snapshot) -> Value {
     Value::Object(m)
 }
 
-/// The host's kimi snapshot at `now_ms`. A cache at `cache_dir`/`kimi-usage.json` younger than
-/// [`CACHE_MS`] is used and `fetch` is not called. Otherwise `fetch` runs: a [`Fetch::Body`]
-/// that parses is written back (those fields only) and returned; [`Fetch::Denied`],
-/// [`Fetch::Failed`], and an unparsable body fall back to a cache younger than
-/// [`quota::MAX_AGE_MS`], else nothing. The key is the `path_hash8` of `home`.
+/// The host's kimi snapshot at `now_ms` under [`quota::Probe`]. [`quota::Probe::Normal`]:
+/// a cache at `cache_dir`/`kimi-usage.json` younger than [`CACHE_MS`] is used and `fetch`
+/// is not called. [`quota::Probe::Force`]: the cache window is ignored and `fetch` runs
+/// once. [`quota::Probe::CacheOnly`]: `fetch` is never called and the cache is read while it
+/// is not older than [`quota::MAX_AGE_MS`], else no snapshot. Otherwise `fetch` runs: a
+/// [`Fetch::Body`] that parses is written back (those fields only) and returned;
+/// [`Fetch::Denied`], [`Fetch::Failed`], and an unparsable body fall back to a cache younger
+/// than [`quota::MAX_AGE_MS`], else nothing. The key is the `path_hash8` of `home`.
 pub fn snapshots(
     cache_dir: &Path,
     home: &Path,
     now_ms: i64,
+    probe: quota::Probe,
     fetch: impl FnOnce() -> Fetch,
 ) -> Vec<quota::Snapshot> {
     let key_hash = alias::path_hash8(home);
     let cache = read_cache(&cache_dir.join(CACHE_FILE));
     let within =
         |at_ms: i64, limit: i64| (0..limit).contains(&now_ms.checked_sub(at_ms).unwrap_or(limit));
-    if let Some(c) = cache.as_ref().filter(|c| within(c.observed_ms, CACHE_MS)) {
-        return snapshot_from_cache(c, &key_hash).into_iter().collect();
+    if probe == quota::Probe::CacheOnly {
+        return cache
+            .as_ref()
+            .filter(|c| within(c.observed_ms, quota::MAX_AGE_MS))
+            .and_then(|c| snapshot_from_cache(c, &key_hash))
+            .into_iter()
+            .collect();
+    }
+    if probe == quota::Probe::Normal {
+        if let Some(c) = cache.as_ref().filter(|c| within(c.observed_ms, CACHE_MS)) {
+            return snapshot_from_cache(c, &key_hash).into_iter().collect();
+        }
     }
     let fallback = || {
         cache
@@ -689,9 +703,13 @@ mod tests {
             }),
         )
         .unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || -> Fetch {
-            panic!("fetch must not be called on a fresh cache")
-        });
+        let got = snapshots(
+            dir.path(),
+            &home(),
+            NOW_MS,
+            quota::Probe::Normal,
+            || -> Fetch { panic!("fetch must not be called on a fresh cache") },
+        );
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].written_at_ms, observed);
         assert_eq!(five(&got[0]).pct, 0.42);
@@ -714,7 +732,9 @@ mod tests {
         )
         .unwrap();
         let before = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied);
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Denied
+        });
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].written_at_ms, observed);
         assert_eq!(std::fs::read(dir.path().join(CACHE_FILE)).unwrap(), before);
@@ -728,23 +748,45 @@ mod tests {
             }),
         )
         .unwrap();
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied).is_empty());
+        assert!(
+            snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+                Fetch::Denied
+            })
+            .is_empty()
+        );
     }
 
     #[test]
     fn failed_with_no_cache_is_empty_and_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed).is_empty());
+        assert!(
+            snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+                Fetch::Failed
+            })
+            .is_empty()
+        );
         assert!(!dir.path().join(CACHE_FILE).exists());
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied).is_empty());
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(json!({}))).is_empty());
+        assert!(
+            snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+                Fetch::Denied
+            })
+            .is_empty()
+        );
+        assert!(
+            snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+                Fetch::Body(json!({}))
+            })
+            .is_empty()
+        );
         assert!(!dir.path().join(CACHE_FILE).exists());
     }
 
     #[test]
     fn a_body_writes_the_cache_and_the_next_call_does_not_fetch() {
         let dir = tempfile::tempdir().unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(sample()));
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Body(sample())
+        });
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].written_at_ms, NOW_MS);
         assert_eq!(five(&got[0]).resets_at, FIVE_RESET);
@@ -772,9 +814,13 @@ mod tests {
         assert_eq!(v["five_hour"]["resets_at"], json!(FIVE_RESET));
         assert_eq!(v["seven_day"]["pct"], json!(1.0));
         assert_eq!(v["seven_day"]["resets_at"], json!(WEEK_RESET));
-        let again = snapshots(dir.path(), &home(), NOW_MS + 60_000, || -> Fetch {
-            panic!("fetch must not be called on a fresh cache")
-        });
+        let again = snapshots(
+            dir.path(),
+            &home(),
+            NOW_MS + 60_000,
+            quota::Probe::Normal,
+            || -> Fetch { panic!("fetch must not be called on a fresh cache") },
+        );
         assert_eq!(again.len(), 1);
         assert_eq!(again[0].written_at_ms, NOW_MS);
     }
@@ -792,7 +838,7 @@ mod tests {
             }),
         )
         .unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
             Fetch::Body(json!({"usages": {"limit_5h": {"used_ratio": "x"}}}))
         });
         assert_eq!(got.len(), 1);
@@ -945,12 +991,16 @@ mod tests {
         body["boosterWallet"] = json!({"token": REFRESH});
 
         let dir = tempfile::tempdir().unwrap();
-        let snaps = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed);
+        let snaps = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Failed
+        });
         assert!(snaps.is_empty());
         no_sentinel(&outputs_of(&snaps, NOW_MS));
         assert!(!dir.path().join(CACHE_FILE).exists());
 
-        let snaps = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(body));
+        let snaps = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Fetch::Body(body)
+        });
         assert_eq!(snaps.len(), 1);
         assert_eq!(five(&snaps[0]).pct, 0.42);
         assert_eq!(week(&snaps[0]).pct, 1.0);
@@ -977,18 +1027,22 @@ mod tests {
             .any(|w| w == b"boosterWallet"));
 
         let stale_at = NOW_MS + CACHE_MS + 1;
-        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied);
+        let snaps = snapshots(dir.path(), &home(), stale_at, quota::Probe::Normal, || {
+            Fetch::Denied
+        });
         assert_eq!(snaps.len(), 1);
         assert_eq!(snaps[0].written_at_ms, NOW_MS);
         no_sentinel(&outputs_of(&snaps, stale_at));
         no_sentinel(&std::fs::read(dir.path().join(CACHE_FILE)).unwrap());
 
-        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Failed);
+        let snaps = snapshots(dir.path(), &home(), stale_at, quota::Probe::Normal, || {
+            Fetch::Failed
+        });
         assert_eq!(snaps.len(), 1);
         no_sentinel(&outputs_of(&snaps, stale_at));
 
         let aged = NOW_MS + quota::MAX_AGE_MS + 1;
-        let snaps = snapshots(dir.path(), &home(), aged, || {
+        let snaps = snapshots(dir.path(), &home(), aged, quota::Probe::Normal, || {
             Fetch::Body(json!({ "access_token": ACCESS, "refresh_token": REFRESH }))
         });
         assert!(snaps.is_empty());
@@ -1031,5 +1085,86 @@ mod tests {
             Fetch::Failed
         ));
         no_sentinel(errors.concat().as_bytes());
+    }
+
+    // `usage collect --harness/--alias` re-probe modes: Force re-fetches even on a fresh
+    // cache (a failed fetch falls back to the cache), CacheOnly never calls fetch and only
+    // reads a cache within `quota::MAX_AGE_MS`.
+
+    #[test]
+    fn force_calls_fetch_once_even_on_a_fresh_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let observed = NOW_MS - 60_000;
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({
+                "observed_ms": observed,
+                "five_hour": {"pct": 0.42, "resets_at": FIVE_RESET},
+                "seven_day": {"pct": 1.0, "resets_at": WEEK_RESET}
+            }),
+        )
+        .unwrap();
+        let mut calls = 0;
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Force, || {
+            calls += 1;
+            Fetch::Failed
+        });
+        assert_eq!(calls, 1);
+        // the failed fetch falls back to the cache, still within MAX_AGE_MS
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].written_at_ms, observed);
+        assert_eq!(five(&got[0]).pct, 0.42);
+        assert_eq!(week(&got[0]).pct, 1.0);
+    }
+
+    #[test]
+    fn cache_only_reads_a_stale_cache_without_calling_fetch() {
+        let dir = tempfile::tempdir().unwrap();
+        // older than CACHE_MS, younger than quota::MAX_AGE_MS
+        let observed = NOW_MS - 11 * 60_000;
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({
+                "observed_ms": observed,
+                "five_hour": {"pct": 0.42, "resets_at": FIVE_RESET},
+                "seven_day": {"pct": 1.0, "resets_at": WEEK_RESET}
+            }),
+        )
+        .unwrap();
+        let got = snapshots(
+            dir.path(),
+            &home(),
+            NOW_MS,
+            quota::Probe::CacheOnly,
+            || -> Fetch { panic!("fetch must not be called in CacheOnly mode") },
+        );
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].written_at_ms, observed);
+    }
+
+    #[test]
+    fn cache_only_drops_a_cache_older_than_max_age() {
+        let dir = tempfile::tempdir().unwrap();
+        let observed = NOW_MS - 7 * 3_600_000;
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({
+                "observed_ms": observed,
+                "five_hour": {"pct": 0.42, "resets_at": FIVE_RESET},
+                "seven_day": {"pct": 1.0, "resets_at": WEEK_RESET}
+            }),
+        )
+        .unwrap();
+        let got = snapshots(
+            dir.path(),
+            &home(),
+            NOW_MS,
+            quota::Probe::CacheOnly,
+            || -> Fetch { panic!("fetch must not be called in CacheOnly mode") },
+        );
+        assert!(got.is_empty());
     }
 }

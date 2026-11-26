@@ -329,6 +329,18 @@ pub enum UsageAction {
         /// 額外收集的 Claude 設定目錄（絕對路徑，可重複；之後自動重掃）
         #[arg(long = "claude-dir", value_name = "PATH")]
         claude_dirs: Vec<std::path::PathBuf>,
+        /// 只重探一個帳號（需與 --alias 一起給）：該 harness 強制探測一次（忽略 10 分鐘快取），其他網路
+        /// fetcher 只讀快取、不 spawn、不連網
+        #[arg(
+            long,
+            value_name = "HARNESS",
+            value_parser = clap::value_parser!(usage::CollectHarness),
+            requires = "alias"
+        )]
+        harness: Option<usage::CollectHarness>,
+        /// 要重探的別名（需與 --harness 一起給）
+        #[arg(long, value_name = "ALIAS", requires = "harness")]
+        alias: Option<String>,
     },
     /// 收集、寫 summary.json，驗證後以 `fleet upload` 上傳，印出 blob sha
     Push,
@@ -658,8 +670,22 @@ pub fn run(cli: Cli) -> Result<()> {
             by,
             json,
         } => usage::run(match action {
-            Some(UsageAction::Collect { quiet, claude_dirs }) => {
-                usage::Action::Collect { quiet, claude_dirs }
+            Some(UsageAction::Collect {
+                quiet,
+                claude_dirs,
+                harness,
+                alias,
+            }) => {
+                // clap 的 requires 已保證兩者同給或同缺
+                let probe = match (harness, alias) {
+                    (Some(harness), Some(alias)) => Some((harness, alias)),
+                    _ => None,
+                };
+                usage::Action::Collect {
+                    quiet,
+                    claude_dirs,
+                    probe,
+                }
             }
             Some(UsageAction::Push) => usage::Action::Push,
             Some(UsageAction::Export { hourly, sessions }) => {

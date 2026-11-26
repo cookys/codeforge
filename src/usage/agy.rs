@@ -157,9 +157,11 @@ fn read_cache(path: &Path) -> Option<Cache> {
     serde_json::from_slice(&buf).ok()
 }
 
-/// The host's agy snapshots at `now_ms`, from the cache at `cache_dir` (`agy-usage.json`)
-/// while it is younger than [`CACHE_MS`] (then `run` is not called), else from `run` — whose
-/// `Some` text, when it parses to at least one snapshot, becomes the new cache. A `None` run
+/// The host's agy snapshots at `now_ms` under [`quota::Probe`], from the cache at `cache_dir`
+/// (`agy-usage.json`). [`quota::Probe::Normal`]: while the cache is younger than [`CACHE_MS`]
+/// `run` is not called. [`quota::Probe::Force`]: the cache window is ignored and `run` is
+/// called once. [`quota::Probe::CacheOnly`]: `run` is never called and the cache is read
+/// while it is not older than [`quota::MAX_AGE_MS`], else no snapshots. A `None` run
 /// (no `agy` on PATH, the off switch, a non-zero exit, or a timeout) and a parse that finds
 /// nothing fall back to the cache while it is younger than [`quota::MAX_AGE_MS`], else return
 /// no snapshots. The key is the `path_hash8` of `home` (canonicalized).
@@ -167,14 +169,23 @@ pub fn snapshots(
     cache_dir: &Path,
     home: &Path,
     now_ms: i64,
+    probe: quota::Probe,
     run: impl FnOnce() -> Option<String>,
 ) -> Vec<quota::Snapshot> {
     let key_hash = alias::path_hash8(home);
     let cache = read_cache(&cache_dir.join(CACHE_FILE));
     let within =
         |at_ms: i64, limit: i64| (0..limit).contains(&now_ms.checked_sub(at_ms).unwrap_or(limit));
-    if let Some(c) = cache.as_ref().filter(|c| within(c.observed_ms, CACHE_MS)) {
-        return parse(&c.text, c.observed_ms, &key_hash);
+    if probe == quota::Probe::CacheOnly {
+        return cache
+            .filter(|c| within(c.observed_ms, quota::MAX_AGE_MS))
+            .map(|c| parse(&c.text, c.observed_ms, &key_hash))
+            .unwrap_or_default();
+    }
+    if probe == quota::Probe::Normal {
+        if let Some(c) = cache.as_ref().filter(|c| within(c.observed_ms, CACHE_MS)) {
+            return parse(&c.text, c.observed_ms, &key_hash);
+        }
     }
     let fallback = || {
         cache
@@ -369,9 +380,13 @@ mod tests {
     fn a_fresh_cache_is_parsed_without_calling_run() {
         let dir = tempfile::tempdir().unwrap();
         write_cache(dir.path(), NOW_MS - 60_000, CAPTURE);
-        let got = snapshots(dir.path(), &home(), NOW_MS, || -> Option<String> {
-            panic!("run must not be called on a fresh cache")
-        });
+        let got = snapshots(
+            dir.path(),
+            &home(),
+            NOW_MS,
+            quota::Probe::Normal,
+            || -> Option<String> { panic!("run must not be called on a fresh cache") },
+        );
         assert_eq!(got.len(), 2);
         // the cache's own observation time, not now
         assert_eq!(got[0].written_at_ms, NOW_MS - 60_000);
@@ -383,25 +398,79 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // older than CACHE_MS, younger than quota::MAX_AGE_MS
         write_cache(dir.path(), NOW_MS - 11 * 60_000, CAPTURE);
-        let got = snapshots(dir.path(), &home(), NOW_MS, || None);
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || None);
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].written_at_ms, NOW_MS - 11 * 60_000);
         // an over-aged cache is not returned
         std::fs::remove_file(dir.path().join(CACHE_FILE)).unwrap();
         write_cache(dir.path(), NOW_MS - 7 * 3_600_000, CAPTURE);
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || None).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || None).is_empty());
     }
 
     #[test]
     fn no_cache_and_no_run_is_empty() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || None).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || None).is_empty());
+    }
+
+    // `usage collect --harness/--alias` re-probe modes: Force re-fetches even on a fresh
+    // cache (a failed fetch falls back to the cache), CacheOnly never calls `run` and only
+    // reads a cache within `quota::MAX_AGE_MS`.
+
+    #[test]
+    fn force_calls_run_once_even_on_a_fresh_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        write_cache(dir.path(), NOW_MS - 60_000, CAPTURE);
+        let mut calls = 0;
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Force, || {
+            calls += 1;
+            None
+        });
+        assert_eq!(calls, 1);
+        // the failed run falls back to the cache, still within MAX_AGE_MS
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].written_at_ms, NOW_MS - 60_000);
+    }
+
+    #[test]
+    fn force_uses_the_run_and_rewrites_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        write_cache(dir.path(), NOW_MS - 60_000, CAPTURE);
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Force, || {
+            Some(CAPTURE.to_string())
+        });
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].written_at_ms, NOW_MS);
+    }
+
+    #[test]
+    fn cache_only_reads_a_stale_cache_without_calling_run() {
+        let dir = tempfile::tempdir().unwrap();
+        // older than CACHE_MS, younger than quota::MAX_AGE_MS
+        write_cache(dir.path(), NOW_MS - 11 * 60_000, CAPTURE);
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::CacheOnly, || {
+            panic!("run must not be called in CacheOnly mode")
+        });
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].written_at_ms, NOW_MS - 11 * 60_000);
+    }
+
+    #[test]
+    fn cache_only_drops_a_cache_older_than_max_age() {
+        let dir = tempfile::tempdir().unwrap();
+        write_cache(dir.path(), NOW_MS - 7 * 3_600_000, CAPTURE);
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::CacheOnly, || {
+            panic!("run must not be called in CacheOnly mode")
+        });
+        assert!(got.is_empty());
     }
 
     #[test]
     fn a_good_run_writes_the_cache_and_the_next_call_does_not_spawn() {
         let dir = tempfile::tempdir().unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Some(CAPTURE.to_string()));
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Some(CAPTURE.to_string())
+        });
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].written_at_ms, NOW_MS);
         #[cfg(unix)]
@@ -421,6 +490,7 @@ mod tests {
             dir.path(),
             &home(),
             NOW_MS + 60_000,
+            quota::Probe::Normal,
             || -> Option<String> { panic!("run must not be called on a fresh cache") },
         );
         assert_eq!(again.len(), 2);
@@ -431,7 +501,9 @@ mod tests {
     fn an_unparsable_run_falls_back_to_the_stale_cache_without_rewriting_it() {
         let dir = tempfile::tempdir().unwrap();
         write_cache(dir.path(), NOW_MS - 11 * 60_000, CAPTURE);
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Some("garbage\n".into()));
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Some("garbage\n".into())
+        });
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].written_at_ms, NOW_MS - 11 * 60_000);
         // the cache was not overwritten with the garbage
