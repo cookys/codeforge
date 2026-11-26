@@ -21,7 +21,7 @@ _spec.loader.exec_module(v)
 T, G = v.T, v.G
 TABS = v.TABS
 URL = 'https://staging.shiye.test/pl02?v=241115'  # r2 codex 1：完整網址，80 欄放得下
-CARDS = v.CARDS  # 合併 plan、外掛更新時機、預覽先拍幾欄、▲ 時冶 PL02 定案
+CARDS = v.CARDS  # 合併 plan、外掛更新時機、預覽先拍幾欄、▴ 時冶 PL02 定案
 CARDS = [{**c, 'steps': [x.replace(v.URL, URL) for x in c['steps']], 'detail': [(k, t.replace(v.URL, URL)) for k, t in c['detail']]} for c in CARDS]  # 網址換成完整版
 SIZES = ((209, 49), (120, 40), (80, 24))
 LW = 37  # 寬螢幕 index 欄寬（含左框線與中間直線）
@@ -68,7 +68,7 @@ def card_detail(c):
 
 
 def decide_ix(focus, marks=None, sent=()):
-    """待決 index：每張卡一列。marks {i: 'a'} 已選；sent 已送出；▲ 要先動手。"""
+    """待決 index：每張卡一列。marks {i: 'a'} 已選；sent 已送出；▴ 要先動手。"""
     marks = marks or {}
     rows = [dim(f'待決 {len(CARDS) - len(sent)} 張 · 已選 {len(marks)} 張' if marks else '待決 3 張 · 等你動手 1 張')]
     for i, c in enumerate(CARDS):
@@ -78,7 +78,7 @@ def decide_ix(focus, marks=None, sent=()):
         elif i in marks:
             rows.append(f'{m} ✓{i+1} {c["name"]}：{marks[i]}')
         else:
-            rows.append(f'{m} {"▲" if c["steps"] else "·"}{i+1} {c["name"]}')
+            rows.append(f'{m} {"▴" if c["steps"] else "·"}{i+1} {c["name"]}')
     return rows
 
 
@@ -88,7 +88,7 @@ def decide_compact(focus, marks=None, sent=()):
         parts = []
         for i, c in enumerate(CARDS):
             name = c['name'].split(' ')[0] if short else c['name']
-            mk = '⇡' if i in sent else '✓' if i in marks else '▲' if c['steps'] else '·'
+            mk = '↑' if i in sent else '✓' if i in marks else '▴' if c['steps'] else '·'
             parts.append(('▸' if i == focus else '') + mk + f'{i+1} {name}' + (f'：{marks[i]}' if i in marks else ''))
         s = '  '.join(parts)
         if v.dw(s) <= 76:
@@ -170,7 +170,7 @@ step(id='1-S', tab=1, state='S', title='過時',
      ix=[dim('要你處理'), '▸ 待決 3 張 · 動手 1 張', '  殘留 2 項', dim('艦隊（12 分鐘前）'), warn('  產線 12：執行 8 · 失敗 2'), dim('本席與審查'), warn('  本席 ctx 42%（12 分鐘前）')],
      compact='▸待決 3·動手 1  ·殘留 2  ·產線 12（過時）  ·本席（過時）',
      reply=['艦隊和本席的數字是 12 分鐘前的，可能已經變了。', '待決卡是即時的，可以照常作答。'],
-     pin=[warn('⚠ pm status 12 分鐘前（超過 5 分鐘算過時）'), warn('⚠ console 12 分鐘前'), warn('⚠ live 本席 12 分鐘前')],
+     pin=[warn('△ pm status 12 分鐘前（超過 5 分鐘算過時）'), warn('△ console 12 分鐘前'), warn('△ live 本席 12 分鐘前')],
      detail=['艦隊 12 條產線：執行 8、失敗 2、卡住 2（09:29）。', '本席 ctx 42%（09:29）。'],
      status=dict(stale={'fleet'}), key=NEXT, next='1-X2')
 step(id='1-X2', tab=1, state='X2', title='缺源（pm 和 console 都讀不到）',
@@ -190,8 +190,8 @@ step(id='2-E', tab=2, state='E', title='沒有卡', ix=[dim('待決 0 張'), '  
      reply=[ok('✓ 沒有待決的卡。'), '新卡進來時底列會亮黃色「待決 N」，按 2 回到這裡。'], detail=['最近一張在 09:30 送出（合併 plan：a）。'],
      hints=ESC, status=dict(dec='0', act='0'), key=NEXT, next='2-M')
 step(id='2-M', tab=2, state='M', title='14 張的第 5 張',
-     ix=[dim('待決 12 張 · 等你動手 2 張'), dim('⋯ 上面還有 3 張'), '  ✓4 時冶 PL02：a', '▸ ·5 hippo 安裝', '  ·6 mnemos 匯入', '  ▲7 alfred 上線', dim('⋯ 下面還有 7 張')],
-     compact='⋯上3  ✓4 時冶：a  ▸·5 hippo  ·6 mnemos  ▲7 alfred  ⋯下7',
+     ix=[dim('待決 12 張 · 等你動手 2 張'), dim('⋯ 上面還有 3 張'), '  ✓4 時冶 PL02：a', '▸ ·5 hippo 安裝', '  ·6 mnemos 匯入', '  ▴7 alfred 上線', dim('⋯ 下面還有 7 張')],
+     compact='⋯上3  ✓4 時冶：a  ▸·5 hippo  ·6 mnemos  ▴7 alfred  ⋯下7',
      reply=[('▸ hippo P1.5 要先裝 canary 還是全部一起裝？', 'text'), opt('a', '先裝 canary', True, '一台出事只影響一台；全部晚半天'),
             opt('b', '全部一起裝', False, '今天就全上；出事要一起回滾'), opt('c', '待辦', False, '離開待決，到期日前不再出現'), dim('s 送出 · 已選 4 張 · 還有 10 張沒選')],
      detail=['來源   PM · 開卡 5 小時前', '背景   hippo P1.5 要裝到 11 台主機。', '卡住   canary 主機要等 hangar 排機。'],
@@ -204,8 +204,8 @@ step(id='2-X', tab=2, state='X', title='缺源', ix=[err('待決讀不到')], co
      reply=[err('⊘ decision list 讀不到（fleet decision list 結束碼 1）'), '卡片內容看不到，不能作答。已選的答案留在本機，恢復後會回來。', '30 秒後自動重試。'],
      detail=['09:41 讀取失敗：courier 沒有回應。'], hints=ESC, status=dict(dec='—', act='—'), key=NEXT, next='2-S')
 step(id='2-S', tab=2, state='S', title='預覽中卡片變了', ix=decide_ix(1, {0: 'a', 1: 'b'}), compact=decide_compact(1, {0: 'a', 1: 'b'}),
-     reply=[warn('⚠ 預覽之後，第 2 張被 PM 改了（選項 b 的說明）。'), '確認已被拒絕，你的選擇都還在；看過再按 s 重新預覽。'] + card_opts(CARDS[1], 'b'),
-     pin=[warn('⚠ 第 2 張 09:40 被修改：b 的說明改了')], detail=card_detail(CARDS[1]),
+     reply=[warn('△ 預覽之後，第 2 張被 PM 改了（選項 b 的說明）。'), '確認已被拒絕，你的選擇都還在；看過再按 s 重新預覽。'] + card_opts(CARDS[1], 'b'),
+     pin=[warn('△ 第 2 張 09:40 被修改：b 的說明改了')], detail=card_detail(CARDS[1]),
      hints=[H('a/b/c', '選'), H('p/n', '換張'), H('s', '重新預覽'), H('Esc', '回輸入框')], key='3', next='3-N')
 
 # ===== 3 派工 =====
@@ -233,7 +233,7 @@ step(id='3-X', tab=3, state='X', title='缺源', ix=[dim('派工'), err('  派�
      reply=['live.rows 讀不到，看不到每一輪。', '摘要改用 fleetSummary：lane 忙 5、閒 4。'],
      pin=[err('⊘ live.rows 讀不到'), err('⊘ pm／console 讀不到 → 摘要改用 fleetSummary')], detail=['fleetSummary 09:40：lane 9，忙 5、閒 4。'], status=dict(fleet='—'), key=NEXT, next='3-S')
 step(id='3-S', tab=3, state='S', title='過時', ix=[dim('執行中 2 輪（15 分鐘前）')] + RUN_IX[1:], compact='▸甲 codeforge（過時）  ·乙 autopilot  ·丙 hangar 失敗',
-     reply=['派工清單是 15 分鐘前的；甲線可能已經交件。'], pin=[warn('⚠ live.rows 15 分鐘前（過時）'), warn('⚠ pm 摘要 15 分鐘前')], detail=['run hetero-1795623455 · codex', '09:26 的狀態：已 commit 2 次'],
+     reply=['派工清單是 15 分鐘前的；甲線可能已經交件。'], pin=[warn('△ live.rows 15 分鐘前（過時）'), warn('△ pm 摘要 15 分鐘前')], detail=['run hetero-1795623455 · codex', '09:26 的狀態：已 commit 2 次'],
      status=dict(stale={'fleet'}), key='4', next='4-N')
 
 # ===== 4 審查 =====
@@ -259,7 +259,7 @@ step(id='4-X', tab=4, state='X', title='缺源', ix=[dim('程式碼審查'), err
      compact='審查讀不到 · QC 讀不到 · 決策讀不到', reply=['審查、QC、代理決策都讀不到，無法判斷有沒有欠審。'], pin=[err('⊘ live.review、qc、decisions 讀不到')], detail=['上次讀到是 09:20。'],
      key=NEXT, next='4-S')
 step(id='4-S', tab=4, state='S', title='過時', ix=RV_IX[:4] + [warn('  欠審 1（20 分鐘前）')] + RV_IX[5:], compact='▸codeforge PASS  ·QC 欠審 1（過時）',
-     reply=['QC 是 20 分鐘前的；欠審那一條可能已經審完。'], pin=[warn('⚠ qc 20 分鐘前（過時）')], detail=['hangar 5cab 在 09:21 進 QC 佇列。'], key='5', next='5-N')
+     reply=['QC 是 20 分鐘前的；欠審那一條可能已經審完。'], pin=[warn('△ qc 20 分鐘前（過時）')], detail=['hangar 5cab 在 09:21 進 QC 佇列。'], key='5', next='5-N')
 
 # ===== 5 花費 =====
 SP_IX = [dim('額度'), '▸ 5h 42% · 重置 2h10m 後', '  照速度 3h03m 用完（晚於重置）', '  7d 18% · 4d 後重置', dim('額度池與今日'), '  A 池 42% · B 池 9%', '  今日 380k tokens · 輸出 41 tok/s']
@@ -289,7 +289,7 @@ step(id='5-S', tab=5, state='S', title='過時（用快取）',
      ix=[dim('額度（快取）'), warn('▸ 5h 42% ⏶ 18 分鐘前'), warn('  7d 18% ⏶ 18 分鐘前'), dim('額度池（14 分鐘前）'), warn('  A 池 42% · B 池 9%'), dim('今日'), warn('  380k · 41 tok/s（35 分鐘前）')],
      compact='▸5h 42% ⏶  ·7d 18% ⏶  ·A 池（過時）  ·速度（過時）',
      reply=['quota 指令失敗，顯示的是 18 分鐘前的快取（黃色 ⏶）。', '最後一次請求在 09:06（35 分鐘前），41 tok/s 是那時的速度。', '撞頂估算暫停，等新數字回來。'],
-     pin=[warn('⏶ seats --quota 失敗，用 18 分鐘前的快取'), warn('⚠ 額度池 14 分鐘前'), warn('⚠ 最後一次請求 09:06（35 分鐘前）')], detail=['今日 380k tokens（09:06）。'],
+     pin=[warn('⏶ seats --quota 失敗，用 18 分鐘前的快取'), warn('△ 額度池 14 分鐘前'), warn('△ 最後一次請求 09:06（35 分鐘前）')], detail=['今日 380k tokens（09:06）。'],
      status=dict(stale={'speed'}), quota='stale', key=NEXT, next='5-X2')
 step(id='5-X2', tab=5, state='X2', title='缺源（額度池和今日用量）',
      ix=[dim('額度'), '▸ 5h 42% · 重置 2h10m 後', '  7d 18% · 4d 後重置', dim('額度池'), err('  額度池讀不到'), dim('今日'), err('  今日用量讀不到')],
@@ -317,7 +317,7 @@ step(id='6-L', tab=6, state='L', title='說明很長', ix=RS_IX, compact='▸舊
 step(id='6-X', tab=6, state='X', title='缺源', ix=[dim('要你處理'), err('  殘留讀不到'), dim('外掛載入 1'), '  forge-stats 從主 clone 載入'], compact='殘留讀不到  ·外掛 1',
      reply=['殘留掃描讀不到，不知道有沒有要你處理的。', '外掛載入另有資料，照常。'], pin=[err('⊘ residue 掃描失敗（結束碼 2）')], detail=['上次成功掃描 08:30。'], key=NEXT, next='6-S')
 step(id='6-S', tab=6, state='S', title='過時', ix=[dim('要你處理 2（2 小時前）')] + RS_IX[1:], compact='▸舊 worktree tri-merge（過時）  ·外掛 1',
-     reply=['殘留清單是 2 小時前掃的；tri-merge 可能已經處理掉。', '人工處理前先在主 clone 重新掃描：', '  node ~/projects/autopilot/scripts/repo-residue-sweep.js scan --repo .'], pin=[warn('⚠ residue 2 小時前（過時）')], detail=['路徑 .claude/worktrees/tri-merge'],
+     reply=['殘留清單是 2 小時前掃的；tri-merge 可能已經處理掉。', '人工處理前先在主 clone 重新掃描：', '  node ~/projects/autopilot/scripts/repo-residue-sweep.js scan --repo .'], pin=[warn('△ residue 2 小時前（過時）')], detail=['路徑 .claude/worktrees/tri-merge'],
      key=NEXT, next='6-X2')
 step(id='6-X2', tab=6, state='X2', title='缺源（外掛載入）', ix=RS_IX[:6] + [err('  外掛載入讀不到')], compact='▸舊 worktree tri-merge  ·外掛載入讀不到',
      reply=['load_source 讀不到，不知道 forge-stats 是從哪裡載入的。', '殘留清單照常。'], pin=[err('⊘ load_source 讀不到')], detail=['上次讀到：主 clone（develop）。'], key='7', next='7-N')
@@ -346,7 +346,7 @@ step(id='7-X', tab=7, state='X', title='缺源（本機卡、他機卡、速度�
      status=dict(dec='—', act='—', speed='—'), key=NEXT, next='7-S')
 step(id='7-S', tab=7, state='S', title='過時', ix=FL_IX[:6] + [warn('待決卡 本機 3 · 他機 1（過時）')], compact='▸codeforge 41  ·runs（過時）  ·他機卡（過時）',
      reply=['runs 和他機卡都是 11 分鐘前的。', '他機卡這格畫的是接線後的樣子（fixture）。'],
-     pin=[warn('⚠ runs 11 分鐘前'), warn('⚠ pm／console 11 分鐘前'), warn('⚠ 他機卡 11 分鐘前（接線後）')], detail=['模型 opus · 41 tok/s'], status=dict(stale={'fleet'}), key=NEXT, next='7-X2')
+     pin=[warn('△ runs 11 分鐘前'), warn('△ pm／console 11 分鐘前'), warn('△ 他機卡 11 分鐘前（接線後）')], detail=['模型 opus · 41 tok/s'], status=dict(stale={'fleet'}), key=NEXT, next='7-X2')
 step(id='7-X2', tab=7, state='X2', title='缺源（runs 和摘要）', ix=[dim('執行中'), err('  runs 讀不到'), dim('待決卡：本機 3 · 他機 1')], compact='runs 讀不到  ·卡 本機3 他機1',
      reply=['runs 和產線摘要讀不到，看不到 agent 在做什麼。', '待決卡照常。'], pin=[err('⊘ runs 讀不到'), err('⊘ pm／console／fleetFeed 讀不到')], detail=['上次讀到 09:20：執行中 3、失敗 1。'],
      status=dict(fleet='—', speed='—'), key='8', next='8-N')
@@ -375,16 +375,16 @@ step(id='8-X', tab=8, state='X', title='缺源（還沒接線）', ix=[dim('待�
      reply=['待辦的資料還沒接上，這頁目前一定是空的。', '接線後讀不到的樣子同 2-X。'], pin=[err('⊘ fleet todo 還沒接線')], detail=['runtime 現況：沒有資料。'],
      hints=[H('Esc', '關閉')], key=NEXT, next='8-S')
 step(id='8-S', tab=8, state='S', title='過時', ix=[dim('待辦 3 張（30 分鐘前）')] + TD_IX[1:], compact='▸11-30 合併計畫（過時）  ·12-02  ·12-05',
-     reply=TD_Q, pin=[warn('⚠ 待辦清單 30 分鐘前（過時）')], detail=['到期 11-30'], hints=TD_HINTS, key='9', next='9-N')
+     reply=TD_Q, pin=[warn('△ 待辦清單 30 分鐘前（過時）')], detail=['到期 11-30'], hints=TD_HINTS, key='9', next='9-N')
 
 # ===== 9 說明 =====
 HP_HINTS = [H('j/k', '換段'), H('Esc', '關閉')]
 step(id='9-N', tab=9, state='N', title='狀態圖示', ix=[dim('說明'), '▸ 狀態圖示', '  按鍵', '  符號'], compact='▸狀態圖示  ·按鍵  ·符號',
-     reply=['● 進行中  ✓ 完成／已選  ✗ 失敗  ⊘ 讀不到  ⚠ 過時  ⏶ 用快取', '▸ 目前這一筆  ★ 建議  ▲ 要先動手  ⇡ 已送出', '底列左邊是狀態，右邊是分頁；黃色數字是待決。'],
+     reply=['◉ 進行中  ✓ 完成／已選  ✗ 失敗  ⊘ 讀不到  ~ 過時  ⏶ 用快取', '▸ 目前這一筆  ✧ 建議  ▴ 要先動手  ↑ 已送出', '底列左邊是狀態，右邊是分頁；黃色數字是待決。'],
      detail=['顏色：黃 要注意 · 紅 讀不到或失敗 · 綠 完成 · 灰 說明'], hints=HP_HINTS, key=NEXT, next='9-L')
 step(id='9-L', tab=9, state='L', title='按鍵表', ix=[dim('說明'), '  狀態圖示', '▸ 按鍵', '  符號'], compact='·狀態圖示  ▸按鍵  ·符號',
      reply=['焦點「按鍵」：全部按鍵在來龍去脈，新增的標 ＊。', '1–9 切頁 · j/k 換筆 · o 展開 · Esc 回輸入框或關閉'],
-     detail=['1–9        切到第 N 頁', 'j/k        換一筆（待決頁用 p/n 換張）', 'o          展開焦點列（待決頁沒有）', 'a/b/c      選選項（待決、待辦）', 'f          沒選的卡填成建議（▲ 卡不填）',
+     detail=['1–9        切到第 N 頁', 'j/k        換一筆（待決頁用 p/n 換張）', 'o          展開焦點列（待決頁沒有）', 'a/b/c      選選項（待決、待辦）', 'f          沒選的卡填成建議（▴ 卡不填）',
              'm          寫附註（只有待決）', 's          送出前先預覽', 'y / x      預覽中確認 / 取消', 'g ＊       複製等你動手卡的網址', '↑↓ ＊      捲回覆區（待決以外的頁，原本是換筆）',
              'PgUp/PgDn ＊ 捲來龍去脈（原本只有待決有）', 'Esc        待決回輸入框；其他頁關閉', 'Enter      附註輸入中：存附註'],
      hints=HP_HINTS, key='2', next='2-L2')
@@ -393,7 +393,7 @@ step(id='9-L', tab=9, state='L', title='按鍵表', ix=[dim('說明'), '  狀態
 ACT = CARDS[3]
 NOTE4 = 'staging 走過一圈，8 個都對；第 5、7 兩個值和 11-24 的對照一致'
 MK = {0: 'a', 1: 'b', 3: 'a'}
-MK0 = {0: 'a', 1: 'b'}  # 第 4 張（▲）還沒選：先走完 staging 才選 a（r2 codex 3）
+MK0 = {0: 'a', 1: 'b'}  # 第 4 張（▴）還沒選：先走完 staging 才選 a（r2 codex 3）
 URL_PIN = [('網址   ' + URL, 'text')]
 ACT_STEPS = [('▸ ' + ACT['q'], 'text'), '  1. 打開 staging 頁（按 g 複製網址）', '     ' + URL, '  2. 走一圈，核對 8 個推定值：', '     衰減、半徑、上限、下限', '     權重 1、權重 2、權重 3、權重 4',
              '  3. 有不一致的值，按 m 寫是哪一個']
@@ -440,7 +440,7 @@ step(id='2-F', tab=2, state='F', title='送出失敗', ix=decide_ix(3, MK), comp
      reply=[err('✗ 送出失敗：courier 逾時（30 秒），3 張都沒送出。'), '選擇和附註都留著；按 s 再預覽一次就能重送。'] + card_reply(3, 'a', NOTE4),
      pin=[err('⊘ 送出失敗 09:42 · courier 逾時')], detail=card_detail(ACT), nhints=D_NSCROLL, key=NEXT, next='2-Fl0')
 step(id='2-Fl0', tab=2, state='Fl0', title='按 f 之前', ix=decide_ix(0, {1: 'a'}), compact=decide_compact(0, {1: 'a'}),
-     reply=['已選 1 張：第 2 張你選了 a（今晚），不是建議的 b。', '按 f：沒選的卡填成建議；已選的和 ▲ 要動手的不動。'] + card_reply(0), detail=card_detail(CARDS[0]), key='f', next='2-Fl')
+     reply=['已選 1 張：第 2 張你選了 a（今晚），不是建議的 b。', '按 f：沒選的卡填成建議；已選的和 ▴ 要動手的不動。'] + card_reply(0), detail=card_detail(CARDS[0]), key='f', next='2-Fl')
 FL = {0: 'a', 1: 'a', 2: 'b'}
 step(id='2-Fl', tab=2, state='Fl', title='按 f 之後', ix=decide_ix(0, FL), compact=decide_compact(0, FL),
      reply=[ok('✓ 填入建議 2 張：第 1 張 a、第 3 張 b。'), '第 2 張保留你選的 a（今晚）；第 4 張要先動手，不自動填。', '送出前會先預覽，可以再改。'] + card_opts(CARDS[0], 'a'),
@@ -486,7 +486,7 @@ def render_items(items, w):
         if isinstance(it, tuple) and it[0] == 'opt':
             _, l, lab, rec, why, picked = it
             r = [T('    '), T(l + ':', 'merged'), T(' ' + lab + ' ' * (optw - v.dw(lab)), 'success' if picked else 'text')]
-            r += [T('  '), G('★', 'warning'), T(' 建議', 'warning')] if rec else [T(' ' * 8)]
+            r += [T('  '), G('✧', 'warning'), T(' 建議', 'warning')] if rec else [T(' ' * 8)]
             pre = v.rowlen(r) + 2
             tag = [T('  ✓ 已選', 'success')] if picked else []
             lines = v.wrap(why, w - pre - v.rowlen(tag)) if why else ['']
@@ -543,12 +543,12 @@ def status_line(W, tab, st):
     fl = st.get('fleet', (8, 2, 2))
     role = 'inactive' if dec == '0' else 'error' if dec == '—' else 'warning'
     counts = [T(f'待決 {dec} · 動手 {act}', role)]
-    counts_s = [T(f'待決 {dec} ', role), G('▲', role), T(f' {act}', role)]
+    counts_s = [T(f'待決 {dec} ', role), G('▴', role), T(f' {act}', role)]
     if fl == '—':
         fleet = [T('艦隊 —', 'inactive')]
     else:
         frole = 'warning' if 'fleet' in stale else 'text'
-        fleet = [T('艦隊 ', frole), G('●', 'suggestion'), T(f' {fl[0]} ', frole), G('✗', 'error'), T(f' {fl[1]} ', frole), T(f'卡住 {fl[2]}', frole)]
+        fleet = [T('艦隊 ', frole), G('◉', 'suggestion'), T(f' {fl[0]} ', frole), G('✗', 'error'), T(f' {fl[1]} ', frole), T(f'卡住 {fl[2]}', frole)]
         if 'fleet' in stale:
             fleet.append(T(' 過時', 'warning'))
     if speed == '—':
@@ -558,7 +558,7 @@ def status_line(W, tab, st):
     else:
         sp, sp_s = [T(f'ϟ {speed} '), G('▆▆▄▃▆', 'suggestion')], [T(f'ϟ {speed}')]
     sep = [G(' │ ')]
-    head = [G(' ● ', 'suggestion'), T('進行中')]
+    head = [G(' ◉ ', 'suggestion'), T('進行中')]
     toggle = [T(' '), G('▾', 'merged'), T(' ')]
     for left, tm in ((head + sep + fleet + sep + counts + sep + sp, 'full'), (head + sep + counts + sep + sp, 'full'), (head + sep + counts_s + sep + sp, 'full'),
                      (head + sep + fleet + sep + counts_s + sep + sp_s, 'cur'), (head + sep + counts_s + sep + sp_s, 'cur')):
@@ -586,7 +586,7 @@ def fleet_seg(st0):
     """最底 statusline 的 fleet 段跟 pane 底列同一個來源（r2 codex 2）。"""
     if st0.get('fleet') == '—':
         return [T('fleet —', 'inactive')]
-    run = st0.get('fleet', (8, 2, 2))[0]  # 和 pane 底列「艦隊 ● N」同一個數字（r3 codex 1）
+    run = st0.get('fleet', (8, 2, 2))[0]  # 和 pane 底列「艦隊 ◉ N」同一個數字（r3 codex 1）
     if 'fleet' in st0.get('stale', ()):
         return [T(f'fleet {run} lane ', 'warning'), G('⏶', 'warning'), T(' 11 分鐘前', 'warning')]
     return [T(f'fleet {run} lane 執行中')]
