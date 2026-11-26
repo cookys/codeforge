@@ -507,7 +507,7 @@
 
 ### 推版的 binary 不可重現：同一 commit 各機 sha16 不同
 - **Id**: B64
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-19
 - **Origin**: self
 - **Problem**: 推版走 `cargo install`，沒加 `--remap-path-prefix`，binary 帶了 clone 路徑和 `$HOME`，同一 commit 各機 sha16 不同，只能看 HEAD 加功能字串驗收。`package.sh` 已可重現（B43），缺推版改走它，以及跨 `$HOME`、跨使用者的 repro 驗證。
@@ -635,7 +635,7 @@
 
 ### 重建 sandbox capture harness（tmux＋真 claude＋--plugin-dir）
 - **Id**: B72
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-24
 - **Origin**: self
 - **Problem**: 舊 harness（capture14/15.py）隨 scratchpad 清除消失。重建版 lane scratch 的 capture.sh（tmux -L＋claude --plugin-dir AP checkout＋沙箱 CODEFORGE_DATA_DIR/AUTOPILOT_LIVE_DIR/CLAUDE_CONFIG_DIR＋trap kill-server）卡在 first-run onboarding：信任對話送 Enter 會選成 No（claude 退出）、預種 theme 鍵名不對、時間線顯示新沙箱 config 下 claude 完全不渲染（timeline/ 90 秒全空）。
