@@ -713,7 +713,7 @@
 
 ### v7.4 框淺色主題：拿鍵盤後的提示列與 ▾ 對比不到 4.5
 - **Id**: B77
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-27
 - **Origin**: self
 - **Problem**: v7.4 框（AUTOPILOT_LIVE_V5=0）在淺色主題下兩處對比不到 4.5：拿鍵盤（ctrl+x Tab）後的提示列用 claude 色，對白底 2.73；清單的 ▾ 用 subtle，2.38。v5 右 pane 已修到全列 ≥4.5（AP a9d642e51），v7.4 框沒跟上。
