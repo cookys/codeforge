@@ -11,3 +11,4 @@ created: 2026-11-23T00:00:00.000Z
 - **Trigger**: ready；pin 換到 7f7b5b95b 並完成真 pane 實拍後即可做
 - **Source**: autopilot 審查；doc/design/ux-gate/band-layout/codex-r6.md
 - **Context**: 範圍 autopilot mods/live；走 AP 分支交 autopilot 審併
+- **Origin**: autopilot 審併單 01M848TE5GS4PS3AMY5C2TJ62A 與 01M8408BYV4NWMG7CPVK8X92FN

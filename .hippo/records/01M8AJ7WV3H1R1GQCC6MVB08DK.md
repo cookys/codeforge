@@ -10,3 +10,7 @@ created: 2026-11-18T00:00:00.000Z
 - **Source**: PM 01M7PMAN：寵物頁排第 3 批，codeforge 主導、autopilot 實作
 - **Pointer**: doc/specs/codeforge-mod-ui.md
 - **Context**: 資料走 pet.json 契約；閘門照 forge-stats-ux-gate
+- **Needs**: B56
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7PMANY4HGR5N2J6BNAWFD6J

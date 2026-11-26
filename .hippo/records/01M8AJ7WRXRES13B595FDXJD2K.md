@@ -10,6 +10,13 @@ created: 2026-11-18T00:00:00.000Z
 - **Source**: 閘門 b1 第 3 輪 carbon M5；PM 01M7P1HY 排第二批
 - **Pointer**: doc/backlog/pane-batch2.md
 - **Context**: band 仍須剛好 2 列（A9 矩陣）
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
+- **Done-Check**: `grep -q "^B52 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
 ---
 # pane 第二批：閘門 b1 第 3 輪 carbon 的 M1–M6、N1–N4
 

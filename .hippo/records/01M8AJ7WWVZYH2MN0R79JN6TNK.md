@@ -10,3 +10,9 @@ created: 2026-11-19T00:00:00.000Z
 - **Source**: 01M7QPEX 推版結果（14/14 7bd44069）與 hangar 01M7QQ2Y 的比對
 - **Pointer**: none
 - **Context**: 同一 commit、同一 rustc，建出來應該一樣；做好後推版要求可以改成「各席 sha16 等於 package.sh 封存檔裡的那支」
+- **Done-Check**: `bash scripts/repro-check.sh x86_64-unknown-linux-gnu`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7QPZ6

@@ -10,3 +10,9 @@ created: 2026-11-19T00:00:00.000Z
 - **Source**: hangar 01M7R1PJ 換版回報
 - **Pointer**: none
 - **Context**: 主機名照隱私規則不寫進 repo，見 hangar 01M7R1PJ
+- **Done-Check**: `bash scripts/check-all.sh`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H

@@ -10,3 +10,10 @@ created: 2026-11-25T18:27:41.000Z
 - **Source**: autopilot 01M81Q2P；PM 裁定 01M81MFTV、01M81M4RYT
 - **Pointer**: fleet 的 `:<project>` project-owner registry（不另建清單，BL-0404）；程式碼放 autopilot mods/live，合併前由 autopilot 審
 - **Context**: 輸入時 a/b/c、s 都當文字的規則不變
+- **Origin**: autopilot 01M81Q2P（v7.6 brief 第 (2) 行）
+- **Done-Check**: 在 mod 輸入框打 `@@co`，補全清單出現 codeforge 席位；打 `p#codeforge` 帶出負責人位址
+- **Artifact**: run
+- **Needs**: none
+- **ms**: v7.6-followup
+- **Used-by**: user
+- **Queued-By**: cookys/team-console/codeforge--claude 01M81Q2P35B0QBTS5QMWQ45RG1

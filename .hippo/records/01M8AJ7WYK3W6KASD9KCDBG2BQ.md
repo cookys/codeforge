@@ -10,3 +10,10 @@ created: 2026-11-22T00:00:00.000Z
 - **Source**: v7.5 修正版驗證（fa3f0246b 之前後的 mod 全套都出現同樣 4 條，AP develop 基底本來就紅）
 - **Pointer**: none
 - **Context**: 在 autopilot repo，不是 codeforge；開單給 autopilot 席時引用這張
+- **Trigger-Type**: internal
+- **Done-Check**: AP develop 上 `bash mods/live/run-tests.sh` 除 10 條 speed tab 外沒有失敗
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M81JXZAA4PZ351VY39ZYXRT9

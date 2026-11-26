@@ -10,3 +10,10 @@ created: 2026-11-19T00:00:00.000Z
 - **Source**: PM 01M7R1SD 的只讀比對（41 列，39 個名稱，和 PM 記憶重疊 0）
 - **Pointer**: none
 - **Context**: 換版前吸進來的舊列沒有 slug，只能靠新的列往後查；舊列要不要清，另外問 PM
+- **Status**: shipped b5dbeac 2026-11-22
+- **Done-Check**: `bash scripts/test-flake-guard.sh cargo`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H

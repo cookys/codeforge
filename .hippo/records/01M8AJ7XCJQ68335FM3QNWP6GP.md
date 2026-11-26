@@ -11,3 +11,4 @@ created: 2026-11-23T00:00:00.000Z
 - **Source**: 01M84BZMK1810A379D4PYC498G
 - **Pointer**: 掃描法見 AP mods/live/width-lint.test.js；forge-stats 畫面改動要過 UX 閘門
 - **Context**: forge-stats 與 statusline 屬操作員看得到的畫面，換符號前先確認它們是否仍在用
+- **Origin**: PM 裁定（01M84GEVJ7、01M84H74A6，方案 B）；AP 側已換並加 width lint（AP feat/width-lint）

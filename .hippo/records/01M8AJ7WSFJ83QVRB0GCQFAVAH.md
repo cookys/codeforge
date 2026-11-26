@@ -10,6 +10,13 @@ created: 2026-11-18T00:00:00.000Z
 - **Source**: 閘門 b1 第 3 輪 carbon M6；PM 01M7P1HY 排第二批
 - **Pointer**: doc/backlog/pane-batch2.md
 - **Context**: 計數分紅（✗）和黃（▲/?）兩種；band 上的 Button 仍不綁數字 hotkey（A5'）
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
+- **Done-Check**: `grep -q "^B53 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
 ---
 # pane 第二批：閘門 b1 第 3 輪 carbon 的 M1–M6、N1–N4
 

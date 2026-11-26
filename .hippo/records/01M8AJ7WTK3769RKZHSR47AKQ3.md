@@ -10,6 +10,13 @@ created: 2026-11-18T00:00:00.000Z
 - **Source**: codeforge keyprobe 11-18（Claude Code 2.1.327、已安裝的 autopilot 083cf2e9）；PM 01M7PMAN 列入第 2 批
 - **Pointer**: doc/backlog/pane-batch2.md
 - **Context**: 實作在 autopilot；可能是 host 換位置時沒重新登記 hotkey，要 autopilot 查清楚是自己的還是 host 的，host 的就做繞道並回報
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
+- **Done-Check**: `grep -q "^B56 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7PMANY4HGR5N2J6BNAWFD6J
 ---
 # pane 第二批：閘門 b1 第 3 輪 carbon 的 M1–M6、N1–N4
 

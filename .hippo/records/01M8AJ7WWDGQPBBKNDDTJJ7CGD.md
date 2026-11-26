@@ -10,3 +10,9 @@ created: 2026-11-18T00:00:00.000Z
 - **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
 - **Pointer**: none
 - **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8

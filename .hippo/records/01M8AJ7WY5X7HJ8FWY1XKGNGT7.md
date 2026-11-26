@@ -11,3 +11,10 @@ created: 2026-11-22T00:00:00.000Z
 - **Source**: v7.6 UX 雙評 r9（兩家都列 Critical）；PM 01M80RW9 裁定 A：算宿主限制，不對外送任何東西
 - **Pointer**: none
 - **Context**: 宿主是 Claude Code 本身，我們改不了；等宿主版本更新時重驗
+- **Trigger-Type**: external
+- **Done-Check**: v7.6 閘門一般畫面長附註步驟畫面可判讀
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M80RW9WV721Z113FS7QXJ1NJ
