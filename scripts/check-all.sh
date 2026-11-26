@@ -132,7 +132,8 @@ shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh 
   scripts/pane-gate/nojump-check.test.sh scripts/pane-gate/v74-keys/parse.test.sh \
   scripts/pane-gate/v74-keys/ux-review.sh scripts/pane-gate/v74-keys/ux-review.test.sh \
   scripts/check-architecture-coverage.sh scripts/check-architecture-coverage.test.sh \
-  scripts/backlog-view.sh scripts/backlog-view.test.sh
+  scripts/backlog-view.sh scripts/backlog-view.test.sh \
+  scripts/install-release.sh scripts/install-release.test.sh scripts/repro-check.sh
 
 step "g40 real-data scan (negative controls)"
 ./scripts/g40-real-data/scan-statusline.test.sh
@@ -174,6 +175,9 @@ step "public push guard (origin is public: only develop/main)"
 
 step "release archive hermetic (B43)"
 ./scripts/test-archive-hermetic.sh
+
+step "install-release (fake package.sh, no build; B64)"
+./scripts/install-release.test.sh
 
 # The MSRV, from Cargo.toml's rust-version: the release build must compile with it.
 MSRV=$(grep -m1 '^rust-version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')

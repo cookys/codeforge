@@ -88,7 +88,8 @@ cargo clippy                   # lint
 ./scripts/lane-run.sh --scratch <dir> <mods-test|gate|dispatch|result>  # lane runner; --help lists path overrides and fixed logs
 ./scripts/check-all.sh         # THE merge gate (no hosted CI since G38): fmt, clippy --all-targets, test (flake guard), cjk-safe, doc-drift, cargo deny, shellcheck, forge-stats plugin tests, g40 real-data scans, trinity-import test, checkout guard (main clone stays on develop), public push guard (pre-push refuses any ref but develop/main to the public origin; override `CODEFORGE_PUBLIC_PUSH_OVERRIDE="<id>: <reason>"`, audit line in the git dir), release archive hermetic test (B43), MSRV release smoke
 ./scripts/package.sh <target>  # release tarball + .sha256 named as install.sh downloads them (dist/); --cross, --max-glibc; reproducible
-./scripts/repro-check.sh <target> # build HEAD twice at two paths; archives must match
+./scripts/repro-check.sh <target> # build HEAD twice at two paths; archives must match; --other-cargo-home = 2nd build under a different offline CARGO_HOME (B64)
+./scripts/install-release.sh [--dest <dir>] [--target <triple>] # install the reproducible package's binary (B64); prints sha16 + commit, identical on every host
 ./scripts/release-local.sh     # local release: linux x86_64/aarch64 via cross (glibc <= 2.35), install.sh verified from a local server, dist/RELEASE.txt; --publish = DRAFT only (operator publishes)
 ./scripts/test-flake-guard.sh  # cargo test; a failure is rerun once, a flake is recorded in target/flaky-tests.log (never hidden)
 ./scripts/g40-real-data/check.sh [<live_dir>]  # G40: statusline + panel/1 against a quota mirror at 5 widths (sandboxed); no arg = fixture, --negative = must fail
