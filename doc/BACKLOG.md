@@ -683,7 +683,7 @@
 
 ### 機器閘 source-overlap 可能因 L0 含 session id 而丟掉所有候選
 - **Id**: B75
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-26
 - **Origin**: self（T2 交件時的未驗項）
 - **Problem**: T2 機器閘的 `source-overlap` 規則拿整個候選 JSON（含 `evidence.session_id`、`time_start`、`time_end`）去和來源 L0 訊號文字比對 ≥20 字元共同子串。如果 session-digest 的訊號文字裡本身帶 session id 或 ISO 時間戳，每一筆候選都會被這條規則丟掉，T3 的候選區永遠是空的。假資料測試沒有這種 L0，所以沒看出來。
