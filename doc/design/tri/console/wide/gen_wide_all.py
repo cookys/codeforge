@@ -51,14 +51,14 @@ def dw(s):
 
 # 艦隊 12 條產線：和狀態列預設（執行 8、失敗 2、卡住 2）與 1 現況的來龍去脈同一份
 LANES = [
-    ('●', 'success', 'codeforge', 'ϟ 41 tok/s  ▆▆▄▃▆', 'tux-sync 測試'),
-    ('●', 'success', 'autopilot', 'ϟ 37 tok/s  ▄▅▆▆▅', 'band 對比修正'),
-    ('●', 'success', 'hangar', 'ϟ 63 tok/s  ▆▇▆▅▆', '盤點 client 尺寸'),
-    ('●', 'success', 'fleet', 'ϟ 30 tok/s  ▃▄▄▅▄', 'courier 重試佇列'),
-    ('●', 'success', 'hippo', 'ϟ 22 tok/s  ▂▃▃▄▃', '安裝 P1.5'),
-    ('●', 'success', 'lab', 'ϟ 18 tok/s  ▂▂▃▂▂', 'gate 掃描'),
-    ('●', 'success', 'alfred', 'ϟ 15 tok/s  ▁▂▂▂▃', '部署前檢查'),
-    ('●', 'success', 'mnemos', 'ϟ 11 tok/s  ▁▁▂▁▂', '索引重建'),
+    ('◉', 'success', 'codeforge', 'ϟ 41 tok/s  ▆▆▄▃▆', 'tux-sync 測試'),
+    ('◉', 'success', 'autopilot', 'ϟ 37 tok/s  ▄▅▆▆▅', 'band 對比修正'),
+    ('◉', 'success', 'hangar', 'ϟ 63 tok/s  ▆▇▆▅▆', '盤點 client 尺寸'),
+    ('◉', 'success', 'fleet', 'ϟ 30 tok/s  ▃▄▄▅▄', 'courier 重試佇列'),
+    ('◉', 'success', 'hippo', 'ϟ 22 tok/s  ▂▃▃▄▃', '安裝 P1.5'),
+    ('◉', 'success', 'lab', 'ϟ 18 tok/s  ▂▂▃▂▂', 'gate 掃描'),
+    ('◉', 'success', 'alfred', 'ϟ 15 tok/s  ▁▂▂▂▃', '部署前檢查'),
+    ('◉', 'success', 'mnemos', 'ϟ 11 tok/s  ▁▁▂▁▂', '索引重建'),
     ('✗', 'error', 'hangar 換池', '失敗 3 輪', '等 NAS 回應逾時'),
     ('✗', 'error', 'docs 建置', '失敗 1 輪', 'mdbook 版本不符'),
     ('⋯', 'warning', 'pinball 美術', '卡住', '等操作員選版'),
@@ -97,7 +97,7 @@ HIST = {
     7: ('今天結束的產線', ['09:05 codeforge · tux-sync 交件', '08:40 hangar · 盤點交件', '08:12 autopilot · band 交件', '07:30 docs · 版本交件',
                           '07:02 fleet · 重試交件', '06:41 hippo · P1.4 交件']),
     8: ('最近完成的待辦', ['11-25 盤點 client 尺寸', '11-24 外掛版本對齊', '11-23 r1 rev4 示意', '11-22 v7.6 第 1 批', '11-21 band 對比']),
-    9: ('顏色怎麼讀', ['綠 ● 正常、執行中', '紅 ✗ ⊘ 失敗、讀不到', '黃 ⚠ ⋯ 過時、在等人', '紫 可按的鍵', '灰 說明文字，不能按']),
+    9: ('顏色怎麼讀', ['綠 ◉ 正常、執行中', '紅 ✗ ⊘ 失敗、讀不到', '黃 ~ ⋯ 過時、在等人', '紫 可按的鍵', '灰 說明文字，不能按']),
 }
 # 本機事件紀錄：最後一塊，補滿 pane 上半剩下的列（來源是本機，不受 pm／console 讀不到影響）
 EVENTS = [f'{t} {x}' for t, x in [('09:41', 'pm status 更新'), ('09:40', 'hangar 回報 client 尺寸'), ('09:38', 'codeforge check-all 綠'), ('09:35', 'autopilot 送審'),
@@ -286,7 +286,7 @@ def compose(n, s):
     speed = s['status'].get('speed') != '—'
     if s['id'] in FLEET12:
         ix = [[('▸ ' if name == FLEET12[s['id']] else '  ', 'text'), (mark, role),
-               (f' {name} · ' + (('ϟ —' if not speed else a.split('  ')[0]) if mark == '●' else a.replace('卡住', '等人')), 'text')]
+               (f' {name} · ' + (('ϟ —' if not speed else a.split('  ')[0]) if mark == '◉' else a.replace('卡住', '等人')), 'text')]
               for mark, role, name, a, b in LANES]
     more = []
     if s['id'] in ABOVE:
@@ -308,6 +308,9 @@ def compose(n, s):
     # ── 底部 band ──
     bl, br = 0, BANDW - 1
     hints = [h for h in (s['hints'] or g.DEFAULT_HINTS[tab]) if h[0] not in NO_SCROLL]
+    # 缺源而且清單沒有可選的列：j/k、o 按了沒反應，提示列就不列（和實作一致，PM 01M8C4DY B 類）
+    if s['state'].startswith('X') and not any('▸' in t for row in ix for t, *_ in row):
+        hints = [h for h in hints if h[0] not in ('j/k', 'o')]
     if not any(k == 'Tab' for k, _ in hints):
         hints.append(g.H('Tab', '換頁'))
     foot = [(' ', 'inactive')] + [tuple(x[:2]) for x in g.hint_row(hints)] + [(' ', 'inactive')]
