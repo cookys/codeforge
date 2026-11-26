@@ -604,6 +604,7 @@ codeforge usage --days 3 --by project
 codeforge usage --json
 codeforge usage collect --quiet     # hook 用
 codeforge usage collect --claude-dir /srv/claude/seat-a --claude-dir /srv/claude/seat-b  # 本次掃描並記住（絕對路徑）
+codeforge usage collect --harness grok --alias grok-1a2b3c4d  # 只重探一個帳號（--harness 與 --alias 需一起給）
 codeforge usage push                # 印出 blob sha
 codeforge usage export              # 印出 push 會上傳的 bytes（驗證後拿掉 email 與 name，不連線、不寫檔），給 hangar 用 ssh 收
 codeforge usage export --hourly     # 同一趟收集後改印每小時（UTC）每帳號每模型的 Claude token 列（codeforge.usage-hourly/1）；沒有 email、name、org、project、路徑
@@ -640,6 +641,15 @@ codeforge usage note clear <provider|名字>          # 備註與規則一起清
 
 collect 本身持有 `<data_dir>/usage/collect.lock`（flock）：`collect --quiet` 遇到另一個還在跑就
 直接跳過，`codeforge usage`、`usage push` 與不帶 `--quiet` 的 collect 會等它跑完。
+
+`collect --harness <h> --alias <a>`（兩者必須一起給）只重探一個帳號：h 是
+`claude`／`codex`／`agy`／`grok`／`kimi`／`trinity`。指定 harness 若是 agy／grok／kimi，
+這次忽略它的 10 分鐘快取、強制 live fetch 一次（失敗照既有規則退回 6 小時內的較舊快取）；
+其他 agy／grok／kimi 只讀快取、不 spawn、不連網（快取 6 小時內才入列，否則這輪沒有那列）；
+claude／codex／trinity 沒有網路探測，照讀本機檔。然後在產生的快照裡找 harness 相符且
+alias 等於 `<a>` 的那一列（claude 另比對 claude root 的登入 alias）：找不到就不寫
+summary.json、結束碼非 0、stderr 印一行（例：`找不到 grok 帳號「grok-1a2b3c4d」`）；
+找得到就照常寫 summary.json，其他帳號的列照舊在。不給這兩個參數時行為與以前逐字相同。
 
 `codeforge install --hooks` 另外把 `usage collect --quiet` 接在 SessionEnd 的 `ship --no-hook`
 之後；第一次收集若超過 hook 時限，已完成的檔案已各自 commit，下次接著做。

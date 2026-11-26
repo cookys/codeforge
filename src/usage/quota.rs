@@ -80,6 +80,22 @@ pub struct Seen {
     pub session: String,
 }
 
+/// How a network fetcher's 10-minute cache is treated in one collect round.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Probe {
+    /// A plain collect: a cache younger than the fetcher's cache window is reused as is,
+    /// the fetch closure is not called.
+    Normal,
+    /// A forced re-probe (`usage collect --harness` names this fetcher): the cache window is
+    /// ignored and the fetch closure is called exactly once; a failure falls back to a cache
+    /// not older than [`MAX_AGE_MS`], exactly like the plain failure path.
+    Force,
+    /// Cache only (the fetcher is not the re-probe target): the fetch closure is never called
+    /// — no spawn, no network; the cache is used while it is not older than [`MAX_AGE_MS`],
+    /// else the fetcher contributes no snapshots.
+    CacheOnly,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Window {
     /// 0.0–1.0

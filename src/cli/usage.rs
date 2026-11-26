@@ -9,6 +9,35 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+/// The value of `usage collect --harness`: which account family the one-account re-probe
+/// targets. The named network fetcher (agy/grok/kimi) is fetched live once, ignoring its
+/// 10-minute cache; the other network fetchers read their cache only — no spawn, no
+/// network. claude/codex/trinity never fetch: they read local files as usual.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
+pub enum CollectHarness {
+    Claude,
+    Codex,
+    Agy,
+    Grok,
+    Kimi,
+    Trinity,
+}
+
+/// The flag's own spelling, the same word clap accepts (also the word the miss message uses).
+impl std::fmt::Display for CollectHarness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            CollectHarness::Claude => "claude",
+            CollectHarness::Codex => "codex",
+            CollectHarness::Agy => "agy",
+            CollectHarness::Grok => "grok",
+            CollectHarness::Kimi => "kimi",
+            CollectHarness::Trinity => "trinity",
+        };
+        f.write_str(name)
+    }
+}
+
 pub enum Action {
     Show {
         days: u32,
@@ -18,6 +47,9 @@ pub enum Action {
     Collect {
         quiet: bool,
         claude_dirs: Vec<PathBuf>,
+        /// Re-probe one account: the `CollectHarness` and its alias. `None` is the plain
+        /// collect, byte for byte.
+        probe: Option<(CollectHarness, String)>,
     },
     Push,
     Export {
@@ -74,11 +106,14 @@ fn now_ms() -> i64 {
 
 /// Collect every root, write the summary; returns the connection for the caller's report.
 /// `wait` false: when another collect is running, return `None` at once (the background
-/// statusline trigger and the SessionEnd hook); otherwise wait for it.
+/// statusline trigger and the SessionEnd hook); otherwise wait for it. `probe` re-probes one
+/// account (`--harness`/`--alias`): the named network fetcher is forced live, the others
+/// read their cache only, and the round writes no summary when the account is not found.
 fn collect_and_summarize(
     quiet: bool,
     wait: bool,
     extra_claude_dirs: &[PathBuf],
+    probe: Option<(CollectHarness, String)>,
 ) -> Result<Option<(rusqlite::Connection, PathBuf)>> {
     for dir in extra_claude_dirs {
         if !dir.is_absolute() {
@@ -151,44 +186,93 @@ fn collect_and_summarize(
         .format("%Y-%m-%d")
         .to_string();
     let rows = collect::rows_since(&conn, &since)?;
-    let mut fresh: Vec<_> = snaps
+    // the claude roots' quota files: the claude harness of a re-probe matches on these, or on
+    // a root's login alias, not on the other fetchers' snapshots
+    let claude_snaps: Vec<quota::Snapshot> = snaps
         .into_iter()
         .filter(|s| (0..quota::MAX_AGE_MS).contains(&(now - s.written_at_ms)))
         .collect();
     // codex accounts carry the windows of their newest rollout `rate_limits` the same way
-    fresh.extend(collect::codex_snapshots(&conn, now)?);
+    let codex_snaps = collect::codex_snapshots(&conn, now)?;
+    // A re-probe round (`--harness`/`--alias`): the named network fetcher is forced live
+    // once; the others read their cache without spawning or connecting.
+    let mode_for = |harness: CollectHarness| -> quota::Probe {
+        match (probe.as_ref().map(|(h, _)| *h), harness) {
+            (Some(want), h) if want == h => quota::Probe::Force,
+            (Some(_), _) => quota::Probe::CacheOnly,
+            (None, _) => quota::Probe::Normal,
+        }
+    };
     // the host's agy account: the two pools of `agy -p /usage` (10-min cache, 20 s timeout,
     // CODEFORGE_USAGE_AGY=0 to never spawn)
-    fresh.extend(agy::snapshots(
-        &summary::summary_dir(&live_base),
+    let agy_snaps = agy::snapshots(
+        &usage_dir,
         &home,
         now,
+        mode_for(CollectHarness::Agy),
         agy::run_agy,
-    ));
+    );
     // the host's grok CLI account: weekly quota from the billing API (10-min cache, 10 s
     // timeout, CODEFORGE_USAGE_GROK=0 to read nothing at all, cache included)
-    if !grok::disabled() {
-        fresh.extend(grok::snapshots(
-            &summary::summary_dir(&live_base),
+    let grok_snaps = if grok::disabled() {
+        Vec::new()
+    } else {
+        grok::snapshots(
+            &usage_dir,
             &home,
             now,
+            mode_for(CollectHarness::Grok),
             || grok::fetch_live(&home),
-        ));
-    }
+        )
+    };
     // the host's kimi Code CLI account: 5h and weekly quota from the usages API (10-min cache,
     // 8 s timeout, CODEFORGE_USAGE_KIMI=0 to read nothing at all, cache included)
-    if !kimi::disabled() {
-        fresh.extend(kimi::snapshots(
-            &summary::summary_dir(&live_base),
+    let kimi_snaps = if kimi::disabled() {
+        Vec::new()
+    } else {
+        kimi::snapshots(
+            &usage_dir,
             &home,
             now,
+            mode_for(CollectHarness::Kimi),
             || kimi::fetch_live(&home),
-        ));
-    }
+        )
+    };
     // trinity's self-reported quota (no network). CODEFORGE_USAGE_TRINITY=0 reads nothing.
-    if !trinity::disabled() {
-        fresh.extend(trinity::snapshots(&summary::summary_dir(&live_base), now));
+    let trinity_snaps = if trinity::disabled() {
+        Vec::new()
+    } else {
+        trinity::snapshots(&usage_dir, now)
+    };
+    // A re-probe round is only for that account: without its row the round writes nothing.
+    if let Some((harness, alias)) = &probe {
+        let found = match harness {
+            CollectHarness::Claude => {
+                claude_snaps.iter().any(|s| &s.alias == alias)
+                    || roots.iter().any(|r| {
+                        r.kind == collect::Kind::Claude
+                            && r.account.as_deref() == Some(alias.as_str())
+                    })
+            }
+            CollectHarness::Codex => codex_snaps.iter().any(|s| &s.alias == alias),
+            CollectHarness::Agy => agy_snaps.iter().any(|s| &s.alias == alias),
+            CollectHarness::Grok => grok_snaps.iter().any(|s| &s.alias == alias),
+            CollectHarness::Kimi => kimi_snaps.iter().any(|s| &s.alias == alias),
+            CollectHarness::Trinity => trinity_snaps.iter().any(|s| &s.alias == alias),
+        };
+        if !found {
+            anyhow::bail!("找不到 {harness} 帳號「{alias}」");
+        }
     }
+    // every source, in the order the summary always read them
+    let fresh: Vec<quota::Snapshot> = claude_snaps
+        .into_iter()
+        .chain(codex_snaps)
+        .chain(agy_snaps)
+        .chain(grok_snaps)
+        .chain(kimi_snaps)
+        .chain(trinity_snaps)
+        .collect();
     let v = summary::with_codex_sessions(
         summary::build(
             &rows,
@@ -268,7 +352,7 @@ fn write_fleet_quota(
 }
 
 fn collected(quiet: bool) -> Result<(rusqlite::Connection, PathBuf)> {
-    collect_and_summarize(quiet, true, &[])?.context("collect 沒有結果")
+    collect_and_summarize(quiet, true, &[], None)?.context("collect 沒有結果")
 }
 
 fn compact(n: u64) -> String {
@@ -325,8 +409,12 @@ fn table_line(cells: &[&str; 8]) -> String {
 
 pub fn run(action: Action) -> Result<()> {
     match action {
-        Action::Collect { quiet, claude_dirs } => {
-            collect_and_summarize(quiet, !quiet, &claude_dirs)?;
+        Action::Collect {
+            quiet,
+            claude_dirs,
+            probe,
+        } => {
+            collect_and_summarize(quiet, !quiet, &claude_dirs, probe)?;
             Ok(())
         }
         Action::Accounts { json } => accounts(json),

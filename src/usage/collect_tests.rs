@@ -213,6 +213,213 @@ fn export_cli_args(
     )
 }
 
+// The `usage collect` seam for re-probe rounds (`--harness`/`--alias`): unlike
+// `collect_dirs_cli_child`, a failed run is the expected outcome of a miss, so the child
+// mirrors `main` — print the anyhow chain to stderr and exit 1.
+#[test]
+fn collect_probe_cli_child() {
+    use clap::Parser;
+    let Ok(args) = std::env::var("CODEFORGE_COLLECT_PROBE_TEST_ARGS") else {
+        return;
+    };
+    let args: Vec<String> = serde_json::from_str(&args).unwrap();
+    let cli = crate::cli::Cli::try_parse_from(args).unwrap();
+    if let Err(e) = crate::cli::run(cli) {
+        eprintln!("{e:#}");
+        std::process::exit(1);
+    }
+}
+
+/// `usage collect` (plus the probe args) in an isolated child: the exit status, the child's
+/// stderr, and the path of the summary the child would write. No PATH in the child, so a
+/// forced fetch always fails and falls back to the cache. Each test passes its own `live`
+/// (a unique label), so parallel test children never share a summary dir.
+fn collect_probe_cli(
+    e: &Env,
+    live: &Path,
+    extra: &[&str],
+    claude_cfg: Option<&Path>,
+) -> (std::process::ExitStatus, String, PathBuf) {
+    let mut args = vec!["codeforge", "usage", "collect"];
+    args.extend_from_slice(extra);
+    let summary_path = live.join("codeforge/usage/summary.json");
+    let mut cmd = std::process::Command::new(std::env::current_exe().unwrap());
+    cmd.args([
+        "--exact",
+        "usage::collect::tests::collect_probe_cli_child",
+        "--nocapture",
+    ])
+    .env_clear()
+    .env("HOME", e._tmp.path())
+    .env("CODEFORGE_DIR", e._tmp.path().join("project"))
+    .env("CODEFORGE_DATA_DIR", &e.data)
+    .env("CODEX_HOME", &e.codex)
+    .env("AUTOPILOT_LIVE_DIR", live)
+    .env(
+        "CODEFORGE_ACCOUNTS_FILE",
+        e._tmp.path().join("accounts.toml"),
+    )
+    .env(
+        "CODEFORGE_COLLECT_PROBE_TEST_ARGS",
+        serde_json::to_string(&args).unwrap(),
+    )
+    .current_dir(e._tmp.path());
+    if let Some(cfg) = claude_cfg {
+        cmd.env("CLAUDE_CONFIG_DIR", cfg);
+    }
+    let out = cmd.output().unwrap();
+    (
+        out.status,
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        summary_path,
+    )
+}
+
+/// A re-probe round (`--harness grok --alias …`) forces grok to fetch (no grok on the child's
+/// PATH: the fetch fails and falls back to the fresh cache) and reads the other network
+/// harnesses from their caches without spawning — the written summary still carries every
+/// account.
+#[test]
+fn a_probe_round_keeps_the_other_accounts_in_the_summary() {
+    let e = env();
+    let live = child_live_labeled(
+        &e,
+        &format!(".codeforge-probe-keeps-{}", std::process::id()),
+    );
+    let sdir = live.join("codeforge/usage");
+    let now = chrono::Utc::now().timestamp_millis();
+    let resets = now.div_euclid(1000) + 7 * 86_400;
+    let resets_rfc = chrono::DateTime::from_timestamp(resets, 0)
+        .unwrap()
+        .to_rfc3339();
+    // the agy cache (fresh): the not-probed harness reads it in CacheOnly mode, no spawn
+    crate::live::write_live_json(
+        &sdir,
+        "agy-usage.json",
+        &json!({
+            "observed_ms": now - 60_000,
+            "text": format!("Gemini Models\tWeekly Limit Remaining\t60%\t{resets_rfc}\nClaude and GPT models\tWeekly Limit Remaining\t84%\t{resets_rfc}")
+        }),
+    )
+    .unwrap();
+    // the grok cache (fresh): the probed harness is forced to fetch; the failed fetch falls
+    // back to it
+    crate::live::write_live_json(
+        &sdir,
+        "grok-usage.json",
+        &json!({ "observed_ms": now - 60_000, "pct": 0.34, "resets_at": resets }),
+    )
+    .unwrap();
+    let home_hash = crate::usage::alias::path_hash8(e._tmp.path());
+    let (status, stderr, summary) = collect_probe_cli(
+        &e,
+        &live,
+        &["--harness", "grok", "--alias", &format!("grok-{home_hash}")],
+        None,
+    );
+    assert!(status.success(), "stderr: {stderr}");
+    let v: Value = serde_json::from_slice(&std::fs::read(&summary).unwrap()).unwrap();
+    let aliases: Vec<&str> = v["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["alias"].as_str().unwrap())
+        .collect();
+    // the probed account and the other account's rows both stand
+    assert!(
+        aliases.contains(&format!("grok-{home_hash}").as_str()),
+        "accounts: {aliases:?} expected grok-{home_hash} live: {} stderr: {stderr}",
+        live.display()
+    );
+    assert!(
+        aliases.contains(&format!("agy-{home_hash}").as_str()),
+        "accounts: {aliases:?}"
+    );
+}
+
+/// A re-probe round whose alias matches no snapshot and no root account writes nothing and
+/// exits non-zero, with the one-line reason (harness and alias) on stderr.
+#[test]
+fn a_probe_round_without_a_match_writes_no_summary() {
+    let e = env();
+    let live = child_live_labeled(&e, &format!(".codeforge-probe-miss-{}", std::process::id()));
+    let sdir = live.join("codeforge/usage");
+    let now = chrono::Utc::now().timestamp_millis();
+    let resets = now.div_euclid(1000) + 7 * 86_400;
+    // a grok cache exists, but under the alias the probe does not name
+    crate::live::write_live_json(
+        &sdir,
+        "grok-usage.json",
+        &json!({ "observed_ms": now - 60_000, "pct": 0.34, "resets_at": resets }),
+    )
+    .unwrap();
+    let (status, stderr, summary) = collect_probe_cli(
+        &e,
+        &live,
+        &["--harness", "grok", "--alias", "grok-ffffffff"],
+        None,
+    );
+    assert!(!status.success());
+    assert!(
+        stderr.contains("找不到 grok 帳號「grok-ffffffff」"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        !summary.exists(),
+        "summary.json must not be written on a miss"
+    );
+}
+
+/// A claude account is matched on the root's login alias, not a quota snapshot: with no
+/// quota file at all, the probe finds the account and the summary is written.
+#[test]
+fn a_probe_round_matches_a_claude_root_account_without_a_quota_snapshot() {
+    let e = env();
+    let live = child_live_labeled(
+        &e,
+        &format!(".codeforge-probe-claude-{}", std::process::id()),
+    );
+    // a login file (any content) plus an identity cache that matches its metadata: the
+    // account comes from the cache, the login body is never read
+    let login = e.cfg.join(".claude.json");
+    std::fs::write(&login, "{}").unwrap();
+    let meta = std::fs::metadata(&login).unwrap();
+    let mtime_ns = meta
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as i64;
+    let cfg_canon = std::fs::canonicalize(&e.cfg).unwrap_or_else(|_| e.cfg.clone());
+    crate::live::write_live_json(
+        &live.join("codeforge/usage"),
+        &format!(
+            "identity-{}.json",
+            crate::usage::alias::path_hash8(&cfg_canon)
+        ),
+        &json!({
+            "mtime_ns": mtime_ns,
+            "size": meta.len(),
+            "alias": "seat-a",
+            "org": null,
+            "org_id": "",
+            "email": null
+        }),
+    )
+    .unwrap();
+    let (status, stderr, summary) = collect_probe_cli(
+        &e,
+        &live,
+        &["--harness", "claude", "--alias", "seat-a"],
+        Some(&e.cfg),
+    );
+    assert!(status.success(), "stderr: {stderr}");
+    assert!(
+        summary.exists(),
+        "the matched root account is enough to write the summary"
+    );
+}
+
 #[test]
 fn usage_export_prints_the_validated_email_free_summary() {
     use crate::usage::quota::Window;
