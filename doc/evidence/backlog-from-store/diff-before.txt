@@ -1,0 +1,91 @@
+missed	B52	field Status: store 'dropped' source 'dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)'
+missed	B52	field Done-Check not in the store
+missed	B52	field Artifact not in the store
+missed	B52	field Needs not in the store
+missed	B52	field ms not in the store
+missed	B52	field Used-by not in the store
+missed	B52	field Queued-By not in the store
+missed	B53	field Status: store 'dropped' source 'dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)'
+missed	B53	field Done-Check not in the store
+missed	B53	field Artifact not in the store
+missed	B53	field Needs not in the store
+missed	B53	field ms not in the store
+missed	B53	field Used-by not in the store
+missed	B53	field Queued-By not in the store
+missed	B56	field Status: store 'dropped' source 'dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)'
+missed	B56	field Done-Check not in the store
+missed	B56	field Artifact not in the store
+missed	B56	field Needs not in the store
+missed	B56	field ms not in the store
+missed	B56	field Used-by not in the store
+missed	B56	field Queued-By not in the store
+missed	B57	field Needs not in the store
+missed	B57	field ms not in the store
+missed	B57	field Used-by not in the store
+missed	B57	field Queued-By not in the store
+missed	B61	field Status: store 'dropped' source 'dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)'
+missed	B61	field Done-Check not in the store
+missed	B61	field Artifact not in the store
+missed	B61	field Needs not in the store
+missed	B61	field ms not in the store
+missed	B61	field Used-by not in the store
+missed	B61	field Queued-By not in the store
+missed	B62	field Status: store 'dropped' source 'dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)'
+missed	B62	field Done-Check not in the store
+missed	B62	field Artifact not in the store
+missed	B62	field Needs not in the store
+missed	B62	field ms not in the store
+missed	B62	field Used-by not in the store
+missed	B62	field Queued-By not in the store
+missed	B63	field Done-Check not in the store
+missed	B63	field Artifact not in the store
+missed	B63	field Needs not in the store
+missed	B63	field ms not in the store
+missed	B63	field Used-by not in the store
+missed	B63	field Queued-By not in the store
+missed	B64	field Done-Check not in the store
+missed	B64	field Artifact not in the store
+missed	B64	field Needs not in the store
+missed	B64	field ms not in the store
+missed	B64	field Used-by not in the store
+missed	B64	field Queued-By not in the store
+missed	B65	field Status: store 'done' source 'shipped b5dbeac 2026-11-22'
+missed	B65	field Done-Check not in the store
+missed	B65	field Artifact not in the store
+missed	B65	field Needs not in the store
+missed	B65	field ms not in the store
+missed	B65	field Used-by not in the store
+missed	B65	field Queued-By not in the store
+missed	B66	field Done-Check not in the store
+missed	B66	field Artifact not in the store
+missed	B66	field Needs not in the store
+missed	B66	field ms not in the store
+missed	B66	field Used-by not in the store
+missed	B66	field Queued-By not in the store
+missed	B67	field Trigger-Type not in the store
+missed	B67	field Done-Check not in the store
+missed	B67	field Artifact not in the store
+missed	B67	field Needs not in the store
+missed	B67	field ms not in the store
+missed	B67	field Used-by not in the store
+missed	B67	field Queued-By not in the store
+missed	B68	field Trigger-Type not in the store
+missed	B68	field Done-Check not in the store
+missed	B68	field Artifact not in the store
+missed	B68	field Needs not in the store
+missed	B68	field ms not in the store
+missed	B68	field Used-by not in the store
+missed	B68	field Queued-By not in the store
+missed	B45	row is not in the store
+missed	B74	field Origin not in the store
+format	B74	field order differs (canonical order used)
+missed	B71	field Origin not in the store
+missed	B73	field Origin: store 'autopilot-01m81q2p-v7.6-brief----2' source 'autopilot 01M81Q2P（v7.6 brief 第 (2) 行）'
+missed	B73	field Done-Check not in the store
+missed	B73	field Artifact not in the store
+missed	B73	field Needs not in the store
+missed	B73	field ms not in the store
+missed	B73	field Used-by not in the store
+missed	B73	field Queued-By not in the store
+format	-	row order differs (canonical: id asc)
+SUMMARY rows_source=43 rows_store=42 missed=88 extra=0 format=2

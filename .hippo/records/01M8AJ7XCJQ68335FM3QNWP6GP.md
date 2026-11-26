@@ -1,0 +1,14 @@
+---
+id: 01M8AJ7XCJQ68335FM3QNWP6GP
+kind: issue
+created: 2026-11-23T00:00:00.000Z
+---
+- **Status**: done（11-24 全數換完：statusline／quota view 589c40a、CLI 與 local map 08bc051、vendor tux 01b559f；歷史證據文件不改；rollout 併下一次 binary 換版）
+- **Since**: 2026-11-23
+- **Problem**: codeforge 側還有舊圖示：plugins/forge-stats 約 10 檔、src/cli、src/tui、src/usage 約 9 檔，以及 mods/tux 重新 vendor（VERSION 3）。對照表：★→✧ ◇→◊ ●→◉ ▲→⏶ ◆→⬥ ⓘ→i ▶→▹ ②→2；操作員 10-13 驗過的 △ ○ ◌ ◐ ◍ 保留。doc/design 的歷史證據不改，現行設計語言文件（pane-design-language）同步。
+- **Impact**: statusline 與 forge-stats 在 tmux／部分 Windows 終端會偏一格；狀態列是全域的，改動要走一行黃金檔測試（tests/statusline_one_line.rs）。
+- **Trigger**: AP feat/width-lint 併入 develop 之後
+- **Source**: 01M84BZMK1810A379D4PYC498G
+- **Pointer**: 掃描法見 AP mods/live/width-lint.test.js；forge-stats 畫面改動要過 UX 閘門
+- **Context**: forge-stats 與 statusline 屬操作員看得到的畫面，換符號前先確認它們是否仍在用
+- **Origin**: PM 裁定（01M84GEVJ7、01M84H74A6，方案 B）；AP 側已換並加 width lint（AP feat/width-lint）

@@ -1,0 +1,12 @@
+---
+id: 01M8AJ7X4PS2Z070HPZ25V4KZR
+kind: issue
+created: 2026-06-24T00:00:00.000Z
+---
+- **Since**: 2026-06-24
+- **Problem**: 健康探測的 liveness 端點不驗 token，token 錯或缺時燈號仍是綠的，要等到 session 結束 ship 失敗才翻黃。
+- **Impact**: 艦隊機器 token 設錯時，燈號整個 session 都是假綠。
+- **Trigger**: Mnemos 正式環境開啟驗證，或艦隊開始多機收錄時
+- **Source**: Mnemos 協作討論，2026-06-24
+- **Pointer**: doc/specs/codeforge-mnemos-runtime.md
+- **Context**: 背景探測改打 Mnemos 的 whoami 端點（已上線）餵進既有 readiness 軸，不做第三盞燈；與 Mnemos 的 fleet-ingest-rollout 對齊

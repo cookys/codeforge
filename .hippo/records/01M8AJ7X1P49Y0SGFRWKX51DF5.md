@@ -1,0 +1,12 @@
+---
+id: 01M8AJ7X1P49Y0SGFRWKX51DF5
+kind: issue
+created: 2026-06-15T00:00:00.000Z
+---
+- **Since**: 2026-06-15
+- **Problem**: 其他專案寫進共用改善佇列的項目，沒有任何地方會在該專案顯示，因為顯示用的 hook 只裝在 codeforge 自己的 clone。
+- **Impact**: 其他專案的待改善項目寫了卻沒人看到。
+- **Trigger**: 想讓其他專案 session 看到自己的待改善項，或把該 hook 納入全域安裝鏈時
+- **Source**: 2026-06-15 改善佇列歸屬修正後留下的增強項
+- **Pointer**: doc/plans/2026-11-02-autopilot-hook-bridge.md
+- **Context**: 2026-11-01 併入 B31（hooks 改由 autopilot 清單註冊），不單獨做；需讓專案根改由 hook 提供

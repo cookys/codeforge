@@ -1,0 +1,12 @@
+---
+id: 01M8AJ7X56KR1GTBMTR8W04A17
+kind: issue
+created: 2026-06-25T00:00:00.000Z
+---
+- **Since**: 2026-06-25
+- **Problem**: statusline 底邊中段留了空位給未來的即時狀態燈（跨 agent 連線、autopilot 模式），但目前沒有狀態來源也沒有語意。
+- **Impact**: 沒有，純預留；做早了反而讓窄終端更擠。
+- **Trigger**: 有 indicator 具備明確語意與狀態來源時；且須先決定是否由 autopilot band 取代
+- **Source**: statusline 版號右對齊改動時預留
+- **Pointer**: doc/specs/codeforge-mod-ui.md
+- **Context**: 2026-11-01：autopilot 狀態已由它自己的 band 畫，隨 B31 決定留不留；擴充步驟寫在 statusline 程式註解內

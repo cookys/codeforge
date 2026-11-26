@@ -1,258 +1,8 @@
 # CodeForge backlog
 
-格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。
+格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。本檔由 `scripts/backlog-view.sh` 從 hippo 紀錄庫產生，不要手改。
 
-### band 的過期原因和修復指令被截斷（第二批 M5）
-- **Id**: B52
-- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: band 中間還有約 38 格空白，左側的過期原因和修復指令卻被截成「請執行：autopilot status run…」，結尾的 --watch 被吃掉。
-- **Impact**: 違反「過期原因不截斷」（PM 01M7N33J）；照畫面打指令會跑錯。
-- **Trigger**: ready；第 1 批 pin 之後即可交 autopilot
-- **Trigger-Type**: ready
-- **Effort**: S
-- **Source**: 閘門 b1 第 3 輪 carbon M5；PM 01M7P1HY 排第二批
-- **Pointer**: doc/backlog/pane-batch2.md
-- **Done-Check**: `grep -q "^B52 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
-- **Artifact**: run
-- **Needs**: none
-- **ms**: pane-batch2
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
-- **Context**: band 仍須剛好 2 列（A9 矩陣）
-
-### pane 關著時 band 第 2 列的計數不完整（第二批 M6）
-- **Id**: B53
-- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: pane 關著時「額度」沒附任何異常計數；「艦隊(✗6)」把黃色閒置線也算成 ✗；9、0 頁籤消失；[+] 和 [-] 同列沒有標籤。
-- **Impact**: 不開 pane 時操作員會以為額度全部正常，艦隊的嚴重度也被誇大。
-- **Trigger**: ready；第 1 批 pin 之後即可交 autopilot
-- **Trigger-Type**: ready
-- **Effort**: S
-- **Source**: 閘門 b1 第 3 輪 carbon M6；PM 01M7P1HY 排第二批
-- **Pointer**: doc/backlog/pane-batch2.md
-- **Done-Check**: `grep -q "^B53 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
-- **Artifact**: run
-- **Needs**: none
-- **ms**: pane-batch2
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
-- **Context**: 計數分紅（✗）和黃（▲/?）兩種；band 上的 Button 仍不綁數字 hotkey（A5'）
-
-### pane 第 1 批補 astra 評審（等 codex 重新登入）
-- **Id**: B55
-- **Status**: open
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: 閘門 b1 第 3 輪 astra 的 runner 失敗（team 帳號 codex token 失效），第 1 批只有 carbon 的判定。
-- **Impact**: 閘門要求兩家都 ≥8；第二批送審時要補 astra。
-- **Trigger**: 操作員完成 team 帳號 codex 登入（PM 開卡）
-- **Trigger-Type**: event
-- **Effort**: S
-- **Source**: PM 01M7P1HY：astra 補評等登入恢復後放到第二批
-- **Pointer**: doc/backlog/pane-batch2.md
-
-### pane 開著時終端機縮窄，數字熱鍵改打進提示列（第二批 B56）
-- **Id**: B56
-- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: pane 在寬終端機（側邊）開著，終端機縮到 80 寬後 pane 改疊在提示列上方，之後按 1–9、0 一律打進提示列，分頁不切換；一開始就是 80 寬、或只縮高度（160x24）都正常。
-- **Impact**: 操作員按數字想切頁，結果在對話框打出數字，可能直接送出錯字（PM 01M7PMAN：會打錯字的真 bug）。
-- **Trigger**: ready；隨第 2 批一起交
-- **Trigger-Type**: ready
-- **Effort**: S
-- **Source**: codeforge keyprobe 11-18（Claude Code 2.1.327、已安裝的 autopilot 083cf2e9）；PM 01M7PMAN 列入第 2 批
-- **Pointer**: doc/backlog/pane-batch2.md
-- **Done-Check**: `grep -q "^B56 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
-- **Artifact**: run
-- **Needs**: none
-- **ms**: pane-batch2
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7PMANY4HGR5N2J6BNAWFD6J
-- **Context**: 實作在 autopilot；可能是 host 換位置時沒重新登記 hotkey，要 autopilot 查清楚是自己的還是 host 的，host 的就做繞道並回報
-
-### pane 寵物分頁正式上線（第 3 批）
-- **Id**: B57
-- **Status**: open
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: 9 寵物分頁目前只畫佔位文字「寵物分頁還沒上線」。
-- **Impact**: 操作員按 9 看不到寵物；寵物只能在這一頁畫（statusline 永不畫寵物）。
-- **Trigger**: 第 2 批 pin 之後
-- **Trigger-Type**: event
-- **Effort**: M
-- **Source**: PM 01M7PMAN：寵物頁排第 3 批，codeforge 主導、autopilot 實作
-- **Pointer**: doc/specs/codeforge-mod-ui.md
-- **Needs**: B56
-- **ms**: pane-batch3
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7PMANY4HGR5N2J6BNAWFD6J
-- **Context**: 資料走 pet.json 契約；閘門照 forge-stats-ux-gate
-
-
-### pane 沒有專案的 session：派工、審查、殘留頁只剩錯誤和不對的修復指令
-- **Id**: B61
-- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: 非 autopilot 專案的 session 開 pane，派工、審查、殘留三頁只畫「✗ 本席資料不是最新：沒有專案」加一條照做也無效的修復指令，和「資料不足，無法判定」；標題列每頁帶「✗ 槽位 無來源」，沒說要做什麼。
-- **Impact**: 一般 session 是常態；三頁永遠是空的錯誤頁，修復指令誤導，紅色 ✗ 天天都在、失去警示作用。（Major）
-- **Trigger**: ready；寫處置交 autopilot
-- **Trigger-Type**: ready
-- **Effort**: S
-- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
-- **Pointer**: none
-- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
-- **Artifact**: code
-- **Needs**: none
-- **ms**: pane-batch3
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
-- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
-
-### pane 花費頁沒有任何花費數字
-- **Id**: B62
-- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: 花費頁只畫 5h／7d 額度百分比和「✗ seats --quota 沒有本席這一列」，判定「資料不足，無法判定」；160x40 帳號列還露出英文原始欄位「primary_owner」。80x24 連本席錯誤列都被擠掉。
-- **Impact**: 頁名是花費卻看不到花費，操作員不知道該看哪裡。（Major）
-- **Trigger**: ready；寫處置交 autopilot
-- **Trigger-Type**: ready
-- **Effort**: S
-- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
-- **Pointer**: none
-- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
-- **Artifact**: code
-- **Needs**: none
-- **ms**: pane-batch3
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
-- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
-
-### pane 120x30 分頁列換成兩列、「0: 鍛」截字
-- **Id**: B63
-- **Status**: open
-- **Since**: 2026-11-18
-- **Origin**: self
-- **Problem**: 120x30 dock 寬 70 欄，分頁列換成兩列（1–6／7–0），每種尺寸都把「鍛造」截成「鍛」；純文字截圖也看不出選中哪一頁，只能靠標題列。
-- **Impact**: 多佔一列正文；標籤不一致。（Minor）
-- **Trigger**: 120x30 真機確認仍會換成兩列（autopilot 0138545 起 STRIP_SPLIT_COLS=66，基準上重現不出來；PM 01M7TBE4 留列待確認）
-- **Trigger-Type**: event
-- **Effort**: XS
-- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
-- **Pointer**: none
-- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
-- **Artifact**: code
-- **Needs**: none
-- **ms**: pane-batch3
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
-- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
-
-### 推版的 binary 不可重現：同一 commit 各機 sha16 不同
-- **Id**: B64
-- **Status**: open
-- **Since**: 2026-11-19
-- **Origin**: self
-- **Problem**: 推版走 `cargo install`，沒加 `--remap-path-prefix`，binary 帶了 clone 路徑和 `$HOME`，同一 commit 各機 sha16 不同，只能看 HEAD 加功能字串驗收。`package.sh` 已可重現（B43），缺推版改走它，以及跨 `$HOME`、跨使用者的 repro 驗證。
-- **Impact**: 推版不能直接比 sha16，驗收得多一步功能檢查，也證明不了各席跑的是同一份 binary。（Minor）
-- **Trigger**: ready；做法是推版改從 `package.sh` 的封存檔安裝（或套用同一組 RUSTFLAGS），再補一個跨 `$HOME`、跨使用者的 repro 檢查；推版腳本那一側歸 hangar
-- **Trigger-Type**: ready
-- **Effort**: S
-- **Source**: 01M7QPEX 推版結果（14/14 7bd44069）與 hangar 01M7QQ2Y 的比對
-- **Pointer**: none
-- **Done-Check**: `bash scripts/repro-check.sh x86_64-unknown-linux-gnu`
-- **Artifact**: code
-- **Needs**: none
-- **ms**: none
-- **Used-by**: e2e
-- **Queued-By**: cookys/host-console/pm--claude 01M7QPZ6
-- **Context**: 同一 commit、同一 rustc，建出來應該一樣；做好後推版要求可以改成「各席 sha16 等於 package.sh 封存檔裡的那支」
-
-### absorb 寫入 L0 時沒有記來源 slug，事後查不出某列來自哪個專案
-- **Id**: B65
-- **Status**: shipped b5dbeac 2026-11-22
-- **Since**: 2026-11-19
-- **Origin**: self
-- **Problem**: `src/dream/absorb.rs` 寫入 signal 時沒記讀的是哪個 Claude 專案目錄（slug）和檔名。8a5f30a 後只讀當前專案，但事後只能用名稱比對證明不是 PM 的記憶，證明不了全部是本專案的；換版前吸進來的跨專案條目也分不出。
-- **Impact**: 隱私稽核無法只計數回答「有沒有跨專案」，得去讀操作員的 Claude 目錄（要卡）。（Minor：absorbed 列不會 ship）
-- **Trigger**: ready；做法是 absorb 寫入時在 signal 上帶 `source_slug`（加檔名），加測試；再出一個只計數的檢查：L0 裡 absorbed 列的 slug 不等於當前專案 slug 的數量
-- **Trigger-Type**: ready
-- **Effort**: S
-- **Source**: PM 01M7R1SD 的只讀比對（41 列，39 個名稱，和 PM 記憶重疊 0）
-- **Pointer**: none
-- **Done-Check**: `bash scripts/test-flake-guard.sh cargo`
-- **Artifact**: code
-- **Needs**: none
-- **ms**: none
-- **Used-by**: e2e
-- **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H
-- **Context**: 換版前吸進來的舊列沒有 slug，只能靠新的列往後查；舊列要不要清，另外問 PM
-
-### 有一台主機的登入 shell PATH 找不到 codeforge
-- **Id**: B66
-- **Status**: open
-- **Since**: 2026-11-19
-- **Origin**: self
-- **Problem**: 03531cc 換版後，hangar 在一台主機的登入 shell 跑 `codeforge dream --only absorb` 得 rc=127，其他 13 個帳號正常。全域 hook 的 SessionEnd 鏈和 statusline 也靠 PATH 找 codeforge，那台的 dream、ship、usage collect、statusline 可能都沒在跑。
-- **Impact**: 那台的記憶、用量和 statusline 可能整個缺席，而且不會報錯。（Major：要先確認 hook 執行時的 PATH 是否也找不到）
-- **Trigger**: hangar 回報那台的 binary 位置、登入 shell 與 hook 的 PATH、`codeforge doctor` 結果；修法歸 hangar，codeforge 視需要讓 install 寫絕對路徑或 doctor 報出
-- **Trigger-Type**: peer
-- **Effort**: S
-- **Source**: hangar 01M7R1PJ 換版回報
-- **Pointer**: none
-- **Done-Check**: `bash scripts/check-all.sh`
-- **Artifact**: code
-- **Needs**: none
-- **ms**: none
-- **Used-by**: e2e
-- **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H
-- **Context**: 主機名照隱私規則不寫進 repo，見 hangar 01M7R1PJ
-
-### 宿主 Input 在一般畫面放長值時 inline 重畫撕裂
-- **Id**: B67
-- **Status**: blocked
-- **Since**: 2026-11-22
-- **Origin**: self
-- **Problem**: mod 的 `Input rows={1}` 在一般畫面（非全螢幕）收到很長的值時，宿主 inline 重畫錯位：上方的送出預覽、頁碼和底框疊在一起或掉到狀態列。宿主文件寫 rows=1 時長文字應在欄內捲動，全螢幕同一步驟正常，所以判定是宿主問題。
-- **Impact**: 一般畫面打長附註時，預覽和確認入口看不清楚（Major）。mod 端已用「一般畫面限長、超過提示改用全螢幕」緩解（v7.6 r10 之後）。
-- **Trigger**: 宿主（Claude Code）修好 inline 重畫後，拿掉一般畫面的附註長度限制並重跑 v7.6 閘門的長附註步驟
-- **Trigger-Type**: external
-- **Effort**: S
-- **Source**: v7.6 UX 雙評 r9（兩家都列 Critical）；PM 01M80RW9 裁定 A：算宿主限制，不對外送任何東西
-- **Pointer**: none
-- **Done-Check**: v7.6 閘門一般畫面長附註步驟畫面可判讀
-- **Artifact**: code
-- **Needs**: none
-- **ms**: none
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M80RW9WV721Z113FS7QXJ1NJ
-- **Context**: 宿主是 Claude Code 本身，我們改不了；等宿主版本更新時重驗
-
-### Autopilot mods 的 bandlayout 在 12 列有 4 條測試本來就紅
-- **Id**: B68
-- **Status**: open
-- **Since**: 2026-11-22
-- **Origin**: self
-- **Problem**: autopilot develop 的 `mods/live/run-tests.sh` 有 4 條 bandlayout 測試在 12 列失敗（「scrolled through at 12 rows, every line of a card is complete and none is wider than the main window」與「a tall card at 12 rows is never taller than maxRows, ends with the menu row and the quick row」各兩次）。同一批 10 條 speed tab 失敗是已記的基線，這 4 條不是；分支測試看到 14 條失敗時，要靠這張單認出它們不是新增的。
-- **Impact**: 每次分支測試都得人工分辨「基線 14 條」與新增失敗，容易把新退步當基線放過（Minor）。
-- **Trigger**: 下一次動 `mods/live/band*` 或 12 列以下版面時，先修這 4 條或把它們收進已知紅名單
-- **Trigger-Type**: internal
-- **Effort**: S
-- **Source**: v7.5 修正版驗證（fa3f0246b 之前後的 mod 全套都出現同樣 4 條，AP develop 基底本來就紅）
-- **Pointer**: none
-- **Done-Check**: AP develop 上 `bash mods/live/run-tests.sh` 除 10 條 speed tab 外沒有失敗
-- **Artifact**: code
-- **Needs**: none
-- **ms**: none
-- **Used-by**: user
-- **Queued-By**: cookys/host-console/pm--claude 01M81JXZAA4PZ351VY39ZYXRT9
-- **Context**: 在 autopilot repo，不是 codeforge；開單給 autopilot 席時引用這張
+<!-- next-id: B75 -->
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
@@ -506,19 +256,33 @@
 - **Pointer**: none
 - **Context**: 加續行內註解狀態並補兩檔負例測試；範圍 daemon/dup_detect.rs 的 classify
 
-### G40 配額顯示的後續
-- **Id**: B45
-- **Status**: superseded（PM 2026-11-23：卡 d-2a19fdb5 已不在卡片庫；真資料檢查由 capacity 額度單一來源計畫 01M82TH9WZ 取代，11-25 讀取端改讀 pool-eta v2，11-26 退役 quota-mirror）
-- **Since**: 2026-11-04
+### G36 第 1 階段 review 的後續（statusline 配額列）
+- **Id**: B39
+- **Status**: open
+- **Since**: 2026-11-03
 - **Origin**: self
-- **Problem**: 配額顯示端已完成，但還等 autopilot 的契約檔與對照向量、真實 mirror 樣本與帳號卡，才能用真資料驗證。
-- **Impact**: G40 里程碑（真資料顯示正確）無法驗收。
-- **Trigger**: autopilot 宣布 P3 與 N37 落地，或拿到真實 mirror 樣本（卡 d-2a19fdb5），或下次動配額顯示
+- **Problem**: 配額列審查留下小項：權限檢查字面與計畫不一致、非 unix 不擋 symlink、黃色計算看資料不看畫面、提示被擠掉、窄 pane 寵物屬性列被截斷。
+- **Impact**: 都是邊角的顯示或強健性問題，不擋使用。
+- **Trigger**: 下次動 statusline 用量列或 forge-stats 摘要列、寵物分頁
 - **Trigger-Type**: event
 - **Effort**: M
-- **Source**: G40 顯示端完成時（develop，2026-11-04）
+- **Source**: G36 第 1 階段四席審查（g2 SHIP-AS-IS，f6baef59）
 - **Pointer**: doc/specs/codeforge-usage.md
-- **Context**: 拿到樣本後跑 scripts/g40-real-data/check.sh；另有 QUOTA_CONTRACT 同步測試與 fs.read 無 no-follow 選項兩項
+- **Context**: 範圍 usage/quota.rs 與 cli/statusline.rs；glyph 寬度與 parseFleet 空錯誤兩項為 G33 Suggestion
+
+### G36 第 2 至 5 階段 review 的後續
+- **Id**: B41
+- **Status**: open
+- **Since**: 2026-11-03
+- **Origin**: self
+- **Problem**: 用量收集器審查留下小項：Codex 基準修剪後重讀、非 unix 測試、快照時間超出範圍整份驗證失敗、中文表頭對不齊。
+- **Impact**: 邊界情況下收集失敗或表格錯位，不影響主流程。
+- **Trigger**: 下次動用量收集器，或非 unix 建置測試；快照驗證失敗時處理 8f1b90b2
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: autopilot 四席審查 G36 第 2、3 輪
+- **Pointer**: doc/specs/codeforge-usage.md
+- **Context**: 範圍 usage/collect.rs 與 store 測試；詳見 lane/g36rest 第 2、3 輪 finding
 
 ### G38 本機 release 流程 review 的後續
 - **Id**: B42
@@ -534,19 +298,19 @@
 - **Pointer**: none
 - **Context**: 範圍 install.sh、package.sh、release-local.sh；細節在審查 finding（3bd8512b、d5e5ae1f、b83770c7 等）
 
-### G36 第 2 至 5 階段 review 的後續
-- **Id**: B41
-- **Status**: open
-- **Since**: 2026-11-03
+### G40 配額顯示的後續
+- **Id**: B45
+- **Status**: superseded（PM 2026-11-23：卡 d-2a19fdb5 已不在卡片庫；真資料檢查由 capacity 額度單一來源計畫 01M82TH9WZ 取代，11-25 讀取端改讀 pool-eta v2，11-26 退役 quota-mirror）
+- **Since**: 2026-11-04
 - **Origin**: self
-- **Problem**: 用量收集器審查留下小項：Codex 基準修剪後重讀、非 unix 測試、快照時間超出範圍整份驗證失敗、中文表頭對不齊。
-- **Impact**: 邊界情況下收集失敗或表格錯位，不影響主流程。
-- **Trigger**: 下次動用量收集器，或非 unix 建置測試；快照驗證失敗時處理 8f1b90b2
+- **Problem**: 配額顯示端已完成，但還等 autopilot 的契約檔與對照向量、真實 mirror 樣本與帳號卡，才能用真資料驗證。
+- **Impact**: G40 里程碑（真資料顯示正確）無法驗收。
+- **Trigger**: autopilot 宣布 P3 與 N37 落地，或拿到真實 mirror 樣本（卡 d-2a19fdb5），或下次動配額顯示
 - **Trigger-Type**: event
 - **Effort**: M
-- **Source**: autopilot 四席審查 G36 第 2、3 輪
+- **Source**: G40 顯示端完成時（develop，2026-11-04）
 - **Pointer**: doc/specs/codeforge-usage.md
-- **Context**: 範圍 usage/collect.rs 與 store 測試；詳見 lane/g36rest 第 2、3 輪 finding
+- **Context**: 拿到樣本後跑 scripts/g40-real-data/check.sh；另有 QUOTA_CONTRACT 同步測試與 fs.read 無 no-follow 選項兩項
 
 ### 其他改行程環境變數的測試（B40 同類）
 - **Id**: B46
@@ -590,33 +354,256 @@
 - **Pointer**: doc/specs/tui-guideline.md
 - **Context**: 範圍 tui/panels/combat_log.rs 與 tui/layout.rs
 
-### G36 第 1 階段 review 的後續（statusline 配額列）
-- **Id**: B39
-- **Status**: open
-- **Since**: 2026-11-03
+### band 的過期原因和修復指令被截斷（第二批 M5）
+- **Id**: B52
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
+- **Since**: 2026-11-18
 - **Origin**: self
-- **Problem**: 配額列審查留下小項：權限檢查字面與計畫不一致、非 unix 不擋 symlink、黃色計算看資料不看畫面、提示被擠掉、窄 pane 寵物屬性列被截斷。
-- **Impact**: 都是邊角的顯示或強健性問題，不擋使用。
-- **Trigger**: 下次動 statusline 用量列或 forge-stats 摘要列、寵物分頁
-- **Trigger-Type**: event
-- **Effort**: M
-- **Source**: G36 第 1 階段四席審查（g2 SHIP-AS-IS，f6baef59）
-- **Pointer**: doc/specs/codeforge-usage.md
-- **Context**: 範圍 usage/quota.rs 與 cli/statusline.rs；glyph 寬度與 parseFleet 空錯誤兩項為 G33 Suggestion
-
-### （已併 AP develop 27e9e5d67，11-24）追溯與 band 併後的 Minor（autopilot 審併 7f7b5b95b、65e67bdfb 提出）
-- **Pointer**: doc/specs/codeforge-usage.md
-- **Status**: done（併 AP develop 27e9e5d67；真終端幾何由測試鎖住，實拍隨下次 pin 後驗收）
-- **Since**: 2026-11-23
-- **Origin**: autopilot 審併單 01M848TE5GS4PS3AMY5C2TJ62A 與 01M8408BYV4NWMG7CPVK8X92FN
-- **Problem**: (1) pm／decide feed 讀取失敗時資料清成 null，標題卻顯示 last ok 年紀，沒保留上次成功值（v74/feeds.ts 約 98–102、131–135）；(2) model.ts 的 qc_reason、readQcReason 無人寫入或呼叫，qc 另有 QcView.at 與 detail.qc_at 兩條來源只有 updated_at 時不一致；(3) pane.tsx 約 322 行有狀態列時無條件丟 body 最後一列；pages/fleet.ts 讀 errors.pm 但寫入端 key 是 errors.now；(4) band 的提醒與待決計數同為黃色、▸ 兼作提醒與清單游標與收合語彙（codex r6 兩條 Minor）。
-- **Impact**: 邊角顯示與命名不一致，不擋使用；(1) 會讓失敗時的「年紀」誤導。
-- **Trigger**: ready；pin 換到 7f7b5b95b 並完成真 pane 實拍後即可做
+- **Problem**: band 中間還有約 38 格空白，左側的過期原因和修復指令卻被截成「請執行：autopilot status run…」，結尾的 --watch 被吃掉。
+- **Impact**: 違反「過期原因不截斷」（PM 01M7N33J）；照畫面打指令會跑錯。
+- **Trigger**: ready；第 1 批 pin 之後即可交 autopilot
 - **Trigger-Type**: ready
 - **Effort**: S
-- **Source**: autopilot 審查；doc/design/ux-gate/band-layout/codex-r6.md
-- **Pointer**: fleet 單 01M83ZQ3ACJD97H1SXJ6JDV9TG
-- **Context**: 範圍 autopilot mods/live；走 AP 分支交 autopilot 審併
+- **Source**: 閘門 b1 第 3 輪 carbon M5；PM 01M7P1HY 排第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Context**: band 仍須剛好 2 列（A9 矩陣）
+- **Done-Check**: `grep -q "^B52 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
+
+### pane 關著時 band 第 2 列的計數不完整（第二批 M6）
+- **Id**: B53
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: pane 關著時「額度」沒附任何異常計數；「艦隊(✗6)」把黃色閒置線也算成 ✗；9、0 頁籤消失；[+] 和 [-] 同列沒有標籤。
+- **Impact**: 不開 pane 時操作員會以為額度全部正常，艦隊的嚴重度也被誇大。
+- **Trigger**: ready；第 1 批 pin 之後即可交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 閘門 b1 第 3 輪 carbon M6；PM 01M7P1HY 排第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Context**: 計數分紅（✗）和黃（▲/?）兩種；band 上的 Button 仍不綁數字 hotkey（A5'）
+- **Done-Check**: `grep -q "^B53 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7P72ATZJR6P0PSH2GRPD6AJ
+
+### pane 第 1 批補 astra 評審（等 codex 重新登入）
+- **Id**: B55
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 閘門 b1 第 3 輪 astra 的 runner 失敗（team 帳號 codex token 失效），第 1 批只有 carbon 的判定。
+- **Impact**: 閘門要求兩家都 ≥8；第二批送審時要補 astra。
+- **Trigger**: 操作員完成 team 帳號 codex 登入（PM 開卡）
+- **Trigger-Type**: event
+- **Effort**: S
+- **Source**: PM 01M7P1HY：astra 補評等登入恢復後放到第二批
+- **Pointer**: doc/backlog/pane-batch2.md
+
+### pane 開著時終端機縮窄，數字熱鍵改打進提示列（第二批 B56）
+- **Id**: B56
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: pane 在寬終端機（側邊）開著，終端機縮到 80 寬後 pane 改疊在提示列上方，之後按 1–9、0 一律打進提示列，分頁不切換；一開始就是 80 寬、或只縮高度（160x24）都正常。
+- **Impact**: 操作員按數字想切頁，結果在對話框打出數字，可能直接送出錯字（PM 01M7PMAN：會打錯字的真 bug）。
+- **Trigger**: ready；隨第 2 批一起交
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: codeforge keyprobe 11-18（Claude Code 2.1.327、已安裝的 autopilot 083cf2e9）；PM 01M7PMAN 列入第 2 批
+- **Pointer**: doc/backlog/pane-batch2.md
+- **Context**: 實作在 autopilot；可能是 host 換位置時沒重新登記 hotkey，要 autopilot 查清楚是自己的還是 host 的，host 的就做繞道並回報
+- **Done-Check**: `grep -q "^B56 pass" doc/design/ux-gate/pane-batch2/verdicts.md`
+- **Artifact**: run
+- **Needs**: none
+- **ms**: pane-batch2
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7PMANY4HGR5N2J6BNAWFD6J
+
+### pane 寵物分頁正式上線（第 3 批）
+- **Id**: B57
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 9 寵物分頁目前只畫佔位文字「寵物分頁還沒上線」。
+- **Impact**: 操作員按 9 看不到寵物；寵物只能在這一頁畫（statusline 永不畫寵物）。
+- **Trigger**: 第 2 批 pin 之後
+- **Trigger-Type**: event
+- **Effort**: M
+- **Source**: PM 01M7PMAN：寵物頁排第 3 批，codeforge 主導、autopilot 實作
+- **Pointer**: doc/specs/codeforge-mod-ui.md
+- **Context**: 資料走 pet.json 契約；閘門照 forge-stats-ux-gate
+- **Needs**: B56
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7PMANY4HGR5N2J6BNAWFD6J
+
+### pane 沒有專案的 session：派工、審查、殘留頁只剩錯誤和不對的修復指令
+- **Id**: B61
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 非 autopilot 專案的 session 開 pane，派工、審查、殘留三頁只畫「✗ 本席資料不是最新：沒有專案」加一條照做也無效的修復指令，和「資料不足，無法判定」；標題列每頁帶「✗ 槽位 無來源」，沒說要做什麼。
+- **Impact**: 一般 session 是常態；三頁永遠是空的錯誤頁，修復指令誤導，紅色 ✗ 天天都在、失去警示作用。（Major）
+- **Trigger**: ready；寫處置交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
+- **Pointer**: none
+- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
+
+### pane 花費頁沒有任何花費數字
+- **Id**: B62
+- **Status**: dropped 2026-11-22 (舊 forge-stats pane 已不是現行路徑，由 v7.6／master-detail 取代；PM 01M82JAAKT0J7AWSQBWW8X1T2Y)
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 花費頁只畫 5h／7d 額度百分比和「✗ seats --quota 沒有本席這一列」，判定「資料不足，無法判定」；160x40 帳號列還露出英文原始欄位「primary_owner」。80x24 連本席錯誤列都被擠掉。
+- **Impact**: 頁名是花費卻看不到花費，操作員不知道該看哪裡。（Major）
+- **Trigger**: ready；寫處置交 autopilot
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
+- **Pointer**: none
+- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
+
+### pane 120x30 分頁列換成兩列、「0: 鍛」截字
+- **Id**: B63
+- **Status**: open
+- **Since**: 2026-11-18
+- **Origin**: self
+- **Problem**: 120x30 dock 寬 70 欄，分頁列換成兩列（1–6／7–0），每種尺寸都把「鍛造」截成「鍛」；純文字截圖也看不出選中哪一頁，只能靠標題列。
+- **Impact**: 多佔一列正文；標籤不一致。（Minor）
+- **Trigger**: 120x30 真機確認仍會換成兩列（autopilot 0138545 起 STRIP_SPLIT_COLS=66，基準上重現不出來；PM 01M7TBE4 留列待確認）
+- **Trigger-Type**: event
+- **Effort**: XS
+- **Source**: 真機走查 team 主機，autopilot 9f9dcf292（第 2 批上線版），三種尺寸 10 頁 30 張，PM 01M7QF7Z 第 (2) 項
+- **Pointer**: none
+- **Context**: 實作在 autopilot；截圖含真實主機名，只留在本機 scratchpad，不入庫
+- **Done-Check**: `bash ../autopilot/mods/live/run-tests.sh`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: pane-batch3
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M7QF7Z95YNS694VNC6ERSDT8
+
+### 推版的 binary 不可重現：同一 commit 各機 sha16 不同
+- **Id**: B64
+- **Status**: open
+- **Since**: 2026-11-19
+- **Origin**: self
+- **Problem**: 推版走 `cargo install`，沒加 `--remap-path-prefix`，binary 帶了 clone 路徑和 `$HOME`，同一 commit 各機 sha16 不同，只能看 HEAD 加功能字串驗收。`package.sh` 已可重現（B43），缺推版改走它，以及跨 `$HOME`、跨使用者的 repro 驗證。
+- **Impact**: 推版不能直接比 sha16，驗收得多一步功能檢查，也證明不了各席跑的是同一份 binary。（Minor）
+- **Trigger**: ready；做法是推版改從 `package.sh` 的封存檔安裝（或套用同一組 RUSTFLAGS），再補一個跨 `$HOME`、跨使用者的 repro 檢查；推版腳本那一側歸 hangar
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: 01M7QPEX 推版結果（14/14 7bd44069）與 hangar 01M7QQ2Y 的比對
+- **Pointer**: none
+- **Context**: 同一 commit、同一 rustc，建出來應該一樣；做好後推版要求可以改成「各席 sha16 等於 package.sh 封存檔裡的那支」
+- **Done-Check**: `bash scripts/repro-check.sh x86_64-unknown-linux-gnu`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7QPZ6
+
+### absorb 寫入 L0 時沒有記來源 slug，事後查不出某列來自哪個專案
+- **Id**: B65
+- **Status**: shipped b5dbeac 2026-11-22
+- **Since**: 2026-11-19
+- **Origin**: self
+- **Problem**: `src/dream/absorb.rs` 寫入 signal 時沒記讀的是哪個 Claude 專案目錄（slug）和檔名。8a5f30a 後只讀當前專案，但事後只能用名稱比對證明不是 PM 的記憶，證明不了全部是本專案的；換版前吸進來的跨專案條目也分不出。
+- **Impact**: 隱私稽核無法只計數回答「有沒有跨專案」，得去讀操作員的 Claude 目錄（要卡）。（Minor：absorbed 列不會 ship）
+- **Trigger**: ready；做法是 absorb 寫入時在 signal 上帶 `source_slug`（加檔名），加測試；再出一個只計數的檢查：L0 裡 absorbed 列的 slug 不等於當前專案 slug 的數量
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: PM 01M7R1SD 的只讀比對（41 列，39 個名稱，和 PM 記憶重疊 0）
+- **Pointer**: none
+- **Context**: 換版前吸進來的舊列沒有 slug，只能靠新的列往後查；舊列要不要清，另外問 PM
+- **Done-Check**: `bash scripts/test-flake-guard.sh cargo`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H
+
+### 有一台主機的登入 shell PATH 找不到 codeforge
+- **Id**: B66
+- **Status**: open
+- **Since**: 2026-11-19
+- **Origin**: self
+- **Problem**: 03531cc 換版後，hangar 在一台主機的登入 shell 跑 `codeforge dream --only absorb` 得 rc=127，其他 13 個帳號正常。全域 hook 的 SessionEnd 鏈和 statusline 也靠 PATH 找 codeforge，那台的 dream、ship、usage collect、statusline 可能都沒在跑。
+- **Impact**: 那台的記憶、用量和 statusline 可能整個缺席，而且不會報錯。（Major：要先確認 hook 執行時的 PATH 是否也找不到）
+- **Trigger**: hangar 回報那台的 binary 位置、登入 shell 與 hook 的 PATH、`codeforge doctor` 結果；修法歸 hangar，codeforge 視需要讓 install 寫絕對路徑或 doctor 報出
+- **Trigger-Type**: peer
+- **Effort**: S
+- **Source**: hangar 01M7R1PJ 換版回報
+- **Pointer**: none
+- **Context**: 主機名照隱私規則不寫進 repo，見 hangar 01M7R1PJ
+- **Done-Check**: `bash scripts/check-all.sh`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H
+
+### 宿主 Input 在一般畫面放長值時 inline 重畫撕裂
+- **Id**: B67
+- **Status**: blocked
+- **Since**: 2026-11-22
+- **Origin**: self
+- **Problem**: mod 的 `Input rows={1}` 在一般畫面（非全螢幕）收到很長的值時，宿主 inline 重畫錯位：上方的送出預覽、頁碼和底框疊在一起或掉到狀態列。宿主文件寫 rows=1 時長文字應在欄內捲動，全螢幕同一步驟正常，所以判定是宿主問題。
+- **Impact**: 一般畫面打長附註時，預覽和確認入口看不清楚（Major）。mod 端已用「一般畫面限長、超過提示改用全螢幕」緩解（v7.6 r10 之後）。
+- **Trigger**: 宿主（Claude Code）修好 inline 重畫後，拿掉一般畫面的附註長度限制並重跑 v7.6 閘門的長附註步驟
+- **Trigger-Type**: external
+- **Effort**: S
+- **Source**: v7.6 UX 雙評 r9（兩家都列 Critical）；PM 01M80RW9 裁定 A：算宿主限制，不對外送任何東西
+- **Pointer**: none
+- **Context**: 宿主是 Claude Code 本身，我們改不了；等宿主版本更新時重驗
+- **Done-Check**: v7.6 閘門一般畫面長附註步驟畫面可判讀
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M80RW9WV721Z113FS7QXJ1NJ
+
+### Autopilot mods 的 bandlayout 在 12 列有 4 條測試本來就紅
+- **Id**: B68
+- **Status**: open
+- **Since**: 2026-11-22
+- **Origin**: self
+- **Problem**: autopilot develop 的 `mods/live/run-tests.sh` 有 4 條 bandlayout 測試在 12 列失敗（「scrolled through at 12 rows, every line of a card is complete and none is wider than the main window」與「a tall card at 12 rows is never taller than maxRows, ends with the menu row and the quick row」各兩次）。同一批 10 條 speed tab 失敗是已記的基線，這 4 條不是；分支測試看到 14 條失敗時，要靠這張單認出它們不是新增的。
+- **Impact**: 每次分支測試都得人工分辨「基線 14 條」與新增失敗，容易把新退步當基線放過（Minor）。
+- **Trigger**: 下一次動 `mods/live/band*` 或 12 列以下版面時，先修這 4 條或把它們收進已知紅名單
+- **Trigger-Type**: internal
+- **Effort**: S
+- **Source**: v7.5 修正版驗證（fa3f0246b 之前後的 mod 全套都出現同樣 4 條，AP develop 基底本來就紅）
+- **Pointer**: none
+- **Context**: 在 autopilot repo，不是 codeforge；開單給 autopilot 席時引用這張
+- **Done-Check**: AP develop 上 `bash mods/live/run-tests.sh` 除 10 條 speed tab 外沒有失敗
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: user
+- **Queued-By**: cookys/host-console/pm--claude 01M81JXZAA4PZ351VY39ZYXRT9
 
 ### （已驗收結案，11-24）追溯單的真終端驗收
 - **Id**: B70
@@ -672,10 +659,24 @@
 - **Effort**: M
 - **Source**: autopilot 01M81Q2P；PM 裁定 01M81MFTV、01M81M4RYT
 - **Pointer**: fleet 的 `:<project>` project-owner registry（不另建清單，BL-0404）；程式碼放 autopilot mods/live，合併前由 autopilot 審
+- **Context**: 輸入時 a/b/c、s 都當文字的規則不變
 - **Done-Check**: 在 mod 輸入框打 `@@co`，補全清單出現 codeforge 席位；打 `p#codeforge` 帶出負責人位址
 - **Artifact**: run
 - **Needs**: none
 - **ms**: v7.6-followup
 - **Used-by**: user
 - **Queued-By**: cookys/team-console/codeforge--claude 01M81Q2P35B0QBTS5QMWQ45RG1
-- **Context**: 輸入時 a/b/c、s 都當文字的規則不變
+
+### （已併 AP develop 27e9e5d67，11-24）追溯與 band 併後的 Minor（autopilot 審併 7f7b5b95b、65e67bdfb 提出）
+- **Id**: B74
+- **Status**: done（併 AP develop 27e9e5d67；真終端幾何由測試鎖住，實拍隨下次 pin 後驗收）
+- **Since**: 2026-11-23
+- **Origin**: autopilot 審併單 01M848TE5GS4PS3AMY5C2TJ62A 與 01M8408BYV4NWMG7CPVK8X92FN
+- **Problem**: (1) pm／decide feed 讀取失敗時資料清成 null，標題卻顯示 last ok 年紀，沒保留上次成功值（v74/feeds.ts 約 98–102、131–135）；(2) model.ts 的 qc_reason、readQcReason 無人寫入或呼叫，qc 另有 QcView.at 與 detail.qc_at 兩條來源只有 updated_at 時不一致；(3) pane.tsx 約 322 行有狀態列時無條件丟 body 最後一列；pages/fleet.ts 讀 errors.pm 但寫入端 key 是 errors.now；(4) band 的提醒與待決計數同為黃色、▸ 兼作提醒與清單游標與收合語彙（codex r6 兩條 Minor）。
+- **Impact**: 邊角顯示與命名不一致，不擋使用；(1) 會讓失敗時的「年紀」誤導。
+- **Trigger**: ready；pin 換到 7f7b5b95b 並完成真 pane 實拍後即可做
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: autopilot 審查；doc/design/ux-gate/band-layout/codex-r6.md
+- **Pointer**: doc/specs/codeforge-usage.md
+- **Context**: 範圍 autopilot mods/live；走 AP 分支交 autopilot 審併

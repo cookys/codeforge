@@ -1,0 +1,12 @@
+---
+id: 01M8AJ7X8MFP5441SA0ZFM34PM
+kind: issue
+created: 2026-11-03T00:00:00.000Z
+---
+- **Since**: 2026-11-03
+- **Problem**: release 流程審查列為可延後的項目：自訂下載來源無提示、aarch64 strip 與 smoke 驗不到、清理函式未共用、輸出目錄整個被換掉、GitHub 來源辨識太嚴。
+- **Impact**: 都是操作摩擦或驗證缺口，不擋出貨。
+- **Trigger**: 下次改 install.sh 或 release 流程，或艦隊有了 aarch64 主機或 qemu
+- **Source**: autopilot 四席審查 G38 第 1 至 3 輪
+- **Pointer**: none
+- **Context**: 範圍 install.sh、package.sh、release-local.sh；細節在審查 finding（3bd8512b、d5e5ae1f、b83770c7 等）

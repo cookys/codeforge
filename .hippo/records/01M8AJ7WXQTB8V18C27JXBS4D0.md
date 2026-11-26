@@ -1,0 +1,18 @@
+---
+id: 01M8AJ7WXQTB8V18C27JXBS4D0
+kind: issue
+created: 2026-11-19T00:00:00.000Z
+---
+- **Since**: 2026-11-19
+- **Problem**: 03531cc 換版後，hangar 在一台主機的登入 shell 跑 `codeforge dream --only absorb` 得 rc=127，其他 13 個帳號正常。全域 hook 的 SessionEnd 鏈和 statusline 也靠 PATH 找 codeforge，那台的 dream、ship、usage collect、statusline 可能都沒在跑。
+- **Impact**: 那台的記憶、用量和 statusline 可能整個缺席，而且不會報錯。（Major：要先確認 hook 執行時的 PATH 是否也找不到）
+- **Trigger**: hangar 回報那台的 binary 位置、登入 shell 與 hook 的 PATH、`codeforge doctor` 結果；修法歸 hangar，codeforge 視需要讓 install 寫絕對路徑或 doctor 報出
+- **Source**: hangar 01M7R1PJ 換版回報
+- **Pointer**: none
+- **Context**: 主機名照隱私規則不寫進 repo，見 hangar 01M7R1PJ
+- **Done-Check**: `bash scripts/check-all.sh`
+- **Artifact**: code
+- **Needs**: none
+- **ms**: none
+- **Used-by**: e2e
+- **Queued-By**: cookys/host-console/pm--claude 01M7R1SDE4K3HVE0HFCB7H389H
