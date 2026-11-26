@@ -61,7 +61,11 @@ const DROP_REASONS: [&str; 3] = [
 const ACCOUNT_KEYS: [&str; 4] = ["alias", "written_at_ms", "five_hour", "seven_day"];
 /// Optional account keys: absent = unknown, so a summary from before `org`/`email` still validates.
 /// `name` = the display name ([`super::names`]), present when the account has one.
-const ACCOUNT_OPTIONAL: [&str; 3] = ["org", "email", "name"];
+/// `auth_state` = the login state at the reading ([`super::quota::AuthState`]), present only when
+/// the writer knows it (grok/kimi/agy rows); claude/codex/trinity rows omit it — never guessed.
+const ACCOUNT_OPTIONAL: [&str; 4] = ["org", "email", "name", "auth_state"];
+/// The closed set of `auth_state` values, as written.
+const AUTH_STATES: [&str; 4] = super::quota::AUTH_STATES;
 const WINDOW_KEYS: [&str; 2] = ["pct", "resets_at"];
 /// Optional window keys: `seen_at_ms` = when the rate-limit data was captured; absent = unknown.
 const WINDOW_OPTIONAL: [&str; 1] = ["seen_at_ms"];
@@ -114,7 +118,7 @@ const HOST_RE: &str = "^host-[0-9a-f]{8}$";
 pub fn contract() -> Value {
     json!({
         "schema": SCHEMA,
-        "top": TOP_KEYS, "top_optional": [DROPPED_KEY, CODEX_KEY], "codex_session": CODEX_SESSION_KEYS, "rollout": ROLLOUT_RE, "max_codex_sessions": super::collect::MAX_CODEX_SESSIONS, "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "org": ORG_RE, "email": EMAIL_RE, "name_max_cells": super::names::NAME_MAX, "window": WINDOW_KEYS, "window_optional": WINDOW_OPTIONAL, "day": DAY_KEYS,
+        "top": TOP_KEYS, "top_optional": [DROPPED_KEY, CODEX_KEY], "codex_session": CODEX_SESSION_KEYS, "rollout": ROLLOUT_RE, "max_codex_sessions": super::collect::MAX_CODEX_SESSIONS, "drop_reasons": DROP_REASONS, "account": ACCOUNT_KEYS, "account_optional": ACCOUNT_OPTIONAL, "auth_state": AUTH_STATES, "org": ORG_RE, "email": EMAIL_RE, "name_max_cells": super::names::NAME_MAX, "window": WINDOW_KEYS, "window_optional": WINDOW_OPTIONAL, "day": DAY_KEYS,
         "counts": COUNT_KEYS, "sources": SOURCES, "speeds": SPEEDS, "pct_max": PCT_MAX,
         "alias": ALIAS_RE, "model": MODEL_RE, "host": HOST_RE, "uint_max": UINT_MAX,
         "max_accounts": MAX_ACCOUNTS, "max_days": MAX_DAYS_ROWS,
@@ -227,6 +231,10 @@ pub fn build(
             }
             if let Some(email) = &s.email {
                 a["email"] = json!(email);
+            }
+            // the writer's verdict as one closed-set string; a writer that does not know omits it
+            if let Some(state) = s.auth_state {
+                a["auth_state"] = json!(state);
             }
             kept.push(a);
         }
@@ -460,6 +468,13 @@ pub fn validate(v: &Value) -> Result<()> {
         {
             bail!("{at}.email: 不是合法的登入信箱");
         }
+        // absent = the writer does not know (legal); present = one of the four strings
+        if m
+            .get("auth_state")
+            .is_some_and(|s| !s.as_str().is_some_and(|v| AUTH_STATES.contains(&v)))
+        {
+            bail!("{at}.auth_state: 不是 ok/expired/revoked/unknown 之一");
+        }
         uint(&m["written_at_ms"], &format!("{at}.written_at_ms"))?;
         let gen = top["generated_at_ms"].as_u64().unwrap_or(0);
         win(&m["five_hour"], &format!("{at}.five_hour"), gen)?;
@@ -585,7 +600,7 @@ pub fn push(dir: &Path, fleet_bin: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::usage::quota::Window;
+    use crate::usage::quota::{AuthState, Window};
 
     fn row(model: &str, speed: &str, project: &str) -> Row {
         Row {
@@ -610,6 +625,7 @@ mod tests {
             org_id: None,
             email: None,
             root: Some("1a2b3c4d".into()),
+            auth_state: None,
             written_at_ms: 5,
             five_hour: Some(Window {
                 pct: 0.3,
@@ -651,6 +667,7 @@ mod tests {
                 org_id: None,
                 email: None,
                 root: None,
+                auth_state: None,
                 written_at_ms: 5,
                 five_hour: seen(at_ms),
                 seven_day: None,
@@ -733,6 +750,7 @@ mod tests {
             org_id: None,
             email: Some("me@example.com".into()),
             root: None,
+            auth_state: None,
             written_at_ms: 5,
             five_hour: None,
             seven_day: None,
@@ -770,6 +788,78 @@ mod tests {
         let mut bad = v.clone();
         bad["accounts"][0]["name"] = json!("acct-a");
         assert!(validate(&bad).is_err());
+    }
+
+    #[test]
+    fn auth_state_is_an_optional_account_key_with_a_closed_set() {
+        // absent: legal — a summary from before the key, and a row whose writer does not know
+        let v = good();
+        assert!(v["accounts"][0].get("auth_state").is_none());
+        validate(&v).unwrap();
+        // the four values are legal
+        for s in ["ok", "expired", "revoked", "unknown"] {
+            let mut v = good();
+            v["accounts"][0]["auth_state"] = json!(s);
+            validate(&v).unwrap();
+        }
+        // anything else is refused, and the value is never echoed
+        for bad in ["OK", " expired", "revokedx", "bogus", "", "me@example.com", &"x".repeat(64)]
+        {
+            let mut v = good();
+            v["accounts"][0]["auth_state"] = json!(bad);
+            let e = validate(&v).unwrap_err().to_string();
+            assert!(e.contains("auth_state"), "{bad:?}: {e}");
+            assert!(bad.is_empty() || !e.contains(bad), "the value is never echoed");
+        }
+        for bad in [json!(5), json!(null), json!(true), json!(["ok"]), json!({"ok": 1})] {
+            let mut v = good();
+            v["accounts"][0]["auth_state"] = bad;
+            assert!(validate(&v).is_err(), "off-set value passed");
+        }
+    }
+
+    #[test]
+    fn build_writes_the_auth_state_and_omits_it_for_a_writer_that_does_not_know() {
+        // a row whose writer knows the state: the string is written, and the summary validates
+        let snap = Snapshot {
+            alias: "grok-1a2b3c4d".into(),
+            org: None,
+            org_id: None,
+            email: None,
+            root: None,
+            written_at_ms: 5,
+            five_hour: None,
+            seven_day: Some(Window {
+                pct: 0.3,
+                resets_at: 9,
+                seen: None,
+            }),
+            auth_state: Some(AuthState::Expired),
+        };
+        let v = build(
+            &[],
+            std::slice::from_ref(&snap),
+            &host_alias("h"),
+            7,
+            &Default::default(),
+        );
+        validate(&v).unwrap();
+        assert_eq!(v["accounts"][0]["auth_state"], "expired");
+        // a row whose writer does not know (claude/codex/trinity): the key is absent
+        let snap = Snapshot {
+            alias: "acct-a".into(),
+            auth_state: None,
+            ..snap
+        };
+        let v = build(
+            &[],
+            std::slice::from_ref(&snap),
+            &host_alias("h"),
+            7,
+            &Default::default(),
+        );
+        validate(&v).unwrap();
+        assert!(v["accounts"][0].get("auth_state").is_none());
     }
 
     #[test]
@@ -1023,6 +1113,7 @@ mod tests {
             org_id: None,
             email: None,
             root: None,
+            auth_state: None,
             written_at_ms,
             five_hour: Some(Window {
                 pct,

@@ -5,7 +5,10 @@
 //! moment of the request, held in a local [`Key`], and sent only on that request. [`Key`] has
 //! no `Debug` and no `Display` — `format!("{:?}", key)` does not compile — so a log, an error,
 //! or a test assertion cannot print it. The login file's other fields are never read. An
-//! expired login or HTTP 401/403 is [`Fetch::Denied`]: no refresh, no new snapshot.
+//! expired login is [`Fetch::Denied`] with the state `expired`, HTTP 401/403 is
+//! [`Fetch::Denied`] with `revoked`, an unusable file and transport errors are
+//! [`Fetch::Failed`] (`unknown`): no refresh, no new snapshot — a cache supplies the numbers,
+//! this attempt's verdict is the row's `auth_state`.
 //!
 //! The response is untrusted. [`parse_billing`] keeps `config.creditUsagePercent` (a number in
 //! 0..=150, divided by 100) and `config.currentPeriod.end` (RFC3339, as unix seconds). It also
@@ -13,9 +16,9 @@
 //! character removed, equals `grokbot`, when that entry's `usagePercent` is a number in 0..=150
 //! (divided by 100). That row is a second snapshot, `grokbot-<hash>`, with the same reset.
 //! Everything else is dropped. The capture is cached at `<cache_dir>/grok-usage.json` as
-//! `{"observed_ms","pct","resets_at"}` plus an optional `"bot_pct"` number (0600, atomic), at
-//! most 10 minutes old. A denied, failed, or unparsable fetch falls back to a cache not older
-//! than [`quota::MAX_AGE_MS`]. `CODEFORGE_USAGE_GROK=0` reads nothing and calls nothing.
+//! `{"observed_ms","pct","resets_at"}` plus optional `"bot_pct"` (0600, atomic), at most
+//! 10 minutes old. A denied, failed, or unparsable fetch falls back to a cache not older than
+//! [`quota::MAX_AGE_MS`]. `CODEFORGE_USAGE_GROK=0` reads nothing and calls nothing.
 
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -120,13 +123,20 @@ pub struct Billing {
     pub bot_pct: Option<f64>,
 }
 
-fn weekly_snapshot(alias: String, pct: f64, resets_at: i64, observed_ms: i64) -> quota::Snapshot {
+fn weekly_snapshot(
+    alias: String,
+    pct: f64,
+    resets_at: i64,
+    observed_ms: i64,
+    state: quota::AuthState,
+) -> quota::Snapshot {
     quota::Snapshot {
         alias,
         org: None,
         org_id: None,
         email: None,
         root: None,
+        auth_state: Some(state),
         written_at_ms: observed_ms,
         five_hour: None,
         seven_day: Some(quota::Window {
@@ -181,13 +191,15 @@ pub fn parse_billing(body: &Value, observed_ms: i64, key_hash: &str) -> Option<B
             raw / 100.0,
             resets_at,
             observed_ms,
+            quota::AuthState::Ok,
         ),
         bot_pct: bot_fraction(config),
     })
 }
 
 /// The cache file: the numbers a snapshot needs, and nothing else. `bot_pct` is absent on a
-/// cache written before Grok Bot was kept.
+/// cache written before Grok Bot was kept. `auth_state` (the state at the write, `ok`) is
+/// absent on an older cache: it reads as `unknown`.
 #[derive(Deserialize)]
 struct Cache {
     observed_ms: i64,
@@ -196,6 +208,9 @@ struct Cache {
     /// Used fraction of Grok Bot. Missing on an old cache.
     #[serde(default)]
     bot_pct: Option<f64>,
+    /// The auth state at the write. Missing on an old cache.
+    #[serde(default)]
+    auth_state: Option<quota::AuthState>,
 }
 
 fn read_cache(path: &Path) -> Option<Cache> {
@@ -206,11 +221,13 @@ fn snapshot_from_cache(c: &Cache, key_hash: &str) -> Option<quota::Snapshot> {
     if !c.pct.is_finite() || !(0.0..=1.5).contains(&c.pct) {
         return None;
     }
+    // an old cache has no state written: the row stands as `unknown`
     Some(weekly_snapshot(
         format!("grok-{key_hash}"),
         c.pct,
         c.resets_at,
         c.observed_ms,
+        c.auth_state.unwrap_or(quota::AuthState::Unknown),
     ))
 }
 
@@ -220,16 +237,21 @@ fn with_bot(grok: quota::Snapshot, bot_pct: Option<f64>, key_hash: &str) -> Vec<
     let Some(pct) = bot_pct.filter(|p| p.is_finite() && (0.0..=1.5).contains(p)) else {
         return out;
     };
-    // Every grok snapshot this module builds carries the weekly window.
-    let (resets_at, observed_ms) = {
+    // Every grok snapshot this module builds carries the weekly window and its state.
+    let (resets_at, observed_ms, state) = {
         let w = out[0].seven_day.as_ref().unwrap();
-        (w.resets_at, out[0].written_at_ms)
+        (
+            w.resets_at,
+            out[0].written_at_ms,
+            out[0].auth_state.unwrap_or(quota::AuthState::Unknown),
+        )
     };
     out.push(weekly_snapshot(
         format!("grokbot-{key_hash}"),
         pct,
         resets_at,
         observed_ms,
+        state,
     ));
     out
 }
@@ -242,11 +264,14 @@ fn snapshots_from_cache(c: &Cache, key_hash: &str) -> Vec<quota::Snapshot> {
 
 /// The host's grok snapshot at `now_ms`, plus a `grokbot-<hash>` snapshot when the billing
 /// lists Grok Bot or the cache holds `bot_pct`. A cache at `cache_dir`/`grok-usage.json`
-/// younger than [`CACHE_MS`] is used and `fetch` is not called. Otherwise `fetch` runs: a
-/// [`Fetch::Body`] that parses is written back (`observed_ms`, `pct`, `resets_at`, and
-/// `bot_pct` only when Grok Bot was kept) and returned; [`Fetch::Denied`], [`Fetch::Failed`],
-/// and an unparsable body fall back to a cache younger than [`quota::MAX_AGE_MS`], else
-/// nothing. The key is the `path_hash8` of `home`.
+/// younger than [`CACHE_MS`] is used and `fetch` is not called: its rows carry the state the
+/// cache wrote (an old cache without one reads as `unknown`). Otherwise `fetch` runs and its
+/// verdict is the auth state of every row it returns: a [`Fetch::Body`] that parses is `ok`
+/// (written back to the cache as `observed_ms`, `pct`, `resets_at`, `auth_state`, and
+/// `bot_pct` only when Grok Bot was kept) and returned; [`Fetch::Denied`] carries its state
+/// (expired key, or 401/403), [`Fetch::Failed`] and an unparsable body are `unknown` — in
+/// those cases a cache younger than [`quota::MAX_AGE_MS`] supplies the numbers. The key is the
+/// `path_hash8` of `home`.
 pub fn snapshots(
     cache_dir: &Path,
     home: &Path,
@@ -260,31 +285,45 @@ pub fn snapshots(
     if let Some(c) = cache.as_ref().filter(|c| within(c.observed_ms, CACHE_MS)) {
         return snapshots_from_cache(c, &key_hash);
     }
-    let fallback = || {
+    // a cache younger than MAX_AGE_MS supplies the numbers; this attempt's verdict is the
+    // state, because it is newer
+    let fallback = |state: quota::AuthState| {
         cache
             .as_ref()
             .filter(|c| within(c.observed_ms, quota::MAX_AGE_MS))
-            .map(|c| snapshots_from_cache(c, &key_hash))
+            .map(|c| {
+                let mut snaps = snapshots_from_cache(c, &key_hash);
+                for s in &mut snaps {
+                    s.auth_state = Some(state);
+                }
+                snaps
+            })
             .unwrap_or_default()
     };
     match fetch() {
         Fetch::Body(body) => {
             let Some(parsed) = parse_billing(&body, now_ms, &key_hash) else {
-                return fallback();
+                return fallback(quota::AuthState::Unknown);
             };
             // `parse_billing`'s Some always carries the weekly window.
             let (pct, resets_at) = {
                 let w = parsed.grok.seven_day.as_ref().unwrap();
                 (w.pct, w.resets_at)
             };
-            let mut cached = json!({ "observed_ms": now_ms, "pct": pct, "resets_at": resets_at });
+            let mut cached = json!({
+                "observed_ms": now_ms,
+                "pct": pct,
+                "resets_at": resets_at,
+                "auth_state": quota::AuthState::Ok
+            });
             if let Some(bot) = parsed.bot_pct {
                 cached["bot_pct"] = json!(bot);
             }
             let _ = crate::live::write_live_json(cache_dir, CACHE_FILE, &cached);
             with_bot(parsed.grok, parsed.bot_pct, &key_hash)
         }
-        Fetch::Denied | Fetch::Failed => fallback(),
+        Fetch::Denied(state) => fallback(state),
+        Fetch::Failed => fallback(quota::AuthState::Unknown),
     }
 }
 
@@ -297,8 +336,10 @@ pub fn disabled() -> bool {
 /// The live quota. [`ENV_DISABLE`] `=0` returns [`Fetch::Failed`] before PATH is read and
 /// before the login file is opened. Otherwise `grok` must resolve on PATH and `grok --version`
 /// (killed after [`VERSION_TIMEOUT_S`]) must print `grok <version> …`; then
-/// `home/.grok/auth.json` is read. Expired is [`Fetch::Denied`] and the endpoint is not called.
-/// The bearer leaves this process only as the `Authorization` header of [`BILLING_URL`].
+/// `home/.grok/auth.json` is read. The fetch verdict is the auth state: an expired login is
+/// `Denied(Expired)`, a 401/403 from the endpoint is `Denied(Revoked)`, an unusable file and
+/// every transport error are `Failed` (`Unknown`). The bearer leaves this process only as the
+/// `Authorization` header of [`BILLING_URL`].
 pub fn fetch_live(home: &Path) -> Fetch {
     if disabled() {
         return Fetch::Failed;
@@ -315,9 +356,16 @@ pub fn fetch_live(home: &Path) -> Fetch {
     let Some(bytes) = read_auth(&home.join(".grok").join("auth.json")) else {
         return Fetch::Failed;
     };
-    match read_key(&bytes, Utc::now()) {
-        KeyState::Ok(key) => request(&key, &version),
-        KeyState::Expired => Fetch::Denied,
+    fetch_for(read_key(&bytes, Utc::now()), |key| request(key, &version))
+}
+
+/// The fetch for a resolved login state: an expired login is denied as `expired` and the
+/// endpoint is not called, an unusable file is a failed attempt (`unknown`), a usable key goes
+/// to the billing request.
+fn fetch_for(state: KeyState, request: impl FnOnce(&Key) -> Fetch) -> Fetch {
+    match state {
+        KeyState::Ok(key) => request(&key),
+        KeyState::Expired => Fetch::Denied(quota::AuthState::Expired),
         KeyState::Unusable => Fetch::Failed,
     }
 }
@@ -393,7 +441,8 @@ async fn request_async(key: &Key, version: &str) -> Fetch {
     };
     let status = resp.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Fetch::Denied;
+        // the key is not expired but the service does not accept it
+        return Fetch::Denied(quota::AuthState::Revoked);
     }
     if !status.is_success() {
         return Fetch::Failed;
@@ -653,7 +702,7 @@ mod tests {
             keys.sort();
             assert_eq!(
                 keys,
-                ["bot_pct", "observed_ms", "pct", "resets_at"],
+                ["auth_state", "bot_pct", "observed_ms", "pct", "resets_at"],
                 "{name}"
             );
             assert_eq!(v["bot_pct"].as_f64(), Some(0.125), "{name}");
@@ -789,11 +838,97 @@ mod tests {
         )
         .unwrap();
         let before = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
-        let stale = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied);
+        let stale = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked));
         assert_eq!(stale.len(), 2);
         assert_eq!(stale[0].written_at_ms, stale_observed);
         assert_eq!(window(&stale[1]).pct, 0.125);
         assert_eq!(std::fs::read(dir.path().join(CACHE_FILE)).unwrap(), before);
+    }
+
+    #[test]
+    fn the_fetch_verdict_of_a_login_state_is_the_auth_state() {
+        let now = at("2026-11-11T12:00:00Z");
+        // an expired login is denied as `expired`; the endpoint is not called
+        assert!(matches!(
+            fetch_for(KeyState::Expired, |_| Fetch::Body(json!(1))),
+            Fetch::Denied(quota::AuthState::Expired)
+        ));
+        // an unusable login is a failed attempt: `unknown`
+        assert!(matches!(
+            fetch_for(KeyState::Unusable, |_| Fetch::Body(json!(1))),
+            Fetch::Failed
+        ));
+        // a usable login goes to the request
+        let key = match read_key(&auth(SENTINEL, "2099-01-01T00:00:00.000000000Z"), now) {
+            KeyState::Ok(k) => k,
+            KeyState::Expired | KeyState::Unusable => panic!("expected Ok"),
+        };
+        assert!(matches!(
+            fetch_for(KeyState::Ok(key), |_| Fetch::Body(json!(1))),
+            Fetch::Body(_)
+        ));
+    }
+
+    #[test]
+    fn snapshots_carry_the_fetch_verdict_as_auth_state() {
+        let dir = tempfile::tempdir().unwrap();
+        // a stale cache (new format): the numbers stand, the state is this attempt's verdict
+        let observed = NOW_MS - 11 * 60_000;
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({
+                "observed_ms": observed,
+                "pct": 0.34,
+                "resets_at": RESETS_AT,
+                "auth_state": "ok"
+            }),
+        )
+        .unwrap();
+        // an expired key: `expired`
+        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Expired));
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Expired));
+        // HTTP 401/403 (denied, the key not expired): `revoked`
+        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked));
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
+        // an unusable key or a transport error: `unknown`
+        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Unknown));
+        // a good body: `ok`, and the cache learns the state
+        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(sample()));
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Ok));
+        let v: Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join(CACHE_FILE)).unwrap()).unwrap();
+        assert_eq!(v["auth_state"], "ok");
+        // the summary row carries the string and validates
+        let summary = crate::usage::summary::build(
+            &[],
+            &got,
+            "host-aaaaaaaa",
+            NOW_MS,
+            &crate::usage::names::Names::default(),
+        );
+        crate::usage::summary::validate(&summary).unwrap();
+        assert_eq!(summary["accounts"][0]["auth_state"], "ok");
+    }
+
+    #[test]
+    fn an_old_cache_without_auth_state_reads_as_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        let observed = NOW_MS - 60_000;
+        crate::live::write_live_json(
+            dir.path(),
+            CACHE_FILE,
+            &json!({ "observed_ms": observed, "pct": 0.34, "resets_at": RESETS_AT }),
+        )
+        .unwrap();
+        let got = snapshots(dir.path(), &home(), NOW_MS, || -> Fetch {
+            panic!("fetch must not be called on a fresh cache")
+        });
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].auth_state, Some(quota::AuthState::Unknown));
     }
 
     #[test]
@@ -877,7 +1012,7 @@ mod tests {
         )
         .unwrap();
         let before = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied);
+        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked));
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].written_at_ms, observed);
         assert_eq!(std::fs::read(dir.path().join(CACHE_FILE)).unwrap(), before);
@@ -889,7 +1024,7 @@ mod tests {
             &json!({ "observed_ms": NOW_MS - 7 * 3_600_000, "pct": 0.34, "resets_at": RESETS_AT }),
         )
         .unwrap();
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked)).is_empty());
     }
 
     #[test]
@@ -897,7 +1032,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed).is_empty());
         assert!(!dir.path().join(CACHE_FILE).exists());
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked)).is_empty());
         assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(json!({}))).is_empty());
         assert!(!dir.path().join(CACHE_FILE).exists());
     }
@@ -922,7 +1057,7 @@ mod tests {
         let v: Value = serde_json::from_slice(&raw).unwrap();
         let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        assert_eq!(keys, ["observed_ms", "pct", "resets_at"]);
+        assert_eq!(keys, ["auth_state", "observed_ms", "pct", "resets_at"]);
         assert_eq!(v["pct"], json!(0.34));
         assert_eq!(v["resets_at"], json!(RESETS_AT));
         let again = snapshots(dir.path(), &home(), NOW_MS + 60_000, || -> Fetch {
@@ -1041,7 +1176,7 @@ mod tests {
 
         // Denied against that cache (now stale): still no sentinel, cache unchanged.
         let stale_at = NOW_MS + CACHE_MS + 1;
-        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied);
+        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied(quota::AuthState::Revoked));
         assert_eq!(snaps.len(), 1);
         assert_eq!(snaps[0].written_at_ms, NOW_MS);
         no_sentinel(&outputs_of(&snaps, stale_at));
@@ -1103,7 +1238,7 @@ mod tests {
         no_sentinel(&outputs_of(&again, NOW_MS + 1_000));
 
         let stale_at = NOW_MS + CACHE_MS + 1;
-        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied);
+        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied(quota::AuthState::Revoked));
         assert_eq!(snaps.len(), 2);
         assert_eq!(snaps[0].written_at_ms, NOW_MS);
         assert_eq!(window(&snaps[1]).pct, 0.125);
