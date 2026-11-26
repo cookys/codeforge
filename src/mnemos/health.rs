@@ -10,6 +10,8 @@ pub const PROBE_TTL_MAX: u64 = 600;
 pub const SHIP_FRESH_WINDOW: u64 = 86_400;
 pub const NEVER_RETIRE_DAYS: u64 = 7;
 pub const CACHE_MAX_AGE: u64 = 3_600;
+// should_refresh relies on this: the longest TTL expires before a cache stops being fresh_enough.
+const _: () = assert!(PROBE_TTL_MAX < CACHE_MAX_AGE);
 pub const INFLIGHT_GRACE: u64 = 10;
 pub const PROBE_CONNECT_TIMEOUT: u64 = 2;
 /// probe 總 timeout = connect timeout × 2（4s）。避免慢但活著的 server 被誤判為 Unreachable。
@@ -436,18 +438,14 @@ pub fn queue_info() -> (usize, Option<u64>) {
 /// Returns true if the liveness cache needs to be refreshed:
 /// - No cache yet → always refresh
 /// - Cache age > TTL for the current outcome/backoff → refresh
-/// - Cache absolute age > CACHE_MAX_AGE (macOS per-boot退路) → refresh
+/// - (an age past CACHE_MAX_AGE, the macOS per-boot fallback, is always past the TTL first)
 pub fn should_refresh(liveness: Option<&LivenessCache>, now: i64) -> bool {
     match liveness {
         None => true,
         Some(l) => {
-            let elapsed = now - l.last_probe_at;
-            let ttl_expired = elapsed > ttl_for(l.last_outcome, l.consecutive_failures) as i64;
-            // belt-and-suspenders：READ-side fresh_enough 已在 statusline/doctor 落實；
-            // 此 OR 在 TTL_MAX(600) < CACHE_MAX_AGE(3600) 時為 dead path（TTL 先短路）。
-            // 保留以防未來 TTL_MAX 調高於 CACHE_MAX_AGE 時仍有 macOS per-boot 安全網。
-            let cache_stale = !fresh_enough(l, now);
-            ttl_expired || cache_stale
+            // TTL ≤ PROBE_TTL_MAX < CACHE_MAX_AGE (compile-time assert below), so a cache old
+            // enough to fail `fresh_enough` has always passed its TTL first: the TTL alone decides.
+            now - l.last_probe_at > ttl_for(l.last_outcome, l.consecutive_failures) as i64
         }
     }
 }
@@ -756,31 +754,6 @@ mod tests {
         let mut old_but_within_ttl = lv(ProbeOutcome::Ok, now - (CACHE_MAX_AGE as i64 + 1));
         old_but_within_ttl.last_outcome = ProbeOutcome::Ok; // TTL=30s but age=3601 → both fire
         assert!(should_refresh(Some(&old_but_within_ttl), now));
-
-        // Explicit CACHE_MAX_AGE boundary check for an Ok outcome:
-        // age = CACHE_MAX_AGE exactly → still fresh_enough, but TTL=30s already fired.
-        // Test the case where TTL ok but CACHE_MAX_AGE triggers:
-        // Make consecutive_failures=99 (backoff TTL=600s), last_probe_at so that
-        // elapsed < 600 but > CACHE_MAX_AGE
-        let cache_stale_by_age = LivenessCache {
-            last_probe_at: now - (CACHE_MAX_AGE as i64 + 1),
-            last_outcome: ProbeOutcome::Unreachable,
-            consecutive_failures: 99, // TTL = 600s
-            latency_ms: None,
-            http_status: None,
-        };
-        // elapsed=3601 < 600? No, 3601>600 so TTL fires too. Use a smaller age:
-        // Let's use age=100 (< 600s TTL) but > CACHE_MAX_AGE is impossible since CACHE_MAX_AGE=3600
-        // So actually this case can't happen (CACHE_MAX_AGE=3600 > PROBE_TTL_MAX=600).
-        // The CACHE_MAX_AGE guard is a backstop for when the probe has been running
-        // successfully but the machine rebooted (Linux purges XDG_RUNTIME_DIR).
-        // On macOS TMPDIR survives reboots, so a cache from 2h ago with outcome=Ok
-        // (TTL=30s) would already be expired by TTL. The CACHE_MAX_AGE guard
-        // is extra insurance when TTL would pass but the machine has rebooted.
-        // Since CACHE_MAX_AGE (3600) > PROBE_TTL_MAX (600), the guard only fires
-        // when both TTL and CACHE_MAX_AGE are in play — which the TTL alone catches
-        // for all outcomes. The guard is belt-and-suspenders; we verify it compiles.
-        let _ = cache_stale_by_age; // verified above conceptually
     }
 
     // ── Task 9: ship cache roundtrip ──────────────────────────────────────
