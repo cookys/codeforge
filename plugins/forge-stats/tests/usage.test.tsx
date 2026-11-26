@@ -79,6 +79,19 @@ test('parseUsage takes a Claude day row with no account (no login, unattributed)
   expect(v.models.length).toBe(1)
 })
 
+test('parseUsage draws a denied row with no windows (auth_state only, both windows null)', () => {
+  for (const state of ['expired', 'revoked']) {
+    const v = parseUsage(
+      JSON.stringify(summary({ accounts: [{ alias: 'grok-1a2b3c4d', written_at_ms: 1, five_hour: null, seven_day: null, auth_state: state }] })),
+      NOW,
+    )
+    expect(v.status).toBe('ok')
+    expect(v.accounts).toEqual([{ alias: 'grok-1a2b3c4d', name: 'grok-1a2b3c4d', writtenAt: 1, fiveHour: null, sevenDay: null }])
+  }
+  // an off-set auth_state still refuses the whole summary
+  expect(parseUsage(JSON.stringify(summary({ accounts: [{ alias: 'grok-1a2b3c4d', written_at_ms: 1, five_hour: null, seven_day: null, auth_state: 'bogus' }] })), NOW).status).toBe('bad')
+})
+
 test('parseUsage accepts the optional dropped_accounts record (closed reasons, uint counts) and refuses a malformed one', () => {
   expect(parseUsage(JSON.stringify(summary({ dropped_accounts: { resets_at_out_of_range: 1, pct_out_of_range: 2 } })), NOW).status).toBe('ok')
   const bad: unknown[] = [
