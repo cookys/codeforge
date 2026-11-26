@@ -33,7 +33,7 @@ head="$(git rev-parse HEAD)"
 base="$(mktemp -d)"
 a="$base/a"
 b="$base/second-checkout/deeper"
-other=""
+other_root=""
 # Extra env for the second build only (--other-cargo-home); empty otherwise.
 FRESH_ENV=()
 # shellcheck disable=SC2329  # invoked by the EXIT trap
@@ -41,7 +41,7 @@ cleanup() {
   git worktree remove --force "$a" 2>/dev/null || true
   git worktree remove --force "$b" 2>/dev/null || true
   rm -rf "$base"
-  if [ -n "$other" ]; then rm -rf "$other"; fi
+  if [ -n "$other_root" ]; then rm -rf "$other_root"; fi
 }
 trap cleanup EXIT
 mkdir -p "$(dirname "$b")"
@@ -65,9 +65,10 @@ arch_a="$(fresh "$a" "$base/out-a" "$@")"
 if [ "$other_home" = 1 ]; then
   # A CARGO_HOME at a path of a different length, seeded with the current registry/ and git/
   # caches so the build stays offline: same commit, different $HOME/user, same bytes (B64).
-  other="$(mktemp -d)"
+  other_root="$(mktemp -d)"
+  other="$other_root"
   cargo_home_cur="${CARGO_HOME:-$HOME/.cargo}"
-  if [ "${#other}" -eq "${#cargo_home_cur}" ]; then other="$other/x"; fi
+  if [ "${#other}" -eq "${#cargo_home_cur}" ]; then other="$other/x"; mkdir -p "$other"; fi
   for d in registry git; do
     if [ -d "$cargo_home_cur/$d" ]; then cp -a "$cargo_home_cur/$d" "$other/$d"; fi
   done
