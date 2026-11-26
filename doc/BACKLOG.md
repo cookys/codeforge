@@ -2,7 +2,7 @@
 
 格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。本檔由 `scripts/backlog-view.sh` 從 hippo 紀錄庫產生，不要手改。
 
-<!-- next-id: B75 -->
+<!-- next-id: B76 -->
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
@@ -592,8 +592,8 @@
 - **Origin**: self
 - **Problem**: autopilot develop 的 `mods/live/run-tests.sh` 有 4 條 bandlayout 測試在 12 列失敗（「scrolled through at 12 rows, every line of a card is complete and none is wider than the main window」與「a tall card at 12 rows is never taller than maxRows, ends with the menu row and the quick row」各兩次）。同一批 10 條 speed tab 失敗是已記的基線，這 4 條不是；分支測試看到 14 條失敗時，要靠這張單認出它們不是新增的。
 - **Impact**: 每次分支測試都得人工分辨「基線 14 條」與新增失敗，容易把新退步當基線放過（Minor）。
-- **Trigger**: 下一次動 `mods/live/band*` 或 12 列以下版面時，先修這 4 條或把它們收進已知紅名單
-- **Trigger-Type**: internal
+- **Trigger**: ready（11-26 提前：backlog ready 列只剩 1 列）；跑一次 AP `mods/live/run-tests.sh` 確認這 4 條仍紅，修掉或收進已知紅名單，交 autopilot 審
+- **Trigger-Type**: ready
 - **Effort**: S
 - **Source**: v7.5 修正版驗證（fa3f0246b 之前後的 mod 全套都出現同樣 4 條，AP develop 基底本來就紅）
 - **Pointer**: none
@@ -680,3 +680,19 @@
 - **Source**: autopilot 審查；doc/design/ux-gate/band-layout/codex-r6.md
 - **Pointer**: doc/specs/codeforge-usage.md
 - **Context**: 範圍 autopilot mods/live；走 AP 分支交 autopilot 審併
+
+### 機器閘 source-overlap 可能因 L0 含 session id 而丟掉所有候選
+- **Id**: B75
+- **Status**: open
+- **Since**: 2026-11-26
+- **Origin**: self（T2 交件時的未驗項）
+- **Problem**: T2 機器閘的 `source-overlap` 規則拿整個候選 JSON（含 `evidence.session_id`、`time_start`、`time_end`）去和來源 L0 訊號文字比對 ≥20 字元共同子串。如果 session-digest 的訊號文字裡本身帶 session id 或 ISO 時間戳，每一筆候選都會被這條規則丟掉，T3 的候選區永遠是空的。假資料測試沒有這種 L0，所以沒看出來。
+- **Impact**: 01M83DFC1Q 上線後真實 L0 進來時，可能 0 筆候選，PM 要的 10 筆樣本拿不到，T4 判斷卡住（Major）。
+- **Trigger**: ready；查 session-digest 寫進 L0 的 content 格式，若含 session id／時間戳，改成只拿五個列舉欄位比對（evidence 欄位不比），補一條「來源含同一 session id 仍保留」的測試
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Pointer**: `src/lessons/gate.rs`（source-overlap）；`src/lessons/candidates.rs`（collect 傳 source）；計畫 doc/plans/2026-11-23-knowledge-pipeline.md 第 10.2 節 T2
+- **Done-Check**: `cargo test lessons` 有新測試：source 含候選的 session_id 與 time_start 時候選保留；source 含候選 repo＋tool 拼成的 ≥20 字片段時仍丟棄
+- **Artifact**: test
+- **Needs**: none
+- **Used-by**: e2e

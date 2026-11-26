@@ -6,11 +6,10 @@ created: 2026-11-22T00:00:00.000Z
 - **Since**: 2026-11-22
 - **Problem**: autopilot develop 的 `mods/live/run-tests.sh` 有 4 條 bandlayout 測試在 12 列失敗（「scrolled through at 12 rows, every line of a card is complete and none is wider than the main window」與「a tall card at 12 rows is never taller than maxRows, ends with the menu row and the quick row」各兩次）。同一批 10 條 speed tab 失敗是已記的基線，這 4 條不是；分支測試看到 14 條失敗時，要靠這張單認出它們不是新增的。
 - **Impact**: 每次分支測試都得人工分辨「基線 14 條」與新增失敗，容易把新退步當基線放過（Minor）。
-- **Trigger**: 下一次動 `mods/live/band*` 或 12 列以下版面時，先修這 4 條或把它們收進已知紅名單
+- **Trigger**: ready（11-26 提前：backlog ready 列只剩 1 列）；跑一次 AP `mods/live/run-tests.sh` 確認這 4 條仍紅，修掉或收進已知紅名單，交 autopilot 審
 - **Source**: v7.5 修正版驗證（fa3f0246b 之前後的 mod 全套都出現同樣 4 條，AP develop 基底本來就紅）
 - **Pointer**: none
 - **Context**: 在 autopilot repo，不是 codeforge；開單給 autopilot 席時引用這張
-- **Trigger-Type**: internal
 - **Done-Check**: AP develop 上 `bash mods/live/run-tests.sh` 除 10 條 speed tab 外沒有失敗
 - **Artifact**: code
 - **Needs**: none
