@@ -71,7 +71,12 @@ struct Pool {
 /// the cache's own on a fresh-cache read). The percent is REMAINING, so `pct` (the used
 /// fraction) is `1 − remaining/100`; `resets_at` is the RFC3339 time in unix seconds. Any line
 /// off the shape is skipped, never an error.
-pub fn parse(text: &str, observed_ms: i64, key_hash: &str, state: quota::AuthState) -> Vec<quota::Snapshot> {
+pub fn parse(
+    text: &str,
+    observed_ms: i64,
+    key_hash: &str,
+    state: quota::AuthState,
+) -> Vec<quota::Snapshot> {
     let mut pools: [Option<Pool>; 2] = [None, None];
     for line in text.lines() {
         let mut f = line.split('\t');
@@ -186,7 +191,12 @@ pub fn snapshots(
     let within =
         |at_ms: i64, limit: i64| (0..limit).contains(&now_ms.checked_sub(at_ms).unwrap_or(limit));
     if let Some(c) = cache.as_ref().filter(|c| within(c.observed_ms, CACHE_MS)) {
-        return parse(&c.text, c.observed_ms, &key_hash, c.auth_state.unwrap_or(quota::AuthState::Unknown));
+        return parse(
+            &c.text,
+            c.observed_ms,
+            &key_hash,
+            c.auth_state.unwrap_or(quota::AuthState::Unknown),
+        );
     }
     // a cache younger than MAX_AGE_MS supplies the numbers; this attempt's verdict is the
     // state, because it is newer
@@ -444,9 +454,12 @@ mod tests {
             serde_json::from_slice(&std::fs::read(dir.path().join(CACHE_FILE)).unwrap()).unwrap();
         assert_eq!(v["auth_state"], "ok");
         // the fresh cache is parsed without a run: the state of the write
-        let got = snapshots(dir.path(), &home(), NOW_MS + 60_000, || -> Option<String> {
-            panic!("run must not be called on a fresh cache")
-        });
+        let got = snapshots(
+            dir.path(),
+            &home(),
+            NOW_MS + 60_000,
+            || -> Option<String> { panic!("run must not be called on a fresh cache") },
+        );
         assert!(got
             .iter()
             .all(|s| s.auth_state == Some(quota::AuthState::Ok)));

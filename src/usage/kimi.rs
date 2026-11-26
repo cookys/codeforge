@@ -745,7 +745,9 @@ mod tests {
         )
         .unwrap();
         let before = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked));
+        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].written_at_ms, observed);
         assert_eq!(std::fs::read(dir.path().join(CACHE_FILE)).unwrap(), before);
@@ -759,7 +761,10 @@ mod tests {
             }),
         )
         .unwrap();
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked)).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(
+            quota::AuthState::Revoked
+        ))
+        .is_empty());
     }
 
     #[test]
@@ -800,10 +805,14 @@ mod tests {
             }),
         )
         .unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Expired));
+        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Expired)
+        });
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].auth_state, Some(quota::AuthState::Expired));
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked));
+        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
         let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed);
         assert_eq!(got[0].auth_state, Some(quota::AuthState::Unknown));
@@ -850,7 +859,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed).is_empty());
         assert!(!dir.path().join(CACHE_FILE).exists());
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked)).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(
+            quota::AuthState::Revoked
+        ))
+        .is_empty());
         assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(json!({}))).is_empty());
         assert!(!dir.path().join(CACHE_FILE).exists());
     }
@@ -876,7 +888,10 @@ mod tests {
         let v: Value = serde_json::from_slice(&raw).unwrap();
         let mut keys: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
         keys.sort();
-        assert_eq!(keys, ["auth_state", "five_hour", "observed_ms", "seven_day"]);
+        assert_eq!(
+            keys,
+            ["auth_state", "five_hour", "observed_ms", "seven_day"]
+        );
         for win in ["five_hour", "seven_day"] {
             let mut wk: Vec<_> = v[win].as_object().unwrap().keys().cloned().collect();
             wk.sort();
@@ -1097,7 +1112,9 @@ mod tests {
             .any(|w| w == b"boosterWallet"));
 
         let stale_at = NOW_MS + CACHE_MS + 1;
-        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied(quota::AuthState::Revoked));
+        let snaps = snapshots(dir.path(), &home(), stale_at, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(snaps.len(), 1);
         assert_eq!(snaps[0].written_at_ms, NOW_MS);
         no_sentinel(&outputs_of(&snaps, stale_at));

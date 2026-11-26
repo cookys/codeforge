@@ -838,7 +838,9 @@ mod tests {
         )
         .unwrap();
         let before = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
-        let stale = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked));
+        let stale = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(stale.len(), 2);
         assert_eq!(stale[0].written_at_ms, stale_observed);
         assert_eq!(window(&stale[1]).pct, 0.125);
@@ -886,11 +888,15 @@ mod tests {
         )
         .unwrap();
         // an expired key: `expired`
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Expired));
+        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Expired)
+        });
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].auth_state, Some(quota::AuthState::Expired));
         // HTTP 401/403 (denied, the key not expired): `revoked`
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked));
+        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(got[0].auth_state, Some(quota::AuthState::Revoked));
         // an unusable key or a transport error: `unknown`
         let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed);
@@ -1012,7 +1018,9 @@ mod tests {
         )
         .unwrap();
         let before = std::fs::read(dir.path().join(CACHE_FILE)).unwrap();
-        let got = snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked));
+        let got = snapshots(dir.path(), &home(), NOW_MS, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].written_at_ms, observed);
         assert_eq!(std::fs::read(dir.path().join(CACHE_FILE)).unwrap(), before);
@@ -1024,7 +1032,10 @@ mod tests {
             &json!({ "observed_ms": NOW_MS - 7 * 3_600_000, "pct": 0.34, "resets_at": RESETS_AT }),
         )
         .unwrap();
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked)).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(
+            quota::AuthState::Revoked
+        ))
+        .is_empty());
     }
 
     #[test]
@@ -1032,7 +1043,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Failed).is_empty());
         assert!(!dir.path().join(CACHE_FILE).exists());
-        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(quota::AuthState::Revoked)).is_empty());
+        assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Denied(
+            quota::AuthState::Revoked
+        ))
+        .is_empty());
         assert!(snapshots(dir.path(), &home(), NOW_MS, || Fetch::Body(json!({}))).is_empty());
         assert!(!dir.path().join(CACHE_FILE).exists());
     }
@@ -1176,7 +1190,9 @@ mod tests {
 
         // Denied against that cache (now stale): still no sentinel, cache unchanged.
         let stale_at = NOW_MS + CACHE_MS + 1;
-        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied(quota::AuthState::Revoked));
+        let snaps = snapshots(dir.path(), &home(), stale_at, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(snaps.len(), 1);
         assert_eq!(snaps[0].written_at_ms, NOW_MS);
         no_sentinel(&outputs_of(&snaps, stale_at));
@@ -1238,7 +1254,9 @@ mod tests {
         no_sentinel(&outputs_of(&again, NOW_MS + 1_000));
 
         let stale_at = NOW_MS + CACHE_MS + 1;
-        let snaps = snapshots(dir.path(), &home(), stale_at, || Fetch::Denied(quota::AuthState::Revoked));
+        let snaps = snapshots(dir.path(), &home(), stale_at, || {
+            Fetch::Denied(quota::AuthState::Revoked)
+        });
         assert_eq!(snaps.len(), 2);
         assert_eq!(snaps[0].written_at_ms, NOW_MS);
         assert_eq!(window(&snaps[1]).pct, 0.125);

@@ -469,8 +469,7 @@ pub fn validate(v: &Value) -> Result<()> {
             bail!("{at}.email: 不是合法的登入信箱");
         }
         // absent = the writer does not know (legal); present = one of the four strings
-        if m
-            .get("auth_state")
+        if m.get("auth_state")
             .is_some_and(|s| !s.as_str().is_some_and(|v| AUTH_STATES.contains(&v)))
         {
             bail!("{at}.auth_state: 不是 ok/expired/revoked/unknown 之一");
@@ -803,15 +802,31 @@ mod tests {
             validate(&v).unwrap();
         }
         // anything else is refused, and the value is never echoed
-        for bad in ["OK", " expired", "revokedx", "bogus", "", "me@example.com", &"x".repeat(64)]
-        {
+        for bad in [
+            "OK",
+            " expired",
+            "revokedx",
+            "bogus",
+            "",
+            "me@example.com",
+            &"x".repeat(64),
+        ] {
             let mut v = good();
             v["accounts"][0]["auth_state"] = json!(bad);
             let e = validate(&v).unwrap_err().to_string();
             assert!(e.contains("auth_state"), "{bad:?}: {e}");
-            assert!(bad.is_empty() || !e.contains(bad), "the value is never echoed");
+            assert!(
+                bad.is_empty() || !e.contains(bad),
+                "the value is never echoed"
+            );
         }
-        for bad in [json!(5), json!(null), json!(true), json!(["ok"]), json!({"ok": 1})] {
+        for bad in [
+            json!(5),
+            json!(null),
+            json!(true),
+            json!(["ok"]),
+            json!({"ok": 1}),
+        ] {
             let mut v = good();
             v["accounts"][0]["auth_state"] = bad;
             assert!(validate(&v).is_err(), "off-set value passed");

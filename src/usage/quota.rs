@@ -692,11 +692,8 @@ mod tests {
         .unwrap();
         assert!(wrote);
         assert_eq!(m.auth_state, Some(AuthState::Revoked));
-        let (m, _) = merge_snapshot(
-            dir.path(),
-            &with_state(NOW_MS + 120_000, AuthState::Ok),
-        )
-        .unwrap();
+        let (m, _) =
+            merge_snapshot(dir.path(), &with_state(NOW_MS + 120_000, AuthState::Ok)).unwrap();
         assert_eq!(m.auth_state, Some(AuthState::Ok));
     }
 
