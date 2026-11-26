@@ -1,0 +1,614 @@
+[
+ {
+  "step": 1,
+  "id": "1-N",
+  "tab": "現況",
+  "state": "N",
+  "title": "正常",
+  "key_to_next": "設計稿：換狀態",
+  "next": 2
+ },
+ {
+  "step": 2,
+  "id": "1-E",
+  "tab": "現況",
+  "state": "E",
+  "title": "有資料、全部正常",
+  "key_to_next": "設計稿：換狀態",
+  "next": 3
+ },
+ {
+  "step": 3,
+  "id": "1-M",
+  "tab": "現況",
+  "state": "M",
+  "title": "很多事",
+  "key_to_next": "設計稿：換狀態",
+  "next": 4
+ },
+ {
+  "step": 4,
+  "id": "1-L",
+  "tab": "現況",
+  "state": "L",
+  "title": "失敗原因很長",
+  "key_to_next": "設計稿：換狀態",
+  "next": 5
+ },
+ {
+  "step": 5,
+  "id": "1-X",
+  "tab": "現況",
+  "state": "X",
+  "title": "缺源（pm 讀不到）",
+  "key_to_next": "設計稿：換狀態",
+  "next": 6
+ },
+ {
+  "step": 6,
+  "id": "1-S",
+  "tab": "現況",
+  "state": "S",
+  "title": "過時",
+  "key_to_next": "設計稿：換狀態",
+  "next": 7
+ },
+ {
+  "step": 7,
+  "id": "1-X2",
+  "tab": "現況",
+  "state": "X2",
+  "title": "缺源（pm 和 console 都讀不到）",
+  "key_to_next": "2",
+  "next": 8
+ },
+ {
+  "step": 8,
+  "id": "2-N",
+  "tab": "待決",
+  "state": "N",
+  "title": "第 1 張",
+  "key_to_next": "設計稿：換狀態",
+  "next": 9
+ },
+ {
+  "step": 9,
+  "id": "2-E",
+  "tab": "待決",
+  "state": "E",
+  "title": "沒有卡",
+  "key_to_next": "設計稿：換狀態",
+  "next": 10
+ },
+ {
+  "step": 10,
+  "id": "2-M",
+  "tab": "待決",
+  "state": "M",
+  "title": "14 張的第 5 張",
+  "key_to_next": "設計稿：換狀態",
+  "next": 11
+ },
+ {
+  "step": 11,
+  "id": "2-L",
+  "tab": "待決",
+  "state": "L",
+  "title": "第 4 張 · 來龍去脈很長",
+  "key_to_next": "設計稿：換狀態",
+  "next": 12
+ },
+ {
+  "step": 12,
+  "id": "2-X",
+  "tab": "待決",
+  "state": "X",
+  "title": "缺源",
+  "key_to_next": "設計稿：換狀態",
+  "next": 13
+ },
+ {
+  "step": 13,
+  "id": "2-S",
+  "tab": "待決",
+  "state": "S",
+  "title": "預覽中卡片變了",
+  "key_to_next": "3",
+  "next": 14
+ },
+ {
+  "step": 14,
+  "id": "3-N",
+  "tab": "派工",
+  "state": "N",
+  "title": "正常",
+  "key_to_next": "設計稿：換狀態",
+  "next": 15
+ },
+ {
+  "step": 15,
+  "id": "3-E",
+  "tab": "派工",
+  "state": "E",
+  "title": "沒有派工",
+  "key_to_next": "設計稿：換狀態",
+  "next": 16
+ },
+ {
+  "step": 16,
+  "id": "3-M",
+  "tab": "派工",
+  "state": "M",
+  "title": "很多輪",
+  "key_to_next": "設計稿：換狀態",
+  "next": 17
+ },
+ {
+  "step": 17,
+  "id": "3-L",
+  "tab": "派工",
+  "state": "L",
+  "title": "失敗原因很長",
+  "key_to_next": "設計稿：換狀態",
+  "next": 18
+ },
+ {
+  "step": 18,
+  "id": "3-X",
+  "tab": "派工",
+  "state": "X",
+  "title": "缺源",
+  "key_to_next": "設計稿：換狀態",
+  "next": 19
+ },
+ {
+  "step": 19,
+  "id": "3-S",
+  "tab": "派工",
+  "state": "S",
+  "title": "過時",
+  "key_to_next": "4",
+  "next": 20
+ },
+ {
+  "step": 20,
+  "id": "4-N",
+  "tab": "審查",
+  "state": "N",
+  "title": "正常",
+  "key_to_next": "設計稿：換狀態",
+  "next": 21
+ },
+ {
+  "step": 21,
+  "id": "4-E",
+  "tab": "審查",
+  "state": "E",
+  "title": "沒有審查",
+  "key_to_next": "設計稿：換狀態",
+  "next": 22
+ },
+ {
+  "step": 22,
+  "id": "4-M",
+  "tab": "審查",
+  "state": "M",
+  "title": "很多條",
+  "key_to_next": "設計稿：換狀態",
+  "next": 23
+ },
+ {
+  "step": 23,
+  "id": "4-L",
+  "tab": "審查",
+  "state": "L",
+  "title": "審查意見很長",
+  "key_to_next": "設計稿：換狀態",
+  "next": 24
+ },
+ {
+  "step": 24,
+  "id": "4-X",
+  "tab": "審查",
+  "state": "X",
+  "title": "缺源",
+  "key_to_next": "設計稿：換狀態",
+  "next": 25
+ },
+ {
+  "step": 25,
+  "id": "4-S",
+  "tab": "審查",
+  "state": "S",
+  "title": "過時",
+  "key_to_next": "5",
+  "next": 26
+ },
+ {
+  "step": 26,
+  "id": "5-N",
+  "tab": "花費",
+  "state": "N",
+  "title": "正常",
+  "key_to_next": "設計稿：換狀態",
+  "next": 27
+ },
+ {
+  "step": 27,
+  "id": "5-E",
+  "tab": "花費",
+  "state": "E",
+  "title": "還沒有用量",
+  "key_to_next": "設計稿：換狀態",
+  "next": 28
+ },
+ {
+  "step": 28,
+  "id": "5-M",
+  "tab": "花費",
+  "state": "M",
+  "title": "10 個額度池",
+  "key_to_next": "設計稿：換狀態",
+  "next": 29
+ },
+ {
+  "step": 29,
+  "id": "5-L",
+  "tab": "花費",
+  "state": "L",
+  "title": "說明很長",
+  "key_to_next": "設計稿：換狀態",
+  "next": 30
+ },
+ {
+  "step": 30,
+  "id": "5-X",
+  "tab": "花費",
+  "state": "X",
+  "title": "缺源（quota 和速度）",
+  "key_to_next": "設計稿：換狀態",
+  "next": 31
+ },
+ {
+  "step": 31,
+  "id": "5-S",
+  "tab": "花費",
+  "state": "S",
+  "title": "過時（用快取）",
+  "key_to_next": "設計稿：換狀態",
+  "next": 32
+ },
+ {
+  "step": 32,
+  "id": "5-X2",
+  "tab": "花費",
+  "state": "X2",
+  "title": "缺源（額度池和今日用量）",
+  "key_to_next": "6",
+  "next": 33
+ },
+ {
+  "step": 33,
+  "id": "6-N",
+  "tab": "殘留",
+  "state": "N",
+  "title": "正常",
+  "key_to_next": "設計稿：換狀態",
+  "next": 34
+ },
+ {
+  "step": 34,
+  "id": "6-E",
+  "tab": "殘留",
+  "state": "E",
+  "title": "沒有殘留",
+  "key_to_next": "設計稿：換狀態",
+  "next": 35
+ },
+ {
+  "step": 35,
+  "id": "6-M",
+  "tab": "殘留",
+  "state": "M",
+  "title": "很多項",
+  "key_to_next": "設計稿：換狀態",
+  "next": 36
+ },
+ {
+  "step": 36,
+  "id": "6-L",
+  "tab": "殘留",
+  "state": "L",
+  "title": "說明很長",
+  "key_to_next": "設計稿：換狀態",
+  "next": 37
+ },
+ {
+  "step": 37,
+  "id": "6-X",
+  "tab": "殘留",
+  "state": "X",
+  "title": "缺源",
+  "key_to_next": "設計稿：換狀態",
+  "next": 38
+ },
+ {
+  "step": 38,
+  "id": "6-S",
+  "tab": "殘留",
+  "state": "S",
+  "title": "過時",
+  "key_to_next": "設計稿：換狀態",
+  "next": 39
+ },
+ {
+  "step": 39,
+  "id": "6-X2",
+  "tab": "殘留",
+  "state": "X2",
+  "title": "缺源（外掛載入）",
+  "key_to_next": "7",
+  "next": 40
+ },
+ {
+  "step": 40,
+  "id": "7-N",
+  "tab": "艦隊",
+  "state": "N",
+  "title": "正常",
+  "key_to_next": "設計稿：換狀態",
+  "next": 41
+ },
+ {
+  "step": 41,
+  "id": "7-E",
+  "tab": "艦隊",
+  "state": "E",
+  "title": "沒有 agent",
+  "key_to_next": "設計稿：換狀態",
+  "next": 42
+ },
+ {
+  "step": 42,
+  "id": "7-M",
+  "tab": "艦隊",
+  "state": "M",
+  "title": "很多 agent",
+  "key_to_next": "設計稿：換狀態",
+  "next": 43
+ },
+ {
+  "step": 43,
+  "id": "7-L",
+  "tab": "艦隊",
+  "state": "L",
+  "title": "失敗原因很長",
+  "key_to_next": "設計稿：換狀態",
+  "next": 44
+ },
+ {
+  "step": 44,
+  "id": "7-X",
+  "tab": "艦隊",
+  "state": "X",
+  "title": "缺源（本機卡、他機卡、速度）",
+  "key_to_next": "設計稿：換狀態",
+  "next": 45
+ },
+ {
+  "step": 45,
+  "id": "7-S",
+  "tab": "艦隊",
+  "state": "S",
+  "title": "過時",
+  "key_to_next": "設計稿：換狀態",
+  "next": 46
+ },
+ {
+  "step": 46,
+  "id": "7-X2",
+  "tab": "艦隊",
+  "state": "X2",
+  "title": "缺源（runs 和摘要）",
+  "key_to_next": "8",
+  "next": 47
+ },
+ {
+  "step": 47,
+  "id": "8-N",
+  "tab": "待辦",
+  "state": "N",
+  "title": "正常",
+  "key_to_next": "設計稿：換狀態",
+  "next": 48
+ },
+ {
+  "step": 48,
+  "id": "8-E",
+  "tab": "待辦",
+  "state": "E",
+  "title": "沒有待辦",
+  "key_to_next": "設計稿：換狀態",
+  "next": 49
+ },
+ {
+  "step": 49,
+  "id": "8-M",
+  "tab": "待辦",
+  "state": "M",
+  "title": "很多張",
+  "key_to_next": "設計稿：換狀態",
+  "next": 50
+ },
+ {
+  "step": 50,
+  "id": "8-L",
+  "tab": "待辦",
+  "state": "L",
+  "title": "長問題加長選項",
+  "key_to_next": "↓",
+  "next": 51
+ },
+ {
+  "step": 51,
+  "id": "8-L2",
+  "tab": "待辦",
+  "state": "L2",
+  "title": "捲到底",
+  "key_to_next": "設計稿：換狀態",
+  "next": 52
+ },
+ {
+  "step": 52,
+  "id": "8-X",
+  "tab": "待辦",
+  "state": "X",
+  "title": "缺源（還沒接線）",
+  "key_to_next": "設計稿：換狀態",
+  "next": 53
+ },
+ {
+  "step": 53,
+  "id": "8-S",
+  "tab": "待辦",
+  "state": "S",
+  "title": "過時",
+  "key_to_next": "9",
+  "next": 54
+ },
+ {
+  "step": 54,
+  "id": "9-N",
+  "tab": "說明",
+  "state": "N",
+  "title": "狀態圖示",
+  "key_to_next": "設計稿：換狀態",
+  "next": 55
+ },
+ {
+  "step": 55,
+  "id": "9-L",
+  "tab": "說明",
+  "state": "L",
+  "title": "按鍵表",
+  "key_to_next": "2",
+  "next": 56
+ },
+ {
+  "step": 56,
+  "id": "2-L2",
+  "tab": "待決",
+  "state": "L2",
+  "title": "等你動手 · 步驟很長",
+  "key_to_next": "↓",
+  "next": 57
+ },
+ {
+  "step": 57,
+  "id": "2-L3",
+  "tab": "待決",
+  "state": "L3",
+  "title": "等你動手 · 捲到底",
+  "key_to_next": "a",
+  "next": 58
+ },
+ {
+  "step": 58,
+  "id": "2-A",
+  "tab": "待決",
+  "state": "A",
+  "title": "走完 staging · 選 a",
+  "key_to_next": "m",
+  "next": 59
+ },
+ {
+  "step": 59,
+  "id": "2-I",
+  "tab": "待決",
+  "state": "I",
+  "title": "寫附註",
+  "key_to_next": "Enter 存附註，再按 s",
+  "next": 60
+ },
+ {
+  "step": 60,
+  "id": "2-P",
+  "tab": "待決",
+  "state": "P",
+  "title": "送出預覽",
+  "key_to_next": "x",
+  "next": 61
+ },
+ {
+  "step": 61,
+  "id": "2-Pc",
+  "tab": "待決",
+  "state": "Pc",
+  "title": "取消預覽",
+  "key_to_next": "s 再按 y",
+  "next": 62
+ },
+ {
+  "step": 62,
+  "id": "2-R",
+  "tab": "待決",
+  "state": "R",
+  "title": "送出成功",
+  "key_to_next": "設計稿：換狀態",
+  "next": 63
+ },
+ {
+  "step": 63,
+  "id": "2-F",
+  "tab": "待決",
+  "state": "F",
+  "title": "送出失敗",
+  "key_to_next": "設計稿：換狀態",
+  "next": 64
+ },
+ {
+  "step": 64,
+  "id": "2-Fl0",
+  "tab": "待決",
+  "state": "Fl0",
+  "title": "按 f 之前",
+  "key_to_next": "f",
+  "next": 65
+ },
+ {
+  "step": 65,
+  "id": "2-Fl",
+  "tab": "待決",
+  "state": "Fl",
+  "title": "按 f 之後",
+  "key_to_next": "設計稿：換狀態",
+  "next": 66
+ },
+ {
+  "step": 66,
+  "id": "C1",
+  "tab": "待決",
+  "state": "C1",
+  "title": "開著卡（第 2 張選了 b、寫了附註）",
+  "key_to_next": "7",
+  "next": 67
+ },
+ {
+  "step": 67,
+  "id": "C2",
+  "tab": "艦隊",
+  "state": "C2",
+  "title": "開著卡時看艦隊",
+  "key_to_next": "2",
+  "next": 68
+ },
+ {
+  "step": 68,
+  "id": "C3",
+  "tab": "待決",
+  "state": "C3",
+  "title": "回到待決（全部恢復）",
+  "key_to_next": "1",
+  "next": 1
+ }
+]

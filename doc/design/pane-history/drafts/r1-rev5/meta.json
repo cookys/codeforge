@@ -6,8 +6,12 @@
   "sources": [
     ".@docs/r1-rev5-gen:doc/design/r1-rev5"
   ],
-  "missing": [
-    "退回原話未取得；R2 記錄 A2/B2 不採用，尚無卡片逐字原文"
-  ],
-  "adoption": "未採用（退件）"
+  "missing": [],
+  "adoption": "未採用（退件）",
+  "rejection_quote": {
+    "when": "2026-11-25T09:25Z",
+    "text": "R1 rev5 是用 7.4 延伸的嗎?  我看還是不是阿?  一堆黃框是怎樣 ?",
+    "source": "operator via PM, fleet 01M8A18Z770H5B7HMVG5TMYW9B",
+    "reason": "基底不是操作員在用的版本；畫面有標註框"
+  }
 }

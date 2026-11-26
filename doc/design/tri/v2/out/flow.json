@@ -1,0 +1,62 @@
+[
+ {
+  "step": 1,
+  "title": "平常沒事：只有最底下一行",
+  "key_to_next": "（等卡片進來）",
+  "next": 2
+ },
+ {
+  "step": 2,
+  "title": "卡片進來：那一行變提醒，不搶鍵盤",
+  "key_to_next": "ctrl+x tab",
+  "next": 3
+ },
+ {
+  "step": 3,
+  "title": "待決卡：左下 index、右下回覆區、右上來龍去脈",
+  "key_to_next": "a",
+  "next": 4
+ },
+ {
+  "step": 4,
+  "title": "選了自動跳下一張：index 打勾，來龍去脈跟著換",
+  "key_to_next": "b",
+  "next": 5
+ },
+ {
+  "step": 5,
+  "title": "第 3 張：來龍去脈多一段，框往上長",
+  "key_to_next": "b",
+  "next": 6
+ },
+ {
+  "step": 6,
+  "title": "等你動手卡：步驟在回覆區，來龍去脈很長",
+  "key_to_next": "a（照 1、2 做完之後）",
+  "next": 7
+ },
+ {
+  "step": 7,
+  "title": "都選好了：送出列亮起來（這張按 m 寫了附註）",
+  "key_to_next": "s",
+  "next": 8
+ },
+ {
+  "step": 8,
+  "title": "送出後的回條：已送出，每張送了什麼",
+  "key_to_next": "7",
+  "next": 9
+ },
+ {
+  "step": 9,
+  "title": "艦隊頁：每個 agent 的 tok/s",
+  "key_to_next": "5",
+  "next": 10
+ },
+ {
+  "step": 10,
+  "title": "花費頁：額度和今天用量",
+  "key_to_next": "Esc",
+  "next": 1
+ }
+]

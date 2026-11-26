@@ -1,0 +1,77 @@
+{
+ "steps": [
+  {
+   "step": 1,
+   "id": "R1-1",
+   "tab": "R1",
+   "state": "closed",
+   "title": "band 出現提醒",
+   "key_to_next": "",
+   "next": 2
+  },
+  {
+   "step": 2,
+   "id": "R1-2",
+   "tab": "R1",
+   "state": "open",
+   "title": "展開",
+   "key_to_next": "",
+   "next": 3
+  },
+  {
+   "step": 3,
+   "id": "R1-3",
+   "tab": "R1",
+   "state": "open",
+   "title": "pane 停在同一張卡",
+   "key_to_next": "",
+   "next": 4
+  },
+  {
+   "step": 4,
+   "id": "R1-4",
+   "tab": "R1",
+   "state": "open",
+   "title": "換卡，兩邊一起變",
+   "key_to_next": "",
+   "next": 5
+  },
+  {
+   "step": 5,
+   "id": "R1-5",
+   "tab": "R1",
+   "state": "open",
+   "title": "選 a／b",
+   "key_to_next": "",
+   "next": 6
+  },
+  {
+   "step": 6,
+   "id": "R1-6",
+   "tab": "R1",
+   "state": "edit",
+   "title": "寫附註",
+   "key_to_next": "",
+   "next": 7
+  },
+  {
+   "step": 7,
+   "id": "R1-7",
+   "tab": "R1",
+   "state": "sent",
+   "title": "預覽並送出",
+   "key_to_next": "",
+   "next": 8
+  },
+  {
+   "step": 8,
+   "id": "R1-8",
+   "tab": "R1",
+   "state": "closed-sent",
+   "title": "收合",
+   "key_to_next": "",
+   "next": null
+  }
+ ],
+ "source": "pane-history/drafts/r1-rev5/gen.py PATH_STATES"
+}

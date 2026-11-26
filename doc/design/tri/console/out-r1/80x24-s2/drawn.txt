@@ -1,0 +1,24 @@
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+   待決 21 · 第 1 張 · 合併 plan                                                
+  要不要把 shared-tui plan 合進 develop？                                       
+  a 合併 ✧ · b 再審一輪                                                         
+  ‹ p 1/21 n › · m 附註：（空） · [s] 送出                                      
+    p/n · m · s · w · Esc                                                       
+‣ 要你決定：要不要把 shared-tui plan …                                ▴收合     
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
