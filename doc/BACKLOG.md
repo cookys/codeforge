@@ -587,7 +587,7 @@
 
 ### Autopilot mods 的 bandlayout 在 12 列有 4 條測試本來就紅
 - **Id**: B68
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-22
 - **Origin**: self
 - **Problem**: autopilot develop 的 `mods/live/run-tests.sh` 有 4 條 bandlayout 測試在 12 列失敗（「scrolled through at 12 rows, every line of a card is complete and none is wider than the main window」與「a tall card at 12 rows is never taller than maxRows, ends with the menu row and the quick row」各兩次）。同一批 10 條 speed tab 失敗是已記的基線，這 4 條不是；分支測試看到 14 條失敗時，要靠這張單認出它們不是新增的。
