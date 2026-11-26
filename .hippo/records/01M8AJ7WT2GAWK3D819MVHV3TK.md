@@ -9,6 +9,7 @@ created: 2026-11-18T00:00:00.000Z
 - **Trigger**: 操作員完成 team 帳號 codex 登入（PM 開卡）
 - **Source**: PM 01M7P1HY：astra 補評等登入恢復後放到第二批
 - **Pointer**: doc/backlog/pane-batch2.md
+- **Status**: dropped 2026-11-27 (舊 forge-stats pane 批次已由 v7.4 框／console v5 取代；PM 01M8CTQD2Y0NDKZE295K16MHNB)
 ---
 # pane 第二批：閘門 b1 第 3 輪 carbon 的 M1–M6、N1–N4
 

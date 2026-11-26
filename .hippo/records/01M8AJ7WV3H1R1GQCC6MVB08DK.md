@@ -9,6 +9,7 @@ created: 2026-11-18T00:00:00.000Z
 - **Trigger**: 第 2 批 pin 之後
 - **Source**: PM 01M7PMAN：寵物頁排第 3 批，codeforge 主導、autopilot 實作
 - **Pointer**: doc/specs/codeforge-mod-ui.md
+- **Status**: dropped 2026-11-27 (舊 forge-stats pane 批次已由 v7.4 框／console v5 取代；PM 01M8CTQD2Y0NDKZE295K16MHNB)
 - **Context**: 資料走 pet.json 契約；閘門照 forge-stats-ux-gate
 - **Needs**: B56
 - **ms**: pane-batch3

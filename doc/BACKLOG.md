@@ -396,7 +396,7 @@
 
 ### pane 第 1 批補 astra 評審（等 codex 重新登入）
 - **Id**: B55
-- **Status**: open
+- **Status**: dropped 2026-11-27 (舊 forge-stats pane 批次已由 v7.4 框／console v5 取代；PM 01M8CTQD2Y0NDKZE295K16MHNB)
 - **Since**: 2026-11-18
 - **Origin**: self
 - **Problem**: 閘門 b1 第 3 輪 astra 的 runner 失敗（team 帳號 codex token 失效），第 1 批只有 carbon 的判定。
@@ -429,7 +429,7 @@
 
 ### pane 寵物分頁正式上線（第 3 批）
 - **Id**: B57
-- **Status**: open
+- **Status**: dropped 2026-11-27 (舊 forge-stats pane 批次已由 v7.4 框／console v5 取代；PM 01M8CTQD2Y0NDKZE295K16MHNB)
 - **Since**: 2026-11-18
 - **Origin**: self
 - **Problem**: 9 寵物分頁目前只畫佔位文字「寵物分頁還沒上線」。
