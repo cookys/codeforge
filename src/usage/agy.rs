@@ -17,7 +17,10 @@
 //! The key is the `path_hash8` of the host's home dir — the same Google account on two hosts is
 //! two rows until the operator names them. The capture is cached at
 //! `<cache_dir>/agy-usage.json` (0600, atomic) and at most 10 minutes old; a failed run falls
-//! back to a cache not older than [`quota::MAX_AGE_MS`]. `CODEFORGE_USAGE_AGY=0` never spawns
+//! back to a cache not older than [`quota::MAX_AGE_MS`]. A parsed run is `auth_state: ok`; a
+//! failed or unparsable run is `unknown` (the cache's numbers stand, this attempt's verdict is
+//! the row's state); an old cache without the field reads as `unknown`.
+//! `CODEFORGE_USAGE_AGY=0` never spawns
 //! `agy`. The binary is spawned with cwd in the system temp dir, stdin/stderr closed, and
 //! killed after 20 s; only an exit-0 stdout is a capture.
 
@@ -63,10 +66,17 @@ struct Pool {
 
 /// The capture's lines as quota snapshots: one per pool that has at least one valid window.
 /// `observed_ms` is when the text was captured (the cache's own time on a cache read);
-/// `key_hash` is the `path_hash8` of the host's home dir. The percent is REMAINING, so
-/// `pct` (the used fraction) is `1 − remaining/100`; `resets_at` is the RFC3339 time in unix
-/// seconds. Any line off the shape is skipped, never an error.
-pub fn parse(text: &str, observed_ms: i64, key_hash: &str) -> Vec<quota::Snapshot> {
+/// `key_hash` is the `path_hash8` of the host's home dir. `state` is the auth state of the
+/// attempt that produced the text (`ok` on a parsed run, `unknown` on a stale-cache fallback,
+/// the cache's own on a fresh-cache read). The percent is REMAINING, so `pct` (the used
+/// fraction) is `1 − remaining/100`; `resets_at` is the RFC3339 time in unix seconds. Any line
+/// off the shape is skipped, never an error.
+pub fn parse(
+    text: &str,
+    observed_ms: i64,
+    key_hash: &str,
+    state: quota::AuthState,
+) -> Vec<quota::Snapshot> {
     let mut pools: [Option<Pool>; 2] = [None, None];
     for line in text.lines() {
         let mut f = line.split('\t');
@@ -128,6 +138,7 @@ pub fn parse(text: &str, observed_ms: i64, key_hash: &str) -> Vec<quota::Snapsho
             org_id: None,
             email: None,
             root: None,
+            auth_state: Some(state),
             written_at_ms: observed_ms,
             five_hour: p.five_hour,
             seven_day: p.seven_day,
@@ -135,11 +146,15 @@ pub fn parse(text: &str, observed_ms: i64, key_hash: &str) -> Vec<quota::Snapsho
         .collect()
 }
 
-/// The cache file: the raw capture and when it was taken.
+/// The cache file: the raw capture and when it was taken. `auth_state` (the state at the
+/// write, `ok`) is absent on an older cache: it reads as `unknown`.
 #[derive(Deserialize)]
 struct Cache {
     observed_ms: i64,
     text: String,
+    /// The auth state at the write. Missing on an old cache.
+    #[serde(default)]
+    auth_state: Option<quota::AuthState>,
 }
 
 /// The cache at `path`, or nothing: missing, unopened, over the cap, or not the shape.
@@ -159,12 +174,15 @@ fn read_cache(path: &Path) -> Option<Cache> {
 
 /// The host's agy snapshots at `now_ms` under [`quota::Probe`], from the cache at `cache_dir`
 /// (`agy-usage.json`). [`quota::Probe::Normal`]: while the cache is younger than [`CACHE_MS`]
-/// `run` is not called. [`quota::Probe::Force`]: the cache window is ignored and `run` is
+/// `run` is not called and the rows carry the state the cache wrote (an old cache without one
+/// reads as `unknown`). [`quota::Probe::Force`]: the cache window is ignored and `run` is
 /// called once. [`quota::Probe::CacheOnly`]: `run` is never called and the cache is read
-/// while it is not older than [`quota::MAX_AGE_MS`], else no snapshots. A `None` run
-/// (no `agy` on PATH, the off switch, a non-zero exit, or a timeout) and a parse that finds
-/// nothing fall back to the cache while it is younger than [`quota::MAX_AGE_MS`], else return
-/// no snapshots. The key is the `path_hash8` of `home` (canonicalized).
+/// (with its written state) while it is not older than [`quota::MAX_AGE_MS`], else no
+/// snapshots. A `Some` run text that parses to at least one snapshot is `ok` and becomes the
+/// new cache (with `auth_state`). A `None` run (no `agy` on PATH, the off switch, a non-zero
+/// exit, or a timeout) and a parse that finds nothing are `unknown` and fall back to the
+/// cache while it is younger than [`quota::MAX_AGE_MS`], else return no snapshots. The key is
+/// the `path_hash8` of `home` (canonicalized).
 pub fn snapshots(
     cache_dir: &Path,
     home: &Path,
@@ -176,38 +194,41 @@ pub fn snapshots(
     let cache = read_cache(&cache_dir.join(CACHE_FILE));
     let within =
         |at_ms: i64, limit: i64| (0..limit).contains(&now_ms.checked_sub(at_ms).unwrap_or(limit));
+    let cached_state = |c: &Cache| c.auth_state.unwrap_or(quota::AuthState::Unknown);
     if probe == quota::Probe::CacheOnly {
         return cache
             .filter(|c| within(c.observed_ms, quota::MAX_AGE_MS))
-            .map(|c| parse(&c.text, c.observed_ms, &key_hash))
+            .map(|c| parse(&c.text, c.observed_ms, &key_hash, cached_state(&c)))
             .unwrap_or_default();
     }
     if probe == quota::Probe::Normal {
         if let Some(c) = cache.as_ref().filter(|c| within(c.observed_ms, CACHE_MS)) {
-            return parse(&c.text, c.observed_ms, &key_hash);
+            return parse(&c.text, c.observed_ms, &key_hash, cached_state(c));
         }
     }
-    let fallback = || {
+    // a cache younger than MAX_AGE_MS supplies the numbers; this attempt's verdict is the
+    // state, because it is newer
+    let fallback = |state: quota::AuthState| {
         cache
             .as_ref()
             .filter(|c| within(c.observed_ms, quota::MAX_AGE_MS))
-            .map(|c| parse(&c.text, c.observed_ms, &key_hash))
+            .map(|c| parse(&c.text, c.observed_ms, &key_hash, state))
             .unwrap_or_default()
     };
     match run() {
         Some(text) => {
-            let snaps = parse(&text, now_ms, &key_hash);
+            let snaps = parse(&text, now_ms, &key_hash, quota::AuthState::Ok);
             if snaps.is_empty() {
-                return fallback();
+                return fallback(quota::AuthState::Unknown);
             }
             let _ = crate::live::write_live_json(
                 cache_dir,
                 CACHE_FILE,
-                &json!({ "observed_ms": now_ms, "text": text }),
+                &json!({ "observed_ms": now_ms, "text": text, "auth_state": quota::AuthState::Ok }),
             );
             snaps
         }
-        None => fallback(),
+        None => fallback(quota::AuthState::Unknown),
     }
 }
 
@@ -296,9 +317,13 @@ mod tests {
         .unwrap();
     }
 
+    fn parse_ok(text: &str) -> Vec<quota::Snapshot> {
+        parse(text, NOW_MS, KEY, quota::AuthState::Ok)
+    }
+
     #[test]
     fn the_real_capture_is_two_snapshots_with_used_fractions() {
-        let v = parse(CAPTURE, NOW_MS, KEY);
+        let v = parse_ok(CAPTURE);
         assert_eq!(v.len(), 2);
         let g = &v[0];
         assert_eq!(g.alias, format!("agy-{KEY}"));
@@ -364,12 +389,12 @@ mod tests {
         ]
         .join("\n");
         // no pool has a valid window: no snapshot at all
-        assert!(parse(&bad, NOW_MS, KEY).is_empty());
+        assert!(parse_ok(&bad).is_empty());
         // one valid line for one pool: that pool stands with its one window
         let mixed = format!(
             "{bad}\nClaude and GPT models\tFive Hour Limit Remaining\t100%\t2026-11-11T14:41:51Z"
         );
-        let v = parse(&mixed, NOW_MS, KEY);
+        let v = parse_ok(&mixed);
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].alias, format!("agyclaude-{KEY}"));
         assert_eq!(v[0].seven_day, None);
@@ -405,6 +430,73 @@ mod tests {
         std::fs::remove_file(dir.path().join(CACHE_FILE)).unwrap();
         write_cache(dir.path(), NOW_MS - 7 * 3_600_000, CAPTURE);
         assert!(snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || None).is_empty());
+    }
+
+    fn write_cache_at(dir: &Path, observed_ms: i64, text: &str, state: Option<&str>) {
+        let mut v = json!({ "observed_ms": observed_ms, "text": text });
+        if let Some(s) = state {
+            v["auth_state"] = json!(s);
+        }
+        crate::live::write_live_json(dir, CACHE_FILE, &v).unwrap();
+    }
+
+    #[test]
+    fn snapshots_carry_the_run_verdict_as_auth_state() {
+        let dir = tempfile::tempdir().unwrap();
+        // a stale cache (new format): a failed run returns it, `unknown`
+        write_cache_at(dir.path(), NOW_MS - 11 * 60_000, CAPTURE, Some("ok"));
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || None);
+        assert_eq!(got.len(), 2);
+        assert!(got
+            .iter()
+            .all(|s| s.auth_state == Some(quota::AuthState::Unknown)));
+        // an unparsable run: the same cache, `unknown`
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Some("garbage\n".into())
+        });
+        assert_eq!(got.len(), 2);
+        assert!(got
+            .iter()
+            .all(|s| s.auth_state == Some(quota::AuthState::Unknown)));
+        // a run that parses: `ok`, and the cache learns the state
+        let got = snapshots(dir.path(), &home(), NOW_MS, quota::Probe::Normal, || {
+            Some(CAPTURE.to_string())
+        });
+        assert_eq!(got.len(), 2);
+        assert!(got
+            .iter()
+            .all(|s| s.auth_state == Some(quota::AuthState::Ok)));
+        let v: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join(CACHE_FILE)).unwrap()).unwrap();
+        assert_eq!(v["auth_state"], "ok");
+        // the fresh cache is parsed without a run: the state of the write
+        let got = snapshots(
+            dir.path(),
+            &home(),
+            NOW_MS + 60_000,
+            quota::Probe::Normal,
+            || -> Option<String> { panic!("run must not be called on a fresh cache") },
+        );
+        assert!(got
+            .iter()
+            .all(|s| s.auth_state == Some(quota::AuthState::Ok)));
+    }
+
+    #[test]
+    fn an_old_cache_without_auth_state_reads_as_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        write_cache_at(dir.path(), NOW_MS - 60_000, CAPTURE, None);
+        let got = snapshots(
+            dir.path(),
+            &home(),
+            NOW_MS,
+            quota::Probe::Normal,
+            || -> Option<String> { panic!("run must not be called on a fresh cache") },
+        );
+        assert_eq!(got.len(), 2);
+        assert!(got
+            .iter()
+            .all(|s| s.auth_state == Some(quota::AuthState::Unknown)));
     }
 
     #[test]

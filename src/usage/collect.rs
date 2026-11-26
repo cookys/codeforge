@@ -558,6 +558,8 @@ pub fn codex_snapshots(conn: &Connection, now_ms: i64) -> Result<Vec<quota::Snap
             org_id: None,
             email: None,
             root: None,
+            // Codex's rate_limits say nothing about its login: the row omits the state
+            auth_state: None,
             written_at_ms: at,
             five_hour: win(r.get(2)?, r.get(3)?),
             seven_day: win(r.get(4)?, r.get(5)?),

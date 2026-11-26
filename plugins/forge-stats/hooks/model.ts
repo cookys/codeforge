@@ -338,7 +338,8 @@ export const USAGE_CONTRACT = {
   "max_codex_sessions": 2000,
   "drop_reasons": ["written_at_ms_out_of_range", "resets_at_out_of_range", "pct_out_of_range"],
   "account": ["alias", "written_at_ms", "five_hour", "seven_day"],
-  "account_optional": ["org", "email", "name"],
+  "account_optional": ["org", "email", "name", "auth_state"],
+  "auth_state": ["ok", "expired", "revoked", "unknown"],
   "org": "^[^@\\p{Cc}]{1,40}$",
   "email": "^(?=.{3,254}$)[^@\\s\\p{Cc}\\uFEFF]+@[^@\\s\\p{Cc}\\uFEFF]+$",
   "name_max_cells": 24,
@@ -446,6 +447,8 @@ export function parseUsage(text: string | null, now: number): UsageView {
     if (fiveHour === undefined || sevenDay === undefined) return bad
     if ('org' in a && (typeof a.org !== 'string' || !ORG_RE.test(a.org))) return bad
     if ('email' in a && (typeof a.email !== 'string' || !EMAIL_RE.test(a.email))) return bad
+    // a writer that knows the login state names one of the four; anything else is off-contract
+    if ('auth_state' in a && !inSet(a.auth_state, C.auth_state)) return bad
     // a writer from before the key rule could name a codex account by its key: shown by its provider instead
     if ('name' in a && !(isDisplayName(a.name) || (typeof a.name === 'string' && isKeyLike(a.name) && keyDefault(a.name) !== null))) return bad
     // a writer from before `name`: the email, else the org, else the alias's default name (`codex` for `codex-<hex>`); an `acct-` hash with none of these is not drawn
