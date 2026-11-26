@@ -1,11 +1,11 @@
 """console 寬螢幕全步驟（PM 01M8A18Z N+2）：舊稿 68 步的資料（gen.py 的 S）照寬版面重排。
 
 版面（209x49，操作員實測；宿主上限見 gen_wide.py 開頭）：
-- 右側停靠 pane 94 欄（宿主上限），整個高度到 prompt 區上方。
+- 右側停靠 pane 94 欄（宿主上限，含第 115 欄宿主拖拉條，內容 93 欄），整個高度到 prompt 區上方。
   上半（唯讀）：回覆區放不下而移過來的步驟、固定警告、來龍去脈（待決卡照 R7 收成一列）、艦隊每條產線一列。
   下半（可按）：其他 8 頁每頁一列摘要，前面是跳頁的數字鍵。
 - 底部 band 17 列（宿主上限）：左欄清單、右欄回覆區（問題、選項、說明），下面全域狀態列、頁籤列、鍵列。
-- 上方對話區 115 欄：宿主對話，唯讀。
+- 上方對話區、底部 band 寬 110 欄（主欄 115 欄，右側 5 欄留給宿主；實機量測）：宿主對話，唯讀。
 120x40、80x24 是退化檢查：沿用已過三輪審查的舊稿版面（out/），不在這裡產生。
 
 用法：python3 gen_wide_all.py <輸出目錄>  → <輸出目錄>/209x49-s<N>/{screen.txt, roles.json[, urls.json]}、flow.json
@@ -25,14 +25,19 @@ v = g.v
 
 W, H = 209, 49
 DOCK = 94
-LEFT = W - DOCK            # 115
+LEFT = W - DOCK            # 115：宿主主欄（對話與 band）的 viewport 寬
+# 實機量測（CC 2.1.332，209x49 tmux，PM 裁定 A 6193db92）：主欄右側留 5 欄給宿主，band 實際可用 110 欄（0–109）；
+# pane 的 94 欄含第 115 欄的宿主拖拉條，內容 93 欄（116–208）
+BANDW = LEFT - 5           # 110
+HOSTBAR = LEFT             # 115：宿主畫的拖拉條
+PANE0 = LEFT + 1           # 116：pane 內容第一欄
 PROMPT_TOP = H - 7         # 42
 BAND_TOP = PROMPT_TOP - 17  # 25
 DIV = PROMPT_TOP - 4       # 38：清單／回覆兩欄收在這條線
-SPLIT = 38                 # 清單欄右邊的直線
+SPLIT = 36                 # 清單欄右邊的直線
 BAND_N = DIV - BAND_TOP - 1  # 12：兩欄的內容列數
-RW = LEFT - 1 - SPLIT - 3  # 73：回覆區寬
-PX, PW = LEFT + 2, DOCK - 4  # pane 內文起點與寬（90）
+RW = BANDW - 1 - SPLIT - 3  # 70：回覆區寬
+PX, PW = PANE0 + 2, W - PANE0 - 4  # pane 內文起點與寬（118、89）
 PANE_TOP_N = 30  # pane 上半（唯讀）第 1–30 列；第 31 列留空
 OTHERS_TOP = PROMPT_TOP - 1 - 9  # 32：下半「其他頁」標題 + 8 列摘要，貼齊 pane 底（R1：可按的在下半）
 
@@ -168,6 +173,24 @@ class Grid:
             x = self.put(y, x, s[0], s[1], end)
         return x
 
+    def row_clip(self, y, x, segs, end=W):
+        """和 row 一樣，但放不下時跟實作（AP wide/band.ts clipTo）同規則截斷：留到 寬度−1，補「…」，「…」沿用被截那段的角色。"""
+        if sum(dw(s[0]) for s in segs) <= end - x:
+            return self.row(y, x, segs, end)
+        room = end - x - 1
+        for s in segs:
+            text, role = s[0], s[1]
+            keep = ''
+            for ch in text:
+                if dw(keep) + CW(ch) > room:
+                    break
+                keep += ch
+            x = self.put(y, x, keep, role, end)
+            room -= dw(keep)
+            if len(keep) < len(text):
+                return self.put(y, x, '…', role, end)
+        return x
+
     def box(self, top, left, bottom, right, title, foot=(), role='inactive'):
         self.put(top, left, '╭─', role)
         x = self.row(top, left + 2, title, right)
@@ -249,7 +272,7 @@ def compose(n, s):
     tabname = f'{tab} {TABS[tab - 1]}'
     # 對話區
     for i, parts in enumerate(TALK):
-        G_.row(1 + i, 0, parts, LEFT)
+        G_.row(1 + i, 0, parts, BANDW)
 
     # ── 回覆區：放不下 12 列時，題目後面的步驟移到 pane 上半，band 留題目與選項 ──
     rows, first_opt = g.render_items(s['reply'], RW)
@@ -283,7 +306,7 @@ def compose(n, s):
     assert len(ix) <= BAND_N, f'{s["id"]}: 清單 {len(ix)} 列'
 
     # ── 底部 band ──
-    bl, br = 0, LEFT - 1
+    bl, br = 0, BANDW - 1
     hints = [h for h in (s['hints'] or g.DEFAULT_HINTS[tab]) if h[0] not in NO_SCROLL]
     if not any(k == 'Tab' for k, _ in hints):
         hints.append(g.H('Tab', '換頁'))
@@ -297,9 +320,9 @@ def compose(n, s):
     G_.put(BAND_TOP, SPLIT, '┬', 'inactive')
     G_.put(DIV, bl, '├' + '─' * (SPLIT - bl - 1) + '┴' + '─' * (br - SPLIT - 1) + '┤', 'inactive')
     for i, r in enumerate(ix):
-        G_.row(BAND_TOP + 1 + i, 2, r, SPLIT)
+        G_.row_clip(BAND_TOP + 1 + i, 2, r, SPLIT)
     for i, r in enumerate(rows):
-        G_.row(BAND_TOP + 1 + i, SPLIT + 2, strip_row(r), br)
+        G_.row_clip(BAND_TOP + 1 + i, SPLIT + 2, strip_row(r), br)
     # 狀態列：取舊稿最完整的那一版（給很寬的寬度），右邊的頁籤另成一列，這裡只留左邊的全域狀態。
     # 「卡住 N」改成 ⋯ N（R7：band 裡不出現 卡住），和 pane 艦隊區的 ⋯ 同一個記號
     st = [tuple(x[:2]) for x in g.status_line(400, tab, s['status'])]
@@ -312,7 +335,9 @@ def compose(n, s):
     G_.row(DIV + 2, 2, tabs[:-1], br)
 
     # ── 右側 pane ──
-    dl, dr = LEFT, W - 1
+    dl, dr = PANE0, W - 1
+    for y in range(0, PROMPT_TOP):
+        G_.put(y, HOSTBAR, '│', 'inactive')  # 宿主的拖拉條，不是 mod 畫的
     G_.box(0, dl, PROMPT_TOP - 1, dr, [(f' {tabname} · 詳情 ', 'text')],
            [(' ', 'inactive'), ('數字鍵', 'merged'), (' 跳到那一頁', 'inactive'), (' · ', 'inactive'), ('e', 'merged'), (' 展開來龍去脈 ', 'inactive')])
     top = [strip_row(r) for r in moved]
@@ -342,14 +367,14 @@ def compose(n, s):
     assert len(top) <= PANE_TOP_N, f'{s["id"]}: pane 上半 {len(top)} 列 > {PANE_TOP_N}'
     top = fill(top, blocks)
     for i, r in enumerate(top):
-        G_.row(1 + i, PX, r, dr)
+        G_.row_clip(1 + i, PX, r, dr)
     G_.row(OTHERS_TOP, PX, [('其他頁', 'inactive')], dr)
     summ = summaries(s)
     y = OTHERS_TOP + 1
     for k, name in enumerate(TABS, 1):
         if k == tab:
             continue
-        G_.row(y, PX, [(f'{k} {name}', 'merged'), ('  ' + summ[k], 'inactive')], dr)
+        G_.row_clip(y, PX, [(f'{k} {name}', 'merged'), ('  ' + summ[k], 'inactive')], dr)
         y += 1
 
     # ── prompt 區（全寬，沿用舊稿的 statusline 狀態：過時、讀不到）──
