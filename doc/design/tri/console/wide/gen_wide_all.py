@@ -308,6 +308,9 @@ def compose(n, s):
     # ── 底部 band ──
     bl, br = 0, BANDW - 1
     hints = [h for h in (s['hints'] or g.DEFAULT_HINTS[tab]) if h[0] not in NO_SCROLL]
+    # 缺源而且清單沒有可選的列：j/k、o 按了沒反應，提示列就不列（和實作一致，PM 01M8C4DY B 類）
+    if s['state'].startswith('X') and not any('▸' in t for row in ix for t, *_ in row):
+        hints = [h for h in hints if h[0] not in ('j/k', 'o')]
     if not any(k == 'Tab' for k, _ in hints):
         hints.append(g.H('Tab', '換頁'))
     foot = [(' ', 'inactive')] + [tuple(x[:2]) for x in g.hint_row(hints)] + [(' ', 'inactive')]
