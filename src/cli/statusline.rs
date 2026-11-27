@@ -863,7 +863,7 @@ const BAR_MID: Rgb = (0xD7, 0xAF, 0x5F); // 179 — bar warn..error (default 80-
 const BAR_HIGH: Rgb = (0xD7, 0x5F, 0x5F); // 167 — bar >=error (default 100%)
 const BAR_EMPTY: Rgb = (0x5C, 0x5C, 0x5C); // bar ▱, 3.1:1 (was 0x30, 1.6:1)
 const BAR_LBL: Rgb = (0x8A, 0x8A, 0x8A); // 245 — "5h" "7d" "ctx"
-const REMAIN: Rgb = (0x62, 0x62, 0x62); // "4h2m", 3.4:1 (was 0x58, 2.95:1)
+const REMAIN: Rgb = (0x88, 0x88, 0x88); // "4h2m", 5.9:1 on black, 4.7:1 on the pane's #1e1e1e (was 0x62, 2.7:1 there)
 const STAT_VAL: Rgb = (0x94, 0x94, 0x94); // 246 — stat numbers
 const UPDATE_C: Rgb = (0xFF, 0xAF, 0x00); // 214 — amber update banner
 
@@ -894,7 +894,7 @@ const THEME_ROLES: [(&str, Rgb, Rgb, Bar); 14] = [
     ("BAR_HIGH", BAR_HIGH, (0xB3, 0x1D, 0x1D), Bar::Text),
     ("BAR_EMPTY", BAR_EMPTY, (0x94, 0x94, 0x94), Bar::Dim),
     ("BAR_LBL", BAR_LBL, (0x76, 0x76, 0x76), Bar::Dim),
-    ("REMAIN", REMAIN, (0x80, 0x80, 0x80), Bar::Dim),
+    ("REMAIN", REMAIN, (0x76, 0x76, 0x76), Bar::Text),
     ("STAT_VAL", STAT_VAL, (0x4A, 0x4A, 0x4A), Bar::Text),
     ("UPDATE_C", UPDATE_C, (0x9A, 0x5B, 0x00), Bar::Text),
 ];
@@ -2875,6 +2875,19 @@ mod theme_tests {
                 if a.1 == b.1 {
                     assert_eq!(a.2, b.2, "{} and {} share dark {:?}", a.0, b.0, a.1);
                 }
+            }
+        }
+    }
+
+    /// The live pane's dark background is #1e1e1e, not black; every text role must still clear
+    /// 4.5:1 against it (autopilot 01M8DV39 measured the old REMAIN 0x62 at 2.73 there).
+    #[test]
+    fn text_roles_clear_4_5_on_pane_grey() {
+        let pane = (0x1E, 0x1E, 0x1E);
+        for (name, dark, _light, bar) in THEME_ROLES {
+            if bar == Bar::Text {
+                let c = contrast(dark, pane);
+                assert!(c >= 4.5, "{name} dark {dark:?} on #1e1e1e {c:.2} < 4.5");
             }
         }
     }
