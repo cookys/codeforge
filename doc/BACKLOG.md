@@ -797,7 +797,7 @@
 
 ### capture.py 收尾自動產生 contrast+cjk 彙總報告
 - **Id**: B84
-- **Status**: open
+- **Status**: done
 - **Origin**: lane-b84
 - **Trigger-Type**: ready
 - **Effort**: S
