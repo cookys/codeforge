@@ -3,13 +3,14 @@
 import re, sys, unicodedata as ud, glob, os
 def dw(s): return sum(2 if ud.east_asian_width(ch) in 'WF' else 1 for ch in s)
 S = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__))
-SIZES = {'120x40': 120, '209x50': 209}
 print('CJK 逐列寬度檢查（寬字元=2，基準=pane 寬；每列寬度必須 <= pane 寬）')
-for path in sorted(glob.glob(os.path.join(S, '*', 'KR-*.txt'))) + sorted(glob.glob(os.path.join(S, '*', 'KR-after-*.txt'))):
+for path in sorted(glob.glob(os.path.join(S, '*', '*.txt'))):
     name = os.path.relpath(path, S)
-    size = os.path.basename(path).replace('KR-', '').replace('.txt', '').split('-')[0]
-    if size not in SIZES: continue
-    cols = SIZES[size]
+    # The pane width comes from the capture name itself (KR-120x40 / A-80x24 / 00-open-209x49),
+    # so every shot size the harness can produce is scanned, not a hardcoded table's two sizes.
+    m = re.search(r'(\d+)x(\d+)', os.path.basename(path))
+    if not m: continue
+    cols = int(m.group(1))
     rows = open(path, encoding='utf-8').read().split('\n')
     over = [(i + 1, dw(r)) for i, r in enumerate(rows) if r and dw(r) > cols]
     frame_rows = sorted({dw(r) for r in rows if r.startswith('│') or r.startswith('╭') or r.startswith('╰')})

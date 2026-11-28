@@ -38,6 +38,7 @@ grep -q '低於 3.0' <<<"$dark" || fail "dark report lost the sub-3.0 list"
 controls=$((controls + 1))
 
 # 3) cjk-width: an over-wide CJK frame row must be flagged, a short row must not.
+#    The width comes from the capture name, so B80's real shot sizes (209x49, 80x24) are scanned too.
 mkdir -p "$tmp/120x40"
 long=""
 for _ in $(seq 1 62); do long="${long}訓"; done   # 62*2 = 124 display columns > 120
@@ -45,6 +46,15 @@ printf '│ %s ║\n│ 短列 ‣ OK ║\n' "$long" >"$tmp/120x40/KR-120x40.txt
 w="$(python3 -I "$gate/cjk-width.py" "$tmp")"
 grep -q '超寬列=\[(1, 128)\]' <<<"$w" || fail "over-wide row 1 (128 cols incl. frame) not flagged: $w"
 grep -q '120x40/KR-120x40.txt' <<<"$w" || fail "fixture not scanned: $w"
+mkdir -p "$tmp/209x49" "$tmp/80x24"
+wide=""
+for _ in $(seq 1 110); do wide="${wide}訓"; done   # 110*2 + 4 single-width frame/space = 224 columns > 209
+printf '│ %s ║\n' "$wide" >"$tmp/209x49/A-209x49.txt"
+printf '│ 短列 ‣ OK ║\n' >"$tmp/80x24/A-80x24.txt"
+w2="$(python3 -I "$gate/cjk-width.py" "$tmp")"
+grep -q '209x49/A-209x49.txt  pane=209' <<<"$w2" || fail "209x49 shot size not scanned (B82 regression): $w2"
+grep -q '超寬列=\[(1, 224)\]' <<<"$w2" || fail "224-col row at width 209 not flagged: $w2"
+grep -q '80x24/A-80x24.txt  pane=80.*超寬列=無' <<<"$w2" || fail "short row at 80x24 falsely flagged: $w2"
 controls=$((controls + 1))
 
 # 4) xterm 256 palette pins (the quantization table the contrast numbers depend on).
