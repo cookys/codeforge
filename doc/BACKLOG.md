@@ -2,7 +2,7 @@
 
 格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。本檔由 `scripts/backlog-view.sh` 從 hippo 紀錄庫產生，不要手改。
 
-<!-- next-id: B84 -->
+<!-- next-id: B86 -->
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
@@ -794,3 +794,17 @@
 - **Origin**: lane-b80
 - **Trigger-Type**: ready
 - **Effort**: S
+
+### capture.py 收尾自動產生 contrast+cjk 彙總報告
+- **Id**: B84
+- **Status**: open
+- **Origin**: lane-b84
+- **Trigger-Type**: ready
+- **Effort**: S
+
+### 清主 clone 未追蹤殘留（舊 handoff + tri 輪散落截圖）
+- **Id**: B85
+- **Status**: open
+- **Origin**: lane-b85
+- **Trigger-Type**: ready
+- **Effort**: XS
