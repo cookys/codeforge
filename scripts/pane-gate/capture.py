@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
 # capture.py <ap-checkout> <out-dir> : drive the pane-gate harness (v74-keys/run.py) against an autopilot checkout and capture pane screens. Sandbox only; never touches live.
-# Env knobs: MODE=fs|keys, SZ=<WxH>, CAPTURE_THEME=light|dark, V75OFF=1 (v7.4 frame), KEEP=1 (leave the tmux server + work dir behind).
-# --check-env: print the sandbox environment (tmux, harness, TERM) and exit; used by toolchain.test.sh.
-import importlib.util, os, subprocess, sys, time, uuid, shutil, json
+# Env knobs: MODE=fs|keys, SZ=<WxH> (initial window size, default 209x49 — the operator's pane), CAPTURE_THEME=light|dark, V75OFF=1 (v7.4 frame), KEEP=1 (leave the tmux server + work dir behind).
+# --check-env: print the sandbox environment (tmux, harness, TERM, effective initial size) and exit; used by toolchain.test.sh.
+import importlib.util, os, re, subprocess, sys, time, uuid, shutil, json
 HERE = os.path.dirname(os.path.abspath(__file__))
 H = os.path.join(HERE, 'v74-keys')
 sys.path.insert(0, H)
 spec = importlib.util.spec_from_file_location('gaterun', H + '/run.py'); R = importlib.util.module_from_spec(spec); spec.loader.exec_module(R)
 R.HERE = H
 PATCH = os.path.join(HERE, 'patch_awaiting.py')
+_sz = re.fullmatch(r'(\d+)x(\d+)', os.environ.get('SZ', '') or '209x49')
+if not _sz:
+    print('SZ must be <W>x<H>, got %r' % os.environ['SZ'], file=sys.stderr); sys.exit(2)
+COLS, ROWS = int(_sz.group(1)), int(_sz.group(2))
 if sys.argv[1] == '--check-env':
     tmux = shutil.which('tmux')
     ok = bool(tmux) and os.path.isfile(os.path.join(H, 'run.py')) and os.path.isfile(PATCH)
     print('tmux', tmux or 'MISSING'); print('harness', H, os.path.isfile(os.path.join(H, 'run.py')))
     print('patch', PATCH, os.path.isfile(PATCH))
+    print('size %dx%d' % (COLS, ROWS))
     print('TERM', os.environ.get('TERM'), 'COLORTERM', os.environ.get('COLORTERM'), 'FORCE_COLOR', os.environ.get('FORCE_COLOR'))
     sys.exit(0 if ok else 1)
 ap, out = os.path.realpath(sys.argv[1]), os.path.realpath(sys.argv[2])
 os.makedirs(out, exist_ok=True)
-MODE = os.environ.get('MODE', 'fs'); SZ = os.environ.get('SZ', '120x22')
-PATCH = os.path.join(HERE, 'patch_awaiting.py')
+MODE = os.environ.get('MODE', 'fs')
 scenario = 'v75' + MODE
 work, data, home, cwd, env = R.setup(ap, out, scenario)
 sid = str(uuid.uuid4())
@@ -54,10 +58,10 @@ def resize(c, r):
 def k(*ks, lit=False, wait=1.2):
     g.keys(*ks, literal=lit); time.sleep(wait)
 try:
-    R.launch(g, ap, out, scenario, data, home, cwd, env, sid, None, extra_env=('CLAUDE_CODE_NO_FLICKER=%d' % (1 if MODE == 'fs' else 0), 'AUTOPILOT_POOL_ETA=' + g.eta, 'V74_LONGCARD=1', 'TERM=xterm-256color') + (('AUTOPILOT_LIVE_V75=0',) if os.environ.get('V75OFF') else ()))
+    R.launch(g, ap, out, scenario, data, home, cwd, env, sid, None, cols=COLS, rows=ROWS, extra_env=('CLAUDE_CODE_NO_FLICKER=%d' % (1 if MODE == 'fs' else 0), 'AUTOPILOT_POOL_ETA=' + g.eta, 'V74_LONGCARD=1', 'TERM=xterm-256color') + (('AUTOPILOT_LIVE_V75=0',) if os.environ.get('V75OFF') else ()))
     time.sleep(8)
     k('/live-pane', lit=True); k('Enter', wait=8)
-    shot('00-open-209x49')
+    shot('00-open-%dx%d' % (COLS, ROWS))
     k("!env | grep -E '^(TERM|COLORTERM|FORCE_COLOR)='", lit=True); k('Enter', wait=4)
     shot('env-probe')
     import re

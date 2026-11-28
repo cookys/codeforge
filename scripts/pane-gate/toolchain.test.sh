@@ -17,6 +17,12 @@ out="$(python3 -I "$gate/capture.py" --check-env)" || fail "capture.py --check-e
 grep -q '^harness .*/v74-keys True$' <<<"$out" || fail "harness not resolved from the repo: $out"
 grep -q '^patch .*/patch_awaiting.py True$' <<<"$out" || fail "patch_awaiting.py not resolved from the repo: $out"
 grep -q '^TERM ' <<<"$out" || fail "env probe lost the TERM line"
+grep -q '^size 209x49$' <<<"$out" || fail "check-env lost the default launch size (B83): $out"
+sz="$(SZ=120x40 python3 -I "$gate/capture.py" --check-env)"
+grep -q '^size 120x40$' <<<"$sz" || fail "SZ=120x40 not honored by the size probe (B83): $sz"
+if SZ=notasize python3 -I "$gate/capture.py" --check-env >/dev/null 2>&1; then
+  fail "SZ=notasize must exit non-zero"
+fi
 controls=$((controls + 1))
 
 # 2) contrast256: fixed 256-colour fixture, both backgrounds, pinned ratios.
