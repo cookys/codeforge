@@ -4,7 +4,8 @@ import re, sys, unicodedata as ud, glob, os
 def dw(s): return sum(2 if ud.east_asian_width(ch) in 'WF' else 1 for ch in s)
 S = sys.argv[1] if len(sys.argv) > 1 else os.path.dirname(os.path.abspath(__file__))
 print('CJK 逐列寬度檢查（寬字元=2，基準=pane 寬；每列寬度必須 <= pane 寬）')
-for path in sorted(glob.glob(os.path.join(S, '*', '*.txt'))):
+for path in sorted(glob.glob(os.path.join(S, '*.txt')) + glob.glob(os.path.join(S, '*', '*.txt'))):
+    # Both layouts are scanned: the capture out-dir is flat (A-120x40.txt), fixtures nest per size.
     name = os.path.relpath(path, S)
     # The pane width comes from the capture name itself (KR-120x40 / A-80x24 / 00-open-209x49),
     # so every shot size the harness can produce is scanned, not a hardcoded table's two sizes.

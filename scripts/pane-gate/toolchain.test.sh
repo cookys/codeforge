@@ -55,6 +55,10 @@ w2="$(python3 -I "$gate/cjk-width.py" "$tmp")"
 grep -q '209x49/A-209x49.txt  pane=209' <<<"$w2" || fail "209x49 shot size not scanned (B82 regression): $w2"
 grep -q '超寬列=\[(1, 224)\]' <<<"$w2" || fail "224-col row at width 209 not flagged: $w2"
 grep -q '80x24/A-80x24.txt  pane=80.*超寬列=無' <<<"$w2" || fail "short row at 80x24 falsely flagged: $w2"
+# Flat layout (the real capture out-dir writes files at the top level, not per-size subdirs).
+printf '│ %s ║\n' "$long" >"$tmp/F-120x40.txt"
+w3="$(python3 -I "$gate/cjk-width.py" "$tmp")"
+grep -q 'F-120x40.txt  pane=120.*超寬列=\[(1, 128)\]' <<<"$w3" || fail "flat-layout over-wide row not scanned (B84): $w3"
 controls=$((controls + 1))
 
 # 4) xterm 256 palette pins (the quantization table the contrast numbers depend on).
@@ -62,6 +66,23 @@ printf '\033[38;5;196mr\033[38;5;231mw\033[0m\n' >"$tmp/palette.ans"
 p196="$(python3 -I "$gate/contrast256.py" "$tmp/palette.ans" dark)"
 grep -q '#ff0000 (code 196)' <<<"$p196" || fail "code 196 no longer maps to pure red: $p196"
 grep -q '#ffffff (code 231)' <<<"$p196" || fail "code 231 no longer maps to white: $p196"
+controls=$((controls + 1))
+
+# 5) post-shoot report (B84): --report aggregates cjk widths + per-shot contrast into report.txt.
+mkdir -p "$tmp/rep"
+printf '│ 短列 ‣ OK ║\n' >"$tmp/rep/A-120x40.txt"
+cp "$tmp/fixture.ans" "$tmp/rep/A-120x40.ans"
+rp="$(python3 -I "$gate/capture.py" --report "$tmp/rep" dark)" || fail "--report exited non-zero: $rp"
+grep -q '^report ok$' <<<"$rp" || fail "--report did not report ok: $rp"
+test -f "$tmp/rep/report.txt" || fail "--report wrote no report.txt"
+r="$(cat "$tmp/rep/report.txt")"
+grep -q '^== cjk-width ==' <<<"$r" || fail "report missing the cjk section: $r"
+grep -q 'A-120x40.txt  pane=120.*超寬列=無' <<<"$r" || fail "report missing the width row: $r"
+grep -q '^== contrast A-120x40.ans \[dark\] ==$' <<<"$r" || fail "report missing the contrast section: $r"
+grep -q '#ffffff (code rgb) = 16.67' <<<"$r" || fail "report lost the pinned ratio: $r"
+if python3 -I "$gate/capture.py" --report "$tmp/rep" bogus >/dev/null 2>&1; then
+  fail "--report must reject a theme other than light|dark"
+fi
 controls=$((controls + 1))
 
 echo "toolchain.test.sh: ok ($controls controls)"
