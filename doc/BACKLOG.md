@@ -804,7 +804,7 @@
 
 ### 清主 clone 未追蹤殘留（舊 handoff + tri 輪散落截圖）
 - **Id**: B85
-- **Status**: open
+- **Status**: done
 - **Origin**: lane-b85
 - **Trigger-Type**: ready
 - **Effort**: XS
