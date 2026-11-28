@@ -1,0 +1,6 @@
+---
+id: 01M8H11JNB14XVTS5PAB8J0XEW
+kind: issue
+created: 2026-11-28T12:10:55.531Z
+---
+B83（SZ 驅動啟動）與 B84（收尾自動 report.txt）是分開驗證的：B83 煙霧跑在 B84 落地前。需要一輪端到端基準：新工具鏈完整跑一次全尺寸煙霧（SZ 啟動 120x40 → resize 200x50/120x40/80x24 → 自動 report.txt），證據為 shoot dir 內 shots.json report=ok＋report.txt 含寬度與對比段＋截圖尺寸讀回正確。吃掉的操作：交付輪前臨時驗證工具鏈。

@@ -2,7 +2,7 @@
 
 格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。本檔由 `scripts/backlog-view.sh` 從 hippo 紀錄庫產生，不要手改。
 
-<!-- next-id: B86 -->
+<!-- next-id: B88 -->
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
@@ -806,5 +806,19 @@
 - **Id**: B85
 - **Status**: done
 - **Origin**: lane-b85
+- **Trigger-Type**: ready
+- **Effort**: XS
+
+### 新 pane-gate 工具鏈端到端基準輪（SZ＋自動 report 整合驗證）
+- **Id**: B86
+- **Status**: open
+- **Origin**: lane-b86
+- **Trigger-Type**: ready
+- **Effort**: XS
+
+### report.txt 加摘要頭（張數／超寬列數／低於 3.0 色集合）
+- **Id**: B87
+- **Status**: open
+- **Origin**: lane-b87
 - **Trigger-Type**: ready
 - **Effort**: XS
