@@ -165,3 +165,10 @@ git -c user.name=<名稱> -c user.email=<公司信箱> commit -m "..."
 **Problem**: (1) tmp + `rename(2)` 寫到 symlink 路徑會把**連結本身**換成一般檔：dotfiles 沒更新、本機悄悄脫鉤（沒有任何錯誤）。(2) hook command 寫 `node <data_local_dir>/codeforge/hooks/<ver>/x.js` → 每台機器（macOS 是 `~/Library/Application Support`）、每個版本都不同；marker `codeforge@<ver>` 讓每次升版都改動共用檔。(3) `Path::exists()` 對 dangling symlink 回 false → dry-run 當空檔印假成功、uninstall 說「沒事可做」。(4) `git ls-files --error-unmatch` 沒設 `Stdio::null()` 會把英文 `fatal:` 漏給使用者；繼承的 `GIT_DIR` 等會讓 `-C` 指錯 repo。
 **Solution**: 寫入先 `canonicalize` 到最終 target，tmp 放 target 同目錄、`sync_all`、rename 到 target、失敗刪 tmp；dangling 在讀取前就報錯。hook 改 `codeforge hook <name>` 子命令：binary 內嵌腳本、落地到私有版本快取再 `node` 執行，stdin/exit code 原樣轉發，轉發器自身錯誤一律 exit 1（clap 用法錯誤也要攔，否則是 2 = Claude Code blocking）。global marker 改契約版號 `codeforge@1`（`--project-hooks` 保持帶版號）。共用檔（symlink 或 git 追蹤）不寫 `cleanupPeriodDays`，要 `--cleanup-period-days`。共用檔升級順序：每台先 self-update，再提交改寫後的設定（舊 binary 沒有 `hook` 子命令 → exit 2 會擋 PreCompact）。
 **Related**: `src/cli/install.rs`、`src/cli/hook.rs`、`doc/plans/2026-11-01-install-stable-paths.md`
+
+## hippo 是 per-clone store / committed body 不可删 / 私有外洩閘門會掃 .hippo bodies
+**Date**: 2026-11-28 | **Context**: B88 backlog 列登記，在 worktree 建紀錄後到主 clone `hippo set` 報 not-found；隨後 pre-push 被私有外洩閘門擋
+**Problem**: (1) `.hippo/` 是每個 clone（含 worktree）各自的追蹤目錄：在 worktree 跑 `hippo new`，紀錄落在該 worktree，主 clone 看不到（`hippo set <id>` → not-found，兩邊生成的 BACKLOG 视图也不同）。(2) hippo 無 `delete`；已提交的 body 檔被删時 pre-commit 的 hippo 檢查會擋（"a committed body file was removed or changed"），`hippo doctor --restore-ops` 會把檔還原回來。(3) 私有外洩閘門（pre-push）掃整個 public tree **包含 .hippo bodies**：backlog 內文引用 host 名（denylist token）會整推被擋，且 `hippo edit` 換內文後**舊 hash 的 body 檔仍在 commit 裡**，擋不變。
+**Solution**: 紀錄的建立/關閉/修改一律在主 clone 跑。未推送的紀錄提交要撤銷時：`git reset <base>`（紀錄檔變 untracked）→ 刪檔 → 重新 `hippo new` → 重新提交；已推送就發更正提交、別刪 body。寫 backlog 內文引用實例時改寫 host 名（例：「accounts[2] 所在 host 的 snapshot」）。
+**When this fires**: 在 worktree 裡碰 hippo、想刪 hippo 紀錄、或 pre-push 私有外洩檢查指到 `.hippo/bodies/*`。
+**Related**: `doc/BACKLOG.md` 由 `scripts/backlog-view.sh` 生成

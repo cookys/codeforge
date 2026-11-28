@@ -4,6 +4,7 @@
 
 | Date | Category | Title | File |
 |------|----------|-------|------|
+| 2026-11-28 | env | hippo per-clone store / committed body 不可删（用 reset 未推的 commit 撤銷）/ 私有外洩閘門掃 .hippo bodies（host 名是 denylist token） | `environment.md` |
 | 2026-11-02 | env | settings.json symlink atomic write / hook command forwarder subcommand / shared dotfiles settings：rename 會把 symlink 換成一般檔 → 先 canonicalize 寫 target；hook 用 `codeforge hook` 子命令不帶路徑版號、轉發器錯誤 exit 1 不是 2；共用檔偵測（git 子行程 stdio null、清 GIT_*） | `environment.md` |
 | 2026-10-31 | arch | AbovePrompt band layout / statusline heartbeat detection：band 一實例、上層不呼叫 next 就輪不到；mod 心跳檔讓 statusline 縮成 2 行 | `harness-patterns.md` |
 | 2026-10-31 | api | pixel sprite format / half-block raster animation / terminal pixel art palette：調色盤+字元列、`▀` fg=上 bg=下、xterm-256 cube 色、`$.clock.every(500)`+`$.ui.blit`（幀放模組變數）、Raster 用 `e.surface==='terminal'` 判斷 | `harness-patterns.md` |
