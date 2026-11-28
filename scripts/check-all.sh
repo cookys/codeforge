@@ -118,6 +118,9 @@ step "architecture map coverage (ARCHITECTURE.md)"
 ./scripts/check-architecture-coverage.test.sh
 ./scripts/check-architecture-coverage.sh
 
+step "v5 rollout preflight controls (inventory columns, rollback usability, dry-run touches nothing)"
+./scripts/v5-rollout-preflight.test.sh
+
 step "cargo deny (licenses)"
 cargo deny check licenses
 
@@ -132,7 +135,7 @@ shellcheck install.sh .githooks/post-checkout scripts/install-checkout-guard.sh 
   scripts/pane-gate/nojump-check.test.sh scripts/pane-gate/toolchain.test.sh scripts/pane-gate/v74-keys/parse.test.sh \
   scripts/pane-gate/v74-keys/ux-review.sh scripts/pane-gate/v74-keys/ux-review.test.sh \
   scripts/check-architecture-coverage.sh scripts/check-architecture-coverage.test.sh \
-  scripts/backlog-view.sh scripts/backlog-view.test.sh scripts/v5-rollout-preflight.sh \
+  scripts/backlog-view.sh scripts/backlog-view.test.sh scripts/v5-rollout-preflight.sh scripts/v5-rollout-preflight.test.sh \
   scripts/install-release.sh scripts/install-release.test.sh scripts/repro-check.sh
 
 step "g40 real-data scan (negative controls)"
