@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# toolchain.test.sh — controls for the pane capture + contrast toolchain (B78).
+# Sandbox only: no tmux pane is launched here (that is capture.py's job, driven by hand);
+# these controls pin the measurement math and the env probe so two rounds of numbers stay comparable.
+set -euo pipefail
+
+repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+gate="$repo/scripts/pane-gate"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+controls=0
+
+fail() { echo "toolchain.test.sh: $*" >&2; exit 1; }
+
+# 1) env probe: tmux present, harness + patch resolvable from the repo (no scratchpad paths).
+out="$(python3 -I "$gate/capture.py" --check-env)" || fail "capture.py --check-env exited non-zero (tmux or harness missing)"
+grep -q '^harness .*/v74-keys True$' <<<"$out" || fail "harness not resolved from the repo: $out"
+grep -q '^patch .*/patch_awaiting.py True$' <<<"$out" || fail "patch_awaiting.py not resolved from the repo: $out"
+grep -q '^TERM ' <<<"$out" || fail "env probe lost the TERM line"
+controls=$((controls + 1))
+
+# 2) contrast256: fixed 256-colour fixture, both backgrounds, pinned ratios.
+#    fg 231 (white), fg 16 (black), bg 232 (near-black), plus one truecolor white.
+printf 'x\033[38;5;231mw\033[38;5;16mk\033[48;5;232mb\033[38;2;255;255;255mt\033[0m\n' >"$tmp/fixture.ans"
+dark="$(python3 -I "$gate/contrast256.py" "$tmp/fixture.ans" dark)"
+grep -q '抽出 3 色' <<<"$dark" || fail "dark parse lost colours: $dark"
+grep -q '#ffffff (code rgb) = 16.67' <<<"$dark" || fail "white on the v7.4 dark base is no longer 16.67: $dark"
+grep -q '#000000 (code 16) = 1.26' <<<"$dark" || fail "black on dark base is no longer 1.26: $dark"
+light="$(python3 -I "$gate/contrast256.py" "$tmp/fixture.ans" light)"
+grep -q '#000000 (code 16) = 21.00' <<<"$light" || fail "black on white is no longer 21.00: $light"
+grep -q '低於 3.0' <<<"$dark" || fail "dark report lost the sub-3.0 list"
+controls=$((controls + 1))
+
+# 3) cjk-width: an over-wide CJK frame row must be flagged, a short row must not.
+mkdir -p "$tmp/120x40"
+long=""
+for _ in $(seq 1 62); do long="${long}訓"; done   # 62*2 = 124 display columns > 120
+printf '│ %s ║\n│ 短列 ‣ OK ║\n' "$long" >"$tmp/120x40/KR-120x40.txt"
+w="$(python3 -I "$gate/cjk-width.py" "$tmp")"
+grep -q '超寬列=\[(1, 128)\]' <<<"$w" || fail "over-wide row 1 (128 cols incl. frame) not flagged: $w"
+grep -q '120x40/KR-120x40.txt' <<<"$w" || fail "fixture not scanned: $w"
+controls=$((controls + 1))
+
+# 4) xterm 256 palette pins (the quantization table the contrast numbers depend on).
+printf '\033[38;5;196mr\033[38;5;231mw\033[0m\n' >"$tmp/palette.ans"
+p196="$(python3 -I "$gate/contrast256.py" "$tmp/palette.ans" dark)"
+grep -q '#ff0000 (code 196)' <<<"$p196" || fail "code 196 no longer maps to pure red: $p196"
+grep -q '#ffffff (code 231)' <<<"$p196" || fail "code 231 no longer maps to white: $p196"
+controls=$((controls + 1))
+
+echo "toolchain.test.sh: ok ($controls controls)"
