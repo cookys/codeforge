@@ -2,7 +2,7 @@
 
 格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。本檔由 `scripts/backlog-view.sh` 從 hippo 紀錄庫產生，不要手改。
 
-<!-- next-id: B88 -->
+<!-- next-id: B89 -->
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
@@ -822,3 +822,10 @@
 - **Origin**: lane-b87
 - **Trigger-Type**: ready
 - **Effort**: XS
+
+### usage-summary: 哨兵 resets_at(2100-01-01) 不得輸出（contract 變更）
+- **Id**: B88
+- **Status**: open
+- **Origin**: lane-b88
+- **Trigger-Type**: ready
+- **Effort**: S
