@@ -2,7 +2,7 @@
 
 格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。本檔由 `scripts/backlog-view.sh` 從 hippo 紀錄庫產生，不要手改。
 
-<!-- next-id: B82 -->
+<!-- next-id: B84 -->
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
@@ -780,3 +780,17 @@
 - **Pointer**: scripts/v5-rollout-preflight.sh（B79 產出）
 - **Context**: dry-run only；測試用 fixture 帳號目錄，不讀 live
 - **Done-Check**: scripts/v5-rollout-preflight.test.sh 綠：盤點表欄位齊、回滾指令行可直接餵 bash -n、dry-run 執行前後 mtime 不變；防止回滾指令靠人轉譯出錯。
+
+### cjk-width.py 尺寸表與實拍尺寸不符，超寬偵測對多數尺寸失效
+- **Id**: B82
+- **Status**: open
+- **Origin**: lane-b80
+- **Trigger-Type**: ready
+- **Effort**: S
+
+### capture.py 的 SZ 參數是死參數：初始尺寸宣稱可調、實際硬編 209x49
+- **Id**: B83
+- **Status**: open
+- **Origin**: lane-b80
+- **Trigger-Type**: ready
+- **Effort**: S
