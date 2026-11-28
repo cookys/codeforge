@@ -16,17 +16,26 @@ if not _sz:
 COLS, ROWS = int(_sz.group(1)), int(_sz.group(2))
 def write_report(out, theme):
     # Post-shoot aggregation, scripted (B84): widths over every .txt in the out-dir (flat layout),
-    # contrast per .ans against the shot theme. Returns 'ok' or 'error: ...'; never raises — a missing
+    # contrast per .ans against the shot theme, and a 3-line summary header (B87) so a delivery can
+    # quote numbers without rereading the body. Returns 'ok' or 'error: ...'; never raises — a missing
     # report must not lose the shots.
     try:
         parts = ['== cjk-width ==']
         w = subprocess.run([sys.executable, '-I', os.path.join(HERE, 'cjk-width.py'), out], capture_output=True, text=True)
         parts.append(w.stdout if w.returncode == 0 else 'cjk-width failed: ' + (w.stderr or w.stdout))
-        for ans in sorted(glob.glob(os.path.join(out, '*.ans'))):
+        ans_files = sorted(glob.glob(os.path.join(out, '*.ans')))
+        low = {}
+        for ans in ans_files:
             c = subprocess.run([sys.executable, '-I', os.path.join(HERE, 'contrast256.py'), ans, theme], capture_output=True, text=True)
             parts.append('== contrast %s [%s] ==' % (os.path.basename(ans), theme))
             parts.append(c.stdout if c.returncode == 0 else 'contrast256 failed: ' + (c.stderr or c.stdout))
-        open(os.path.join(out, 'report.txt'), 'w', encoding='utf-8').write('\n'.join(parts) + '\n')
+            if c.returncode == 0:
+                for hex6, ratio in re.findall(r"\('#([0-9a-f]{6})', ([0-9.]+)\)", c.stdout):
+                    low.setdefault('#' + hex6, ratio)
+        over = sum(len(re.findall(r'\(\d+, \d+\)', line)) for line in w.stdout.splitlines() if '超寬列=[' in line) if w.returncode == 0 else -1
+        head = ['== summary ==', 'shots=%d  超寬列=%s' % (len(ans_files), over if over >= 0 else 'cjk-width failed'),
+                '低於 3.0（全部 .ans 去重）： ' + (', '.join('%s=%s' % kv for kv in sorted(low.items())) or '無')]
+        open(os.path.join(out, 'report.txt'), 'w', encoding='utf-8').write('\n'.join(head + parts) + '\n')
         return 'ok'
     except Exception as e:
         return 'error: %s' % e
