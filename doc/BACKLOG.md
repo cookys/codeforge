@@ -725,7 +725,7 @@
 
 ### 沙箱截圖＋256 色對比量測工具鏈固化進 scripts/pane-gate/
 - **Id**: B78
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-28
 - **Origin**: pm-01m8gy1b6t6
 - **Problem**: pane/statusline 畫面驗收用的截圖與 256 色對比量測腳本（capture.py、contrast256.py、theme env 探測、TERM=xterm-256color）只存在 session scratchpad，本 session 期間已重寫第 3 次（handoff 更新 28/46/58）。工具每次重寫行為可能漂移（量化誤差、捲動 offset 處理），量測基準不可重現。
