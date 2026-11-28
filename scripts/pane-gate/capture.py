@@ -2,7 +2,8 @@
 # capture.py <ap-checkout> <out-dir> : drive the pane-gate harness (v74-keys/run.py) against an autopilot checkout and capture pane screens. Sandbox only; never touches live.
 # Env knobs: MODE=fs|keys, SZ=<WxH> (initial window size, default 209x49 — the operator's pane), CAPTURE_THEME=light|dark, V75OFF=1 (v7.4 frame), KEEP=1 (leave the tmux server + work dir behind).
 # --check-env: print the sandbox environment (tmux, harness, TERM, effective initial size) and exit; used by toolchain.test.sh.
-import importlib.util, os, re, subprocess, sys, time, uuid, shutil, json
+# --report <out-dir> [theme]: run the analyzers (cjk-width + contrast256 per shot) over an existing out-dir and write report.txt; also runs automatically at the end of a capture.
+import glob, importlib.util, os, re, subprocess, sys, time, uuid, shutil, json
 HERE = os.path.dirname(os.path.abspath(__file__))
 H = os.path.join(HERE, 'v74-keys')
 sys.path.insert(0, H)
@@ -13,6 +14,30 @@ _sz = re.fullmatch(r'(\d+)x(\d+)', os.environ.get('SZ', '') or '209x49')
 if not _sz:
     print('SZ must be <W>x<H>, got %r' % os.environ['SZ'], file=sys.stderr); sys.exit(2)
 COLS, ROWS = int(_sz.group(1)), int(_sz.group(2))
+def write_report(out, theme):
+    # Post-shoot aggregation, scripted (B84): widths over every .txt in the out-dir (flat layout),
+    # contrast per .ans against the shot theme. Returns 'ok' or 'error: ...'; never raises — a missing
+    # report must not lose the shots.
+    try:
+        parts = ['== cjk-width ==']
+        w = subprocess.run([sys.executable, '-I', os.path.join(HERE, 'cjk-width.py'), out], capture_output=True, text=True)
+        parts.append(w.stdout if w.returncode == 0 else 'cjk-width failed: ' + (w.stderr or w.stdout))
+        for ans in sorted(glob.glob(os.path.join(out, '*.ans'))):
+            c = subprocess.run([sys.executable, '-I', os.path.join(HERE, 'contrast256.py'), ans, theme], capture_output=True, text=True)
+            parts.append('== contrast %s [%s] ==' % (os.path.basename(ans), theme))
+            parts.append(c.stdout if c.returncode == 0 else 'contrast256 failed: ' + (c.stderr or c.stdout))
+        open(os.path.join(out, 'report.txt'), 'w', encoding='utf-8').write('\n'.join(parts) + '\n')
+        return 'ok'
+    except Exception as e:
+        return 'error: %s' % e
+if sys.argv[1] == '--report':
+    if len(sys.argv) < 3:
+        print('usage: capture.py --report <out-dir> [light|dark]', file=sys.stderr); sys.exit(2)
+    theme = sys.argv[3] if len(sys.argv) > 3 else os.environ.get('CAPTURE_THEME', 'light')
+    if theme not in ('light', 'dark'):
+        print('theme must be light|dark, got %r' % theme, file=sys.stderr); sys.exit(2)
+    st = write_report(os.path.realpath(sys.argv[2]), theme)
+    print('report', st); sys.exit(0 if st == 'ok' else 1)
 if sys.argv[1] == '--check-env':
     tmux = shutil.which('tmux')
     ok = bool(tmux) and os.path.isfile(os.path.join(H, 'run.py')) and os.path.isfile(PATCH)
@@ -99,7 +124,9 @@ try:
     open(os.path.join(out, 'notes.log'), 'w').write('\n'.join(log))
 
 finally:
-    json.dump(dict(shots=shots), open(os.path.join(out, 'shots.json'), 'w'), ensure_ascii=False, indent=1)
+    report = write_report(out, os.environ.get('CAPTURE_THEME', 'light'))
+    json.dump(dict(shots=shots, report=report), open(os.path.join(out, 'shots.json'), 'w'), ensure_ascii=False, indent=1)
+    print('REPORT', report, os.path.join(out, 'report.txt'), flush=True)
     if os.environ.get('KEEP') != '1':
         regen.kill(); g.tmux('kill-server', check=False); shutil.rmtree(work, ignore_errors=True)
     else:
