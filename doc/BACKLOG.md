@@ -740,7 +740,7 @@
 
 ### console v5 環境鍵 rollout 預檢腳本（dry-run 盤點）
 - **Id**: B79
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-28
 - **Origin**: pm-01m8gy1b6t6
 - **Problem**: console v5 換版（live pin）各主機的預檢——盤點各帳號 settings.json 的環境鍵現況、記舊 sha16、寫回滾指令——目前每次換版窗內手工做，容易漏一台帳號或漏記一個回滾點。

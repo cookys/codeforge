@@ -9,3 +9,4 @@
 {"op_id":"01M8GYH3TDYVYXRHM56Y9P25B2","actor":"local/cookys-team","at":"2026-11-28T11:26:58.893Z","kind":"set","field":"tags/trigger:ready","value":true,"supersedes":[],"create_nonce":"f4e9cb3176dff3deae8bf5c37dcc2339"}
 {"op_id":"01M8GYH3V6ZFH4V0CF31CD0CDN","actor":"local/cookys-team","at":"2026-11-28T11:26:58.918Z","kind":"set","field":"tags/origin:pm-01m8gy1b6t6","value":true,"supersedes":[],"create_nonce":"f4e9cb3176dff3deae8bf5c37dcc2339"}
 {"op_id":"01M8GYWMSV31F276GM16GAN3QC","actor":"local/cookys-team","at":"2026-11-28T11:33:16.731Z","kind":"body","body_sha":"sha256:17832908db232530a3716e3fc1db298c3b4e2377ffa72c5af956c053bc132f97","supersedes":["01M8GYH3QF3YQ22KR5J8M721PF"],"create_nonce":"f4e9cb3176dff3deae8bf5c37dcc2339"}
+{"op_id":"01M8GZBX2CAPGWGG7KWJPBF0BX","actor":"local/cookys-team","at":"2026-11-28T11:41:36.716Z","kind":"close","field":"status","value":"done","supersedes":["01M8GYH3QF3YQ22KR5J8M721PD"],"create_nonce":"f4e9cb3176dff3deae8bf5c37dcc2339"}
