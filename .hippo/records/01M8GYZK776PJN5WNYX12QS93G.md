@@ -1,0 +1,13 @@
+---
+id: 01M8GYZK776PJN5WNYX12QS93G
+kind: issue
+created: 2026-11-28T11:34:53.415Z
+---
+- **Since**: 2026-11-28
+- **Problem**: B79 的盤點輸出還要能產生可直接執行的回滾指令，並有輸出格式測試；只有盤點表的話，換版窗內仍要人肉轉譯。
+- **Impact**: 人肉轉譯回滾指令，換版出錯時回滾可能打錯目標。
+- **Trigger**: ready（接在 B79 輸出格式定了之後做，格式先冻结即可開工）
+- **Source**: B79 拆分（PM 01M8H02W4 要求拆細）
+- **Pointer**: scripts/v5-rollout-preflight.sh（B79 產出）
+- **Context**: dry-run only；測試用 fixture 帳號目錄，不讀 live
+- **Done-Check**: scripts/v5-rollout-preflight.test.sh 綠：盤點表欄位齊、回滾指令行可直接餵 bash -n、dry-run 執行前後 mtime 不變；防止回滾指令靠人轉譯出錯。

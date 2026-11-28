@@ -12,4 +12,4 @@ created: 2026-11-28T11:26:58.799Z
 - **Source**: PM 01M8GY1B6T6（lane 不空轉）；v5 canary 待操作員卡 d-d2a0cfb0
 - **Pointer**: doc/specs/codeforge-mod-ui.md；memory verify-on-operator-config（AUTOPILOT_LIVE_V75 先例）
 - **Context**: dry-run only，不碰 live；輸出含每帳號 settings.json 路徑、現行環境鍵值、binary sha16、回滾指令
-- **Done-Check**: 對 team 帳號 dry-run 產出盤點表（≥1 帳號，含 sha16 與回滾指令），且執行前後不修改任何檔案；防止換版窗內漏記回滾點。
+- **Done-Check**: scripts/v5-rollout-preflight.sh 對 team 帳號 dry-run 印出盤點表（settings.json 環境鍵現況＋binary sha16），執行前後不改任何檔案；防止換版窗內漏記盤點。

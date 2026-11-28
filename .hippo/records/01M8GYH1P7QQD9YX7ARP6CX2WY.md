@@ -12,4 +12,4 @@ created: 2026-11-28T11:26:56.711Z
 - **Source**: PM 01M8GY1B6T6（lane 不空轉）；Mechanize-repeats 鐵律（同一程序第二次手跑即須腳本化）
 - **Pointer**: 舊 session（be512828-fb6d-4dc0-a527-288c49cc831a）scratchpad 的 accept-s1/（capture.py、contrast256.py），位置在 ~/.tmp/claude-1001/〈專案目錄名〉/〈sid〉/scratchpad/；scripts/pane-gate/README.md
 - **Context**: 工具只在沙箱跑（tmux capture-pane），不碰 live；tmux 量化在 256 色域，對比報告須註明色域限制
-- **Done-Check**: 乾淨 worktree 無 scratchpad 從零跑 scripts/pane-gate/ 的 smoke test，能截出 pane 畫面並產出對比報告，數值與 scratchpad 版在 256 色域內一致；防止下次驗收時工具不存在或量測基準漂移。
+- **Done-Check**: scripts/pane-gate/toolchain.test.sh 綠（env 探測、對比基準 16.67/21.00、196/231 色板、CJK 超寬回報 4 controls）且接進 check-all；防止下次驗收時工具不存在或量測基準漂移。

@@ -2,7 +2,7 @@
 
 格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。本檔由 `scripts/backlog-view.sh` 從 hippo 紀錄庫產生，不要手改。
 
-<!-- next-id: B80 -->
+<!-- next-id: B82 -->
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
@@ -736,7 +736,7 @@
 - **Source**: PM 01M8GY1B6T6（lane 不空轉）；Mechanize-repeats 鐵律（同一程序第二次手跑即須腳本化）
 - **Pointer**: 舊 session（be512828-fb6d-4dc0-a527-288c49cc831a）scratchpad 的 accept-s1/（capture.py、contrast256.py），位置在 ~/.tmp/claude-1001/〈專案目錄名〉/〈sid〉/scratchpad/；scripts/pane-gate/README.md
 - **Context**: 工具只在沙箱跑（tmux capture-pane），不碰 live；tmux 量化在 256 色域，對比報告須註明色域限制
-- **Done-Check**: 乾淨 worktree 無 scratchpad 從零跑 scripts/pane-gate/ 的 smoke test，能截出 pane 畫面並產出對比報告，數值與 scratchpad 版在 256 色域內一致；防止下次驗收時工具不存在或量測基準漂移。
+- **Done-Check**: scripts/pane-gate/toolchain.test.sh 綠（env 探測、對比基準 16.67/21.00、196/231 色板、CJK 超寬回報 4 controls）且接進 check-all；防止下次驗收時工具不存在或量測基準漂移。
 
 ### console v5 環境鍵 rollout 預檢腳本（dry-run 盤點）
 - **Id**: B79
@@ -751,4 +751,32 @@
 - **Source**: PM 01M8GY1B6T6（lane 不空轉）；v5 canary 待操作員卡 d-d2a0cfb0
 - **Pointer**: doc/specs/codeforge-mod-ui.md；memory verify-on-operator-config（AUTOPILOT_LIVE_V75 先例）
 - **Context**: dry-run only，不碰 live；輸出含每帳號 settings.json 路徑、現行環境鍵值、binary sha16、回滾指令
-- **Done-Check**: 對 team 帳號 dry-run 產出盤點表（≥1 帳號，含 sha16 與回滾指令），且執行前後不修改任何檔案；防止換版窗內漏記回滾點。
+- **Done-Check**: scripts/v5-rollout-preflight.sh 對 team 帳號 dry-run 印出盤點表（settings.json 環境鍵現況＋binary sha16），執行前後不改任何檔案；防止換版窗內漏記盤點。
+
+### 用固化後的 capture.py 端到端實拍一次，產出對比報告取代 scratchpad 流程
+- **Id**: B80
+- **Status**: open
+- **Since**: 2026-11-28
+- **Problem**: 工具固化後（B78）還沒用 repo 內版本跑過一次完整端到端實拍；Done 的定義要落到一次真實執行，不能停在測試綠。
+- **Impact**: 沒用 repo 版跑過就交下一輪畫面驗收，等於把交件押在未驗證的流程上。
+- **Trigger**: ready
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: B78 拆分（PM 01M8H02W4 要求拆細）
+- **Pointer**: scripts/pane-gate/capture.py、contrast256.py；v74-keys harness
+- **Context**: 沙箱跑，KEEP=1 可留 tmux server 排查；不碰 live
+- **Done-Check**: 用 scripts/pane-gate/capture.py 於沙箱對 autopilot tip 實拍 209x49、120x40、80x24 三尺寸，out-dir 含 .ans 截圖與 contrast256 報告，報告基準與 toolchain.test.sh fixture 一致；防止固化後的工具第一次真用就卡住。
+
+### v5 rollout 預檢腳本：產生回滾指令與盤點輸出格式測試
+- **Id**: B81
+- **Status**: open
+- **Since**: 2026-11-28
+- **Problem**: B79 的盤點輸出還要能產生可直接執行的回滾指令，並有輸出格式測試；只有盤點表的話，換版窗內仍要人肉轉譯。
+- **Impact**: 人肉轉譯回滾指令，換版出錯時回滾可能打錯目標。
+- **Trigger**: ready（接在 B79 輸出格式定了之後做，格式先冻结即可開工）
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: B79 拆分（PM 01M8H02W4 要求拆細）
+- **Pointer**: scripts/v5-rollout-preflight.sh（B79 產出）
+- **Context**: dry-run only；測試用 fixture 帳號目錄，不讀 live
+- **Done-Check**: scripts/v5-rollout-preflight.test.sh 綠：盤點表欄位齊、回滾指令行可直接餵 bash -n、dry-run 執行前後 mtime 不變；防止回滾指令靠人轉譯出錯。
