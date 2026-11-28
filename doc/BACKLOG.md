@@ -2,7 +2,7 @@
 
 格式依 autopilot `references/backlog-entry.md`；一列一件，細節放在 Pointer 指的地方。自動派工從 Status=open 且 Trigger-Type=ready 的列取下一件。本檔由 `scripts/backlog-view.sh` 從 hippo 紀錄庫產生，不要手改。
 
-<!-- next-id: B78 -->
+<!-- next-id: B80 -->
 
 ### 兩個 dream 同時跑時 signal cursor 競態
 - **Id**: B1
@@ -649,7 +649,7 @@
 
 ### mod 輸入框 @@ 補全席位名稱、p#<project> 選專案負責人
 - **Id**: B73
-- **Status**: done
+- **Status**: open
 - **Since**: 2026-11-26
 - **Origin**: autopilot 01M81Q2P（v7.6 brief 第 (2) 行）
 - **Problem**: 操作員在 mod 輸入框打 @@ 時，不會跳出席位名稱補全；打 p#<project> 也不會帶出該專案的負責人。v7.6 brief 已寫進這項需求，但到 autopilot develop 13af20c04 都還沒有實作（`git grep '@@' mods/` 只有 viewer 的 diff hunk）。同一份 brief 的第 (1) 行 askpm 已經在 develop。
@@ -722,3 +722,33 @@
 - **Trigger-Type**: ready
 - **Effort**: S
 - **Pointer**: AP `mods/live/pane.tsx` 提示列與 ▾ 的色角色；量測腳本 scratchpad v5shot/panecontrast.py 的做法（逐列 fg/bg WCAG）；01M8CDY11V 交件串
+
+### 沙箱截圖＋256 色對比量測工具鏈固化進 scripts/pane-gate/
+- **Id**: B78
+- **Status**: open
+- **Since**: 2026-11-28
+- **Origin**: pm-01m8gy1b6t6
+- **Problem**: pane/statusline 畫面驗收用的截圖與 256 色對比量測腳本（capture.py、contrast256.py、theme env 探測、TERM=xterm-256color）只存在 session scratchpad，本 session 期間已重寫第 3 次（handoff 更新 28/46/58）。工具每次重寫行為可能漂移（量化誤差、捲動 offset 處理），量測基準不可重現。
+- **Impact**: 每輪畫面交件多花 30–60 分鐘重寫；同一畫面兩輪量出的對比值不可比，可能誤判 contrast 過/未過 4.5 門檻。
+- **Trigger**: ready
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: PM 01M8GY1B6T6（lane 不空轉）；Mechanize-repeats 鐵律（同一程序第二次手跑即須腳本化）
+- **Pointer**: 舊 session（be512828-fb6d-4dc0-a527-288c49cc831a）scratchpad 的 accept-s1/（capture.py、contrast256.py），位置在 ~/.tmp/claude-1001/〈專案目錄名〉/〈sid〉/scratchpad/；scripts/pane-gate/README.md
+- **Context**: 工具只在沙箱跑（tmux capture-pane），不碰 live；tmux 量化在 256 色域，對比報告須註明色域限制
+- **Done-Check**: 乾淨 worktree 無 scratchpad 從零跑 scripts/pane-gate/ 的 smoke test，能截出 pane 畫面並產出對比報告，數值與 scratchpad 版在 256 色域內一致；防止下次驗收時工具不存在或量測基準漂移。
+
+### console v5 環境鍵 rollout 預檢腳本（dry-run 盤點）
+- **Id**: B79
+- **Status**: open
+- **Since**: 2026-11-28
+- **Origin**: pm-01m8gy1b6t6
+- **Problem**: console v5 換版（live pin）各主機的預檢——盤點各帳號 settings.json 的環境鍵現況、記舊 sha16、寫回滾指令——目前每次換版窗內手工做，容易漏一台帳號或漏記一個回滾點。
+- **Impact**: 換版漏記回滾點時，出事只能靠記憶還原；漏盤一台帳號就出現帳號間版本分歧（同一畫面不同行為），事後對帳耗時。
+- **Trigger**: ready
+- **Trigger-Type**: ready
+- **Effort**: S
+- **Source**: PM 01M8GY1B6T6（lane 不空轉）；v5 canary 待操作員卡 d-d2a0cfb0
+- **Pointer**: doc/specs/codeforge-mod-ui.md；memory verify-on-operator-config（AUTOPILOT_LIVE_V75 先例）
+- **Context**: dry-run only，不碰 live；輸出含每帳號 settings.json 路徑、現行環境鍵值、binary sha16、回滾指令
+- **Done-Check**: 對 team 帳號 dry-run 產出盤點表（≥1 帳號，含 sha16 與回滾指令），且執行前後不修改任何檔案；防止換版窗內漏記回滾點。
