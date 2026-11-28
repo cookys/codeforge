@@ -811,14 +811,14 @@
 
 ### 新 pane-gate 工具鏈端到端基準輪（SZ＋自動 report 整合驗證）
 - **Id**: B86
-- **Status**: open
+- **Status**: done
 - **Origin**: lane-b86
 - **Trigger-Type**: ready
 - **Effort**: XS
 
 ### report.txt 加摘要頭（張數／超寬列數／低於 3.0 色集合）
 - **Id**: B87
-- **Status**: open
+- **Status**: done
 - **Origin**: lane-b87
 - **Trigger-Type**: ready
 - **Effort**: XS

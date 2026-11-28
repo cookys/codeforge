@@ -8,3 +8,4 @@
 {"op_id":"01M8H123TQZF1D57N5KZNKGDH7","actor":"local/cookys-team","at":"2026-11-28T12:11:13.111Z","kind":"set","field":"tags/trigger:ready","value":true,"supersedes":[],"create_nonce":"42f08ff1757b282829f68f539cb76b42"}
 {"op_id":"01M8H123TQZF1D57N5KZNKGDH8","actor":"local/cookys-team","at":"2026-11-28T12:11:13.111Z","kind":"set","field":"tags/origin:lane-b87","value":true,"supersedes":[],"create_nonce":"42f08ff1757b282829f68f539cb76b42"}
 {"op_id":"01M8H123VG1C9Y0DM65XJWZ01J","actor":"local/cookys-team","at":"2026-11-28T12:11:13.136Z","kind":"set","field":"type","value":"debt","supersedes":[],"create_nonce":"42f08ff1757b282829f68f539cb76b42"}
+{"op_id":"01M8H1CS3BJMNCJQYKR0QB9M77","actor":"local/cookys-team","at":"2026-11-28T12:17:02.571Z","kind":"close","field":"status","value":"done","supersedes":["01M8H11JPAX9WMZZHKQ58X5N4G"],"create_nonce":"42f08ff1757b282829f68f539cb76b42"}
