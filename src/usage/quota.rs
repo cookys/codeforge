@@ -71,6 +71,10 @@ pub const PCT_CAP: f64 = 1.5;
 /// Two `resets_at` closer than this are the same window (sessions may round differently).
 pub const SAME_WINDOW_S: i64 = 600;
 
+/// Upstream's "no real reset time" marker: some account rows carry 2100-01-01 when the
+/// provider never resets. A window stamped with it would read live forever (B88).
+pub const RESET_SENTINEL_S: i64 = 4_102_444_800;
+
 /// When and by which session a window's value was observed. The same value seen again
 /// within WRITE_EVERY_MS is not rewritten, so `at_ms` can lag the latest sighting by that much.
 #[derive(Clone, Debug, PartialEq)]
@@ -104,6 +108,13 @@ pub struct Window {
     pub resets_at: i64,
     /// Provenance of `pct`; `None` from an older writer.
     pub seen: Option<Seen>,
+}
+
+impl Window {
+    /// The real reset time, when this is not the upstream "never resets" sentinel.
+    pub fn real_resets_at(&self) -> Option<i64> {
+        (self.resets_at < RESET_SENTINEL_S).then_some(self.resets_at)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -66,9 +66,10 @@ const ACCOUNT_KEYS: [&str; 4] = ["alias", "written_at_ms", "five_hour", "seven_d
 const ACCOUNT_OPTIONAL: [&str; 4] = ["org", "email", "name", "auth_state"];
 /// The closed set of `auth_state` values, as written.
 const AUTH_STATES: [&str; 4] = super::quota::AUTH_STATES;
-const WINDOW_KEYS: [&str; 2] = ["pct", "resets_at"];
-/// Optional window keys: `seen_at_ms` = when the rate-limit data was captured; absent = unknown.
-const WINDOW_OPTIONAL: [&str; 1] = ["seen_at_ms"];
+const WINDOW_KEYS: [&str; 1] = ["pct"];
+/// Optional window keys: `resets_at` = the real reset time (omitted when unknown — the upstream
+/// "never resets" sentinel is not emitted, B88); `seen_at_ms` = when the rate-limit data was captured.
+const WINDOW_OPTIONAL: [&str; 2] = ["resets_at", "seen_at_ms"];
 /// A capture time may be this far ahead of the summary's own `generated_at_ms` (clock skew).
 pub const SEEN_SKEW_MS: u64 = 10 * 60 * 1000;
 const COUNT_KEYS: [&str; 6] = [
@@ -163,7 +164,11 @@ pub fn hostname() -> String {
 fn window(w: &Option<super::quota::Window>, now_ms: i64) -> Value {
     match w {
         Some(w) => {
-            let mut v = json!({ "pct": w.pct, "resets_at": w.resets_at });
+            let mut v = json!({ "pct": w.pct });
+            // the real reset time only; the upstream "never resets" sentinel is not emitted (B88)
+            if let Some(r) = w.real_resets_at() {
+                v["resets_at"] = json!(r);
+            }
             // the capture time, when the snapshot carries one the contract accepts
             if let Some(seen) = &w.seen {
                 if (0..=now_ms.saturating_add(SEEN_SKEW_MS as i64)).contains(&seen.at_ms) {
@@ -380,7 +385,13 @@ fn win(v: &Value, at: &str, generated_at_ms: u64) -> Result<()> {
     let pct = m["pct"]
         .as_f64()
         .filter(|p| p.is_finite() && (0.0..=PCT_MAX).contains(p));
-    if pct.is_none() || m["resets_at"].as_u64().is_none_or(|n| n > UINT_MAX) {
+    if let Some(r) = m.get("resets_at") {
+        uint(r, &format!("{at}.resets_at"))?;
+        if r.as_u64().is_some_and(|n| n > UINT_MAX) {
+            bail!("{at}.resets_at: 值不合法");
+        }
+    }
+    if pct.is_none() {
         bail!("{at}: 值不合法");
     }
     Ok(())
@@ -599,7 +610,7 @@ pub fn push(dir: &Path, fleet_bin: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::usage::quota::{AuthState, Window};
+    use crate::usage::quota::{AuthState, Window, RESET_SENTINEL_S};
 
     fn row(model: &str, speed: &str, project: &str) -> Row {
         Row {
@@ -1171,6 +1182,42 @@ mod tests {
             }),
             seven_day: None,
         }
+    }
+
+    #[test]
+    fn sentinel_resets_at_is_not_emitted() {
+        // upstream's "no real reset" marker must not reach the summary: a window stamped
+        // 2100-01-01 reads live forever and poisons downstream merges (hangar 01M8H0N14J)
+        let snap = snap_with("acct-a", 5_000, 0.3, RESET_SENTINEL_S);
+        let v = build(
+            &[],
+            &[snap],
+            &host_alias("h"),
+            1_000_000,
+            &Default::default(),
+        );
+        let five = &v["accounts"][0]["five_hour"];
+        assert_eq!(five["pct"].as_f64(), Some(0.3), "pct must survive");
+        assert!(
+            five.get("resets_at").is_none(),
+            "sentinel resets_at must not be emitted"
+        );
+        validate(&v).unwrap();
+
+        // a window that simply lacks resets_at is not a bad snapshot
+        let real = snap_with("acct-b", 5_000, 0.5, 9_000);
+        let mut v2 = build(
+            &[],
+            &[real],
+            &host_alias("h"),
+            1_000_000,
+            &Default::default(),
+        );
+        v2["accounts"][0]["five_hour"]
+            .as_object_mut()
+            .unwrap()
+            .remove("resets_at");
+        validate(&v2).expect("a window without resets_at is not a bad snapshot");
     }
 
     #[test]

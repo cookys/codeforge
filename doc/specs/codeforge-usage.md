@@ -41,7 +41,7 @@ session 手上是舊值（2026-11-06 實測：同一組重置時間下，四組�
 本 session 自己的 5h／7d 長條顯示合併後的值。每個窗另記 `seen_at_ms`、`seen_by`（這個值是哪個
 session、何時看到的；`seen_by` 是清理過的 session id）。同樣的值 30 秒內不重寫，所以 `seen_at_ms`
 最多落後 30 秒。讀和寫不是同一個原子步驟：兩個 session 在同一瞬間寫入時，較小的值仍可能留下，
-下一次較大值的寫入會再改回來。`summary.json` 的契約不變（只輸出 `pct`、`resets_at`）。
+下一次較大值的寫入會再改回來。`summary.json` 的契約不變（只輸出 `pct`，以及有真實重置時間時的 `resets_at`）。
 
 快照的 `written_at_ms` 是**最後一次有讀數被採用**的時間：這次帶來的窗在合併時全部落敗（已重置的窗、較舊的讀數、
 或同一窗較小的值），檔案不重寫，`written_at_ms` 不更新。否則閒置 session 不斷送舊值時，檔案的時間會被刷新，
@@ -300,6 +300,10 @@ grok／kimi 被拒（`expired`／`revoked`）且沒有 `MAX_AGE_MS` 內的快取
 `five_hour` 與 `seven_day` 皆為 `null`（`Failed` 的 `unknown` 等未知狀態不產生列）。欄位只有狀態字串，
 絕不含 token、email、org、姓名或錯誤原文；出現但不在四值內的值，`validate` 拒絕整份寫入與上傳。
 新增選用欄位，schema 維持 `codeforge.usage-summary/1`。帳號列的鍵是白名單（forge-stats `keysWith`、`summary::validate`），舊版讀取端會把含此欄的整份當不合規格，所以和 `null` 一樣讀的一方要先升級。
+`five_hour`／`seven_day` 視窗的 `resets_at` 是**選用**欄位：上游帶的是「永不重置」哨兵（epoch
+`4102444800`＝2100-01-01）時**不輸出**這個欄位，不輸出假時間（B88，hangar 01M8H0N14J）。缺欄＝不知道重置時間：
+讀取端（pane、`usage fleet`）不得把缺欄當壞快照，也不得拿假值排程；`usage fleet` 對缺欄的視窗不顯示、
+不拿假重置時間參與合併（stale 哨兵讀數因此不再餵 by-pool 加總）。
 所有整數（計數、時間、`resets_at`）都必須在 0..=2^53−1（`UINT_MAX`，JS number 能精確表示的
 範圍）；飽和後的加總寫出時壓在這個上限。
 某份本機配額快照的值超出契約（`written_at_ms`／`resets_at` 不在 0..=2^53−1、`pct` 不在 0..=1.5）時，

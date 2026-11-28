@@ -486,7 +486,7 @@ function usageLines(view: UsageView, cols: number, tr: T, now: number, quota: { 
     const win = (label: string, w: UsageView['accounts'][number]['fiveHour'], withReset: boolean): Seg[] =>
       w === null
         ? [seg(`  ${label} `, 'dim'), seg(GLYPH.empty, 'dim')]
-        : [seg(`  ${label} `, 'dim'), seg(tuxPct(w.pct)), ...(withReset ? [seg(' ' + countdown(w.resetsAtMs, now), 'dim')] : [])]
+        : [seg(`  ${label} `, 'dim'), seg(tuxPct(w.pct)), ...(withReset && w.resetsAtMs !== null ? [seg(' ' + countdown(w.resetsAtMs, now), 'dim')] : [])]
     const name = seg('  ' + padRight(a.name, KEY_W))
     // the widest form that fits: both windows with countdowns, then without, then 5h alone; a field is dropped whole, never cut
     const forms: Line[] = [
