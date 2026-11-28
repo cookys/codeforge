@@ -377,6 +377,14 @@ pub fn merge_snapshot(dir: &Path, snap: &Snapshot) -> std::io::Result<(Snapshot,
     let merged = match &old {
         None => snap.clone(),
         Some(old) => {
+            // A reading that does not carry an org_id (an alias pin, or an unknown writer) must not
+            // have its windows merged into a book whose org IS known: that is how a pinned host's
+            // numbers leaked into a different org's file and read high (PM 01M8H0K7F, two books under
+            // one acct-61468014). Derived aliases already split known orgs, so only a no-org writer
+            // can reach a known-org file. Refuse the merge; the pin must resolve its own org_id.
+            if snap.org_id.is_none() && old.org_id.is_some() {
+                return Ok((old.clone(), false));
+            }
             let five_hour = merge_window(old.five_hour.as_ref(), snap.five_hour.as_ref());
             let seven_day = merge_window(old.seven_day.as_ref(), snap.seven_day.as_ref());
             // `written_at_ms` is when a reading was last taken: a snapshot whose windows all lost
@@ -592,6 +600,40 @@ mod tests {
         assert_eq!(m.org.as_deref(), Some("Beta"));
         assert_eq!(m.org_id.as_deref(), Some("org-2"));
         assert_eq!(m.email.as_deref(), Some("new@example.com"));
+    }
+
+    #[test]
+    fn a_pinned_no_org_reading_does_not_merge_into_a_known_org_book() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut real = snap(
+            "acct-a",
+            NOW_MS,
+            Some((0.30, NOW_S + 60)),
+            Some((0.62, NOW_S + 3600)),
+        );
+        real.org = Some("personal".into());
+        real.org_id = Some("org-real".into());
+        real.email = Some("me@example.com".into());
+        merge_snapshot(dir.path(), &real).unwrap();
+        // an alias-pin writer (no org_id) carrying a DIFFERENT org's higher readings.
+        let pinned = snap(
+            "acct-a",
+            NOW_MS + 60_000,
+            Some((0.40, NOW_S + 60)),
+            Some((0.80, NOW_S + 3600)),
+        );
+        let (m, wrote) = merge_snapshot(dir.path(), &pinned).unwrap();
+        assert!(
+            !wrote,
+            "the pinned unknown-org reading must not write into the known-org file"
+        );
+        assert_eq!(m.org_id.as_deref(), Some("org-real"));
+        let rows = read_all(dir.path());
+        assert_eq!(
+            rows[0].seven_day.as_ref().unwrap().pct,
+            0.62,
+            "known org 7d stays 0.62, not max->0.80"
+        );
     }
 
     #[test]
