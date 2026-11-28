@@ -825,7 +825,7 @@
 
 ### usage-summary: 哨兵 resets_at(2100-01-01) 不得輸出（contract 變更）
 - **Id**: B88
-- **Status**: open
+- **Status**: done
 - **Origin**: lane-b88
 - **Trigger-Type**: ready
 - **Effort**: S
