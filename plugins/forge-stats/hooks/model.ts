@@ -313,7 +313,7 @@ export const USAGE_SCHEMA = 'codeforge.usage-summary/1'
 export const USAGE_MAX_BYTES = 256 * 1024
 export const USAGE_STALE_MS = 60 * 60_000
 export const usageSummaryPath = (base: string) => `${base}/codeforge/usage/summary.json`
-export type UsageWindow = { pct: number; resetsAtMs: number }
+export type UsageWindow = { pct: number; resetsAtMs: number | null }
 /** `name` is what the pane shows: codeforge's display name; the `acct-` alias is a key and never drawn. */
 export type UsageAccount = { alias: string; name: string; writtenAt: number; fiveHour: UsageWindow | null; sevenDay: UsageWindow | null }
 /** One model's totals for the day; `cost` is the priced part (null when no row of it is priced), `unpriced` its rows without a price. */
@@ -343,8 +343,8 @@ export const USAGE_CONTRACT = {
   "org": "^[^@\\p{Cc}]{1,40}$",
   "email": "^(?=.{3,254}$)[^@\\s\\p{Cc}\\uFEFF]+@[^@\\s\\p{Cc}\\uFEFF]+$",
   "name_max_cells": 24,
-  "window": ["pct", "resets_at"],
-  "window_optional": ["seen_at_ms"],
+  "window": ["pct"],
+  "window_optional": ["resets_at", "seen_at_ms"],
   "day": ["day", "source", "account", "model", "speed", "input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests", "cost_usd"],
   "counts": ["input", "output", "cache_write_5m", "cache_write_1h", "cache_read", "requests"],
   "sources": ["claude", "codex"],
@@ -399,8 +399,9 @@ function usageWindow(v: unknown, generatedAt: number): UsageWindow | null | unde
   if (v === null) return null
   if (!keysWith(v, C.window, C.window_optional)) return undefined
   if ('seen_at_ms' in v && (!isUint(v.seen_at_ms) || v.seen_at_ms > generatedAt + SEEN_SKEW_MS)) return undefined
-  if (typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || v.pct > C.pct_max || !isUint(v.resets_at)) return undefined
-  return { pct: v.pct, resetsAtMs: (v.resets_at as number) * 1000 }
+  if ('resets_at' in v && !isUint(v.resets_at)) return undefined
+  if (typeof v.pct !== 'number' || !Number.isFinite(v.pct) || v.pct < 0 || v.pct > C.pct_max) return undefined
+  return { pct: v.pct, resetsAtMs: 'resets_at' in v ? (v.resets_at as number) * 1000 : null }
 }
 
 /** Parse the summary text; `text === null` means no file. Every rule of `summary::validate` applies; anything off the contract makes the whole summary

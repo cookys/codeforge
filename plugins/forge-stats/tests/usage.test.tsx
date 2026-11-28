@@ -38,6 +38,13 @@ test('parseUsage takes today, sums per model, priced first, and refuses each con
   expect(v.models[0]).toEqual({ model: 'claude-opus-5-5', tokens: 2000, requests: 6, cost: 4.5, unpriced: 0 })
   expect(v.models[1].cost).toBe(null)
   expect(v.accounts[0].fiveHour?.pct).toBe(0.3)
+  // a window without resets_at is valid: the field is optional (B88, sentinel never emitted)
+  const noReset = parseUsage(
+    JSON.stringify({ ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 0.4 }, seven_day: null }] }),
+    NOW,
+  )
+  expect(noReset.status).toBe('ok')
+  expect(noReset.accounts[0].fiveHour).toEqual({ pct: 0.4, resetsAtMs: null })
   expect(parseUsage(null, NOW).status).toBe('missing')
   const breaks: unknown[] = [
     { ...summary(), schema: 'other/1' },
@@ -51,6 +58,8 @@ test('parseUsage takes today, sums per model, priced first, and refuses each con
     { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: null, seven_day: null, email: 'x' }] },
     { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 1, note: 'x' }, seven_day: null }] },
     { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 1.6, resets_at: 1 }, seven_day: null }] },
+    { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: null }, seven_day: null }] },
+    { ...summary(), accounts: [{ alias: 'smith1', written_at_ms: 1, five_hour: { pct: 0.1, resets_at: 'x' }, seven_day: null }] },
     { ...summary(), days: [{ ...row({}), project: 'repo' }] },
     { ...summary(), host: 'my-laptop' },
     { ...summary(), prices_as_of: 'yesterday' },
