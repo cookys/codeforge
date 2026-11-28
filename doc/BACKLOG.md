@@ -783,14 +783,14 @@
 
 ### cjk-width.py 尺寸表與實拍尺寸不符，超寬偵測對多數尺寸失效
 - **Id**: B82
-- **Status**: open
+- **Status**: done
 - **Origin**: lane-b80
 - **Trigger-Type**: ready
 - **Effort**: S
 
 ### capture.py 的 SZ 參數是死參數：初始尺寸宣稱可調、實際硬編 209x49
 - **Id**: B83
-- **Status**: open
+- **Status**: done
 - **Origin**: lane-b80
 - **Trigger-Type**: ready
 - **Effort**: S
