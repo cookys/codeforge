@@ -649,7 +649,7 @@
 
 ### mod 輸入框 @@ 補全席位名稱、p#<project> 選專案負責人
 - **Id**: B73
-- **Status**: open
+- **Status**: done
 - **Since**: 2026-11-26
 - **Origin**: autopilot 01M81Q2P（v7.6 brief 第 (2) 行）
 - **Problem**: 操作員在 mod 輸入框打 @@ 時，不會跳出席位名稱補全；打 p#<project> 也不會帶出該專案的負責人。v7.6 brief 已寫進這項需求，但到 autopilot develop 13af20c04 都還沒有實作（`git grep '@@' mods/` 只有 viewer 的 diff hunk）。同一份 brief 的第 (1) 行 askpm 已經在 develop。
